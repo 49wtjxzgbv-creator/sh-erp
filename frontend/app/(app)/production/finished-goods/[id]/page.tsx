@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useFinishedGood,
   useQcChecklistItems,
@@ -55,7 +56,7 @@ export default function FinishedGoodDetailPage() {
   }, [checklistItems]);
 
   if (isLoading || !fg) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   async function handleSubmit() {

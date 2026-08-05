@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useProductionOrder,
   useProductionStages,
@@ -79,7 +80,7 @@ export default function ProductionOrderDetailPage() {
   }, [order?.workers]);
 
   if (isLoading || !order) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   async function handleSaveWorkers() {

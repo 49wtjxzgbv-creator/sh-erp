@@ -9,6 +9,7 @@ import { SupplierForm } from '@/components/domain/procurement/supplier-form';
 import { ApiError } from '@/lib/api-client/types';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
 import { Button } from '@/components/ui/button';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   Dialog,
   DialogTrigger,
@@ -46,7 +47,7 @@ export default function SupplierDetailPage() {
   }
 
   if (isLoading || !supplier) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

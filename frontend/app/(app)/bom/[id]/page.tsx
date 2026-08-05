@@ -7,6 +7,7 @@ import { useAssembly, useUpdateAssembly } from '@/lib/hooks/use-bom';
 import { AssemblyForm } from '@/components/domain/bom/assembly-form';
 import { ApiError } from '@/lib/api-client/types';
 import type { CreateAssemblyInput } from '@/lib/api-client/bom';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 export default function AssemblyHeaderPage() {
   const params = useParams<{ id: string }>();
@@ -25,7 +26,7 @@ export default function AssemblyHeaderPage() {
   }
 
   if (isLoading || !assembly) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

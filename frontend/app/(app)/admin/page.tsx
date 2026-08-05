@@ -11,6 +11,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 export default function AdminUsersPage() {
   const t = useTranslations('admin');
@@ -55,7 +56,7 @@ export default function AdminUsersPage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+        <LoadingBlock />
       ) : (
         <Table>
           <TableHeader>

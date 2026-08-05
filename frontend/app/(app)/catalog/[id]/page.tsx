@@ -9,6 +9,7 @@ import { ProductForm } from '@/components/domain/catalog/product-form';
 import { ApiError } from '@/lib/api-client/types';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
 import { Button } from '@/components/ui/button';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   Dialog,
   DialogTrigger,
@@ -46,7 +47,7 @@ export default function EditProductPage() {
   }
 
   if (isLoading || !product) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

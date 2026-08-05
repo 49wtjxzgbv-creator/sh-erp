@@ -7,6 +7,7 @@ import { useAssemblyCost } from '@/lib/hooks/use-bom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 export default function AssemblyCostPage() {
   const params = useParams<{ id: string }>();
@@ -15,7 +16,7 @@ export default function AssemblyCostPage() {
   const { data: cost, isLoading, refetch, isFetching } = useAssemblyCost(params.id);
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

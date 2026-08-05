@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 /**
  * Phase 0 billing stub (billing.service.ts's own header comment): switching
@@ -47,7 +48,7 @@ export default function BillingPage() {
       <h1 className="text-xl font-semibold">{t('title')}</h1>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+        <LoadingBlock />
       ) : (
         <>
           {subscription && (

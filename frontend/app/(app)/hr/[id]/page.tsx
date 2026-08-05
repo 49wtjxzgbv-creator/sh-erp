@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api-client/types';
 import type { CreateEmployeeInput } from '@/lib/api-client/hr';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   Dialog,
   DialogTrigger,
@@ -59,7 +60,7 @@ export default function EmployeeDetailPage() {
   }
 
   if (isLoading || !employee) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

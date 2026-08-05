@@ -7,6 +7,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 const PAGE_SIZE = 50;
 
@@ -63,7 +64,7 @@ export default function AdminAuditPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+        <LoadingBlock />
       ) : (
         <>
           <Table>

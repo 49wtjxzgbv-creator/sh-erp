@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api-client/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 export default function AdminRolesPage() {
   const t = useTranslations('admin');
@@ -52,7 +53,7 @@ export default function AdminRolesPage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+        <LoadingBlock />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {roles?.map((role) => (

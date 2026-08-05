@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useAssemblyVersion } from '@/lib/hooks/use-bom';
 import { toNumber } from '@/lib/api-client/decimal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 export default function AssemblyVersionDetailPage() {
   const params = useParams<{ id: string; versionId: string }>();
@@ -13,7 +14,7 @@ export default function AssemblyVersionDetailPage() {
   const { data: version, isLoading } = useAssemblyVersion(params.id, params.versionId);
 
   if (isLoading || !version) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

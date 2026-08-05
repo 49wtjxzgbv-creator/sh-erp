@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success'> = {
   ORDERED: 'secondary',
@@ -37,7 +38,7 @@ export default function PurchaseOrderDetailPage() {
   const [success, setSuccess] = useState(false);
 
   if (isLoading || !order) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   async function handleReceive() {

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   Dialog,
   DialogTrigger,
@@ -39,7 +40,7 @@ export default function ShipmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !shipment) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   const isDelivered = shipment.status === 'DELIVERED';

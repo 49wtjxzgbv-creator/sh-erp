@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSessionStore } from '@/lib/auth/session-store';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCompanySettings,
   useUpdateCompanySettings,
@@ -141,7 +142,7 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (
@@ -217,7 +218,7 @@ function BrandingCard({
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

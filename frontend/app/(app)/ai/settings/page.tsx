@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 /**
  * Bring-your-own Gemini API key + monthly usage quota
@@ -64,7 +65,7 @@ export default function AiSettingsPage() {
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

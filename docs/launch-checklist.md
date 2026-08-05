@@ -5,24 +5,24 @@ For the first real Hostinger VPS launch. Each item links to the document that co
 ## 1. Infrastructure
 
 - [ ] DNS: `app.<domain>` and `api.<domain>` A records point at the VPS's IP.
-- [ ] `ops/hostinger-setup.sh` run and reviewed (Docker, Nginx, certbot, `ufw`, `awscli` all installed) — [deployment.md](./deployment.md#hostinger-vps-first-launch).
-- [ ] Repo cloned onto the VPS, `.env.prod` created from the full [env-var checklist](./deployment.md#6-full-environment-variable-checklist) — every value real, nothing left as a `changeme`/placeholder.
-- [ ] `docker-compose.prod.yml` stack up (`postgres`, `backend`, `frontend`), all three confirmed bound to `127.0.0.1` only (`docker compose -f docker-compose.prod.yml ps` — no `0.0.0.0` port bindings).
+- [ ] `ops/hostinger-setup.sh` run and reviewed (Node.js 20, Docker for Postgres, Nginx, certbot, `ufw`, `awscli`, the `shserp` system user, and both systemd units all installed) — [deployment.md](./deployment.md#hostinger-vps-native-systemd).
+- [ ] Repo cloned onto the VPS, `/etc/sh-erp/backend.env` and `/etc/sh-erp/frontend.env` created from the full [env-var checklist](./deployment.md#6-full-environment-variable-checklist) — every value real, nothing left as a `changeme`/placeholder. A minimal `.env.prod` also created for Postgres.
+- [ ] `docker-compose.prod.yml` (Postgres only) up, and `sh-erp-backend`/`sh-erp-frontend` systemd services active — Postgres confirmed bound to `127.0.0.1` only (`docker compose -f docker-compose.prod.yml ps` — no `0.0.0.0` port bindings), backend/frontend confirmed bound to `127.0.0.1:3000`/`127.0.0.1:3001` (`ss -tlnp` or `systemctl status`).
 - [ ] Nginx site configs installed from `ops/nginx/*.conf.template`, `nginx -t` passes, reloaded.
 - [ ] `certbot --nginx -d api.<domain> -d app.<domain>` succeeded — both domains serve valid HTTPS (`curl -vI https://api.<domain>/health` shows a real cert, not self-signed).
 
 ## 2. Database
 
 - [ ] `app_user` role created, granted `CREATE, USAGE` on schema `public` only — [role-split rationale](./deployment.md#app_userpostgres-role-split-self-hosted-postgres).
-- [ ] All three migrations applied in order, via the superuser connection (`20260803000000_init`, `20260804000000_create_auth_service_role`, `20260805000000_enable_rls_and_check_constraints`).
+- [ ] All four migrations applied in order, via the superuser connection (`20260803000000_init`, `20260804000000_create_auth_service_role`, `20260805000000_enable_rls_and_check_constraints`, `20260805100000_add_super_admin`) — `ops/deploy.sh` does this automatically on every deploy, this line item is about confirming it actually happened, not running it by hand.
 - [ ] **`\du app_user` confirms `Superuser`, `Create role`, and `Bypass RLS` all read no.** This is the single most important line item in this entire checklist — RLS silently does nothing if this is wrong, and it's the kind of mistake that's invisible until it isn't.
-- [ ] `auth_service` role's placeholder password rotated to a real generated value, matching `AUTH_DATABASE_URL` in `.env.prod`.
+- [ ] `auth_service` and `super_admin_service` roles' placeholder passwords both rotated to real generated values, matching `AUTH_DATABASE_URL`/`SUPER_ADMIN_DATABASE_URL`.
 - [ ] `citext` extension confirmed active (`\dx` inside the `postgres` container) — needed for case-insensitive `article`/`email`/`login` lookups.
 
 ## 3. Application configuration
 
-- [ ] `FRONTEND_URL` in `.env.prod` set to the real `https://app.<domain>` — not left unset (CORS falls back to a permissive reflect-any-origin default otherwise, wrong for production).
-- [ ] `NEXT_PUBLIC_API_BASE_URL` baked into the frontend build (a **build-time** arg, not just a runtime env var — confirm `docker compose -f docker-compose.prod.yml build frontend` was run with the real value, not the Dockerfile's `localhost` default).
+- [ ] `FRONTEND_URL` in `/etc/sh-erp/backend.env` set to the real `https://app.<domain>` — not left unset (CORS falls back to a permissive reflect-any-origin default otherwise, wrong for production).
+- [ ] `NEXT_PUBLIC_API_BASE_URL` in `/etc/sh-erp/frontend.env` ends in exactly `/api/v1` and is baked into the frontend build (a **build-time** value — `ops/deploy.sh` now validates this and refuses to build on a wrong value, a real past incident: it was set to end in `/api` and 404'd on every request).
 - [ ] `JWT_ACCESS_SECRET`/`AI_API_KEY_ENCRYPTION_SECRET` are real generated secrets, not the `.env.example` placeholders.
 - [ ] R2 bucket created, API token scoped to it only, `R2_*` vars set — [R2 setup](./deployment.md#2-cloudflare-r2-file-storage).
 - [ ] R2 bucket versioning enabled (recommended in [backup-restore.md](./backup-restore.md)) — one-time Cloudflare dashboard setting.
@@ -48,6 +48,7 @@ Choose one:
 - [ ] Check `/admin/audit` — confirm the actions above actually appear in the audit trail.
 - [ ] Log out, confirm `/dashboard` (and every other protected route) redirects to `/login` rather than rendering.
 - [ ] Open `https://api.<domain>/api/docs` — Swagger loads, confirming the backend's public surface is reachable and versioned correctly.
+- [ ] Log into `/super-admin/login` with the bootstrap credentials, confirm the companies list loads, block/unblock a test company, and confirm impersonation lands you in `/dashboard` as that company's user — [ADR-0010](./adr/0010-super-admin-role.md).
 
 ## 6. Security
 
@@ -76,7 +77,7 @@ Choose one:
 
 ## First 24-48 hours after launch
 
-- [ ] Watch `docker compose -f docker-compose.prod.yml logs -f backend` (or at least check it periodically) for anything unexpected — this is when a config mistake that passed the smoke test but only shows up under real, varied usage will surface.
+- [ ] Watch `journalctl -u sh-erp-backend -f` (or at least check it periodically) for anything unexpected — this is when a config mistake that passed the smoke test but only shows up under real, varied usage will surface.
 - [ ] Confirm the next day's cron backup actually ran (check `/var/log/sh-erp-backup.log`).
 - [ ] Watch disk usage (`df -h`) — a single VPS has finite disk, and this is the first real signal if Postgres data or Docker images are growing faster than expected.
 - [ ] Follow up on anything from the smoke test that was a "works but ugly" rather than a clean pass.

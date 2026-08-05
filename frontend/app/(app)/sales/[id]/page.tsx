@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCustomerOrder,
   useCancelCustomerOrder,
@@ -50,7 +51,7 @@ export default function CustomerOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !order) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   const canCancel = order.status === 'NEW' || order.status === 'IN_PRODUCTION';

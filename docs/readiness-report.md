@@ -2,6 +2,8 @@
 
 Date: 2026-08-05. Written at the end of the documentation + audit + Hostinger-prep pass, per the explicit request to state honestly whether this system is ready for its first deployment, with any remaining limitations listed plainly rather than glossed over.
 
+**Superseded, same day**: after this report was written, a further audit round moved the Hostinger deployment path off Docker for the backend/frontend (onto native systemd) and added the Super Admin feature — see `docs/production-audit-2026-08-05.md` for the current, authoritative problem list, change list, upgrade/fresh-install instructions, and env reference. The "not yet executed against Docker/live Postgres" caveat below still applies in substance (still no live-run verification), just against the new systemd artifacts instead of the old container ones.
+
 ## Bottom line
 
 SH ERP v2 is ready for a first deployment to a Hostinger VPS, with one important caveat: every artifact built for that deployment (Dockerfiles, docker-compose.prod.yml, the Nginx templates, the ops/ scripts, the Prisma migrations) has been verified as thoroughly as this development sandbox allows — static analysis, syntax parsing, cross-referencing against the schema, compilation with zero new errors — but **none of it has been executed against a real Postgres instance, a real Docker daemon, or a real VPS**, because this sandbox has never had access to either a live Postgres server or a Docker daemon, and `binaries.prisma.sh` (needed for the real Prisma engine) has been unreachable from here in every session of this project. The first time these scripts actually run will be the real deploy. This is a real gap, not a formality — it's disclosed below with what verification was and wasn't possible.

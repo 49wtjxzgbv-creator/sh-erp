@@ -10,6 +10,7 @@ import { updateProduct, deleteProduct, type Product } from '@/lib/api-client/cat
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { recordStockMovement } from '@/lib/api-client/inventory';
 import { ApiError } from '@/lib/api-client/types';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   PRODUCT_GRID_COLUMNS,
   FILTERABLE_COLUMNS,
@@ -170,7 +171,7 @@ export default function ProductGridPage() {
     if (failed > 0) setError(t('gridBulkDeletePartialFailure', { count: failed }));
   }
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+  if (isLoading) return <LoadingBlock />;
 
   return (
     <div className="space-y-4">

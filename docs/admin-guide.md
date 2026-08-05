@@ -55,33 +55,36 @@ A company's logo cannot currently be shown on the public, pre-login `/login` scr
 
 ## Part 2 — Server administration (Hostinger VPS)
 
-For whoever has SSH access to the VPS this system runs on. Assumes the [Hostinger VPS deployment](./deployment.md#hostinger-vps-first-launch) from `docs/deployment.md` is already set up — this section is about operating it day to day, not setting it up the first time.
+For whoever has SSH access to the VPS this system runs on. Assumes the [Hostinger VPS deployment](./deployment.md#hostinger-vps-native-systemd) from `docs/deployment.md` is already set up — this section is about operating it day to day, not setting it up the first time.
+
+Backend and frontend run as native systemd services (`sh-erp-backend`/`sh-erp-frontend`, `ops/systemd/*.service`) since the 2026-08-05 architecture pivot away from Docker for the app layer — see `docker-compose.prod.yml`'s own header comment for why. Postgres is the one thing still in Docker.
 
 ### Checking system health
 
 ```bash
-curl https://api.<your-domain>/health          # backend + live DB connectivity check
-docker compose -f docker-compose.prod.yml ps    # which containers are up
+curl https://api.<your-domain>/health              # backend + live DB connectivity check
+systemctl status sh-erp-backend sh-erp-frontend    # are the two app services up
+docker compose -f docker-compose.prod.yml ps        # is Postgres up
 ```
 
 ### Viewing logs
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f backend      # tail live
-docker compose -f docker-compose.prod.yml logs --since 1h frontend
+journalctl -u sh-erp-backend -f          # tail live
+journalctl -u sh-erp-frontend --since "1 hour ago"
 docker compose -f docker-compose.prod.yml logs postgres
 ```
 
-Backend logs are structured JSON (`nestjs-pino`) — pipe through `jq` for readability if grepping for something specific: `docker compose -f docker-compose.prod.yml logs backend | jq .`. Bearer tokens are redacted at the source (`req.headers.authorization` is explicitly excluded from logging, `app.module.ts`'s `LoggerModule.forRoot` config) — never something to worry about leaking into a log file.
+Backend logs are structured JSON (`nestjs-pino`) — pipe through `jq` for readability if grepping for something specific: `journalctl -u sh-erp-backend -o cat | jq .`. Bearer tokens are redacted at the source (`req.headers.authorization` is explicitly excluded from logging, `app.module.ts`'s `LoggerModule.forRoot` config) — never something to worry about leaking into a log file.
 
 ### Restarting a service
 
 ```bash
-docker compose -f docker-compose.prod.yml restart backend
-docker compose -f docker-compose.prod.yml restart frontend
+sudo systemctl restart sh-erp-backend
+sudo systemctl restart sh-erp-frontend
 ```
 
-Restarting `postgres` is riskier and rarely needed — only do it if the database itself is misbehaving, and expect a brief connection interruption for both other services while it comes back up.
+Restarting `postgres` is riskier and rarely needed — only do it if the database itself is misbehaving, and expect a brief connection interruption for both app services while it comes back up: `docker compose -f docker-compose.prod.yml restart postgres`.
 
 ### Deploying a new release
 
@@ -94,15 +97,20 @@ See [Steady-state releases](./deployment.md#steady-state-releases) in `docs/depl
 
 ### Applying a new database migration
 
-Migrations are never automatic (same policy on every environment this project has — a schema change is a deliberate, reviewed step):
+Migrations are never a separate manual step you run yourself — `ops/deploy.sh` runs `prisma migrate deploy` automatically, every deploy, using the superuser connection (`MIGRATION_DATABASE_URL` in `/etc/sh-erp/backend.env`), before building/restarting either service:
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm \
-  -e DATABASE_URL="postgresql://postgres:${POSTGRES_SUPERUSER_PASSWORD}@postgres:5432/sh_erp?schema=public" \
-  backend npx prisma migrate deploy --schema=/app/prisma/schema.prisma
+git pull
+./ops/deploy.sh
 ```
 
-Run this **before** `ops/deploy.sh` rolls out code that depends on the new schema, immediately after `git pull` brings in the new migration file. See the [`app_user`/`postgres` role split](./deployment.md#app_userpostgres-role-split-self-hosted-postgres) in `docs/deployment.md` for why this uses the superuser connection, not `app_user`'s own.
+See the [`app_user`/`postgres` role split](./deployment.md#app_userpostgres-role-split-self-hosted-postgres) in `docs/deployment.md` for why migrations use the superuser connection, not `app_user`'s own. If you ever need to apply a migration by hand without a full deploy (e.g. investigating a stuck migration), the equivalent manual command is:
+
+```bash
+cd /opt/sh-erp/backend
+set -a; source /etc/sh-erp/backend.env; set +a
+DATABASE_URL="$MIGRATION_DATABASE_URL" npx prisma migrate deploy --schema=../prisma/schema.prisma
+```
 
 ### Rotating secrets
 

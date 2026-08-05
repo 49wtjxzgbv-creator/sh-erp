@@ -7,8 +7,11 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
+import { Inbox } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 
 /**
  * Shared "spreadsheet-style grid" used across every module's list view
@@ -29,6 +32,8 @@ export interface DataTableProps<TData, TValue> {
     total: number;
     onOffsetChange: (offset: number) => void;
   };
+  /** Shown in place of the default "no results" empty state — pass a module-specific icon/title/description/action (e.g. a "Create first product" button). */
+  emptyState?: React.ReactNode;
 }
 
 export function DataTable<TData, TValue>({
@@ -37,6 +42,7 @@ export function DataTable<TData, TValue>({
   isLoading,
   onRowClick,
   pagination,
+  emptyState,
 }: DataTableProps<TData, TValue>) {
   const tc = useTranslations('common');
   const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
@@ -57,15 +63,19 @@ export function DataTable<TData, TValue>({
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="py-8 text-center text-muted-foreground">
-                {tc('loading')}
-              </TableCell>
-            </TableRow>
+            Array.from({ length: 6 }).map((_, rowIdx) => (
+              <TableRow key={rowIdx}>
+                {columns.map((_col, colIdx) => (
+                  <TableCell key={colIdx}>
+                    <Skeleton className="h-4 w-full max-w-[10rem]" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
           ) : table.getRowModel().rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className="py-8 text-center text-muted-foreground">
-                {tc('noResults')}
+              <TableCell colSpan={columns.length} className="p-0">
+                {emptyState ?? <EmptyState icon={Inbox} title={tc('noResults')} />}
               </TableCell>
             </TableRow>
           ) : (

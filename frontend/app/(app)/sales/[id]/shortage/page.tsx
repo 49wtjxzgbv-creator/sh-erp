@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 interface EditableLine extends ShortageGroupLineInput {
   /** Frozen at hydration — the original gross requirement, kept visible and never mutated by editing `qty`. */
@@ -99,7 +100,7 @@ export default function ShortagePreviewPage() {
   }
 
   if (isLoading || !preview) {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
+    return <LoadingBlock />;
   }
 
   return (

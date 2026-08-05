@@ -46,7 +46,14 @@ export default function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (firstSegment === 'login' && hasRefreshToken) {
+  if ((firstSegment === 'login' || firstSegment === 'register') && hasRefreshToken) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // The public Landing Page at "/" is for anonymous visitors — an already
+  // signed-in user landing here (e.g. a bookmarked root URL) gets sent
+  // straight to their dashboard instead of seeing marketing copy again.
+  if (pathname === '/' && hasRefreshToken) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

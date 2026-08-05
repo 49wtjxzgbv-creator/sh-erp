@@ -63,7 +63,7 @@ This restores into a **fresh** database (`sh_erp_restore` by default) — never 
 
 Once a restore in `sh_erp_restore` is verified:
 
-1. Stop the `backend` container (`docker compose -f docker-compose.prod.yml stop backend`) to prevent writes during the swap.
+1. Stop the backend service (`sudo systemctl stop sh-erp-backend` — native systemd since the 2026-08-05 architecture pivot, see `docker-compose.prod.yml`'s header comment) to prevent writes during the swap.
 2. Rename the live database out of the way and the restored one into its place:
    ```sql
    ALTER DATABASE sh_erp RENAME TO sh_erp_before_restore_<timestamp>;

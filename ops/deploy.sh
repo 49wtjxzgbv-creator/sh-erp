@@ -57,6 +57,16 @@ source "$BACKEND_ENV"
 set +a
 : "${DATABASE_URL:?DATABASE_URL is empty in $BACKEND_ENV — aborting rather than seeding/migrating against nothing}"
 
+if [ -z "${SUPER_ADMIN_JWT_SECRET:-}" ]; then
+  echo "WARNING: SUPER_ADMIN_JWT_SECRET is empty in $BACKEND_ENV — SuperAdminGuard fails closed without it," >&2
+  echo "so the Super Admin panel will reject every request until this is set. This does NOT block the" >&2
+  echo "rest of the app (regular company login/API is unaffected), so the deploy continues." >&2
+fi
+if [ -z "${SUPER_ADMIN_BOOTSTRAP_EMAIL:-}" ] || [ -z "${SUPER_ADMIN_BOOTSTRAP_PASSWORD:-}" ]; then
+  echo "NOTE: SUPER_ADMIN_BOOTSTRAP_EMAIL/PASSWORD not both set in $BACKEND_ENV — seed will skip creating" >&2
+  echo "the first Super Admin account (safe no-op). Set both before the next deploy if you need one." >&2
+fi
+
 echo "=== 3. Backend: install, generate, migrate, seed, build ==="
 cd "$REPO_ROOT/backend"
 # Full install, NOT --omit=dev: `nest build` needs the TypeScript

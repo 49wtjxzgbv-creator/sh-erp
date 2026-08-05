@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api-client/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LoadingBlock } from '@/components/ui/loading-block';
 
 /**
  * Low-stock digest — the only notification this module has (Automation.gs'
@@ -67,7 +68,7 @@ export default function NotificationsPage() {
           </div>
 
           {previewLoading ? (
-            <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+            <LoadingBlock />
           ) : preview ? (
             <div className="rounded-md border border-border bg-secondary/30 p-3 text-sm">
               <p className="font-medium">{preview.subject}</p>
