@@ -42,9 +42,33 @@ FROM node:20-slim AS runtime
 ENV NODE_ENV=production
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nestjs
 WORKDIR /app
-COPY --from=build /repo/backend/dist ./dist
-COPY --from=build /repo/backend/node_modules ./node_modules
-COPY --from=build /repo/backend/package.json ./package.json
+# Real VPS production bug, found and fixed: every stage above runs as root
+# (no USER directive before this one), so every COPY --from=build below was
+# landing as root:root in the final image — including
+# node_modules/@prisma/engines. `USER nestjs` (below) then drops the actual
+# running process to uid 1001, which owned none of it. Prisma's engine
+# resolver touches/verifies its cached engine binaries under
+# node_modules/@prisma/engines on every PrismaClient instantiation and every
+# `prisma migrate` invocation — even when the binary is already correctly
+# cached from `prisma generate` in the `deps` stage and nothing actually
+# needs downloading, that verification step still does a real filesystem
+# write (a lock/checksum touch), not just a read. Root-owned, non-writable
+# files under an unprivileged runtime user is exactly what turns that
+# routine touch into "Can't write to /app/node_modules/@prisma/engines".
+# This is a container-permissions bug, not a Prisma bug and not
+# regeneration-at-runtime — confirmed by the error itself (a plain
+# "Permission denied" on `touch`, not a network/download error), and
+# consistent with `deps` already being the only stage that ever calls
+# `prisma generate` (line 32) — runtime has no code path that re-runs it.
+# `chown nestjs:nodejs /app` covers the directory itself (created earlier
+# under root by WORKDIR, which `--chown` on the COPYs below does not
+# retroactively touch); `--chown` on each COPY sets ownership on exactly
+# what's copied, in the same layer, with no extra recursive chown pass over
+# a potentially large node_modules tree.
+RUN chown nestjs:nodejs /app
+COPY --from=build --chown=nestjs:nodejs /repo/backend/dist ./dist
+COPY --from=build --chown=nestjs:nodejs /repo/backend/node_modules ./node_modules
+COPY --from=build --chown=nestjs:nodejs /repo/backend/package.json ./package.json
 # Real bug found and fixed during the Hostinger-VPS deployment-prep pass:
 # this runtime stage never copied `prisma/` (schema.prisma + migrations/)
 # at all — the generated Prisma Client (already baked into node_modules
@@ -56,7 +80,7 @@ COPY --from=build /repo/backend/package.json ./package.json
 # this Dockerfile would fail immediately with a missing-file error — never
 # caught before now because no docker-compose/CI step had actually run a
 # migration from inside this exact built image until this pass.
-COPY --from=build /repo/prisma ./prisma
+COPY --from=build --chown=nestjs:nodejs /repo/prisma ./prisma
 USER nestjs
 EXPOSE 3000
 # Railway's healthcheck path is /health (docs/deployment.md) — served by
