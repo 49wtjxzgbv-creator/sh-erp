@@ -22,6 +22,23 @@
 # ---- deps: install once, cached across builds unless package files change ----
 FROM node:20-slim AS deps
 WORKDIR /repo
+# Real VPS production bug, found and fixed: `node:20-slim` is Debian
+# bookworm-based and ships `libssl3` (OpenSSL 3.0.x) as a *library*, but has
+# no `openssl` package (CLI or dev headers) installed by default — "slim"
+# strips it. Prisma's own platform-detection (`@prisma/get-platform`, run
+# as part of `prisma generate` below) shells out to `openssl version` to
+# decide which prebuilt engine binary to fetch/cache; with no `openssl`
+# binary on PATH to query, it silently fell back to a stale default guess
+# (`debian-openssl-1.1.x`) instead of the correct `debian-openssl-3.0.x` —
+# an engine built against a libssl major version this image's actual
+# `libssl3` can't satisfy (`libssl.so.1.1: cannot open shared object file`).
+# Installing the real `openssl` Debian package (not a manual libssl symlink
+# hack) fixes detection at the source, before `prisma generate` ever runs,
+# so the CORRECT engine binaries get fetched and cached in this layer.
+# `apt-get install` runs before `COPY`ing any repo files so this layer
+# stays cached across ordinary code changes.
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 COPY backend/package.json backend/package-lock.json* ./backend/
 COPY prisma ./prisma
 RUN cd backend && npm ci
@@ -40,6 +57,19 @@ RUN cd backend && npm run build
 # ---- runtime: slim, non-root, only what's needed to run ----
 FROM node:20-slim AS runtime
 ENV NODE_ENV=production
+# Same root cause as the `deps` stage above, second half of the fix: even
+# with the CORRECT `debian-openssl-3.0.x` engine binaries now cached (fixed
+# above), those binaries still dynamically link against `libssl.so.3` AT
+# RUNTIME — and this stage starts fresh `FROM node:20-slim`, so it does not
+# inherit anything installed in `deps`/`build`. Without `libssl3` actually
+# present here too, the schema/query engine copied in via `COPY
+# --from=build` below would fail to start in THIS stage even though it was
+# the right binary all along. Installed as root, before `USER nestjs`
+# drops privileges (matches the ordering already established for the
+# ownership fix below) — the real Debian package, not a manually vendored
+# `.so` file.
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nestjs
 WORKDIR /app
 # Real VPS production bug, found and fixed: every stage above runs as root
