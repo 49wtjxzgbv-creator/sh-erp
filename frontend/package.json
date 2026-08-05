@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/copy-standalone-static.js",
     "start": "next start",
+    "start:standalone": "node .next/standalone/server.js",
     "lint": "eslint \"{app,components,lib,messages}/**/*.{ts,tsx}\" --fix",
     "typecheck": "tsc --noEmit",
     "test": "jest",

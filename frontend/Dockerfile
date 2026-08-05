@@ -13,8 +13,14 @@
 # the actual runtime dependency graph into `.next/standalone/` instead of
 # needing the full `node_modules` tree at runtime. Per Next.js's own
 # documented standalone-output convention, `public/` and `.next/static/`
-# are NOT included in that trace automatically and must be copied in by
-# hand — done explicitly below, not omitted.
+# are NOT included in that trace automatically — `npm run build`'s own
+# `postbuild` hook (package.json -> scripts/copy-standalone-static.js) now
+# copies both into `.next/standalone/` as an inseparable part of the build
+# itself (real recurring bug, found during the 2026-08-05 audit: a
+# hand-copy step here used to be the only place this happened, and it was
+# never run for the actual native-VPS deploy path at all — see
+# docs/deployment.md). This runtime stage below only needs to copy the
+# already-complete `.next/standalone/` directory once.
 
 # ---- deps: install once, cached across builds unless package files change ----
 FROM node:20-slim AS deps
@@ -42,8 +48,6 @@ ENV NODE_ENV=production
 RUN groupadd --system --gid 1001 nextjs && useradd --system --uid 1001 --gid nextjs nextjs
 WORKDIR /app
 COPY --from=build /repo/frontend/.next/standalone ./
-COPY --from=build /repo/frontend/.next/static ./.next/static
-COPY --from=build /repo/frontend/public ./public
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000

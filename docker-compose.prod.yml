@@ -1,36 +1,32 @@
-# Production compose file for the Hostinger VPS deployment path
-# (docs/deployment.md's "Hostinger VPS (first launch)" section). Distinct
-# from docker-compose.yml (local dev) — this one runs the real Postgres +
-# backend + frontend stack that a single self-managed VPS serves traffic
-# from, with Nginx running NATIVELY on the host (not containerized) doing
-# TLS termination + reverse proxy into these containers. All three services
-# below are bound to 127.0.0.1 only — never exposed directly to the public
-# interface — so Nginx (and Let's Encrypt's certbot) is the only thing a
-# client ever actually connects to.
+# Production Postgres for the Hostinger VPS deployment path
+# (docs/deployment.md's "Hostinger VPS (native systemd)" section).
 #
-# Real env values live in a server-local `.env.prod` (never committed —
-# see docs/deployment.md's env-var checklist for the full list) and are
-# loaded via `env_file` below. Bring the stack up with:
+# REAL ARCHITECTURE CHANGE (2026-08-05 production-readiness audit): this
+# file used to also build and run `backend`/`frontend` as containers. That
+# was retired — not patched again — after three consecutive real
+# production incidents that were all fundamentally "fighting Docker, not
+# fighting this app": root-owned node_modules under a non-root USER
+# (chown), a Debian-slim image missing libssl for Prisma's engine, and a
+# standalone Next.js build silently missing its own static assets unless
+# someone remembered to `docker cp` them in. None of those problems exist
+# for a native process managed by systemd (ops/systemd/*.service) — the
+# process runs as the exact same OS user that owns its own files, uses
+# whatever OpenSSL the host already has, and `npm run build`'s `postbuild`
+# hook (frontend/scripts/copy-standalone-static.js) is a normal filesystem
+# operation with no container-layer boundary to cross. Postgres, by
+# contrast, has no build step and no code of ours running inside it — the
+# official `postgres:16` image has none of those failure modes, so it stays
+# exactly where it was.
 #
-#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Bring it up with:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 #
-# Apply migrations (once, after postgres is healthy, before backend first
-# serves real traffic) — deliberately run as the Postgres SUPERUSER
-# connection, not `app_user`'s own DATABASE_URL: the
-# 20260804000000_create_auth_service_role migration runs a real `CREATE
-# ROLE`, which needs CREATEROLE privilege, and `app_user` intentionally
-# does NOT have CREATEROLE (see docs/deployment.md's "Hostinger VPS" section
-# for the full app_user/postgres-superuser role split rationale — the same
-# least-privilege reasoning as the existing "app_user must not be
-# superuser/BYPASSRLS" requirement, just extended to CREATEROLE too):
-#
-#   docker compose -f docker-compose.prod.yml run --rm \
-#     -e DATABASE_URL="postgresql://postgres:${POSTGRES_SUPERUSER_PASSWORD}@postgres:5432/sh_erp?schema=public" \
-#     backend npx prisma migrate deploy --schema=/app/prisma/schema.prisma
-#
-# Everyday application traffic (the `backend`/`frontend` services above)
-# uses `app_user`'s own DATABASE_URL from .env.prod, never the superuser
-# connection.
+# `.env.prod` here is intentionally minimal (just POSTGRES_SUPERUSER* and
+# R2 backup credentials for ops/backup-postgres.sh) — it is NOT the same
+# file as /etc/sh-erp/backend.env or /etc/sh-erp/frontend.env, which hold
+# the application's own configuration and are read by systemd directly, not
+# by Docker Compose. See docs/deployment.md's env-var checklist for the
+# full picture of which file holds what.
 
 services:
   postgres:
@@ -50,37 +46,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    env_file: .env.prod
-    environment:
-      NODE_ENV: production
-      PORT: '3000'
-    ports:
-      - '127.0.0.1:3000:3000'
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-    restart: unless-stopped
-    depends_on:
-      - backend
-    env_file: .env.prod
-    environment:
-      NODE_ENV: production
-      PORT: '3000'
-    ports:
-      - '127.0.0.1:3001:3000'
 
 volumes:
   sh-erp-postgres-data:

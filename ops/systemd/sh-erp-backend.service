@@ -1,0 +1,46 @@
+[Unit]
+Description=SH ERP API (NestJS backend)
+# Postgres runs via Docker (docker-compose.prod.yml) even in the native
+# systemd deployment path — see docs/deployment.md's "Hostinger VPS (native
+# systemd)" section for why only the app layer moved out of Docker, not the
+# database. `docker.service` ordering is best-effort: if Postgres genuinely
+# isn't ready yet when this unit starts, the app fails fast and
+# Restart=on-failure below retries it every 5s until Postgres answers —
+# deliberately simple rather than a custom wait-for-Postgres script.
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shserp
+Group=shserp
+WorkingDirectory=/opt/sh-erp/backend
+# All real configuration lives in this ONE file, loaded by systemd itself —
+# never partially in a shell profile, never partially exported by hand.
+# This is the direct fix for the exact incident that motivated this unit:
+# `DATABASE_URL`/etc existed only in an interactive shell's environment, so
+# `prisma db seed` (and this service) silently ran without it. See
+# docs/deployment.md's env-var checklist for what must be in this file, and
+# ops/hostinger-setup.sh for how it gets created with correct permissions
+# (0640, owned root:shserp — readable by the service user, not world-readable).
+EnvironmentFile=/etc/sh-erp/backend.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+# journald captures stdout/stderr automatically; SyslogIdentifier just makes
+# `journalctl -t sh-erp-backend` a stable, memorable filter — equivalent to
+# `docker compose logs backend` in the Docker path.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sh-erp-backend
+# Defense in depth, same principle as docker-compose.prod.yml binding every
+# container to 127.0.0.1 only: this process should never be reachable
+# except through Nginx on the same host. Set HOST=127.0.0.1 in
+# /etc/sh-erp/backend.env (see that file's own template) — NoNewPrivileges
+# here is a second, independent layer (least-privilege hardening), not a
+# substitute for the HOST binding.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

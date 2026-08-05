@@ -1,0 +1,28 @@
+[Unit]
+Description=SH ERP frontend (Next.js standalone)
+After=network-online.target sh-erp-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shserp
+Group=shserp
+# The standalone server's actual entrypoint lives one level down from the
+# repo's frontend/ directory — Next.js generates it there
+# (`.next/standalone/server.js`), and `npm run build`'s postbuild hook
+# (scripts/copy-standalone-static.js) has already copied `.next/static` and
+# `public/` into this same directory by the time this unit ever starts, so
+# there is nothing left to assemble by hand.
+WorkingDirectory=/opt/sh-erp/frontend/.next/standalone
+EnvironmentFile=/etc/sh-erp/frontend.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sh-erp-frontend
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
