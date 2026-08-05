@@ -1,0 +1,40 @@
+<section id="view-reports" class="view hidden">
+  <h1>Звіти й аналітика</h1>
+
+  <div class="panel-grid">
+    <div class="panel panel-wide">
+      <div class="view-header">
+        <h2>⚠️ Що варто замовити</h2>
+        <button class="btn btn-primary btn-small hidden" id="createOrderFromSuggestionsBtn">+ Створити замовлення з цього списку</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th></th><th>Артикул</th><th>Назва</th><th>Доступно</th><th>Мінімум</th><th>Пропозиція</th></tr></thead>
+          <tbody id="reorderSuggestionsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel panel-wide" id="warehouseValuePanel">
+      <h2>💰 Вартість складу (у всіх типах цін)</h2>
+      <div class="stat-grid" id="warehouseValueTotals"></div>
+      <h3 style="margin-top:16px">По категоріях</h3>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Категорія</th><th>Наша без ПДВ</th><th>Наша з ПДВ</th><th>Нім. без ПДВ</th><th>Нім. з ПДВ</th><th>За ціною продажу</th></tr></thead>
+          <tbody id="warehouseValueByCategory"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel panel-wide">
+      <h2>🏭 Виробництво по місяцях</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Місяць</th><th>Замовлень завершено</th><th>Одиниць виготовлено</th><th id="productionCostHeader" class="hidden">Собівартість (EUR)</th></tr></thead>
+          <tbody id="productionReportBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,51 @@
+// Every Prisma model name that carries `companyId` (Phase 3 schema
+// convention — see schema.prisma's header comment). Kept as an explicit
+// list rather than derived reflectively, so adding a new tenant-scoped
+// model to schema.prisma is a deliberate two-file change (schema + this
+// list), not something that silently starts working (or silently doesn't)
+// depending on Prisma's runtime metadata shape. Cross-check against this
+// list whenever a new model is added in a later Phase 5 module.
+export const TENANT_SCOPED_MODELS = new Set<string>([
+  'Product',
+  'CompanyUnit',
+  'Supplier',
+  'Warehouse',
+  'WarehouseStock',
+  'StockMovement',
+  'InventorySession',
+  'InventoryItem',
+  'Assembly',
+  'AssemblyComponent',
+  'AssemblyVersion',
+  'AssemblyVersionComponent',
+  'ProductionStage',
+  'ProductionOrder',
+  'ProductionOrderPickListItem',
+  'ProductionOrderStageEvent',
+  'ProductionOrderWorker',
+  'FinishedGood',
+  'QcChecklistItem',
+  'QcCheck',
+  'QcCheckResult',
+  'CustomerOrder',
+  'CustomerOrderItem',
+  'Shipment',
+  'ShipmentItem',
+  'PurchaseOrder',
+  'PurchaseOrderItem',
+  'Employee',
+  'PayrollEntry',
+  'CompanySettings',
+  'CompanyBranding',
+  'CompanyAiSettings',
+  'PendingAiAction',
+  'AiUsageLog',
+  'CompanySubscription',
+  'LegacyMigrationRun',
+  'CompanyMembership',
+  'Role',
+  'RefreshToken',
+  'AuditEvent',
+  'CompanyFeatureFlagOverride',
+  'FileAsset',
+]);

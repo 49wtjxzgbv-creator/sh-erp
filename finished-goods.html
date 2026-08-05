@@ -1,0 +1,47 @@
+<section id="view-finishedGoods" class="view hidden">
+  <h1>Готові вироби</h1>
+  <p class="muted">Кожна фізична одиниця виробу отримує унікальний серійний номер при запуску виробництва — знайдіть будь-яку тут.</p>
+
+  <div class="filters-row">
+    <input type="text" id="fgSearchInput" placeholder="Пошук за серійним номером або назвою виробу...">
+    <select id="fgStatusFilter">
+      <option value="">Усі статуси</option>
+      <option value="in_stock">На складі</option>
+      <option value="shipped">Відвантажено</option>
+      <option value="defective">Брак</option>
+    </select>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Серійний номер</th><th>Виріб</th><th>Дата виготовлення</th><th>Статус</th><th></th></tr></thead>
+      <tbody id="fgTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Історія конкретного готового виробу -->
+<div id="finishedGoodViewModal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" data-close="finishedGoodViewModal">✕</button>
+    <h2 id="fgViewSerial"></h2>
+    <div id="fgViewBody"></div>
+  </div>
+</div>
+
+<!-- Контроль якості -->
+<div id="qcModal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" data-close="qcModal">✕</button>
+    <h2>Контроль якості — <span id="qcSerialLabel"></span></h2>
+    <div id="qcChecklistList"></div>
+    <label>Фото готового виробу (необов'язково)</label>
+    <input type="file" id="qcPhotoInput" accept="image/*">
+    <label>Коментар</label>
+    <textarea id="qcCommentInput" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="qcAcceptBtn">✅ Прийнято</button>
+      <button class="btn btn-danger" id="qcReworkBtn">↩ Повернути на доопрацювання</button>
+    </div>
+  </div>
+</div>

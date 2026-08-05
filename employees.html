@@ -1,0 +1,42 @@
+<section id="view-employees" class="view hidden">
+  <div class="view-header">
+    <h1>Працівники</h1>
+    <button class="btn btn-primary" id="addEmployeeBtn">+ Новий працівник</button>
+  </div>
+  <div id="employeesGrid" class="products-grid"></div>
+</section>
+
+<div id="employeeModal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" data-close="employeeModal">✕</button>
+    <h2 id="employeeModalTitle">Новий працівник</h2>
+    <input type="hidden" id="employeeIdField">
+
+    <img id="employeePhotoPreview" class="product-photo" src="https://via.placeholder.com/300x200?text=Немає+фото">
+    <label class="btn btn-secondary btn-small" style="margin-top:8px">
+      📷 Завантажити фото
+      <input type="file" id="employeePhotoInput" accept="image/*" class="hidden">
+    </label>
+
+    <label>ПІБ</label>
+    <input id="employeeNameField" type="text">
+    <label>Посада</label>
+    <input id="employeePositionField" type="text">
+    <label>Телефон</label>
+    <input id="employeePhoneField" type="text">
+    <label>Дата прийому</label>
+    <input id="employeeHireDateField" type="date">
+    <label>Статус</label>
+    <select id="employeeStatusField">
+      <option value="active">Активний</option>
+      <option value="inactive">Неактивний</option>
+    </select>
+    <label>Примітки</label>
+    <textarea id="employeeNotesField" rows="2"></textarea>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="saveEmployeeBtn">Зберегти</button>
+      <button class="btn btn-danger" id="deleteEmployeeBtn">Деактивувати</button>
+    </div>
+  </div>
+</div>

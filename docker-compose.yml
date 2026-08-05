@@ -1,0 +1,75 @@
+# Local development environment (Phase 2 §17.1): `docker compose up` is the
+# entire local onboarding step for a new contributor working on the backend.
+#
+# Scope, disclosed rather than silently partial: this compose file provides
+# Postgres 16 (required — everything needs a database) and the API service.
+# It deliberately does NOT include Redis, Mailhog, or a `worker` service —
+# per backend/README.md's "what's NOT built yet" list, this backend has no
+# BullMQ/Redis-backed background jobs and no dedicated worker process today
+# (ThrottlerModule uses in-memory storage, not Redis; NotificationsModule's
+# email.service.ts talks to SMTP directly and fails open — logs instead of
+# sending — when SMTP_HOST is unset, so a local Mailhog container has
+# nothing to receive in the meantime). Add all three here the same day a
+# real BullMQ queue or a Mailhog-backed email flow actually lands, not
+# before — an unused service in this file would be actively misleading
+# about what "docker compose up" gives a new contributor today.
+#
+# The frontend (Next.js) is intentionally NOT containerized, matching
+# production (Vercel builds it natively) — run it locally with `npm run dev`
+# inside frontend/, pointed at this compose stack's API via
+# frontend/.env.example's NEXT_PUBLIC_API_BASE_URL.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: sh_erp
+    ports:
+      - '5432:5432'
+    volumes:
+      - sh-erp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app_user -d sh_erp']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '3000:3000'
+    environment:
+      # Local-only placeholder values — never real secrets. See
+      # backend/.env.example for the full, documented list; this compose
+      # file only overrides what needs to point at the `postgres` service
+      # name instead of `localhost`.
+      DATABASE_URL: postgresql://app_user:changeme@postgres:5432/sh_erp?schema=public
+      # NOTE: app_user here is a superuser (the default Postgres image
+      # role), which is fine for local dev convenience but is the exact
+      # opposite of the production requirement (database-schema.md §2:
+      # app_user must NOT be a superuser and must NOT have BYPASSRLS, or
+      # RLS silently does nothing) — see docs/deployment.md's provisioning
+      # checklist for the real, restricted role a staging/production
+      # database must use. RLS policies are inert against this local
+      # container as configured; that's an accepted local-dev-only tradeoff,
+      # not something to copy into a real environment.
+      AUTH_DATABASE_URL: postgresql://app_user:changeme@postgres:5432/sh_erp?schema=public
+      JWT_ACCESS_SECRET: local-dev-only-not-a-real-secret
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL_DAYS: '30'
+      PORT: '3000'
+      NODE_ENV: development
+      AI_MODEL_ALIAS: gemini-flash-latest
+      AI_API_KEY_ENCRYPTION_SECRET: local-dev-only-not-a-real-secret
+
+volumes:
+  sh-erp-postgres-data:

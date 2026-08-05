@@ -1,0 +1,30 @@
+<section id="view-production" class="view hidden">
+  <div class="view-header">
+    <h1>Дано в роботу</h1>
+    <button class="btn btn-secondary" id="exportProductionOrdersBtn">⬇ Excel (з собівартістю)</button>
+  </div>
+  <p class="muted">Заплановані замовлення резервують компоненти зі складу. Натисніть "Запустити в роботу",
+    щоб фактично списати їх і отримати аркуш видачі для друку. Собівартість фіксується назавжди на момент запуску —
+    навіть якщо ціни постачальників пізніше зміняться, тут завжди залишиться те, що було насправді.</p>
+
+  <div class="filters-row">
+    <select id="productionStatusFilter">
+      <option value="">Усі статуси</option>
+      <option value="planned">Заплановано (зарезервовано)</option>
+      <option value="in_progress">В роботі</option>
+      <option value="completed">Завершено</option>
+    </select>
+  </div>
+
+  <div id="productionOrdersList" class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Виріб</th><th>К-сть</th><th>Статус</th><th>Етап</th><th>Хто</th>
+          <th>Створено</th><th>Завершено</th><th>Собівартість (наша / нім.)</th><th>Коментар</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="productionOrdersTableBody"></tbody>
+    </table>
+  </div>
+</section>

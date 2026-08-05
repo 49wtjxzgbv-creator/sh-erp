@@ -1,0 +1,246 @@
+import { apiClient } from './http';
+import type { DecimalString } from './decimal';
+
+/**
+ * Typed wrappers for backend/src/modules/sales/ (CustomerOrdersController,
+ * ShipmentsController). Field shapes copied verbatim from
+ * dto/customer-order.dto.ts, dto/give-to-production.dto.ts,
+ * dto/shortage-analysis.dto.ts, dto/shipment.dto.ts, and schema.prisma's
+ * CustomerOrder/CustomerOrderItem/Shipment/ShipmentItem models.
+ *
+ * Same DecimalString-vs-plain-number split as BOM (lib/api-client/bom.ts):
+ * the plain CRUD endpoints (create/update/findOne/query) return Prisma
+ * rows, so CustomerOrderItem.qty is DecimalString as usual. But
+ * `GET /customer-orders/:id/shortage-preview` returns a *computed* result
+ * built from `Number(...)` arithmetic inside
+ * `customer-order-shortage.service.ts` — ShortageLine.neededQty/currentStock
+ * are real JSON numbers, not strings. Double-check against the real service
+ * method before assuming either convention for a new field here.
+ */
+
+export type CustomerOrderPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+export type CustomerOrderStatus = 'NEW' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED';
+
+export interface CustomerOrderItem {
+  id: string;
+  companyId: string;
+  customerOrderId: string;
+  assemblyId: string;
+  qty: DecimalString;
+  /** Set once this line has been "given to production" (Phase 1 §6.2's staged workflow) — null until then. */
+  productionOrderId: string | null;
+}
+
+export interface CustomerOrder {
+  id: string;
+  companyId: string;
+  orderNumber: string | null;
+  clientName: string;
+  contactPerson: string | null;
+  deadline: string | null;
+  priority: CustomerOrderPriority;
+  status: CustomerOrderStatus;
+  comment: string | null;
+  createdById: string;
+  createdAt: string;
+  /** Present on create/findOne responses; not on query() list rows. */
+  items?: CustomerOrderItem[];
+}
+
+export interface CustomerOrderItemInput {
+  assemblyId: string;
+  qty: number;
+}
+
+export interface CreateCustomerOrderInput {
+  orderNumber?: string;
+  clientName: string;
+  contactPerson?: string;
+  deadline?: string;
+  priority?: CustomerOrderPriority;
+  comment?: string;
+  items: CustomerOrderItemInput[];
+}
+
+/** Header-only — item lines are immutable once created; cancel and recreate for a genuine line change. */
+export type UpdateCustomerOrderInput = Partial<Omit<CreateCustomerOrderInput, 'items'>>;
+
+export interface QueryCustomerOrdersInput {
+  status?: CustomerOrderStatus;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedCustomerOrders {
+  items: CustomerOrder[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function queryCustomerOrders(query: QueryCustomerOrdersInput = {}): Promise<PaginatedCustomerOrders> {
+  return apiClient.get<PaginatedCustomerOrders>('customer-orders', { query: query as Record<string, string | number> });
+}
+export function getCustomerOrder(id: string): Promise<CustomerOrder> {
+  return apiClient.get<CustomerOrder>(`customer-orders/${id}`);
+}
+export function createCustomerOrder(dto: CreateCustomerOrderInput): Promise<CustomerOrder> {
+  return apiClient.post<CustomerOrder>('customer-orders', dto);
+}
+export function updateCustomerOrder(id: string, dto: UpdateCustomerOrderInput): Promise<CustomerOrder> {
+  return apiClient.patch<CustomerOrder>(`customer-orders/${id}`, dto);
+}
+/** NEW or IN_PRODUCTION only — 400 otherwise. */
+export function cancelCustomerOrder(id: string): Promise<CustomerOrder> {
+  return apiClient.post<CustomerOrder>(`customer-orders/${id}/cancel`);
+}
+/** Manual staff action — no automatic "every line shipped" trigger exists (deliberate, see the real service's header comment). */
+export function completeCustomerOrder(id: string): Promise<CustomerOrder> {
+  return apiClient.post<CustomerOrder>(`customer-orders/${id}/complete`);
+}
+
+export interface GiveItemToProductionInput {
+  /** Defaults to the line's own qty (rounded up) if omitted. */
+  unitsPlanned?: number;
+}
+
+export interface GiveToProductionResult {
+  item: CustomerOrderItem;
+  productionOrder: { id: string; [key: string]: unknown };
+}
+
+/** A line can only be given once — 400 if it already has a productionOrderId. */
+export function giveItemToProduction(
+  orderId: string,
+  itemId: string,
+  dto: GiveItemToProductionInput = {},
+): Promise<GiveToProductionResult> {
+  return apiClient.post<GiveToProductionResult>(`customer-orders/${orderId}/items/${itemId}/give-to-production`, dto);
+}
+/** Calls giveItemToProduction for every not-yet-given line; already-given lines are silently skipped. */
+export function giveAllToProduction(orderId: string): Promise<GiveToProductionResult[]> {
+  return apiClient.post<GiveToProductionResult[]>(`customer-orders/${orderId}/give-all-to-production`);
+}
+
+export interface ShortageLine {
+  kind: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  description: string;
+  /** Real JSON number — computed result, not a Prisma Decimal field. See file header. */
+  neededQty: number;
+  /** Real JSON number. Shown side-by-side with neededQty, never auto-subtracted ("no hidden arithmetic" rule) — the human decides the actual order qty. */
+  currentStock: number;
+}
+
+export interface SupplierGroup {
+  supplierId: string | null;
+  supplierName: string;
+  lines: ShortageLine[];
+}
+
+export interface ShortagePreview {
+  orderId: string;
+  groups: SupplierGroup[];
+}
+
+/** Recursive, whole-order shortage analysis grouped by supplier. Never mutates anything. */
+export function getShortagePreview(orderId: string): Promise<ShortagePreview> {
+  return apiClient.get<ShortagePreview>(`customer-orders/${orderId}/shortage-preview`);
+}
+
+export interface ShortageGroupLineInput {
+  kind: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  description: string;
+  /** The actual qty to order — pre-filled from the preview's neededQty but human-editable before committing. */
+  qty: number;
+}
+
+export interface PurchaseOrderGroupInput {
+  /** Omitted/null = the "no supplier" bucket. */
+  supplierId?: string;
+  supplierName: string;
+  items: ShortageGroupLineInput[];
+}
+
+/** Commits a (possibly hand-edited) preview — one PurchaseOrder per group, each with sourceCustomerOrderId set. */
+export function createPurchaseOrdersFromShortage(
+  orderId: string,
+  groups: PurchaseOrderGroupInput[],
+): Promise<unknown[]> {
+  return apiClient.post<unknown[]>(`customer-orders/${orderId}/purchase-orders-from-shortage`, { groups });
+}
+
+export type ShipmentStatus = 'SHIPPED' | 'DELIVERED';
+
+export interface ShipmentItem {
+  id: string;
+  companyId: string;
+  shipmentId: string;
+  finishedGoodId: string;
+}
+
+export interface Shipment {
+  id: string;
+  companyId: string;
+  carrier: string | null;
+  waybillNumber: string | null;
+  packageCount: number | null;
+  weightKg: DecimalString | null;
+  dimensions: string | null;
+  status: ShipmentStatus;
+  customerOrderId: string | null;
+  comment: string | null;
+  createdById: string;
+  shipDate: string | null;
+  deliveryDate: string | null;
+  createdAt: string;
+  /** Present on create/findOne responses; not on query() list rows. */
+  items?: ShipmentItem[];
+}
+
+export interface CreateShipmentInput {
+  customerOrderId?: string;
+  carrier?: string;
+  waybillNumber?: string;
+  packageCount?: number;
+  weightKg?: number;
+  dimensions?: string;
+  comment?: string;
+  /** Each must currently be IN_STOCK — flipped to SHIPPED as part of this call. */
+  finishedGoodIds: string[];
+}
+
+export interface QueryShipmentsInput {
+  status?: ShipmentStatus;
+  customerOrderId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedShipments {
+  items: Shipment[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function queryShipments(query: QueryShipmentsInput = {}): Promise<PaginatedShipments> {
+  return apiClient.get<PaginatedShipments>('shipments', { query: query as Record<string, string | number> });
+}
+export function getShipment(id: string): Promise<Shipment> {
+  return apiClient.get<Shipment>(`shipments/${id}`);
+}
+export function createShipment(dto: CreateShipmentInput): Promise<Shipment> {
+  return apiClient.post<Shipment>('shipments', dto);
+}
+export function markShipmentDelivered(id: string): Promise<Shipment> {
+  return apiClient.post<Shipment>(`shipments/${id}/deliver`);
+}
+/** Not-yet-delivered shipments only — reverts the consumed finished goods back to IN_STOCK. */
+export function deleteShipment(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`shipments/${id}`);
+}

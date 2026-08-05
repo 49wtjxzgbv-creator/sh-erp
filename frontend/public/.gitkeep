@@ -1,0 +1,3 @@
+Placeholder — frontend/Dockerfile's standalone build COPY needs this
+directory to exist even before any real static assets (favicon, robots.txt,
+etc.) are added here. Delete this file once real assets exist.

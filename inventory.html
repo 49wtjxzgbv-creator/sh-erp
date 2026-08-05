@@ -1,0 +1,45 @@
+<section id="view-inventory" class="view hidden">
+  <div class="view-header">
+    <h1>Інвентаризація</h1>
+    <button class="btn btn-primary" id="addInventorySessionBtn">+ Нова інвентаризація</button>
+  </div>
+  <p class="muted">Створюєте сесію → система робить знімок поточних залишків → ви проходите складом і вписуєте фактичну кількість → при завершенні розбіжності автоматично коригуються.</p>
+
+  <div id="inventorySessionsGrid" class="products-grid"></div>
+</section>
+
+<div id="newInventorySessionModal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" data-close="newInventorySessionModal">✕</button>
+    <h2>Нова інвентаризація</h2>
+    <label>Назва</label>
+    <input id="invSessionNameInput" type="text" placeholder="Напр. Липень 2026">
+    <label>Коментар</label>
+    <textarea id="invSessionCommentInput" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="createInvSessionBtn">Створити й почати підрахунок</button>
+    </div>
+  </div>
+</div>
+
+<div id="inventorySessionViewModal" class="modal hidden">
+  <div class="modal-content modal-wide">
+    <button class="modal-close" data-close="inventorySessionViewModal">✕</button>
+    <h2 id="invViewTitle"></h2>
+    <div id="invViewMeta" class="muted"></div>
+    <div class="inline-row">
+      <input type="text" id="invItemsSearch" placeholder="Пошук за артикулом чи назвою...">
+    </div>
+    <div class="table-wrap" style="max-height:55vh;overflow-y:auto;">
+      <table class="data-table">
+        <thead><tr><th>Артикул</th><th>Назва</th><th>Очікується</th><th>Фактично</th><th>Різниця</th></tr></thead>
+        <tbody id="invItemsBody"></tbody>
+      </table>
+    </div>
+    <div id="invCompleteBlock" class="modal-actions">
+      <button class="btn btn-primary" id="completeInvSessionBtn">✅ Завершити й скоригувати склад</button>
+      <button class="btn btn-danger" id="deleteInvSessionBtn">🗑 Видалити</button>
+    </div>
+    <div id="invCompleteResult"></div>
+  </div>
+</div>

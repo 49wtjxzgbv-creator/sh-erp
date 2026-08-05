@@ -1,0 +1,46 @@
+{
+  "name": "sh-erp-migration-toolkit",
+  "version": "0.1.0",
+  "description": "SH ERP v2 — legacy-data migration toolkit (Phase 4 design, implemented in the production-readiness pass). A standalone Node/TypeScript CLI, decoupled from the legacy Apps Script runtime, that runs the extract -> transform -> load -> verify pipeline described in \"SH ERP v2 — Phase 4 Migration Engine.md\", per company, against the real Prisma schema at ../prisma/schema.prisma. See README.md before running anything for real.",
+  "private": true,
+  "license": "UNLICENSED",
+  "bin": {
+    "migrate-company": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "migrate-company": "ts-node src/cli.ts",
+    "prisma:generate": "prisma generate --schema=../prisma/schema.prisma",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "argon2": "^0.41.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.16.5",
+    "jest": "^29.7.0",
+    "prisma": "^5.20.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "schema": "../prisma/schema.prisma"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.test\\.ts$",
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  }
+}

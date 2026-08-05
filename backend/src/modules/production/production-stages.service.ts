@@ -1,0 +1,100 @@
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { CreateProductionStageDto, ReorderProductionStagesDto } from './dto/production-stage.dto';
+
+/**
+ * Configurable production-stage list (ProductionStages.gs, Phase 1 §3.3).
+ * No defaults are seeded at company signup — unlike CompanyUnit/Warehouse,
+ * the legacy system has no fixed default stage list; a company that wants
+ * stage tracking configures it explicitly, and `ProductionOrder.start()`
+ * (production-orders.service.ts) falls back to completing immediately if
+ * none are configured, matching Phase 1 §3.3's "(if configured) enters the
+ * multi-stage progress tracker."
+ */
+@Injectable()
+export class ProductionStagesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
+
+  async create(user: RequestUser, dto: CreateProductionStageDto) {
+    const maxSort = await this.prisma.tenant.productionStage.aggregate({ _max: { sortOrder: true } });
+    const stage = await this.prisma.tenant.productionStage.create({
+      data: { name: dto.name, sortOrder: (maxSort._max.sortOrder ?? -1) + 1 } as any,
+    });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_stage.created',
+      entityType: 'ProductionStage',
+      entityId: stage.id,
+      after: stage,
+    });
+    return stage;
+  }
+
+  async list(user: RequestUser) {
+    return this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
+  }
+
+  /** Rewrites sortOrder for every stage to match the given id order. */
+  async reorder(user: RequestUser, dto: ReorderProductionStagesDto) {
+    const existing = await this.list(user);
+    const existingIds = new Set(existing.map((s) => s.id));
+    if (dto.orderedIds.length !== existing.length || !dto.orderedIds.every((id) => existingIds.has(id))) {
+      throw new ConflictException('orderedIds must contain exactly every existing stage id, once each.');
+    }
+
+    for (let i = 0; i < dto.orderedIds.length; i++) {
+      await this.prisma.tenant.productionStage.update({
+        where: { id: dto.orderedIds[i] },
+        data: { sortOrder: i },
+      });
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_stage.reordered',
+      entityType: 'ProductionStage',
+      entityId: 'bulk',
+      after: { orderedIds: dto.orderedIds },
+    });
+
+    return this.list(user);
+  }
+
+  /**
+   * Hard delete — a stage is pure configuration metadata, not referenced by
+   * FK from anywhere (ProductionOrderStageEvent stores a plain `stageIndex`
+   * integer snapshot, not a relation, precisely so a later stage-list edit
+   * never corrupts historical events). Renumbers remaining stages so
+   * sortOrder stays contiguous.
+   */
+  async remove(user: RequestUser, id: string) {
+    const stage = await this.prisma.tenant.productionStage.findUnique({ where: { id } });
+    if (!stage) throw new NotFoundException('Production stage not found.');
+
+    await this.prisma.tenant.productionStage.delete({ where: { id } });
+
+    const remaining = await this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
+    for (let i = 0; i < remaining.length; i++) {
+      if (remaining[i].sortOrder !== i) {
+        await this.prisma.tenant.productionStage.update({ where: { id: remaining[i].id }, data: { sortOrder: i } });
+      }
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_stage.deleted',
+      entityType: 'ProductionStage',
+      entityId: id,
+      before: stage,
+    });
+    return { ok: true };
+  }
+}

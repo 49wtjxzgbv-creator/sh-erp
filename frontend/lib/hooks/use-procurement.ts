@@ -1,0 +1,98 @@
+'use client';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  querySuppliers,
+  getSupplier,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  queryPurchaseOrders,
+  getPurchaseOrder,
+  createPurchaseOrder,
+  receivePurchaseOrder,
+  type QuerySuppliersInput,
+  type CreateSupplierInput,
+  type UpdateSupplierInput,
+  type QueryPurchaseOrdersInput,
+  type CreatePurchaseOrderInput,
+  type ReceivePurchaseOrderInput,
+} from '@/lib/api-client/procurement';
+
+const suppliersKey = (query: QuerySuppliersInput) => ['suppliers', query] as const;
+const supplierKey = (id: string) => ['suppliers', id] as const;
+const purchaseOrdersKey = (query: QueryPurchaseOrdersInput) => ['purchase-orders', query] as const;
+const purchaseOrderKey = (id: string) => ['purchase-orders', id] as const;
+
+export function useSuppliers(query: QuerySuppliersInput) {
+  return useQuery({ queryKey: suppliersKey(query), queryFn: () => querySuppliers(query) });
+}
+
+export function useSupplier(id: string | undefined) {
+  return useQuery({
+    queryKey: supplierKey(id ?? ''),
+    queryFn: () => getSupplier(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateSupplier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateSupplierInput) => createSupplier(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+}
+
+export function useUpdateSupplier(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdateSupplierInput) => updateSupplier(id, dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      qc.invalidateQueries({ queryKey: supplierKey(id) });
+    },
+  });
+}
+
+export function useDeleteSupplier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteSupplier(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+}
+
+export function usePurchaseOrders(query: QueryPurchaseOrdersInput) {
+  return useQuery({ queryKey: purchaseOrdersKey(query), queryFn: () => queryPurchaseOrders(query) });
+}
+
+export function usePurchaseOrder(id: string | undefined) {
+  return useQuery({
+    queryKey: purchaseOrderKey(id ?? ''),
+    queryFn: () => getPurchaseOrder(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreatePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreatePurchaseOrderInput) => createPurchaseOrder(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+export function useReceivePurchaseOrder(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: ReceivePurchaseOrderInput) => receivePurchaseOrder(id, dto),
+    onSuccess: () => {
+      // Receiving posts real RECEIVE stock movements — stock views go stale too.
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      qc.invalidateQueries({ queryKey: purchaseOrderKey(id) });
+      qc.invalidateQueries({ queryKey: ['stock-levels'] });
+      qc.invalidateQueries({ queryKey: ['stock-history'] });
+    },
+  });
+}

@@ -1,0 +1,42 @@
+<section id="view-payroll" class="view hidden">
+  <h1>Зарплата</h1>
+
+  <div class="filters-row">
+    <input type="date" id="payrollFromDate">
+    <input type="date" id="payrollToDate">
+    <button class="btn btn-secondary btn-small" id="applyPayrollPeriodBtn">Застосувати період</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Працівник</th><th>Одиниць</th><th>Зароблено</th><th>Премії</th><th>Штрафи</th><th>Аванси</th><th>Разом до виплати</th><th>Брак</th><th></th></tr></thead>
+      <tbody id="payrollSummaryBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<div id="employeePayrollModal" class="modal hidden">
+  <div class="modal-content modal-wide">
+    <button class="modal-close" data-close="employeePayrollModal">✕</button>
+    <h2 id="epViewName"></h2>
+    <div id="epTotals" class="stat-grid"></div>
+
+    <div class="inline-row">
+      <select id="epEntryType">
+        <option value="advance">Аванс</option>
+        <option value="bonus">Премія</option>
+        <option value="penalty">Штраф</option>
+      </select>
+      <input id="epEntryAmount" type="number" step="any" placeholder="Сума">
+      <input id="epEntryComment" type="text" placeholder="Коментар">
+      <button type="button" class="btn btn-secondary btn-small" id="addPayrollEntryBtn">+ Додати</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Дата</th><th>Тип</th><th>Виріб</th><th>Сума</th><th>Коментар</th><th></th></tr></thead>
+        <tbody id="epEntriesBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>

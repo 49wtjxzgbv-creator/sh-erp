@@ -1,0 +1,80 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { useProducts } from '@/lib/hooks/use-catalog';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+
+/**
+ * Lightweight typeahead product picker — no dedicated combobox primitive is
+ * in the Radix set this project uses (select/dialog/dropdown-menu/label/
+ * tabs/toast/slot only), and pulling one in for a single field isn't worth
+ * a new dependency, so this is hand-rolled: an Input + an absolutely
+ * positioned result list, backed by `useProducts({ search })` (real
+ * server-side search, not a client-side filter over a fixed page). Meant to
+ * be reused everywhere a product needs picking — Inventory now, BOM/
+ * Production/Procurement/Sales next.
+ */
+export interface ProductPickerProps {
+  value: string | undefined;
+  onChange: (productId: string | undefined, label: string | undefined) => void;
+  placeholder?: string;
+}
+
+export function ProductPicker({ value, onChange, placeholder }: ProductPickerProps) {
+  const t = useTranslations('catalog');
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const { data } = useProducts({ search: query, limit: 20 });
+
+  // Reset the visible text if the caller clears `value` externally (e.g. form reset).
+  useEffect(() => {
+    if (!value) setQuery('');
+  }, [value]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        placeholder={placeholder ?? t('searchPlaceholder')}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          if (!e.target.value) onChange(undefined, undefined);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 100)}
+      />
+      {open && query && (
+        <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
+          {data?.items.length ? (
+            data.items.map((product) => (
+              <button
+                type="button"
+                key={product.id}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setQuery(`${product.article} — ${product.name}`);
+                  setOpen(false);
+                  onChange(product.id, `${product.article} — ${product.name}`);
+                }}
+                className={cn(
+                  'flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary',
+                  product.id === value && 'bg-secondary',
+                )}
+              >
+                <span className="font-medium">{product.article}</span>
+                <span className="text-xs text-muted-foreground">{product.name}</span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-sm text-muted-foreground">—</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

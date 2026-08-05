@@ -1,0 +1,55 @@
+# Nginx site config for the backend API on the Hostinger VPS deployment
+# path (docs/deployment.md). Template — copy to
+# /etc/nginx/sites-available/api.<domain> and replace API_DOMAIN below with
+# the real subdomain (e.g. api.sh-erp.com) before enabling.
+#
+# Proxies straight to the `backend` container, which docker-compose.prod.yml
+# binds to 127.0.0.1:3000 only — this Nginx config is the only thing that
+# ever actually accepts a public connection for API traffic.
+#
+# The `/health` location is called out separately only to keep it out of
+# rate limiting / any future auth-adjacent Nginx rule that might get added
+# to the main location block — Railway's own healthcheck story (§17.3) has
+# no equivalent here, so an uptime pinger hitting this VPS directly is the
+# real substitute; this location is what it should target.
+
+server {
+    listen 80;
+    server_name API_DOMAIN;
+
+    # certbot's --nginx plugin rewrites this file in place to add the real
+    # TLS server block + an HTTP->HTTPS redirect here — this bare HTTP block
+    # is the starting point `certbot --nginx -d API_DOMAIN` expects to find.
+
+    location /health {
+        proxy_pass http://127.0.0.1:3000/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Swagger UI / file-upload bodies can be larger than Nginx's 1m
+        # default — matches this backend's own file-attachment feature set
+        # (product photos, assembly drawings, QC photos) even though actual
+        # uploads go direct-to-R2 via presigned URLs (Phase 2 §7) and never
+        # transit this proxy; kept generous for any future JSON payload.
+        client_max_body_size 20m;
+        # Found during the pre-launch audit: Nginx's 60s default
+        # proxy_read_timeout is real risk for the AI module specifically —
+        # askFullAssistant's tool-calling loop (AiToolsRegistry) can chain
+        # multiple sequential Gemini calls in one request, and
+        # recognize-invoice (AI invoice OCR) sends a real file to Gemini for
+        # analysis; either can plausibly exceed 60s on a slow/complex case.
+        # Bumped for this proxy only, not globally — every other endpoint in
+        # this API is a normal fast CRUD call and doesn't need this.
+        proxy_read_timeout 120s;
+    }
+}

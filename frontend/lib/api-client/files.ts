@@ -1,0 +1,107 @@
+import { apiClient } from './http';
+
+/**
+ * Typed wrappers for backend/src/modules/files/ (FilesController). Files
+ * are never proxied through either Next.js or the NestJS API (Phase 2 §7)
+ * — the browser PUTs directly to R2 using a short-lived presigned URL, so
+ * `uploadFile()` below is a 3-step orchestration (presign → direct PUT →
+ * confirm), not a single API call.
+ */
+
+export type FileDomain =
+  | 'PRODUCT_PHOTO'
+  | 'ASSEMBLY_PHOTO'
+  | 'ASSEMBLY_DRAWING'
+  | 'CUSTOMER_ORDER_DOCUMENT'
+  | 'PURCHASE_INVOICE'
+  | 'EMPLOYEE_PHOTO'
+  | 'QC_PHOTO'
+  | 'SHIPMENT_PHOTO'
+  | 'BRANDING';
+
+export interface FileAsset {
+  id: string;
+  companyId: string;
+  domain: FileDomain;
+  entityType: string;
+  entityId: string;
+  storageKey: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  isPublic: boolean;
+  uploadedById: string | null;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+interface CreatePresignedUploadInput {
+  domain: FileDomain;
+  entityType: string;
+  entityId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  isPublic?: boolean;
+}
+
+interface PresignedUpload {
+  fileAssetId: string;
+  uploadUrl: string;
+  expiresInSeconds: number;
+}
+
+function createPresignedUpload(dto: CreatePresignedUploadInput): Promise<PresignedUpload> {
+  return apiClient.post<PresignedUpload>('files/presigned-upload', dto);
+}
+
+function confirmUpload(fileAssetId: string): Promise<FileAsset> {
+  return apiClient.post<FileAsset>(`files/${fileAssetId}/confirm`);
+}
+
+export function getFileDownloadUrl(fileAssetId: string): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
+  return apiClient.get(`files/${fileAssetId}/download-url`);
+}
+
+export function listFilesForEntity(entityType: string, entityId: string): Promise<FileAsset[]> {
+  return apiClient.get<FileAsset[]>('files', { query: { entityType, entityId } });
+}
+
+export function deleteFile(fileAssetId: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`files/${fileAssetId}`);
+}
+
+/**
+ * Full upload orchestration used by every "attach a file" UI in the app
+ * (components/domain/files/file-upload-field.tsx is the shared widget built
+ * on top of this). Throws if the direct-to-R2 PUT fails, leaving an
+ * unconfirmed FileAsset row behind — acceptable since confirmUpload never
+ * ran, so it never shows up in listFilesForEntity's normal query path, and
+ * cleaning up orphaned unconfirmed rows is a housekeeping job, not
+ * something the upload flow itself needs to handle synchronously.
+ */
+export async function uploadFile(
+  file: File,
+  meta: { domain: FileDomain; entityType: string; entityId: string; isPublic?: boolean },
+): Promise<FileAsset> {
+  const presigned = await createPresignedUpload({
+    domain: meta.domain,
+    entityType: meta.entityType,
+    entityId: meta.entityId,
+    originalName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    sizeBytes: file.size,
+    isPublic: meta.isPublic,
+  });
+
+  const putRes = await fetch(presigned.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!putRes.ok) {
+    throw new Error(`Upload to storage failed (${putRes.status}).`);
+  }
+
+  return confirmUpload(presigned.fileAssetId);
+}

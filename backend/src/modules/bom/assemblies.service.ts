@@ -1,0 +1,531 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ComponentType, Prisma } from '@prisma/client';
+import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { StockService } from '../inventory/stock.service';
+import { AssemblyComponentLineDto, SetAssemblyComponentsDto } from './dto/assembly-component.dto';
+import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
+import { ProduceAssemblyDto } from './dto/produce-assembly.dto';
+import { QueryAssembliesDto } from './dto/query-assemblies.dto';
+
+export interface CostBreakdownLine {
+  componentType: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  unitLocalCost: number;
+  unitGermanCost: number;
+  lineLocalCost: number;
+  lineGermanCost: number;
+}
+
+export interface AssemblyCostResult {
+  assemblyId: string;
+  localCostPerUnit: number;
+  germanCostPerUnit: number;
+  breakdown: CostBreakdownLine[];
+}
+
+export interface AvailabilityResult {
+  assemblyId: string;
+  qty: number;
+  sufficient: boolean;
+  requirements: Array<{ productId: string; needed: number }>;
+  shortages: Array<{ productId: string; needed: number; available: number; shortage: number }>;
+}
+
+/**
+ * BOM module (Assemblies.gs, Phase 1 §3.3). Ports:
+ *  - Full BOM CRUD (Assembly header + AssemblyComponent lines).
+ *  - Immutable version snapshot on every BOM save (saveAssemblyVersionSnapshot_).
+ *  - Recursive cost calculation (calcAssemblyCost_) — cycle-protected via a
+ *    per-path visited set, same technique the legacy code used, but paired
+ *    here with a save-time cycle *rejection* (see setComponents) rather than
+ *    the legacy's silent truncation (Phase 1 §10.5's documented weakness).
+ *  - Recursive component-requirement flattening + availability checking, and
+ *    the reservation-free "produce" path (Assemblies.produceAssembly) that
+ *    immediately checks availability and consumes components on the spot —
+ *    distinct from, and preserved alongside, the full reserve→start
+ *    ProductionOrder lifecycle landing in Module 6 (Phase 1 §6.1: "two
+ *    parallel make-a-product paths", never to be collapsed into one).
+ *
+ * Neither Assembly nor a sub-assembly carries its own stock ledger in this
+ * schema (only FinishedGood does, and only via a full ProductionOrder) — so
+ * every cost/availability/consumption calculation here flattens all the way
+ * down to real Product leaves, regardless of a sub-assembly's
+ * `defaultSupplierId`. That field only changes how the Sales module groups
+ * shortages into purchase-order lines later (Phase 1 §6.3); it is
+ * deliberately NOT consulted by this module.
+ */
+@Injectable()
+export class AssembliesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+    private readonly stockService: StockService,
+  ) {}
+
+  // ============================================================
+  // CRUD
+  // ============================================================
+
+  async create(user: RequestUser, dto: CreateAssemblyDto) {
+    const assembly = await this.prisma.tenant.assembly.create({ data: dto as any });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.created',
+      entityType: 'Assembly',
+      entityId: assembly.id,
+      after: assembly,
+    });
+    return assembly;
+  }
+
+  async findOne(user: RequestUser, id: string) {
+    const assembly = await this.prisma.tenant.assembly.findUnique({
+      where: { id },
+      include: { components: true },
+    });
+    if (!assembly) throw new NotFoundException('Assembly not found.');
+    return assembly;
+  }
+
+  async query(user: RequestUser, query: QueryAssembliesDto) {
+    const where: Prisma.AssemblyWhereInput = {};
+    if (!query.includeDeleted) where.deletedAt = null;
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { article: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const take = query.limit ?? 50;
+    const skip = query.offset ?? 0;
+
+    const [items, total] = await Promise.all([
+      this.prisma.tenant.assembly.findMany({ where, orderBy: { name: 'asc' }, take, skip }),
+      this.prisma.tenant.assembly.count({ where }),
+    ]);
+
+    return { items, total, limit: take, offset: skip };
+  }
+
+  async update(user: RequestUser, id: string, dto: UpdateAssemblyDto) {
+    const before = await this.findOne(user, id);
+    const assembly = await this.prisma.tenant.assembly.update({ where: { id }, data: dto as any });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.updated',
+      entityType: 'Assembly',
+      entityId: id,
+      before,
+      after: assembly,
+    });
+    return assembly;
+  }
+
+  /** Soft delete only — matches the Product convention (Phase 3 §1). */
+  async remove(user: RequestUser, id: string) {
+    const before = await this.findOne(user, id);
+    const assembly = await this.prisma.tenant.assembly.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.deleted',
+      entityType: 'Assembly',
+      entityId: id,
+      before,
+    });
+    return assembly;
+  }
+
+  // ============================================================
+  // BOM lines + versioning
+  // ============================================================
+
+  async getComponents(user: RequestUser, assemblyId: string) {
+    await this.findOne(user, assemblyId);
+    return this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId }, orderBy: { id: 'asc' } });
+  }
+
+  /**
+   * Replaces the full BOM line list and writes a new immutable
+   * AssemblyVersion snapshot — mirrors the legacy `saveAssembly` /
+   * `saveAssemblyVersionSnapshot_` pair (Phase 1 §3.3): every save is a new
+   * version, never an edit of a past one, so `ProductionOrder.assemblyVersionId`
+   * can lock onto a specific point in time (Phase 1 §6.4). Runs as plain
+   * sequential writes against `this.prisma.tenant`, not a nested
+   * `$transaction` — the whole HTTP request is already one transaction via
+   * `TenantScopeInterceptor` (same convention as InventorySessionsService.complete).
+   */
+  async setComponents(user: RequestUser, assemblyId: string, dto: SetAssemblyComponentsDto) {
+    await this.findOne(user, assemblyId);
+    this.validateComponentLines(dto.components);
+    await this.assertNoCycle(assemblyId, dto.components);
+
+    await this.prisma.tenant.assemblyComponent.deleteMany({ where: { assemblyId } });
+    if (dto.components.length > 0) {
+      await this.prisma.tenant.assemblyComponent.createMany({
+        data: dto.components.map((line) => ({
+          assemblyId,
+          componentType: line.componentType as unknown as ComponentType,
+          productId: line.componentType === 'PRODUCT' ? line.productId : null,
+          subAssemblyId: line.componentType === 'ASSEMBLY' ? line.subAssemblyId : null,
+          warehouseId: line.warehouseId ?? null,
+          qtyPerUnit: line.qtyPerUnit,
+        })) as any,
+      });
+    }
+
+    const lastVersion = await this.prisma.tenant.assemblyVersion.findFirst({
+      where: { assemblyId },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
+
+    const version = await this.prisma.tenant.assemblyVersion.create({
+      data: { assemblyId, versionNumber, createdById: user.userId } as any,
+    });
+
+    if (dto.components.length > 0) {
+      await this.prisma.tenant.assemblyVersionComponent.createMany({
+        data: dto.components.map((line) => ({
+          assemblyVersionId: version.id,
+          componentType: line.componentType as unknown as ComponentType,
+          productId: line.componentType === 'PRODUCT' ? line.productId : null,
+          subAssemblyId: line.componentType === 'ASSEMBLY' ? line.subAssemblyId : null,
+          warehouseId: line.warehouseId ?? null,
+          qtyPerUnit: line.qtyPerUnit,
+        })) as any,
+      });
+    }
+
+    const components = await this.getComponents(user, assemblyId);
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.bom_saved',
+      entityType: 'Assembly',
+      entityId: assemblyId,
+      after: { versionNumber, componentCount: dto.components.length },
+    });
+
+    return { version, components };
+  }
+
+  async getVersions(user: RequestUser, assemblyId: string) {
+    await this.findOne(user, assemblyId);
+    return this.prisma.tenant.assemblyVersion.findMany({
+      where: { assemblyId },
+      orderBy: { versionNumber: 'desc' },
+    });
+  }
+
+  async getVersion(user: RequestUser, assemblyId: string, versionId: string) {
+    await this.findOne(user, assemblyId);
+    const version = await this.prisma.tenant.assemblyVersion.findFirst({
+      where: { id: versionId, assemblyId },
+      include: { components: true },
+    });
+    if (!version) throw new NotFoundException('Assembly version not found.');
+    return version;
+  }
+
+  private validateComponentLines(lines: AssemblyComponentLineDto[]) {
+    for (const line of lines) {
+      if (line.componentType === 'PRODUCT') {
+        if (!line.productId) {
+          throw new BadRequestException('productId is required when componentType is PRODUCT.');
+        }
+        if (line.subAssemblyId) {
+          throw new BadRequestException('subAssemblyId must be omitted when componentType is PRODUCT.');
+        }
+      } else if (line.componentType === 'ASSEMBLY') {
+        if (!line.subAssemblyId) {
+          throw new BadRequestException('subAssemblyId is required when componentType is ASSEMBLY.');
+        }
+        if (line.productId) {
+          throw new BadRequestException('productId must be omitted when componentType is ASSEMBLY.');
+        }
+      }
+    }
+  }
+
+  /**
+   * Rejects a save that would introduce a circular BOM (A contains B
+   * contains A), checked against the *existing, already-saved* component
+   * tree of every proposed sub-assembly. This is a deliberate improvement
+   * over the legacy behavior, which only guarded against infinite
+   * recursion at read-time via a visited set and otherwise silently
+   * truncated a genuine cycle rather than flagging it as a data error
+   * (Phase 1 §10.5).
+   */
+  private async assertNoCycle(assemblyId: string, lines: AssemblyComponentLineDto[]) {
+    const subAssemblyIds = lines
+      .filter((line) => line.componentType === 'ASSEMBLY' && line.subAssemblyId)
+      .map((line) => line.subAssemblyId as string);
+
+    for (const subId of subAssemblyIds) {
+      if (subId === assemblyId) {
+        throw new ConflictException('An assembly cannot contain itself as a component.');
+      }
+      const reachable = await this.collectReachableAssemblyIds(subId, new Set([subId]));
+      if (reachable.has(assemblyId)) {
+        throw new ConflictException(
+          `Adding "${subId}" as a component would create a circular BOM: it already contains this assembly, directly or indirectly.`,
+        );
+      }
+    }
+  }
+
+  /** Full-expansion reachability set from `startAssemblyId`, over already-persisted AssemblyComponent rows only. */
+  private async collectReachableAssemblyIds(startAssemblyId: string, visited: Set<string>): Promise<Set<string>> {
+    const components = await this.prisma.tenant.assemblyComponent.findMany({
+      where: { assemblyId: startAssemblyId, componentType: 'ASSEMBLY' },
+    });
+    for (const component of components) {
+      if (component.subAssemblyId && !visited.has(component.subAssemblyId)) {
+        visited.add(component.subAssemblyId);
+        await this.collectReachableAssemblyIds(component.subAssemblyId, visited);
+      }
+    }
+    return visited;
+  }
+
+  // ============================================================
+  // Cost calculation (calcAssemblyCost_ port)
+  // ============================================================
+
+  async calculateCost(user: RequestUser, assemblyId: string): Promise<AssemblyCostResult> {
+    // No separate findOne() existence check here (unlike checkAvailability,
+    // below) — calcAssemblyCostRecursive's own `assembly.findUnique` already
+    // throws NotFoundException if the top-level assemblyId doesn't exist,
+    // so an extra findOne() call first would just be a redundant fetch of
+    // the same row (found and fixed: this second read used to silently
+    // shadow the first one under jest mocking with per-call
+    // mockResolvedValueOnce sequencing, since the redundant call shifts
+    // every subsequent recursive fetch's mocked response by one — a real,
+    // if usually harmless against an actual database, wasted round trip).
+    return this.calcAssemblyCostRecursive(assemblyId, new Set());
+  }
+
+  /**
+   * `visited` tracks the current *ancestor path*, not "everywhere seen" —
+   * entries are removed on the way back out of the recursion (line at the
+   * bottom of this method), so a legitimate diamond dependency (two
+   * different branches both using sub-assembly D) is not mistaken for a
+   * cycle; only a genuine ancestor-reappearing-as-its-own-descendant is.
+   */
+  private async calcAssemblyCostRecursive(
+    assemblyId: string,
+    visited: Set<string>,
+  ): Promise<AssemblyCostResult> {
+    if (visited.has(assemblyId)) {
+      throw new ConflictException(
+        `Circular BOM detected while calculating cost (assembly ${assemblyId} references itself, directly or indirectly). ` +
+          'This should be unreachable for BOMs saved after cycle detection was added — see setComponents.',
+      );
+    }
+    visited.add(assemblyId);
+
+    const assembly = await this.prisma.tenant.assembly.findUnique({
+      where: { id: assemblyId },
+      include: { components: true },
+    });
+    if (!assembly) {
+      throw new NotFoundException(`Assembly ${assemblyId} not found.`);
+    }
+
+    // Own per-unit costs (labor/packaging/delivery/other) have no separate
+    // German-market variant in the schema, so they contribute identically
+    // to both currency totals — only Product component prices differ
+    // between localPriceExclVat and germanPriceExclVat.
+    const ownCost =
+      Number(assembly.laborCostPerUnit) +
+      Number(assembly.packagingCostPerUnit) +
+      Number(assembly.deliveryCostPerUnit) +
+      Number(assembly.otherCostPerUnit);
+
+    let localCostPerUnit = ownCost;
+    let germanCostPerUnit = ownCost;
+    const breakdown: CostBreakdownLine[] = [];
+
+    for (const line of assembly.components) {
+      const qtyPerUnit = Number(line.qtyPerUnit);
+
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
+        if (!product) throw new NotFoundException(`Component product ${line.productId} not found.`);
+        const unitLocalCost = Number(product.localPriceExclVat ?? 0);
+        const unitGermanCost = Number(product.germanPriceExclVat ?? 0);
+        localCostPerUnit += unitLocalCost * qtyPerUnit;
+        germanCostPerUnit += unitGermanCost * qtyPerUnit;
+        breakdown.push({
+          componentType: 'PRODUCT',
+          productId: line.productId,
+          qtyPerUnit,
+          unitLocalCost,
+          unitGermanCost,
+          lineLocalCost: unitLocalCost * qtyPerUnit,
+          lineGermanCost: unitGermanCost * qtyPerUnit,
+        });
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const sub = await this.calcAssemblyCostRecursive(line.subAssemblyId, visited);
+        localCostPerUnit += sub.localCostPerUnit * qtyPerUnit;
+        germanCostPerUnit += sub.germanCostPerUnit * qtyPerUnit;
+        breakdown.push({
+          componentType: 'ASSEMBLY',
+          subAssemblyId: line.subAssemblyId,
+          qtyPerUnit,
+          unitLocalCost: sub.localCostPerUnit,
+          unitGermanCost: sub.germanCostPerUnit,
+          lineLocalCost: sub.localCostPerUnit * qtyPerUnit,
+          lineGermanCost: sub.germanCostPerUnit * qtyPerUnit,
+        });
+      }
+    }
+
+    visited.delete(assemblyId);
+    return { assemblyId, localCostPerUnit, germanCostPerUnit, breakdown };
+  }
+
+  // ============================================================
+  // Availability + produce (Assemblies.produceAssembly port)
+  // ============================================================
+
+  async checkAvailability(user: RequestUser, assemblyId: string, qty: number): Promise<AvailabilityResult> {
+    await this.findOne(user, assemblyId);
+
+    const requirements = new Map<string, number>();
+    await this.flattenRequirements(assemblyId, qty, requirements, new Set());
+
+    const shortages: AvailabilityResult['shortages'] = [];
+    for (const [productId, needed] of requirements) {
+      const product = await this.prisma.tenant.product.findUnique({ where: { id: productId } });
+      const available = Number(product?.qty ?? 0);
+      if (available < needed) {
+        shortages.push({ productId, needed, available, shortage: needed - available });
+      }
+    }
+
+    return {
+      assemblyId,
+      qty,
+      sufficient: shortages.length === 0,
+      requirements: Array.from(requirements.entries()).map(([productId, needed]) => ({ productId, needed })),
+      shortages,
+    };
+  }
+
+  /**
+   * Flattens the BOM recursively down to real Product leaves. Neither
+   * Assembly nor a purchased sub-assembly (`defaultSupplierId` set) carries
+   * its own stock in this schema, so availability/consumption must always
+   * expand all the way down — `defaultSupplierId` is deliberately not
+   * consulted here (see class header comment).
+   */
+  private async flattenRequirements(
+    assemblyId: string,
+    qtyOfAssembly: number,
+    requirements: Map<string, number>,
+    visited: Set<string>,
+  ): Promise<void> {
+    if (visited.has(assemblyId)) {
+      throw new ConflictException(`Circular BOM detected while expanding assembly ${assemblyId}.`);
+    }
+    visited.add(assemblyId);
+
+    const components = await this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId } });
+    for (const line of components) {
+      const neededQty = qtyOfAssembly * Number(line.qtyPerUnit);
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        requirements.set(line.productId, (requirements.get(line.productId) ?? 0) + neededQty);
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        await this.flattenRequirements(line.subAssemblyId, neededQty, requirements, visited);
+      }
+    }
+
+    visited.delete(assemblyId);
+  }
+
+  /**
+   * The reservation-free "Дати в роботу" direct-produce path
+   * (Assemblies.produceAssembly, Phase 1 §6.1) — immediately checks
+   * physical availability and, if sufficient, lists-consumes on the spot.
+   * Deliberately does NOT create FinishedGoods rows, does not go through
+   * the stage tracker, and is not linked to a customer order — that is the
+   * full ProductionOrder lifecycle (Module 6), a distinct code path that
+   * must be preserved alongside this one, not collapsed into it.
+   */
+  async produce(user: RequestUser, assemblyId: string, dto: ProduceAssemblyDto) {
+    const assembly = await this.findOne(user, assemblyId);
+
+    const availability = await this.checkAvailability(user, assemblyId, dto.qty);
+    if (!availability.sufficient) {
+      throw new BadRequestException({
+        message: 'Insufficient stock to produce this quantity.',
+        shortages: availability.shortages,
+      });
+    }
+
+    const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
+
+    const movements = [];
+    for (const requirement of availability.requirements) {
+      const movement = await this.stockService.applyMovement(user, {
+        productId: requirement.productId,
+        warehouseId,
+        type: 'ASSEMBLY_CONSUMPTION',
+        qtyDelta: -requirement.needed,
+        comment: dto.comment ?? `Produced ${dto.qty} × "${assembly.name}"`,
+        sourceType: 'Assembly',
+        sourceId: assemblyId,
+      });
+      movements.push(movement);
+    }
+
+    const cost = await this.calculateCost(user, assemblyId);
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.produced',
+      entityType: 'Assembly',
+      entityId: assemblyId,
+      after: { qty: dto.qty, warehouseId, movementIds: movements.map((m) => m.id) },
+    });
+
+    return {
+      assemblyId,
+      qtyProduced: dto.qty,
+      warehouseId,
+      consumedMovements: movements,
+      costEstimate: {
+        localCostPerUnit: cost.localCostPerUnit,
+        germanCostPerUnit: cost.germanCostPerUnit,
+        totalLocalCost: cost.localCostPerUnit * dto.qty,
+        totalGermanCost: cost.germanCostPerUnit * dto.qty,
+      },
+    };
+  }
+
+  private async resolveDefaultWarehouseId(): Promise<string> {
+    const warehouse = await this.prisma.tenant.warehouse.findFirst({
+      where: { isDefault: true, deletedAt: null },
+    });
+    if (!warehouse) {
+      throw new BadRequestException(
+        'No default warehouse configured and none specified — cannot determine where to consume components from.',
+      );
+    }
+    return warehouse.id;
+  }
+}

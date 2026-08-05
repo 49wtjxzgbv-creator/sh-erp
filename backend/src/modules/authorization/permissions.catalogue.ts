@@ -1,0 +1,139 @@
+/**
+ * Fixed permission catalogue (Phase 2 §6): permission keys correspond to
+ * real enforcement points in code, and this list only grows when a new
+ * enforcement point ships — it is NOT company-editable (only which
+ * permissions a given company's roles carry is editable; see the `Role`
+ * and `RolePermission` models). Seeded into the `permissions` table by
+ * prisma/seed.ts (Phase 3 §7); this file is the source of truth that seed
+ * script reads from, so the two never drift.
+ *
+ * Grouped by module per the Phase 2 §2.1 NestJS module map. Only the
+ * Module 1 (Tenancy/Identity/Authorization) and a starter set for modules
+ * landing next are defined here — each subsequent Phase 5 module adds its
+ * own permissions to this file as it ships, per "every feature must be
+ * testable" / traceable-to-an-enforcement-point discipline.
+ */
+export interface PermissionDefinition {
+  key: string;
+  resource: string;
+  action: string;
+  description: string;
+}
+
+export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
+  // Tenancy / company administration
+  { key: 'company:manage', resource: 'company', action: 'manage', description: 'Edit company profile, settings, and branding.' },
+  { key: 'company:billing', resource: 'company', action: 'billing', description: 'View and manage subscription/billing.' },
+
+  // Identity / user & role administration
+  { key: 'users:invite', resource: 'users', action: 'invite', description: 'Invite new users to the company.' },
+  { key: 'users:manage', resource: 'users', action: 'manage', description: 'Deactivate users, change their assigned role.' },
+  { key: 'roles:manage', resource: 'roles', action: 'manage', description: "Create/edit the company's custom roles and permission grants." },
+
+  // Audit
+  { key: 'audit:read', resource: 'audit', action: 'read', description: 'View the audit trail and per-entity history.' },
+
+  // Files
+  { key: 'files:read', resource: 'files', action: 'read', description: 'View/download file attachments.' },
+  { key: 'files:write', resource: 'files', action: 'write', description: 'Upload/delete file attachments.' },
+
+  // Catalog
+  { key: 'products:read', resource: 'products', action: 'read', description: 'View product catalog.' },
+  { key: 'products:write', resource: 'products', action: 'write', description: 'Create/edit products.' },
+  { key: 'units:manage', resource: 'units', action: 'manage', description: 'Manage the company unit-of-measure list.' },
+  { key: 'suppliers:read', resource: 'suppliers', action: 'read', description: 'View suppliers.' },
+  { key: 'suppliers:write', resource: 'suppliers', action: 'write', description: 'Create/edit suppliers.' },
+  { key: 'settings:manage', resource: 'settings', action: 'manage', description: 'Edit company settings and branding.' },
+
+  // Inventory
+  { key: 'warehouses:manage', resource: 'warehouses', action: 'manage', description: 'Create/edit warehouses.' },
+  { key: 'stock:read', resource: 'stock', action: 'read', description: 'View stock levels and movement history.' },
+  { key: 'stock:adjust', resource: 'stock', action: 'adjust', description: 'Record stock movements (receive/issue/adjust/move/write-off).' },
+  { key: 'inventory-sessions:manage', resource: 'inventory-sessions', action: 'manage', description: 'Run stocktakes (inventory sessions).' },
+
+  // BOM
+  { key: 'assemblies:read', resource: 'assemblies', action: 'read', description: 'View assemblies and their BOM.' },
+  { key: 'assemblies:write', resource: 'assemblies', action: 'write', description: 'Create/edit assemblies and BOM lines, save new BOM versions.' },
+
+  // Production
+  { key: 'production-orders:read', resource: 'production-orders', action: 'read', description: 'View production orders.' },
+  { key: 'production-orders:manage', resource: 'production-orders', action: 'manage', description: 'Plan, start, advance, and complete production orders.' },
+  { key: 'production-stages:manage', resource: 'production-stages', action: 'manage', description: 'Configure the company\'s production stage list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
+  { key: 'finished-goods:read', resource: 'finished-goods', action: 'read', description: 'View finished goods / serials.' },
+
+  // Quality — split into checklist configuration (admin-only, legacy matrix) vs. recording a check (admin+storekeeper-equivalent roles)
+  { key: 'qc-checklist:manage', resource: 'qc-checklist', action: 'manage', description: 'Configure the QC checklist item list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
+  { key: 'qc:record', resource: 'qc', action: 'record', description: 'Record a QC check result against a finished good.' },
+
+  // Procurement
+  { key: 'purchase-orders:read', resource: 'purchase-orders', action: 'read', description: 'View purchase orders.' },
+  { key: 'purchase-orders:manage', resource: 'purchase-orders', action: 'manage', description: 'Create/edit purchase orders and record receiving.' },
+
+  // Sales
+  { key: 'customer-orders:read', resource: 'customer-orders', action: 'read', description: 'View customer orders.' },
+  { key: 'customer-orders:manage', resource: 'customer-orders', action: 'manage', description: 'Create/edit customer orders, give lines to production, preview and create shortage-driven purchase orders.' },
+  { key: 'shipments:read', resource: 'shipments', action: 'read', description: 'View shipments.' },
+  { key: 'shipments:manage', resource: 'shipments', action: 'manage', description: 'Create/edit shipments, mark delivered.' },
+
+  // HR
+  { key: 'employees:manage', resource: 'employees', action: 'manage', description: 'Manage employee records.' },
+
+  // Reports
+  { key: 'reports:read', resource: 'reports', action: 'read', description: 'View operational reports (reorder suggestions, monthly production rollup).' },
+  { key: 'reports:valuation', resource: 'reports', action: 'valuation', description: 'View the warehouse value report — admin-only in the legacy RBAC matrix because it exposes cost/price data (Phase 1 §5).' },
+
+  // Payroll — called out explicitly since it's the field-sensitivity
+  // example used throughout Phase 2 (§6's "price-stripping" successor).
+  { key: 'payroll:manage', resource: 'payroll', action: 'manage', description: 'View and record payroll entries.' },
+
+  // AI
+  { key: 'ai:use', resource: 'ai', action: 'use', description: 'Ask the help assistant or full AI assistant (available to every default role in the legacy RBAC matrix, Phase 1 §5).' },
+  { key: 'ai:use-critical-actions', resource: 'ai', action: 'use-critical-actions', description: 'Confirm AI-proposed actions that mutate data (e.g. stock adjustments).' },
+  { key: 'ai:settings-manage', resource: 'ai', action: 'settings-manage', description: 'Configure the company AI settings (bring-your-own API key, usage quota) — admin-only in the legacy RBAC matrix, same row as the Gemini key (Phase 1 §5).' },
+];
+
+/**
+ * Default (`isSystem = true`) roles seeded per company (Phase 2 §6 / Phase 3
+ * §7) — richer than the old system's hardcoded 3 (admin/storekeeper/viewer,
+ * Phase 1 §1.2), per the owner's flexible-RBAC requirement. Companies can
+ * still edit these (they're not locked, just not deletable — `isSystem`).
+ */
+export const DEFAULT_ROLES = [
+  { name: 'Admin', permissions: PERMISSIONS_CATALOGUE.map((p) => p.key) },
+  {
+    name: 'Storekeeper',
+    permissions: [
+      'products:read', 'products:write', 'units:manage', 'suppliers:read',
+      'warehouses:manage', 'stock:read', 'stock:adjust', 'inventory-sessions:manage',
+      'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'files:read', 'files:write',
+      // AI: full RBAC-matrix parity with the legacy "storekeeper" role — both
+      // basic AI use and confirming a critical action (Phase 1 §5's AI rows).
+      'ai:use', 'ai:use-critical-actions',
+    ],
+  },
+  {
+    name: 'Production',
+    permissions: [
+      'products:read', 'assemblies:read', 'assemblies:write',
+      'production-orders:read', 'production-orders:manage', 'finished-goods:read',
+      'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use',
+    ],
+  },
+  {
+    name: 'Sales',
+    permissions: [
+      'products:read', 'assemblies:read', 'customer-orders:read', 'customer-orders:manage',
+      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'ai:use',
+    ],
+  },
+  {
+    name: 'Viewer',
+    permissions: [
+      'products:read', 'assemblies:read', 'stock:read', 'production-orders:read',
+      'customer-orders:read', 'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'reports:read',
+      // AI: legacy matrix grants viewer both simple + full assistant use, just
+      // never `ai:use-critical-actions` (viewer can't confirm mutating actions).
+      'ai:use',
+    ],
+  },
+] as const;

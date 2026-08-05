@@ -1,0 +1,192 @@
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../prisma/prisma.service';
+import { PurchaseOrdersService } from '../procurement/purchase-orders.service';
+import { CreatePurchaseOrdersFromGroupsDto } from './dto/shortage-analysis.dto';
+
+export interface ShortageLine {
+  kind: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  description: string;
+  neededQty: number;
+  currentStock: number;
+}
+
+export interface SupplierGroup {
+  supplierId: string | null;
+  supplierName: string;
+  lines: ShortageLine[];
+}
+
+const NO_SUPPLIER_BUCKET_NAME = 'Без постачальника'; // preserved verbatim from the legacy UI (Phase 1 §6.3)
+
+/**
+ * The recursive shortage-collection engine (`collectShortageGroups_`,
+ * Phase 1 §3.4/§6.3) — by the project's own documentation, "the most
+ * algorithmically involved function in the codebase." Walks every line's
+ * assembly tree recursively across the WHOLE order using shared, mutable
+ * pools (`productPool`/`assemblyBuyPool`), NOT independent per-line totals
+ * — this is a deliberate, documented fix for a real historical bug: an
+ * earlier per-item-only version undercounted shortages when two products
+ * in the same order shared a common component.
+ *
+ * Recursion rule for an ASSEMBLY-type BOM line: if that sub-assembly has a
+ * `defaultSupplierId`, it's added as a buy-line for that supplier at its
+ * full needed quantity — the tree does NOT recurse further past it, since
+ * it's purchased finished, not manufactured in-house. If it has no
+ * `defaultSupplierId`, the walk recurses into its own components ("we make
+ * it ourselves"). This is the opposite default from `AssembliesService`'s
+ * cost/availability logic (BOM module, Module 5), which always flattens
+ * fully regardless of `defaultSupplierId` — the two modules read the same
+ * field for two entirely different purposes, by design (see
+ * AssembliesService's own header comment).
+ *
+ * **Explicit, documented product decision, preserved exactly**: this never
+ * subtracts current stock automatically. `previewShortage` returns the
+ * full gross requirement AND the current stock/finished-goods count for
+ * each line, side by side — the human compares them and adjusts the
+ * quantity by hand before `createPurchaseOrdersFromGroups` commits
+ * anything. Reintroducing automatic netting here would reintroduce the
+ * exact bug this design avoids.
+ */
+@Injectable()
+export class CustomerOrderShortageService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly purchaseOrdersService: PurchaseOrdersService,
+  ) {}
+
+  async previewShortage(user: RequestUser, orderId: string): Promise<{ orderId: string; groups: SupplierGroup[] }> {
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) throw new NotFoundException('Customer order not found.');
+
+    const productPool = new Map<string, number>();
+    const assemblyBuyPool = new Map<string, number>();
+
+    for (const item of order.items as any[]) {
+      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, new Set());
+    }
+
+    const products = (await this.prisma.tenant.product.findMany({ where: { id: { in: Array.from(productPool.keys()) } } })) as any[];
+    const productById = new Map<string, any>();
+    for (const p of products) productById.set(p.id, p);
+
+    const subAssemblies = (await this.prisma.tenant.assembly.findMany({ where: { id: { in: Array.from(assemblyBuyPool.keys()) } } })) as any[];
+    const assemblyById = new Map<string, any>();
+    for (const a of subAssemblies) assemblyById.set(a.id, a);
+
+    const supplierIds = new Set<string>();
+    for (const p of products) if (p.defaultSupplierId) supplierIds.add(p.defaultSupplierId);
+    for (const a of subAssemblies) if (a.defaultSupplierId) supplierIds.add(a.defaultSupplierId);
+    const suppliers = (await this.prisma.tenant.supplier.findMany({ where: { id: { in: Array.from(supplierIds) } } })) as any[];
+    const supplierById = new Map<string, any>();
+    for (const s of suppliers) supplierById.set(s.id, s);
+
+    const groups = new Map<string, SupplierGroup>();
+    const getGroup = (supplierId: string | null): SupplierGroup => {
+      const key = supplierId ?? '__NONE__';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          supplierId,
+          supplierName: supplierId ? supplierById.get(supplierId)?.name ?? 'Unknown supplier' : NO_SUPPLIER_BUCKET_NAME,
+          lines: [],
+        });
+      }
+      return groups.get(key)!;
+    };
+
+    for (const [productId, neededQty] of productPool) {
+      const product = productById.get(productId);
+      getGroup(product?.defaultSupplierId ?? null).lines.push({
+        kind: 'PRODUCT',
+        productId,
+        description: product ? `${product.article} — ${product.name}` : productId,
+        neededQty,
+        currentStock: Number(product?.qty ?? 0),
+      });
+    }
+
+    for (const [subAssemblyId, neededQty] of assemblyBuyPool) {
+      const assembly = assemblyById.get(subAssemblyId);
+      const inStockCount = await this.prisma.tenant.finishedGood.count({
+        where: { assemblyId: subAssemblyId, status: 'IN_STOCK' },
+      });
+      getGroup(assembly?.defaultSupplierId ?? null).lines.push({
+        kind: 'ASSEMBLY',
+        subAssemblyId,
+        description: assembly?.name ?? subAssemblyId,
+        neededQty,
+        currentStock: inStockCount,
+      });
+    }
+
+    return { orderId, groups: Array.from(groups.values()) };
+  }
+
+  /**
+   * Commits the (possibly hand-edited) preview — one PurchaseOrder per
+   * group, `sourceCustomerOrderId` set so the link back to this order is
+   * traceable (PurchaseOrder.sourceCustomerOrderId, wired up in the schema
+   * since Phase 3 specifically for this).
+   */
+  async createPurchaseOrdersFromGroups(user: RequestUser, orderId: string, dto: CreatePurchaseOrdersFromGroupsDto) {
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Customer order not found.');
+
+    const created = [];
+    for (const group of dto.groups) {
+      const po = await this.purchaseOrdersService.create(user, {
+        supplierId: group.supplierId,
+        supplierNameSnapshot: group.supplierName,
+        sourceCustomerOrderId: orderId,
+        items: group.items.map((line) => ({
+          productId: line.kind === 'PRODUCT' ? line.productId : undefined,
+          articleSnapshot: line.description,
+          productNameSnapshot: line.description,
+          qtyOrdered: line.qty,
+        })),
+      });
+      created.push(po);
+    }
+    return created;
+  }
+
+  /**
+   * `visited` tracks the current ancestor path only (removed on the way
+   * back out — same technique as AssembliesService's cost/availability
+   * recursion, Module 5), so a legitimate diamond dependency isn't mistaken
+   * for a cycle.
+   */
+  private async walkAssembly(
+    assemblyId: string,
+    qtyOfAssembly: number,
+    productPool: Map<string, number>,
+    assemblyBuyPool: Map<string, number>,
+    visited: Set<string>,
+  ): Promise<void> {
+    if (visited.has(assemblyId)) {
+      throw new ConflictException(`Circular BOM detected while expanding assembly ${assemblyId}.`);
+    }
+    visited.add(assemblyId);
+
+    const components = await this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId } });
+    for (const line of components) {
+      const neededQty = qtyOfAssembly * Number(line.qtyPerUnit);
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        productPool.set(line.productId, (productPool.get(line.productId) ?? 0) + neededQty);
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const subAssembly = await this.prisma.tenant.assembly.findUnique({ where: { id: line.subAssemblyId } });
+        if (!subAssembly) continue; // defensive — shouldn't happen given FK integrity
+
+        if (subAssembly.defaultSupplierId) {
+          assemblyBuyPool.set(line.subAssemblyId, (assemblyBuyPool.get(line.subAssemblyId) ?? 0) + neededQty);
+        } else {
+          await this.walkAssembly(line.subAssemblyId, neededQty, productPool, assemblyBuyPool, visited);
+        }
+      }
+    }
+
+    visited.delete(assemblyId);
+  }
+}

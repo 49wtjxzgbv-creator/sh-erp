@@ -1,0 +1,33 @@
+# Nginx site config for the frontend on the Hostinger VPS deployment path
+# (docs/deployment.md). Template — copy to
+# /etc/nginx/sites-available/app.<domain> and replace APP_DOMAIN below with
+# the real subdomain (e.g. app.sh-erp.com) before enabling.
+#
+# Proxies to the `frontend` container (Next.js standalone server,
+# frontend/Dockerfile), which docker-compose.prod.yml binds to
+# 127.0.0.1:3001 only.
+
+server {
+    listen 80;
+    server_name APP_DOMAIN;
+
+    # certbot's --nginx plugin rewrites this file in place to add the real
+    # TLS server block + an HTTP->HTTPS redirect here — this bare HTTP block
+    # is the starting point `certbot --nginx -d APP_DOMAIN` expects to find.
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Next.js dev-time hot-reload websocket has no equivalent in a
+        # production standalone build, but Upgrade/Connection headers are
+        # kept harmless-forwarded here in case any future feature needs a
+        # long-lived connection through this proxy (e.g. a live-updating
+        # dashboard) — cheap to have now, avoids a silent break later.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

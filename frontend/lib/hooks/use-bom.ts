@@ -1,0 +1,133 @@
+'use client';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  queryAssemblies,
+  getAssembly,
+  createAssembly,
+  updateAssembly,
+  deleteAssembly,
+  getAssemblyComponents,
+  setAssemblyComponents,
+  getAssemblyVersions,
+  getAssemblyVersion,
+  calculateAssemblyCost,
+  checkAssemblyAvailability,
+  produceAssembly,
+  type QueryAssembliesInput,
+  type CreateAssemblyInput,
+  type UpdateAssemblyInput,
+  type AssemblyComponentLineInput,
+  type ProduceAssemblyInput,
+} from '@/lib/api-client/bom';
+
+const assembliesKey = (query: QueryAssembliesInput) => ['assemblies', query] as const;
+const assemblyKey = (id: string) => ['assemblies', id] as const;
+const componentsKey = (id: string) => ['assemblies', id, 'components'] as const;
+const versionsKey = (id: string) => ['assemblies', id, 'versions'] as const;
+const versionKey = (id: string, versionId: string) => ['assemblies', id, 'versions', versionId] as const;
+const costKey = (id: string) => ['assemblies', id, 'cost'] as const;
+
+export function useAssemblies(query: QueryAssembliesInput) {
+  return useQuery({ queryKey: assembliesKey(query), queryFn: () => queryAssemblies(query) });
+}
+
+export function useAssembly(id: string | undefined) {
+  return useQuery({
+    queryKey: assemblyKey(id ?? ''),
+    queryFn: () => getAssembly(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateAssembly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateAssemblyInput) => createAssembly(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assemblies'] }),
+  });
+}
+
+export function useUpdateAssembly(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdateAssemblyInput) => updateAssembly(id, dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assemblies'] });
+      qc.invalidateQueries({ queryKey: assemblyKey(id) });
+    },
+  });
+}
+
+export function useDeleteAssembly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteAssembly(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assemblies'] }),
+  });
+}
+
+export function useAssemblyComponents(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: componentsKey(assemblyId ?? ''),
+    queryFn: () => getAssemblyComponents(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+export function useSetAssemblyComponents(assemblyId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (components: AssemblyComponentLineInput[]) => setAssemblyComponents(assemblyId, components),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: componentsKey(assemblyId) });
+      qc.invalidateQueries({ queryKey: versionsKey(assemblyId) });
+      qc.invalidateQueries({ queryKey: costKey(assemblyId) });
+      qc.invalidateQueries({ queryKey: assemblyKey(assemblyId) });
+    },
+  });
+}
+
+export function useAssemblyVersions(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: versionsKey(assemblyId ?? ''),
+    queryFn: () => getAssemblyVersions(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+export function useAssemblyVersion(assemblyId: string | undefined, versionId: string | undefined) {
+  return useQuery({
+    queryKey: versionKey(assemblyId ?? '', versionId ?? ''),
+    queryFn: () => getAssemblyVersion(assemblyId as string, versionId as string),
+    enabled: Boolean(assemblyId && versionId),
+  });
+}
+
+export function useAssemblyCost(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: costKey(assemblyId ?? ''),
+    queryFn: () => calculateAssemblyCost(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+/** Not cached as a query — availability is checked on demand for a specific candidate qty, not a stable resource to refetch in the background. */
+export function useCheckAvailability() {
+  return useMutation({
+    mutationFn: ({ assemblyId, qty }: { assemblyId: string; qty: number }) => checkAssemblyAvailability(assemblyId, qty),
+  });
+}
+
+export function useProduceAssembly(assemblyId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: ProduceAssemblyInput) => produceAssembly(assemblyId, dto),
+    onSuccess: () => {
+      // Producing consumes real stock — every stock view elsewhere in the
+      // app (Inventory levels/history) is now stale too.
+      qc.invalidateQueries({ queryKey: ['stock-levels'] });
+      qc.invalidateQueries({ queryKey: ['stock-history'] });
+    },
+  });
+}

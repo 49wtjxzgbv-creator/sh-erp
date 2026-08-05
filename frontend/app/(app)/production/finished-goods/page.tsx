@@ -1,0 +1,85 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { type ColumnDef } from '@tanstack/react-table';
+import { useFinishedGoods } from '@/lib/hooks/use-production';
+import type { FinishedGood, FinishedGoodStatus } from '@/lib/api-client/production';
+import { DataTable } from '@/components/domain/data-table/data-table';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+
+const PAGE_SIZE = 50;
+
+const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
+  IN_STOCK: 'success',
+  SHIPPED: 'secondary',
+  CONSUMED: 'secondary',
+  REWORK: 'warning',
+  DEFECTIVE: 'destructive',
+};
+
+export default function FinishedGoodsPage() {
+  const t = useTranslations('production');
+  const router = useRouter();
+  const [status, setStatus] = useState<FinishedGoodStatus | undefined>(undefined);
+  const [offset, setOffset] = useState(0);
+
+  const { data, isLoading } = useFinishedGoods({ status, limit: PAGE_SIZE, offset });
+
+  const columns = useMemo<ColumnDef<FinishedGood>[]>(
+    () => [
+      { accessorKey: 'serialNumber', header: t('serialNumber') },
+      {
+        accessorKey: 'assemblyId',
+        header: t('assembly'),
+        cell: ({ getValue }) => (
+          <span className="block max-w-[220px] truncate" title={getValue() as string}>
+            {getValue() as string}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: t('status'),
+        cell: ({ getValue }) => {
+          const s = getValue() as FinishedGoodStatus;
+          return <Badge variant={FG_STATUS_VARIANT[s]}>{t(`fgStatus${s}`)}</Badge>;
+        },
+      },
+      {
+        accessorKey: 'manufactureDate',
+        header: t('manufactureDate'),
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
+    ],
+    [t],
+  );
+
+  return (
+    <div className="space-y-4">
+      <Select value={status ?? '__all'} onValueChange={(v) => { setStatus(v === '__all' ? undefined : (v as FinishedGoodStatus)); setOffset(0); }}>
+        <SelectTrigger className="w-48">
+          <SelectValue placeholder={t('filterByStatus')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">{t('allStatuses')}</SelectItem>
+          <SelectItem value="IN_STOCK">{t('fgStatusIN_STOCK')}</SelectItem>
+          <SelectItem value="SHIPPED">{t('fgStatusSHIPPED')}</SelectItem>
+          <SelectItem value="CONSUMED">{t('fgStatusCONSUMED')}</SelectItem>
+          <SelectItem value="REWORK">{t('fgStatusREWORK')}</SelectItem>
+          <SelectItem value="DEFECTIVE">{t('fgStatusDEFECTIVE')}</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <DataTable
+        columns={columns}
+        data={data?.items ?? []}
+        isLoading={isLoading}
+        onRowClick={(fg) => router.push(`/production/finished-goods/${fg.id}`)}
+        pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
+      />
+    </div>
+  );
+}

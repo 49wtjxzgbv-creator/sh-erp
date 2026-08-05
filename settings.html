@@ -1,0 +1,237 @@
+<section id="view-settings" class="view hidden">
+  <h1>Налаштування</h1>
+
+  <div class="panel-grid">
+    <div class="panel panel-wide">
+      <div class="view-header">
+        <h2>Користувачі</h2>
+        <button class="btn btn-primary btn-small" id="addUserBtn">+ Новий користувач</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Логін</th><th>ПІБ</th><th>Роль</th><th>Активний</th><th></th></tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Ставка ПДВ</h2>
+      <p class="muted">Використовується для обчислення "ціна з ПДВ" з базових цін товарів.</p>
+      <div class="inline-row">
+        <input id="vatRateField" type="number" step="any" style="max-width:100px">
+        <span>%</span>
+        <button class="btn btn-secondary btn-small" id="saveVatRateBtn">Зберегти</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Одиниці виміру</h2>
+      <div id="unitsList" class="chip-list"></div>
+      <div class="inline-row">
+        <input id="settingsNewUnit" type="text" placeholder="Нова одиниця">
+        <button class="btn btn-secondary btn-small" id="settingsAddUnitBtn">Додати</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Резервні копії</h2>
+      <button class="btn btn-secondary btn-small" id="createBackupBtn">Створити резервну копію</button>
+      <div id="backupsList" class="simple-list"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Віртуальні склади</h2>
+      <p class="muted">Загальний облік лишається один — це просто розподіл "де саме лежить" у межах загального залишку.</p>
+      <div id="warehousesList" class="chip-list"></div>
+      <div class="inline-row">
+        <input id="newWarehouseName" type="text" placeholder="Назва нового складу">
+        <button class="btn btn-secondary btn-small" id="addWarehouseBtn">Додати</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Етапи виробництва</h2>
+      <p class="muted">Порядок має значення — це послідовність, через яку проходить кожен виріб.</p>
+      <div id="productionStagesList"></div>
+      <div class="inline-row">
+        <input id="newStageName" type="text" placeholder="Назва етапу">
+        <button class="btn btn-secondary btn-small" id="addStageBtn">+ Додати етап</button>
+      </div>
+      <button class="btn btn-primary btn-small" id="saveStagesBtn" style="margin-top:8px">Зберегти порядок етапів</button>
+    </div>
+
+    <div class="panel">
+      <h2>Чек-лист контролю якості</h2>
+      <div id="qcChecklistSettingsList"></div>
+      <div class="inline-row">
+        <input id="newQcItemName" type="text" placeholder="Пункт перевірки">
+        <button class="btn btn-secondary btn-small" id="addQcItemBtn">+ Додати</button>
+      </div>
+      <button class="btn btn-primary btn-small" id="saveQcChecklistBtn" style="margin-top:8px">Зберегти чек-лист</button>
+    </div>
+
+    <div class="panel">
+      <h2>Брендування</h2>
+      <p class="muted">Завантажте власні файли (SVG рекомендовано) — підставляться автоматично скрізь, де потрібно.</p>
+
+      <div class="branding-row">
+        <div>
+          <strong>Логотип сайту</strong>
+          <div class="muted">У верхній панелі застосунку та на екрані входу</div>
+        </div>
+        <img id="brandSiteLogoPreview" class="branding-preview hidden">
+        <label class="btn btn-secondary btn-small">
+          Завантажити
+          <input type="file" id="brandSiteLogoInput" accept=".svg,image/*" class="hidden">
+        </label>
+        <button class="btn btn-danger btn-small" id="deleteBrandSiteLogoBtn">Прибрати</button>
+      </div>
+
+      <div class="branding-row">
+        <div>
+          <strong>Емблема для друку</strong>
+          <div class="muted">Лівий верхній кут усіх друкованих/PDF документів</div>
+        </div>
+        <img id="brandPrintLogoPreview" class="branding-preview hidden">
+        <label class="btn btn-secondary btn-small">
+          Завантажити
+          <input type="file" id="brandPrintLogoInput" accept=".svg,image/*" class="hidden">
+        </label>
+        <button class="btn btn-danger btn-small" id="deleteBrandPrintLogoBtn">Прибрати</button>
+      </div>
+
+      <div class="branding-row">
+        <div>
+          <strong>Фавікон</strong>
+          <div class="muted">Іконка вкладки браузера</div>
+        </div>
+        <img id="brandFaviconPreview" class="branding-preview hidden">
+        <label class="btn btn-secondary btn-small">
+          Завантажити
+          <input type="file" id="brandFaviconInput" accept=".svg,image/*" class="hidden">
+        </label>
+        <button class="btn btn-danger btn-small" id="deleteBrandFaviconBtn">Прибрати</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Постачальники</h2>
+      <div id="suppliersList"></div>
+      <div class="inline-row">
+        <input id="newSupplierName" type="text" placeholder="Назва постачальника">
+        <input id="newSupplierContact" type="text" placeholder="Контактна особа (необов'язково)">
+        <input id="newSupplierPhone" type="text" placeholder="Телефон (необов'язково)">
+        <button class="btn btn-secondary btn-small" id="addSupplierBtn">+ Додати</button>
+      </div>
+    </div>
+
+    <!-- Модалка редагування постачальника -->
+    <div id="supplierModal" class="modal hidden">
+      <div class="modal-content">
+        <button class="modal-close" data-close="supplierModal">✕</button>
+        <h2>Редагувати постачальника</h2>
+        <input type="hidden" id="supplierIdField">
+
+        <label>Назва</label>
+        <input id="supplierNameField" type="text">
+
+        <label>Контактна особа</label>
+        <input id="supplierContactField" type="text">
+
+        <label>Телефон</label>
+        <input id="supplierPhoneField" type="text">
+
+        <label>Email</label>
+        <input id="supplierEmailField" type="email">
+
+        <label>Примітки</label>
+        <input id="supplierNotesField" type="text">
+
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="saveSupplierModalBtn">Зберегти</button>
+          <button class="btn btn-danger" id="deleteSupplierModalBtn">Видалити</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Дашборд</h2>
+      <p class="muted">Оберіть, які блоки показувати на дашборді.</p>
+      <div id="dashboardWidgetsList"></div>
+      <button class="btn btn-primary btn-small" id="saveDashboardWidgetsBtn" style="margin-top:8px">Зберегти</button>
+    </div>
+
+    <div class="panel">
+      <h2>⚙️ Автоматизація</h2>
+      <p class="muted">Щоденна перевірка залишків о 8:00 з надсиланням підсумку на пошту (нижче мінімуму + прогноз закінчення за 14 днів).</p>
+      <div id="digestStatusLine" class="muted"></div>
+      <div class="inline-row">
+        <input type="email" id="digestEmailInput" placeholder="пошта для підсумків">
+        <button class="btn btn-primary btn-small" id="enableDigestBtn">Увімкнути</button>
+        <button class="btn btn-danger btn-small" id="disableDigestBtn">Вимкнути</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>🤖 AI (Gemini)</h2>
+      <p class="muted">Потрібен безкоштовний ключ з <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>. Використовується для розпізнавання накладних і довідника.</p>
+      <div id="geminiStatusLine" class="muted"></div>
+      <div class="inline-row">
+        <input type="password" id="geminiApiKeyInput" placeholder="Вставте API ключ">
+        <button class="btn btn-primary btn-small" id="saveGeminiKeyBtn">Зберегти</button>
+      </div>
+    </div>
+
+    <div class="panel" id="telegramPanel">
+      <h2>📱 Telegram-бот</h2>
+      <p class="muted">Токен отримайте у <a href="https://t.me/BotFather" target="_blank">@BotFather</a>. Після збереження токена натисніть "Увімкнути опитування" (бот перевіряє нові повідомлення раз на хвилину — без вебхука, бо Apps Script з ним несумісний). Далі кожен користувач сам пише боту <code>/login логін пароль</code> і отримує звіти/документи (Excel, PDF) без Gemini.</p>
+      <div id="telegramStatusLine" class="muted"></div>
+      <div class="inline-row">
+        <input type="password" id="telegramBotTokenInput" placeholder="Токен бота від BotFather">
+        <button class="btn btn-primary btn-small" id="saveTelegramTokenBtn">Зберегти токен</button>
+      </div>
+      <div class="inline-row" style="margin-top:8px">
+        <button class="btn btn-secondary btn-small" id="startTelegramPollingBtn">Увімкнути опитування</button>
+        <button class="btn btn-danger btn-small" id="stopTelegramPollingBtn">Вимкнути</button>
+      </div>
+      <div id="telegramLinkedUsersList" style="margin-top:10px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Модалка користувача -->
+<div id="userModal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" data-close="userModal">✕</button>
+    <h2 id="userModalTitle">Новий користувач</h2>
+    <input type="hidden" id="userIdField">
+
+    <label>Логін</label>
+    <input id="userLoginField" type="text">
+
+    <label>Пароль <span id="passwordHint" class="muted"></span></label>
+    <input id="userPasswordField" type="password">
+
+    <label>ПІБ</label>
+    <input id="userFullNameField" type="text">
+
+    <label>Роль</label>
+    <select id="userRoleField">
+      <option value="admin">Адмін</option>
+      <option value="storekeeper">Комірник</option>
+      <option value="viewer">Перегляд</option>
+    </select>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="userActiveField" checked> Активний
+    </label>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="saveUserBtn">Зберегти</button>
+      <button class="btn btn-danger" id="deleteUserBtn">Видалити</button>
+    </div>
+  </div>
+</div>

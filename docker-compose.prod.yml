@@ -1,0 +1,86 @@
+# Production compose file for the Hostinger VPS deployment path
+# (docs/deployment.md's "Hostinger VPS (first launch)" section). Distinct
+# from docker-compose.yml (local dev) — this one runs the real Postgres +
+# backend + frontend stack that a single self-managed VPS serves traffic
+# from, with Nginx running NATIVELY on the host (not containerized) doing
+# TLS termination + reverse proxy into these containers. All three services
+# below are bound to 127.0.0.1 only — never exposed directly to the public
+# interface — so Nginx (and Let's Encrypt's certbot) is the only thing a
+# client ever actually connects to.
+#
+# Real env values live in a server-local `.env.prod` (never committed —
+# see docs/deployment.md's env-var checklist for the full list) and are
+# loaded via `env_file` below. Bring the stack up with:
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Apply migrations (once, after postgres is healthy, before backend first
+# serves real traffic) — deliberately run as the Postgres SUPERUSER
+# connection, not `app_user`'s own DATABASE_URL: the
+# 20260804000000_create_auth_service_role migration runs a real `CREATE
+# ROLE`, which needs CREATEROLE privilege, and `app_user` intentionally
+# does NOT have CREATEROLE (see docs/deployment.md's "Hostinger VPS" section
+# for the full app_user/postgres-superuser role split rationale — the same
+# least-privilege reasoning as the existing "app_user must not be
+# superuser/BYPASSRLS" requirement, just extended to CREATEROLE too):
+#
+#   docker compose -f docker-compose.prod.yml run --rm \
+#     -e DATABASE_URL="postgresql://postgres:${POSTGRES_SUPERUSER_PASSWORD}@postgres:5432/sh_erp?schema=public" \
+#     backend npx prisma migrate deploy --schema=/app/prisma/schema.prisma
+#
+# Everyday application traffic (the `backend`/`frontend` services above)
+# uses `app_user`'s own DATABASE_URL from .env.prod, never the superuser
+# connection.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: sh_erp
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - sh-erp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d sh_erp']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+    ports:
+      - '127.0.0.1:3000:3000'
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+    ports:
+      - '127.0.0.1:3001:3000'
+
+volumes:
+  sh-erp-postgres-data:

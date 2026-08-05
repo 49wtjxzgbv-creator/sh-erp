@@ -1,0 +1,139 @@
+# CI (Phase 2 §17.2): runs on every PR. Scope, disclosed rather than
+# silently partial — this workflow covers what this repo can actually back
+# up today: install, lint, typecheck, unit tests, an ephemeral Postgres
+# service container, the real baseline + RLS/CHECK migrations applied via
+# `prisma migrate deploy`, the one real e2e spec that exists
+# (backend/test/tenancy-auth.e2e-spec.ts), `prisma migrate diff --exit-code`
+# (drift check), and a Docker build-only smoke test (no push — this repo has
+# no container registry or `deploy-staging.yml`/`deploy-production.yml` yet;
+# see docs/deployment.md for that scope boundary). NOT included, and not
+# faked here: a Redis service container (nothing in this backend talks to
+# Redis yet — see docker-compose.yml's header comment) and an OpenAPI
+# contract-diff step (§17.2 calls for one; no contract-diff tooling has been
+# built in this repo, a real gap tracked in docs/deployment.md rather than
+# silently invented here).
+#
+# `prisma migrate deploy`/`diff` need the real Prisma engine binaries from
+# binaries.prisma.sh — this repo's own sandbox during development could
+# never reach that host (see backend/README.md's standing note), but a
+# real GitHub Actions runner has normal internet access and is expected to
+# reach it without issue.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DATABASE_URL: postgresql://app_user:changeme@localhost:5432/sh_erp_test?schema=public
+  AUTH_DATABASE_URL: postgresql://app_user:changeme@localhost:5432/sh_erp_test?schema=public
+  JWT_ACCESS_SECRET: ci-only-not-a-real-secret
+  JWT_ACCESS_TTL: 15m
+  JWT_REFRESH_TTL_DAYS: '30'
+  AI_MODEL_ALIAS: gemini-flash-latest
+  AI_API_KEY_ENCRYPTION_SECRET: ci-only-not-a-real-secret
+  NODE_ENV: test
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: changeme
+          POSTGRES_DB: sh_erp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app_user -d sh_erp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        working-directory: backend
+        run: npm ci
+
+      - name: Lint (no --fix in CI — package.json's `lint` script is the
+          local-dev convenience version; CI should fail on findings, not
+          silently rewrite files with no one to commit the result)
+        working-directory: backend
+        run: npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings=0
+
+      - name: Typecheck + build
+        working-directory: backend
+        run: npm run build
+
+      - name: Unit tests
+        working-directory: backend
+        run: npm test -- --runInBand
+
+      - name: Prisma generate
+        working-directory: backend
+        run: npm run prisma:generate
+
+      - name: Apply migrations (baseline + auth_service role + RLS/CHECK)
+        working-directory: backend
+        run: npm run prisma:migrate:deploy
+
+      - name: Migration drift check
+        working-directory: backend
+        run: npx prisma migrate diff --from-migrations ../prisma/migrations --to-schema-datamodel ../prisma/schema.prisma --shadow-database-url "$DATABASE_URL" --exit-code
+
+      - name: e2e tests
+        working-directory: backend
+        run: npm run test:e2e
+
+      - name: Docker build (smoke test only, no push — see file header)
+        run: docker build -f backend/Dockerfile -t sh-erp-api:ci .
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint (no --fix in CI, same rationale as the backend job)
+        working-directory: frontend
+        run: npx eslint "{app,components,lib,messages}/**/*.{ts,tsx}" --max-warnings=0
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test -- --runInBand
+
+      - name: Build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:3000/api/v1
+          INTERNAL_API_BASE_URL: http://localhost:3000/api/v1
+        run: npm run build
+
+      - name: Docker build (smoke test only, no push — added when the Hostinger
+          VPS path introduced frontend/Dockerfile; same rationale as the
+          backend job's own Docker smoke test above)
+        run: docker build -f frontend/Dockerfile -t sh-erp-web:ci .

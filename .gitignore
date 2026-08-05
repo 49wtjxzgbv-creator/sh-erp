@@ -1,0 +1,45 @@
+# Repo-root .gitignore — real gap found during the pre-Hostinger-launch
+# audit: no root-level .gitignore existed at all before this (only
+# backend/.gitignore and frontend/.gitignore did, and this repo had never
+# even been through `git init`). Without this, `.env.prod` — every
+# production secret this system has (DB passwords, JWT secret, R2 keys, AI
+# key-encryption secret) — had no protection from an accidental `git add .`
+# once this repo is actually pushed anywhere. Fixed here, before any commit
+# is ever made, rather than after the fact.
+
+# Real secrets — never committed, ever
+.env
+.env.prod
+.env.*.local
+!*.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Next.js (frontend/ also has its own .gitignore with the same entries —
+# kept here too since a repo-root `git status` should never surface these
+# regardless of which subdirectory a command is run from)
+.next/
+out/
+
+# Migration toolkit — extraction snapshots can contain real customer data
+# (product lists, order history, employee names) pulled from a legacy
+# spreadsheet during a dry run or real migration; these are working files,
+# never something to commit.
+migration-toolkit/snapshots/
+
+# OS/editor noise
+.DS_Store
+*.swp
+
+# Local backup staging (only relevant if a backup/restore script is ever
+# run from a checked-out copy of this repo instead of the deployed one —
+# defensive, not expected to trigger in normal use)
+/var/backups/

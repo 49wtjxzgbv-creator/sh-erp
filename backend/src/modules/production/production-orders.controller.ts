@@ -1,0 +1,79 @@
+import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import {
+  CreateProductionOrderDto,
+  QueryProductionOrdersDto,
+  SetProductionOrderWorkersDto,
+  StartProductionOrderDto,
+} from './dto/production-order.dto';
+import { ProductionOrdersService } from './production-orders.service';
+
+@ApiTags('production')
+@Controller({ path: 'production-orders', version: '1' })
+export class ProductionOrdersController {
+  constructor(private readonly productionOrdersService: ProductionOrdersService) {}
+
+  @Post()
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({ summary: 'Create (reserve) a production order — locks in the assembly\'s current BOM version, does not touch stock.' })
+  async create(@CurrentUser() user: RequestUser, @Body() dto: CreateProductionOrderDto) {
+    return this.productionOrdersService.create(user, dto);
+  }
+
+  @Get()
+  @RequirePermissions('production-orders:read')
+  @ApiOperation({ summary: 'Search/list production orders, paginated.' })
+  async query(@CurrentUser() user: RequestUser, @Query() query: QueryProductionOrdersDto) {
+    return this.productionOrdersService.query(user, query);
+  }
+
+  @Get(':id')
+  @RequirePermissions('production-orders:read')
+  @ApiOperation({ summary: 'Get one production order with its workers/pick-list/stage-history/finished-goods.' })
+  async findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productionOrdersService.findOne(user, id);
+  }
+
+  @Put(':id/workers')
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({ summary: 'Replace the assigned-worker list (PLANNED orders only).' })
+  async setWorkers(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: SetProductionOrderWorkersDto,
+  ) {
+    return this.productionOrdersService.setWorkers(user, id, dto);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({ summary: 'Cancel a PLANNED production order.' })
+  async cancel(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productionOrdersService.cancel(user, id);
+  }
+
+  @Post(':id/start')
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({
+    summary:
+      'Start the order: checks availability, physically consumes components (raw products from stock, ' +
+      'sub-assemblies via FIFO-consumed FinishedGoods), generates serialized FinishedGoods, freezes cost, ' +
+      'splits piecework pay, and enters stage tracking (or completes immediately if no stages are configured).',
+  })
+  async start(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: StartProductionOrderDto,
+  ) {
+    return this.productionOrdersService.start(user, id, dto);
+  }
+
+  @Post(':id/advance-stage')
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({ summary: 'Advance to the next configured production stage; auto-completes on the last one.' })
+  async advanceStage(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productionOrdersService.advanceStage(user, id);
+  }
+}
