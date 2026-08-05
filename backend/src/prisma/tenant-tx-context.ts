@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from './prisma.service';
 
 /**
  * Holds the per-request, RLS-activated, tenant-scoped Prisma client for the
@@ -21,5 +21,13 @@ import { PrismaClient } from '@prisma/client';
  * to a REAL RLS-activated transaction client for the lifetime of a request,
  * without changing the call signature of a single already-written service
  * method.
+ *
+ * Typed as `TenantPrismaClient` (prisma.service.ts), not the base
+ * `PrismaClient` — a real, previously-uncaught Docker-build break (see that
+ * file's header comment): the value actually stored here is always the
+ * result of `$extends(tenantScopingExtension())`, whose real generated type
+ * is not assignable to plain `PrismaClient`. `import type` avoids a runtime
+ * circular-import between this file and prisma.service.ts — it's erased at
+ * compile time, so the two files' mutual reference is type-only.
  */
-export const tenantTxStorage = new AsyncLocalStorage<PrismaClient>();
+export const tenantTxStorage = new AsyncLocalStorage<TenantPrismaClient>();

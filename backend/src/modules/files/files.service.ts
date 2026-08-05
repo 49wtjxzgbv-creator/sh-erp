@@ -30,8 +30,21 @@ export class FilesService {
     const safeName = sanitizeFilename(dto.originalName);
     const storageKey = `tenants/${user.companyId}/${dto.domain.toLowerCase()}/${dto.entityType.toLowerCase()}/${dto.entityId}/${randomUUID()}-${safeName}`;
 
+    // Root cause of a real Docker-build failure (TS2322 "Property 'company'
+    // is missing"), found once `prisma generate` finally ran for real (see
+    // docs/readiness-report.md): `FileAsset`'s only relation is `company`
+    // (schema.prisma), and this literal previously provided neither the
+    // `companyId` scalar nor a `company: { connect: ... } }` relation
+    // object — it relied entirely on `tenantScopingExtension`'s runtime
+    // `stampCompanyId` to inject `companyId` invisibly, which the real
+    // generated `FileAssetUncheckedCreateInput` type has no way to know
+    // about. Providing `companyId` explicitly here (the same value the
+    // extension would have stamped anyway — it verifies rather than
+    // overwrites, see prisma-tenant.extension.ts) satisfies the real type
+    // directly, with no cast needed at all.
     const fileAsset = await this.prisma.tenant.fileAsset.create({
       data: {
+        companyId: user.companyId,
         domain: dto.domain,
         entityType: dto.entityType,
         entityId: dto.entityId,

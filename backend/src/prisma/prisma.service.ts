@@ -5,6 +5,33 @@ import { tenantContextStorage, TenantContext } from './tenant-context';
 import { tenantTxStorage } from './tenant-tx-context';
 
 /**
+ * Root cause of a real Docker-build failure (TS2322 on `PrismaService.tenant`,
+ * found once `prisma generate` finally ran against a real schema in a real
+ * environment — see docs/readiness-report.md's "genuinely unverified"
+ * section, which flagged exactly this class of gap in advance): `client.$extends(...)`
+ * is a GENERIC method, and its real return type
+ * (`Prisma.DynamicClientExtensionThis<...>`, computed from the specific
+ * extension passed in) is a distinct, more specific type than plain
+ * `PrismaClient` — NOT assignable to it. Every place in this file that used
+ * to say `PrismaClient` for a value that might actually be an extended
+ * client was therefore wrong, just never caught, because the hand-rolled
+ * `@prisma/client` stub used for verification before a real `prisma
+ * generate` was ever reachable modeled `$extends()` too loosely to expose
+ * the mismatch.
+ *
+ * Fix follows Prisma's own documented pattern for typing an extended
+ * client: route `$extends()` through a small NON-generic helper function,
+ * then capture its type with `ReturnType<typeof helper>`.
+ * `ReturnType<PrismaClient['$extends']>` does NOT work here — `$extends` is
+ * itself generic, so referencing it as a bare method type erases the
+ * specific extension argument and resolves to something unusable.
+ */
+function extendWithTenantScoping(client: PrismaClient) {
+  return client.$extends(tenantScopingExtension());
+}
+export type TenantPrismaClient = ReturnType<typeof extendWithTenantScoping>;
+
+/**
  * Base Prisma client, extended once with the app-layer tenant-scoping
  * extension (prisma-tenant.extension.ts). Every module should inject this
  * service rather than instantiating PrismaClient directly.
@@ -47,8 +74,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    * off of. Any code running outside a request that needs the RLS backstop
    * too should use `runInTenantTransaction` explicitly instead.
    */
-  get tenant(): PrismaClient {
-    return (tenantTxStorage.getStore() as PrismaClient | undefined) ?? this.$extends(tenantScopingExtension());
+  get tenant(): TenantPrismaClient {
+    return tenantTxStorage.getStore() ?? extendWithTenantScoping(this);
   }
 
   /**
@@ -61,15 +88,22 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    */
   async runInTenantTransaction<T>(
     context: TenantContext,
-    work: (tenantDb: PrismaClient) => Promise<T>,
+    work: (tenantDb: TenantPrismaClient) => Promise<T>,
   ): Promise<T> {
-    const extended = this.$extends(tenantScopingExtension());
+    const extended = extendWithTenantScoping(this);
     return tenantContextStorage.run(context, () =>
       extended.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(
           `SET LOCAL app.current_company_id = '${context.companyId}'`,
         );
-        return tenantTxStorage.run(tx as unknown as PrismaClient, () => work(tx as unknown as PrismaClient));
+        // `tx` here is Prisma's own interactive-transaction client shape for
+        // an extended PrismaClient — structurally compatible with
+        // TenantPrismaClient for every model-delegate call this codebase
+        // actually makes (`tx.role.findUnique`, `tx.company.create`, etc.),
+        // but not nominally identical to it, so this cast (pre-existing,
+        // just retargeted from `PrismaClient` to the correct
+        // `TenantPrismaClient`) stays.
+        return tenantTxStorage.run(tx as unknown as TenantPrismaClient, () => work(tx as unknown as TenantPrismaClient));
       }),
     );
   }
