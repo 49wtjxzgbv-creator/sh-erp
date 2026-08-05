@@ -276,6 +276,66 @@ model RefreshToken {
 }
 
 // ============================================================================
+// SECTION: Global System Administration  (module: SuperAdminModule)
+//
+// Added during the production-readiness audit (2026-08-05) per an explicit
+// owner requirement: a genuinely separate, global "system operator" role,
+// distinct from Company Admin (a per-company Role row, tenant-scoped like
+// everything else in Authorization). Deliberately its OWN model, not a flag
+// on `User` — a super admin is not a member of any company, has no
+// `CompanyMembership`/`Role`, and must keep working even for a company
+// whose own admin user is locked out or deleted. Authenticated with its own
+// JWT (signed with `SUPER_ADMIN_JWT_SECRET`, never `JWT_ACCESS_SECRET`) via
+// SuperAdminAuthService — a super admin token and a regular access token
+// are not interchangeable in either direction. Data access crosses tenant
+// boundaries by design (see all companies, all users), so it reads through
+// a separate BYPASSRLS role (`super_admin_service`, see the migration
+// alongside this schema change) — never through `app_user`'s RLS-bound
+// connection, and never through `auth_service` either (ADR-0009's role is
+// narrowly scoped to 3 pre-tenant-context auth flows and stays that way;
+// overloading it here would blur a boundary that was deliberately drawn
+// tight — see ADR-0010 for the new role's own rationale).
+// ============================================================================
+
+model SuperAdmin {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.Citext
+  passwordHash String    // argon2id, same algorithm as User — no reason to use a weaker one here
+  fullName     String
+  active       Boolean   @default(true) // deactivate instead of delete — keeps SuperAdminAuditLog attributable
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  auditLogs    SuperAdminAuditLog[]
+
+  @@map("super_admins")
+}
+
+// Append-only, mirroring AuditEvent's own "corrections are new state, never
+// erasure" convention below — but a SEPARATE table, not a reuse of
+// AuditEvent, because a super-admin action (blocking a company, changing
+// its plan, impersonating a user) often has no single `companyId` it
+// belongs to, and AuditEvent.companyId is required/RLS-scoped by design.
+model SuperAdminAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  superAdminId String   @db.Uuid
+  action       String   // e.g. "company.blocked", "company.impersonated", "plan.updated"
+  targetType   String?  // e.g. "Company", "Plan", "SuperAdmin"
+  targetId     String?
+  metadata     Json?
+
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+
+  @@index([superAdminId])
+  @@index([targetType, targetId])
+  @@map("super_admin_audit_log")
+}
+
+// ============================================================================
 // SECTION: Audit  (module: AuditModule) — replaces the old append-only History sheet
 // ============================================================================
 
