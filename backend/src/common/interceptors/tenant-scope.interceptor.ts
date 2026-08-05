@@ -54,6 +54,21 @@ export class TenantScopeInterceptor implements NestInterceptor {
 
     return from(
       this.prisma.runInTenantTransaction({ companyId: user.companyId, userId: user.userId }, async (tenantDb) => {
+        // Real gap found and fixed during the production-readiness audit:
+        // `Company.status` existed in the schema since Phase 3 but was
+        // never enforced anywhere, so a Super Admin "blocking" a company
+        // (SuperAdminModule) had no actual effect on requests using an
+        // already-issued access token — AuthService's own login/refresh
+        // checks (identity/auth.service.ts) only stop a NEW session from
+        // being minted, not an existing one from continuing until its
+        // 15-minute expiry. This check closes that gap: every authenticated
+        // request re-checks status, so suspension takes effect immediately,
+        // not "eventually."
+        const company = await tenantDb.company.findUnique({ where: { id: user.companyId } });
+        if (!company || company.status !== 'ACTIVE') {
+          throw new ForbiddenException('This company has been suspended. Contact support.');
+        }
+
         if (required && required.length > 0) {
           const role = await tenantDb.role.findUnique({
             where: { id: user.roleId },

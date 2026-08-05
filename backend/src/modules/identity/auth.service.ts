@@ -47,6 +47,16 @@ export class AuthService {
     if (!company) {
       throw new UnauthorizedException('Invalid email or password.'); // deliberately same message — don't leak slug existence
     }
+    // Real gap found and fixed during the production-readiness audit:
+    // `Company.status` (schema.prisma) existed since Phase 3 but was never
+    // actually read anywhere — a Super Admin "blocking" a company
+    // (SuperAdminModule) had no effect at all until this check existed.
+    // Checked at both login AND refresh (below) — an already-issued access
+    // token still expires within JWT_ACCESS_TTL regardless, but a blocked
+    // company's users should not be able to mint a NEW session either way.
+    if (company.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This company has been suspended. Contact support.');
+    }
 
     const membership = await this.prisma.companyMembership.findUnique({
       where: { companyId_userId: { companyId: company.id, userId: user.id } },
@@ -142,6 +152,11 @@ export class AuthService {
       where: { id: stored.id },
       data: { revokedAt: new Date() },
     });
+
+    const company = await this.prisma.company.findUnique({ where: { id: stored.companyId } });
+    if (!company || company.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This company has been suspended. Contact support.');
+    }
 
     const membership = await this.prisma.companyMembership.findUnique({
       where: { companyId_userId: { companyId: stored.companyId, userId: stored.userId } },

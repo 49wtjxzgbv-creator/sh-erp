@@ -87,6 +87,20 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(process.env.PORT ?? 3000);
+  // `HOST` added for the native (non-Docker) Hostinger systemd deployment
+  // path (docs/deployment.md) — defaults to every interface (Node's own
+  // default when no host is passed) so the Docker/Railway paths, which
+  // rely on the container/platform boundary instead, keep working exactly
+  // as before. Set HOST=127.0.0.1 in the native path's backend.env so
+  // Nginx is the only thing that can ever reach this process, matching
+  // docker-compose.prod.yml's own "127.0.0.1 only" principle for the
+  // container path.
+  const port = process.env.PORT ?? 3000;
+  const host = process.env.HOST || undefined;
+  if (host) {
+    await app.listen(port, host);
+  } else {
+    await app.listen(port);
+  }
 }
 bootstrap();

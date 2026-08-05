@@ -24,6 +24,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { BillingModule } from './modules/billing/billing.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { HealthModule } from './modules/health/health.module';
     BillingModule,
     UsersModule,
     HealthModule,
+    SuperAdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
