@@ -47,6 +47,22 @@ services:
         condition: service_healthy
     ports:
       - '3000:3000'
+    # Applies all 3 migrations (baseline + auth_service role + RLS/CHECK)
+    # before starting the API, so `docker compose up --build` alone is a
+    # complete, ready-to-use local stack — matching this file's own stated
+    # purpose ("the entire local onboarding step for a new contributor").
+    # `prisma migrate deploy` is idempotent (no-ops on already-applied
+    # migrations), so this is safe to run on every container start,
+    # including restarts against the same persisted `sh-erp-postgres-data`
+    # volume. `--schema` is explicit and absolute rather than relying on
+    # backend/package.json's own `"prisma": {"schema": "../prisma/schema.prisma"}`
+    # — that path is relative to a `backend/` directory that doesn't exist
+    # at this layout inside the built image (WORKDIR /app, with `prisma/`
+    # copied to `/app/prisma` alongside `dist/`, not one level above it —
+    # see backend/Dockerfile's runtime stage). `docker-compose.prod.yml`'s
+    # own one-off migration command already had to work around the same
+    # path fact; this now applies it too, not just documents it there.
+    command: sh -c "npx prisma migrate deploy --schema=./prisma/schema.prisma && node dist/main.js"
     environment:
       # Local-only placeholder values — never real secrets. See
       # backend/.env.example for the full, documented list; this compose
