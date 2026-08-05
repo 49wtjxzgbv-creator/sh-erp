@@ -3,9 +3,14 @@
 # /etc/nginx/sites-available/api.<domain> and replace API_DOMAIN below with
 # the real subdomain (e.g. api.sh-erp.com) before enabling.
 #
-# Proxies straight to the `backend` container, which docker-compose.prod.yml
-# binds to 127.0.0.1:3000 only — this Nginx config is the only thing that
-# ever actually accepts a public connection for API traffic.
+# Proxies to the sh-erp-backend systemd service (ops/systemd/
+# sh-erp-backend.service), which binds to 127.0.0.1:3000 only (HOST/PORT in
+# /etc/sh-erp/backend.env — see that file's own template comment) — this
+# Nginx config is the only thing that ever actually accepts a public
+# connection for API traffic. (Previously this was a Docker container port
+# mapping; the app layer moved to native systemd on 2026-08-05 — see
+# docker-compose.prod.yml's header comment for why — but the port number
+# and this proxy config are unchanged either way.)
 #
 # The `/health` location is called out separately only to keep it out of
 # rate limiting / any future auth-adjacent Nginx rule that might get added

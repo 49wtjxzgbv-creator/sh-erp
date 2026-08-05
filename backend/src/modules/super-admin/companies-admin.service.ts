@@ -151,8 +151,11 @@ export class CompaniesAdminService {
     return {
       accessToken,
       expiresIn: accessTtl,
+      companyId,
       companySlug: company.slug,
+      userId: membership.userId,
       userEmail: membership.user.email,
+      roleId: membership.roleId,
     };
   }
 }

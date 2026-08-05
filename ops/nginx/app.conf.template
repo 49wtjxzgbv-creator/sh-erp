@@ -3,9 +3,27 @@
 # /etc/nginx/sites-available/app.<domain> and replace APP_DOMAIN below with
 # the real subdomain (e.g. app.sh-erp.com) before enabling.
 #
-# Proxies to the `frontend` container (Next.js standalone server,
-# frontend/Dockerfile), which docker-compose.prod.yml binds to
-# 127.0.0.1:3001 only.
+# Proxies to the sh-erp-frontend systemd service (ops/systemd/
+# sh-erp-frontend.service — Next.js standalone server, `node server.js`),
+# which binds to 127.0.0.1:3001 only (PORT in /etc/sh-erp/frontend.env).
+# (Previously a Docker container port mapping; the app layer moved to
+# native systemd on 2026-08-05 — docker-compose.prod.yml's header comment
+# explains why — the port and this proxy config are unchanged either way.)
+#
+# A single `location /` catch-all is deliberate and correct here, not an
+# under-specified config: `/`, every `/_next/static/*` and `/_next/image`
+# asset, and the frontend's OWN `/api/auth/*` route handlers (Next-owned
+# cookie-setting proxies to the real backend, NOT the same thing as
+# api.<domain>/api/v1/* — see frontend/lib/api-client/http.ts's header
+# comment) are all served by this ONE Next.js process. Splitting static
+# assets into their own Nginx location serving the files directly would be
+# a valid performance optimization (skip the Node process for a cache hit)
+# but was a real source of 404s during the 2026-08-05 audit when tried
+# ad hoc — Next's own standalone server already sets correct
+# `Cache-Control: immutable` headers on hashed assets, so this stays a
+# single proxy rule: simpler, and the actual bug (missing static files in
+# the standalone output itself, not this config) is fixed at its real
+# source now — see frontend/scripts/copy-standalone-static.js.
 
 server {
     listen 80;
@@ -22,11 +40,13 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # Next.js dev-time hot-reload websocket has no equivalent in a
-        # production standalone build, but Upgrade/Connection headers are
-        # kept harmless-forwarded here in case any future feature needs a
-        # long-lived connection through this proxy (e.g. a live-updating
-        # dashboard) — cheap to have now, avoids a silent break later.
+        # No WebSocket endpoint exists anywhere in this app today (confirmed
+        # by grep across backend/frontend during the 2026-08-05 audit — no
+        # socket.io, no ws, no EventSource/SSE). Upgrade/Connection headers
+        # are kept harmless-forwarded here purely as forward-compatibility
+        # for a future long-lived-connection feature (e.g. a live-updating
+        # dashboard) — cheap to have now, avoids a silent break later; not
+        # load-bearing for anything that exists yet.
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
