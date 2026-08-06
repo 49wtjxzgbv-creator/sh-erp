@@ -11,11 +11,21 @@
 .env
 .env.prod
 .env.*.local
+.env.production
 !*.env.example
 
 # Node
 node_modules/
 npm-debug.log*
+*.log
+*.bak
+
+# Guards the "no root package.json in this repo" invariant that Vercel's/
+# Railway's Root Directory auto-detection depends on (docs/deployment.md) —
+# a 2026-08-05 production incident found one accidentally created by an
+# ad hoc `npm install` run from the repo root directly on the VPS.
+/package.json
+/package-lock.json
 
 # Build output
 dist/
