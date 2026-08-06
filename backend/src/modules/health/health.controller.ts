@@ -1,4 +1,9 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  ServiceUnavailableException,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -16,13 +21,22 @@ import { Public } from '../../common/decorators/public.decorator';
  * `main.ts`'s `setGlobalPrefix('api', { exclude: ['health'] })`) — a
  * healthcheck target should be a stable, unversioned path a load balancer
  * or uptime pinger can hit without knowing this API's version scheme.
+ * `@Controller({ version: VERSION_NEUTRAL })` is required for that: URI
+ * versioning still applies to a route even when it's excluded from
+ * `globalPrefix`, unless the controller itself opts out — found as a real
+ * bug during the first Hostinger deploy (`/health` 404'd, breaking
+ * `ops/deploy.sh`'s post-deploy verification step and Nginx health checks)
+ * and fixed here rather than left broken.
  * `@Public()` so it works before any auth is established (the whole point
  * of a healthcheck), and does one real check — a live Postgres query, not
  * just "the process is running" — since a backend that's up but can't
  * reach its database is not actually healthy.
  */
 @ApiTags('health')
-@Controller('health')
+@Controller({
+  path: 'health',
+  version: VERSION_NEUTRAL,
+})
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -32,8 +46,14 @@ export class HealthController {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
     } catch {
-      throw new ServiceUnavailableException('Database connectivity check failed.');
+      throw new ServiceUnavailableException(
+        'Database connectivity check failed.',
+      );
     }
-    return { status: 'ok', timestamp: new Date().toISOString() };
+
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
   }
 }
