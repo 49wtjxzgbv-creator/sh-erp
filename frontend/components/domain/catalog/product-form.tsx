@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
@@ -126,6 +127,17 @@ export function ProductForm({ product, onSubmit, submitting, submitError }: Prod
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit(submit)} noValidate>
+      {product && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('photo')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityPhotoField domain="PRODUCT_PHOTO" entityType="Product" entityId={product.id} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('sectionBasic')}</CardTitle>

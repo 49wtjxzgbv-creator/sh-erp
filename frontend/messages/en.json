@@ -91,6 +91,7 @@
     "germanPriceInclVat": "Price (DE, incl. VAT)",
     "weightPerUnitKg": "Weight per unit (kg)",
     "note": "Note",
+    "photo": "Photo",
     "sectionBasic": "Basic info",
     "sectionClassification": "Classification",
     "sectionUnitsStock": "Units & stock",
@@ -112,6 +113,7 @@
     "importResultSummary": "Created: {created}, updated: {updated}.",
     "importErrorsTitle": "Rows with errors ({count}):",
     "importRowError": "Row {row}: {message}",
+    "printLabels": "Print labels",
     "printLabelsTitle": "Print product labels",
     "gridViewTitle": "Product grid",
     "gridJumpSearchPlaceholder": "Find a product and jump to it...",
@@ -139,7 +141,10 @@
     "favicon": "Favicon",
     "changePassword": "Change password",
     "currentPassword": "Current password",
-    "newPassword": "New password"
+    "newPassword": "New password",
+    "importFromLegacy": "Import from SHСклад",
+    "importFromLegacyDescription": "Transfer products, assemblies, orders, suppliers, and stock from your legacy SHСклад spreadsheet.",
+    "openWizard": "Open the import wizard"
   },
   "inventory": {
     "title": "Inventory",
@@ -184,6 +189,7 @@
     "title": "Bill of Materials",
     "newAssembly": "New assembly",
     "editAssembly": "Edit assembly",
+    "photo": "Photo",
     "assemblyHeader": "Basic info",
     "name": "Name",
     "article": "Article",
@@ -613,5 +619,42 @@
     "requestTo": "Request to",
     "printLabels": "Print labels",
     "labelsTitle": "Product labels"
+  },
+  "legacyImport": {
+    "title": "Import from SHСклад",
+    "description": "Transfer products, assemblies, BOMs, customer orders, suppliers, warehouse stock, and history from your legacy SHСклад spreadsheet. First deploy the dedicated Apps Script Web App in your legacy spreadsheet (instructions below), then paste the resulting URL and token.",
+    "step1Title": "Step 1. Connection",
+    "step1Description": "The deployed Web App URL (ends in /exec) and the token you set in WebAppExport.gs.",
+    "sourceUrl": "Web App URL",
+    "sourceToken": "Token",
+    "validateButton": "Check",
+    "step2Title": "Step 2. Review",
+    "step2Description": "This is a preview — nothing has been written yet. Review the counts and warnings, then confirm the import.",
+    "confirmImportButton": "Import",
+    "step3Title": "Step 3. Import",
+    "completedMessage": "Import completed successfully.",
+    "countProducts": "Products",
+    "countSuppliers": "Suppliers",
+    "countWarehouses": "Warehouses",
+    "countWarehouseStock": "Warehouse stock",
+    "countAssemblies": "Assemblies",
+    "countAssemblyVersions": "BOM versions",
+    "countCustomerOrders": "Customer orders",
+    "countStockMovements": "Stock movements (history)",
+    "countPhotosDiscovered": "Photos found (migrated separately)",
+    "countProductsExcluded": "Products that will NOT be imported (no unit)",
+    "warningsCount": "{count, plural, one {# warning} other {# warnings}}",
+    "showMoreWarnings": "Show {count} more",
+    "showLessWarnings": "Show less",
+    "status": {
+      "pending": "Pending",
+      "fetching": "Fetching data",
+      "transforming": "Processing",
+      "loading": "Writing to database",
+      "importingPhotos": "Migrating photos",
+      "verifying": "Verifying",
+      "completed": "Completed",
+      "failed": "Failed"
+    }
   }
 }

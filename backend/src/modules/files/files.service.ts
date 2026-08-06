@@ -180,6 +180,45 @@ export class FilesService {
     });
   }
 
+  /**
+   * Batch counterpart to `listForEntity` — one query for N entity ids
+   * instead of N requests, using this codebase's established
+   * `findMany({ where: { id: { in: [...] } } })` idiom (e.g.
+   * `customer-order-shortage.service.ts`, `users.service.ts`). Grouped by
+   * entityId client-side rather than via a `groupBy` query since callers
+   * need the full FileAsset rows per entity, not just counts.
+   *
+   * Also attaches a presigned `downloadUrl` to each row, generated here
+   * rather than left to a separate `GET /:id/download-url` call per file —
+   * `getSignedUrl` only signs locally (no round trip to R2), so doing it
+   * for an entire list-view page's worth of thumbnails in one request is
+   * cheap and is what actually avoids the N+1 this endpoint exists for;
+   * returning bare `storageKey`s would just move the N+1 to the client.
+   */
+  async listForEntities(user: RequestUser, entityType: string, entityIds: string[]) {
+    if (entityIds.length === 0) return {};
+
+    const files = await this.prisma.tenant.fileAsset.findMany({
+      where: { entityType, entityId: { in: entityIds }, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const withUrls = await Promise.all(
+      files.map(async (file) => ({
+        ...file,
+        downloadUrl: await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey }), {
+          expiresIn: DOWNLOAD_URL_TTL_SECONDS,
+        }),
+      })),
+    );
+
+    const byEntityId: Record<string, typeof withUrls> = {};
+    for (const file of withUrls) {
+      (byEntityId[file.entityId] ??= []).push(file);
+    }
+    return byEntityId;
+  }
+
   /** Soft delete only — matches the schema-wide convention; the R2 object is left in place (a lifecycle rule handles real purging, out of scope for this module). */
   async delete(user: RequestUser, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });

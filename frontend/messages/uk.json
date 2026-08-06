@@ -91,6 +91,7 @@
     "germanPriceInclVat": "Ціна (DE, з ПДВ)",
     "weightPerUnitKg": "Вага за одиницю (кг)",
     "note": "Примітка",
+    "photo": "Фото",
     "sectionBasic": "Основна інформація",
     "sectionClassification": "Класифікація",
     "sectionUnitsStock": "Одиниці та запаси",
@@ -112,6 +113,7 @@
     "importResultSummary": "Додано: {created}, оновлено: {updated}.",
     "importErrorsTitle": "Рядки з помилками ({count}):",
     "importRowError": "Рядок {row}: {message}",
+    "printLabels": "Друк етикеток",
     "printLabelsTitle": "Друк етикеток товарів",
     "gridViewTitle": "Таблиця товарів",
     "gridJumpSearchPlaceholder": "Знайти товар і перейти до нього...",
@@ -139,7 +141,10 @@
     "favicon": "Фавікон",
     "changePassword": "Змінити пароль",
     "currentPassword": "Поточний пароль",
-    "newPassword": "Новий пароль"
+    "newPassword": "Новий пароль",
+    "importFromLegacy": "Імпорт із SHСклад",
+    "importFromLegacyDescription": "Перенести товари, вироби, замовлення, постачальників і залишки зі старої таблиці SHСклад.",
+    "openWizard": "Відкрити майстер імпорту"
   },
   "inventory": {
     "title": "Склад",
@@ -184,6 +189,7 @@
     "title": "Специфікації (BOM)",
     "newAssembly": "Нова специфікація",
     "editAssembly": "Редагувати специфікацію",
+    "photo": "Фото",
     "assemblyHeader": "Основні дані",
     "name": "Назва",
     "article": "Артикул",
@@ -613,5 +619,42 @@
     "requestTo": "Заявка постачальнику",
     "printLabels": "Друк етикеток",
     "labelsTitle": "Етикетки товарів"
+  },
+  "legacyImport": {
+    "title": "Імпорт із SHСклад",
+    "description": "Перенесіть товари, вироби, специфікації, замовлення, постачальників, складські залишки та історію з вашої старої таблиці SHСклад. Спочатку розгорніть спеціальний Apps Script Web App у вашій легасі-таблиці (інструкція нижче), потім вставте отримане посилання та токен.",
+    "step1Title": "Крок 1. Підключення",
+    "step1Description": "URL розгорнутого Web App (закінчується на /exec) та токен, який ви вказали у файлі WebAppExport.gs.",
+    "sourceUrl": "URL Web App",
+    "sourceToken": "Токен",
+    "validateButton": "Перевірити",
+    "step2Title": "Крок 2. Перевірка даних",
+    "step2Description": "Це попередній перегляд — дані ще НЕ записані. Перевірте кількості та попередження, потім підтвердіть імпорт.",
+    "confirmImportButton": "Імпортувати",
+    "step3Title": "Крок 3. Імпорт",
+    "completedMessage": "Імпорт завершено успішно.",
+    "countProducts": "Товари",
+    "countSuppliers": "Постачальники",
+    "countWarehouses": "Склади",
+    "countWarehouseStock": "Складські залишки",
+    "countAssemblies": "Вироби",
+    "countAssemblyVersions": "Версії специфікацій",
+    "countCustomerOrders": "Замовлення клієнтів",
+    "countStockMovements": "Рухи по складу (історія)",
+    "countPhotosDiscovered": "Знайдено фото (буде перенесено окремо)",
+    "countProductsExcluded": "Товари, що НЕ будуть імпортовані (немає одиниці виміру)",
+    "warningsCount": "{count, plural, one {# попередження} few {# попередження} many {# попереджень} other {# попереджень}}",
+    "showMoreWarnings": "Показати ще {count}",
+    "showLessWarnings": "Згорнути",
+    "status": {
+      "pending": "Очікування",
+      "fetching": "Завантаження даних",
+      "transforming": "Обробка",
+      "loading": "Запис у базу",
+      "importingPhotos": "Перенесення фото",
+      "verifying": "Перевірка",
+      "completed": "Завершено",
+      "failed": "Помилка"
+    }
   }
 }

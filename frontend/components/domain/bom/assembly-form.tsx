@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -69,6 +70,17 @@ export function AssemblyForm({ assembly, onSubmit, submitting, submitError }: As
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit(submit)} noValidate>
+      {assembly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('photo')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityPhotoField domain="ASSEMBLY_PHOTO" entityType="Assembly" entityId={assembly.id} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('assemblyHeader')}</CardTitle>

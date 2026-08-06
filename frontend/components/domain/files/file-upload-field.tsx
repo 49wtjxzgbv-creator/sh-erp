@@ -1,10 +1,12 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Upload, X, FileIcon } from 'lucide-react';
-import { uploadFile, type FileAsset, type FileDomain } from '@/lib/api-client/files';
+import { uploadFile, getFileDownloadUrl, type FileAsset, type FileDomain } from '@/lib/api-client/files';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 
 /**
  * Shared "attach a file" widget — presign → direct-to-R2 PUT → confirm
@@ -23,6 +25,8 @@ export interface FileUploadFieldProps {
   onChange: (fileAssetId: string | null) => void;
   accept?: string;
   isPublic?: boolean;
+  /** Shows an actual `<img>` thumbnail (via a fetched presigned download URL) instead of the generic filename+icon row. Defaults to true whenever `accept` targets images — pass `false` explicitly for non-image attachments that happen to use an image-like accept string, or `true` to force it. */
+  preview?: boolean;
 }
 
 export function FileUploadField({
@@ -33,12 +37,22 @@ export function FileUploadField({
   onChange,
   accept = 'image/*',
   isPublic,
+  preview = accept.startsWith('image/'),
 }: FileUploadFieldProps) {
   const tc = useTranslations('common');
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUploaded, setLastUploaded] = useState<FileAsset | null>(null);
+
+  // 1hr presigned URL TTL server-side (files.service.ts's DOWNLOAD_URL_TTL_SECONDS)
+  // — refetch a little before that so a long-open form never shows a broken image.
+  const { data: downloadUrl } = useQuery({
+    queryKey: ['file-download-url', value],
+    queryFn: () => getFileDownloadUrl(value as string).then((r) => r.downloadUrl),
+    enabled: preview && Boolean(value),
+    staleTime: 50 * 60 * 1000,
+  });
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -58,21 +72,42 @@ export function FileUploadField({
     }
   }
 
+  function clear() {
+    setLastUploaded(null);
+    onChange(null);
+  }
+
   return (
     <div className="space-y-2">
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleFileSelected} />
-      {value ? (
+      {preview ? (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="rounded-md ring-offset-background transition-opacity hover:opacity-80 disabled:opacity-50"
+            aria-label={tc('edit')}
+          >
+            <Avatar src={downloadUrl} size="lg" />
+          </button>
+          <div className="flex flex-col gap-1">
+            <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
+              <Upload className="mr-2 h-4 w-4" />
+              {value ? tc('edit') : tc('create')}
+            </Button>
+            {value && (
+              <button type="button" onClick={clear} className="text-left text-xs text-muted-foreground hover:text-foreground">
+                {tc('delete')}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : value ? (
         <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-sm">
           <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{lastUploaded?.originalName ?? value}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setLastUploaded(null);
-              onChange(null);
-            }}
-            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
-          >
+          <button type="button" onClick={clear} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>

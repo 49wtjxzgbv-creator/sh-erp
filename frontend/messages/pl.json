@@ -91,6 +91,7 @@
     "germanPriceInclVat": "Price (DE, incl. VAT)",
     "weightPerUnitKg": "Weight per unit (kg)",
     "note": "Note",
+    "photo": "Photo",
     "sectionBasic": "Basic info",
     "sectionClassification": "Classification",
     "sectionUnitsStock": "Units & stock",
@@ -112,6 +113,7 @@
     "importResultSummary": "Created: {created}, updated: {updated}.",
     "importErrorsTitle": "Rows with errors ({count}):",
     "importRowError": "Row {row}: {message}",
+    "printLabels": "Print labels",
     "printLabelsTitle": "Print product labels",
     "gridViewTitle": "Product grid",
     "gridJumpSearchPlaceholder": "Find a product and jump to it...",
@@ -139,7 +141,10 @@
     "favicon": "Favicon",
     "changePassword": "Change password",
     "currentPassword": "Current password",
-    "newPassword": "New password"
+    "newPassword": "New password",
+    "importFromLegacy": "Import z SHСклад",
+    "importFromLegacyDescription": "Przenieś towary, wyroby, zamówienia, dostawców i stany magazynowe ze starego arkusza SHСклад.",
+    "openWizard": "Otwórz kreator importu"
   },
   "inventory": {
     "title": "Inventory",
@@ -184,6 +189,7 @@
     "title": "Bill of Materials",
     "newAssembly": "New assembly",
     "editAssembly": "Edit assembly",
+    "photo": "Photo",
     "assemblyHeader": "Basic info",
     "name": "Name",
     "article": "Article",
@@ -613,5 +619,42 @@
     "requestTo": "Request to",
     "printLabels": "Print labels",
     "labelsTitle": "Product labels"
+  },
+  "legacyImport": {
+    "title": "Import z SHСклад",
+    "description": "Przenieś towary, wyroby, specyfikacje, zamówienia, dostawców, stany magazynowe i historię ze starego arkusza SHСклад. Najpierw wdróż dedykowaną aplikację Apps Script Web App w swoim starym arkuszu (instrukcja poniżej), a następnie wklej otrzymany URL i token.",
+    "step1Title": "Krok 1. Połączenie",
+    "step1Description": "URL wdrożonej aplikacji Web App (kończy się na /exec) oraz token ustawiony w WebAppExport.gs.",
+    "sourceUrl": "URL Web App",
+    "sourceToken": "Token",
+    "validateButton": "Sprawdź",
+    "step2Title": "Krok 2. Podgląd",
+    "step2Description": "To podgląd — dane nie zostały jeszcze zapisane. Sprawdź liczby i ostrzeżenia, a następnie potwierdź import.",
+    "confirmImportButton": "Importuj",
+    "step3Title": "Krok 3. Import",
+    "completedMessage": "Import zakończony pomyślnie.",
+    "countProducts": "Towary",
+    "countSuppliers": "Dostawcy",
+    "countWarehouses": "Magazyny",
+    "countWarehouseStock": "Stany magazynowe",
+    "countAssemblies": "Wyroby",
+    "countAssemblyVersions": "Wersje specyfikacji",
+    "countCustomerOrders": "Zamówienia klientów",
+    "countStockMovements": "Ruchy magazynowe (historia)",
+    "countPhotosDiscovered": "Znalezione zdjęcia (przenoszone osobno)",
+    "countProductsExcluded": "Towary, które NIE zostaną zaimportowane (brak jednostki)",
+    "warningsCount": "{count, plural, one {# ostrzeżenie} few {# ostrzeżenia} many {# ostrzeżeń} other {# ostrzeżeń}}",
+    "showMoreWarnings": "Pokaż jeszcze {count}",
+    "showLessWarnings": "Zwiń",
+    "status": {
+      "pending": "Oczekiwanie",
+      "fetching": "Pobieranie danych",
+      "transforming": "Przetwarzanie",
+      "loading": "Zapisywanie",
+      "importingPhotos": "Przenoszenie zdjęć",
+      "verifying": "Weryfikacja",
+      "completed": "Zakończono",
+      "failed": "Błąd"
+    }
   }
 }

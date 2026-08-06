@@ -44,6 +44,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'suppliers:read', resource: 'suppliers', action: 'read', description: 'View suppliers.' },
   { key: 'suppliers:write', resource: 'suppliers', action: 'write', description: 'Create/edit suppliers.' },
   { key: 'settings:manage', resource: 'settings', action: 'manage', description: 'Edit company settings and branding.' },
+  { key: 'legacy-import:manage', resource: 'legacy-import', action: 'manage', description: 'Run the SHСклад legacy-data import wizard (admin-only: writes across nearly every module).' },
 
   // Inventory
   { key: 'warehouses:manage', resource: 'warehouses', action: 'manage', description: 'Create/edit warehouses.' },

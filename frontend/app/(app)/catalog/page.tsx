@@ -7,11 +7,13 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Settings2, Upload, Download, Tag, Grid3x3 } from 'lucide-react';
 import { useProducts, useExportProducts } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { Product } from '@/lib/api-client/catalog';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Avatar } from '@/components/ui/avatar';
 import { ImportProductsDialog } from '@/components/domain/catalog/import-products-dialog';
 import { ProductLabelsDialog } from '@/components/domain/catalog/product-labels-dialog';
 
@@ -29,8 +31,18 @@ export default function CatalogPage() {
 
   const { data, isLoading } = useProducts({ search: search || undefined, limit: PAGE_SIZE, offset });
 
+  // One batch request for every row's photo instead of PAGE_SIZE separate
+  // ones — see files.service.ts#listForEntities's header comment.
+  const productIds = useMemo(() => data?.items.map((p) => p.id) ?? [], [data]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+
   const columns = useMemo<ColumnDef<Product>[]>(
     () => [
+      {
+        id: 'photo',
+        header: '',
+        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="sm" />,
+      },
       { accessorKey: 'article', header: t('article') },
       { accessorKey: 'name', header: t('name') },
       { accessorKey: 'category', header: t('category'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
@@ -44,7 +56,7 @@ export default function CatalogPage() {
         },
       },
     ],
-    [t],
+    [t, photosByProduct],
   );
 
   return (

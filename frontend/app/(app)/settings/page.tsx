@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { ArrowRight } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
@@ -29,8 +31,28 @@ export default function SettingsPage() {
       <h1 className="text-xl font-semibold">{t('title')}</h1>
       <GeneralSettingsCard t={t} tc={tc} />
       {companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
+      <LegacyImportCard t={t} />
       <ChangePasswordCard t={t} tc={tc} />
     </div>
+  );
+}
+
+function LegacyImportCard({ t }: { t: ReturnType<typeof useTranslations> }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('importFromLegacy')}</CardTitle>
+        <CardDescription>{t('importFromLegacyDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Link href="/settings/import">
+          <Button variant="outline">
+            {t('openWizard')}
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
   );
 }
 

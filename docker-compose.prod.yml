@@ -47,5 +47,45 @@ services:
       timeout: 5s
       retries: 10
 
+  # Self-hosted, S3-compatible object storage (2026-08-07) — a drop-in
+  # substitute for Cloudflare R2 for a deployment that has no card/external
+  # account on file. backend/src/modules/files/r2-client.ts is a plain AWS
+  # SDK S3Client configured entirely from R2_ENDPOINT/R2_ACCESS_KEY_ID/
+  # R2_SECRET_ACCESS_KEY env vars — no code change needed, MinIO just gets
+  # pointed to instead of Cloudflare's endpoint. Bound to 127.0.0.1 only,
+  # same as postgres above: only the backend process on this host ever
+  # talks to it, never exposed publicly.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # The official image's own Dockerfile sets these to "access_key"/
+      # "secret_key" by default (a Docker-secrets-file convention) — when
+      # set, MinIO's entrypoint prefers them over the direct
+      # MINIO_ROOT_USER/PASSWORD values above and silently falls back to a
+      # blank/internal identity when the referenced file doesn't exist
+      # (found the hard way: correct direct credentials, "Access Denied"
+      # on every request). Blanking these two restores the direct vars.
+      MINIO_ROOT_USER_FILE: ''
+      MINIO_ROOT_PASSWORD_FILE: ''
+      MINIO_ACCESS_KEY_FILE: ''
+      MINIO_SECRET_KEY_FILE: ''
+      MINIO_CONFIG_ENV_FILE: ''
+    command: server /data --console-address ":9001"
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - sh-erp-minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   sh-erp-postgres-data:
+  sh-erp-minio-data:

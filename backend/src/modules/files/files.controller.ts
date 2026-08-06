@@ -42,6 +42,21 @@ export class FilesController {
     return this.filesService.listForEntity(user, entityType, entityId);
   }
 
+  @Get('batch')
+  @RequirePermissions('files:read')
+  @ApiOperation({
+    summary:
+      'Files for MANY entities of the same type in one call — avoids an N-request fan-out from a list view ' +
+      '(e.g. a 50-row product list rendering a thumbnail per row).',
+  })
+  async listForEntities(
+    @CurrentUser() user: RequestUser,
+    @Query('entityType') entityType: string,
+    @Query('entityIds') entityIds: string,
+  ) {
+    return this.filesService.listForEntities(user, entityType, entityIds.split(',').filter(Boolean));
+  }
+
   @Delete(':id')
   @RequirePermissions('files:write')
   @ApiOperation({ summary: 'Soft-delete a file attachment.' })

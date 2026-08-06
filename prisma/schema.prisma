@@ -146,6 +146,7 @@ model Company {
   pendingAiActions  PendingAiAction[]
   aiUsageLogs       AiUsageLog[]
   legacyMigrationRuns LegacyMigrationRun[]
+  importJobs        ImportJob[]
   assemblyComponents AssemblyComponent[]
   assemblyVersions  AssemblyVersion[]
   assemblyVersionComponents AssemblyVersionComponent[]
@@ -1441,6 +1442,56 @@ enum MigrationRunStatus {
   EXTRACTING
   TRANSFORMING
   LOADING
+  VERIFYING
+  COMPLETED
+  FAILED
+}
+
+// SHСклад-specific import (2026-08-07 migration-wizard build) — distinct from
+// `LegacyMigrationRun` above, which is the `migration-toolkit` CLI's own
+// tracking row for a Sheets-API, new-company-creation migration run (never
+// driven from the app itself). `ImportJob` is what the in-app import wizard
+// (`settings/import`) creates: it loads legacy SHСклад data, fetched from a
+// customer-deployed Apps Script Web App (not Sheets API — no service-account
+// sharing, see ADR/plan), into the CALLER'S OWN EXISTING company, run as an
+// un-awaited in-process async job (no queue infra yet, ADR-0005) with
+// progress polled from this row — the same "durable row instead of
+// in-memory state" shape `PendingAiAction` already established for
+// long-running background work in this codebase.
+model ImportJob {
+  id                String          @id @default(uuid()) @db.Uuid
+  companyId         String          @db.Uuid
+  status            ImportJobStatus @default(PENDING)
+  step              String? // "fetching" | "transforming" | "loading" | "importing_photos" | "verifying" — human-readable substage within `status`, shown in the wizard's progress bar
+
+  sourceUrl         String // Apps Script Web App /exec URL, customer-supplied
+  sourceTokenEncrypted String // same AES-256-GCM envelope scheme as CompanyAiSettings.apiKeyEncrypted (backend/src/modules/ai/ai-crypto.util.ts) — never stored plaintext
+  dryRun            Boolean         @default(false) // true = validate-only run (§ wizard step 2), never writes business data
+
+  totalPhotos       Int?
+  processedPhotos   Int             @default(0)
+
+  warnings          Json? // TransformWarning[] collected during transform
+  report            Json? // counts-by-entity + warnings, the wizard's final summary screen
+  errorMessage      String?
+
+  startedByUserId   String          @db.Uuid
+
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  completedAt       DateTime?       @db.Timestamptz(3)
+
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, createdAt])
+  @@map("import_jobs")
+}
+
+enum ImportJobStatus {
+  PENDING
+  FETCHING
+  TRANSFORMING
+  LOADING
+  IMPORTING_PHOTOS
   VERIFYING
   COMPLETED
   FAILED

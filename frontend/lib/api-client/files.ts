@@ -67,6 +67,17 @@ export function listFilesForEntity(entityType: string, entityId: string): Promis
   return apiClient.get<FileAsset[]>('files', { query: { entityType, entityId } });
 }
 
+/** `FileAsset` plus a presigned download URL — only the batch endpoint returns this (see files.service.ts#listForEntities's header comment for why: signing locally, in one server-side pass, is what actually avoids an N+1 for a list view's worth of thumbnails). */
+export interface FileAssetWithUrl extends FileAsset {
+  downloadUrl: string;
+}
+
+/** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */
+export function listFilesForEntities(entityType: string, entityIds: string[]): Promise<Record<string, FileAssetWithUrl[]>> {
+  if (entityIds.length === 0) return Promise.resolve({});
+  return apiClient.get<Record<string, FileAssetWithUrl[]>>('files/batch', { query: { entityType, entityIds: entityIds.join(',') } });
+}
+
 export function deleteFile(fileAssetId: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`files/${fileAssetId}`);
 }

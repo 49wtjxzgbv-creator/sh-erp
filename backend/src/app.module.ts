@@ -25,6 +25,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
+import { LegacyImportModule } from './modules/legacy-import/legacy-import.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { SuperAdminModule } from './modules/super-admin/super-admin.module';
     HrModule,
     ReportsModule,
     AiModule,
+    LegacyImportModule,
     NotificationsModule,
     BillingModule,
     UsersModule,

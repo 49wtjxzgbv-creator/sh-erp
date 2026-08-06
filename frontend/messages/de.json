@@ -91,6 +91,7 @@
     "germanPriceInclVat": "Price (DE, incl. VAT)",
     "weightPerUnitKg": "Weight per unit (kg)",
     "note": "Note",
+    "photo": "Photo",
     "sectionBasic": "Basic info",
     "sectionClassification": "Classification",
     "sectionUnitsStock": "Units & stock",
@@ -112,6 +113,7 @@
     "importResultSummary": "Created: {created}, updated: {updated}.",
     "importErrorsTitle": "Rows with errors ({count}):",
     "importRowError": "Row {row}: {message}",
+    "printLabels": "Print labels",
     "printLabelsTitle": "Print product labels",
     "gridViewTitle": "Product grid",
     "gridJumpSearchPlaceholder": "Find a product and jump to it...",
@@ -139,7 +141,10 @@
     "favicon": "Favicon",
     "changePassword": "Change password",
     "currentPassword": "Current password",
-    "newPassword": "New password"
+    "newPassword": "New password",
+    "importFromLegacy": "Import aus SHСклад",
+    "importFromLegacyDescription": "Übertragen Sie Produkte, Baugruppen, Aufträge, Lieferanten und Bestände aus Ihrer alten SHСклад-Tabelle.",
+    "openWizard": "Import-Assistenten öffnen"
   },
   "inventory": {
     "title": "Inventory",
@@ -184,6 +189,7 @@
     "title": "Bill of Materials",
     "newAssembly": "New assembly",
     "editAssembly": "Edit assembly",
+    "photo": "Photo",
     "assemblyHeader": "Basic info",
     "name": "Name",
     "article": "Article",
@@ -613,5 +619,42 @@
     "requestTo": "Request to",
     "printLabels": "Print labels",
     "labelsTitle": "Product labels"
+  },
+  "legacyImport": {
+    "title": "Import aus SHСклад",
+    "description": "Übertragen Sie Produkte, Baugruppen, Stücklisten, Kundenaufträge, Lieferanten, Lagerbestände und den Verlauf aus Ihrer alten SHСклад-Tabelle. Stellen Sie zunächst die spezielle Apps-Script-Web-App in Ihrer alten Tabelle bereit (Anleitung unten) und fügen Sie dann die erhaltene URL und das Token ein.",
+    "step1Title": "Schritt 1. Verbindung",
+    "step1Description": "Die URL der bereitgestellten Web-App (endet auf /exec) und das in WebAppExport.gs festgelegte Token.",
+    "sourceUrl": "Web-App-URL",
+    "sourceToken": "Token",
+    "validateButton": "Prüfen",
+    "step2Title": "Schritt 2. Vorschau",
+    "step2Description": "Dies ist eine Vorschau — es wurde noch nichts gespeichert. Prüfen Sie die Anzahlen und Warnungen und bestätigen Sie dann den Import.",
+    "confirmImportButton": "Importieren",
+    "step3Title": "Schritt 3. Import",
+    "completedMessage": "Import erfolgreich abgeschlossen.",
+    "countProducts": "Produkte",
+    "countSuppliers": "Lieferanten",
+    "countWarehouses": "Lager",
+    "countWarehouseStock": "Lagerbestände",
+    "countAssemblies": "Baugruppen",
+    "countAssemblyVersions": "Stücklisten-Versionen",
+    "countCustomerOrders": "Kundenaufträge",
+    "countStockMovements": "Lagerbewegungen (Verlauf)",
+    "countPhotosDiscovered": "Gefundene Fotos (werden separat migriert)",
+    "countProductsExcluded": "Produkte, die NICHT importiert werden (keine Einheit)",
+    "warningsCount": "{count, plural, one {# Warnung} other {# Warnungen}}",
+    "showMoreWarnings": "{count} weitere anzeigen",
+    "showLessWarnings": "Weniger anzeigen",
+    "status": {
+      "pending": "Ausstehend",
+      "fetching": "Daten werden abgerufen",
+      "transforming": "Verarbeitung",
+      "loading": "Wird gespeichert",
+      "importingPhotos": "Fotos werden migriert",
+      "verifying": "Wird überprüft",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen"
+    }
   }
 }

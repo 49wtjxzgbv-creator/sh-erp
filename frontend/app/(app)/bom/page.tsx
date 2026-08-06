@@ -7,10 +7,12 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useAssemblies } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { Assembly } from '@/lib/api-client/bom';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 
 const PAGE_SIZE = 50;
 
@@ -22,8 +24,16 @@ export default function BomPage() {
 
   const { data, isLoading } = useAssemblies({ search: search || undefined, limit: PAGE_SIZE, offset });
 
+  const assemblyIds = useMemo(() => data?.items.map((a) => a.id) ?? [], [data]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+
   const columns = useMemo<ColumnDef<Assembly>[]>(
     () => [
+      {
+        id: 'photo',
+        header: '',
+        cell: ({ row }) => <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="sm" />,
+      },
       { accessorKey: 'name', header: t('name') },
       { accessorKey: 'article', header: t('article'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
       {
@@ -31,7 +41,7 @@ export default function BomPage() {
         header: t('laborCostPerUnit'),
       },
     ],
-    [t],
+    [t, photosByAssembly],
   );
 
   return (
