@@ -147,6 +147,7 @@ model Company {
   aiUsageLogs       AiUsageLog[]
   legacyMigrationRuns LegacyMigrationRun[]
   importJobs        ImportJob[]
+  importConnections ImportConnection[]
   assemblyComponents AssemblyComponent[]
   assemblyVersions  AssemblyVersion[]
   assemblyVersionComponents AssemblyVersionComponent[]
@@ -1447,33 +1448,86 @@ enum MigrationRunStatus {
   FAILED
 }
 
-// SHСклад-specific import (2026-08-07 migration-wizard build) — distinct from
+// Universal data-import platform (2026-08-07 build, revised into a
+// provider-agnostic architecture same day after review) — distinct from
 // `LegacyMigrationRun` above, which is the `migration-toolkit` CLI's own
 // tracking row for a Sheets-API, new-company-creation migration run (never
-// driven from the app itself). `ImportJob` is what the in-app import wizard
-// (`settings/import`) creates: it loads legacy SHСклад data, fetched from a
-// customer-deployed Apps Script Web App (not Sheets API — no service-account
-// sharing, see ADR/plan), into the CALLER'S OWN EXISTING company, run as an
-// un-awaited in-process async job (no queue infra yet, ADR-0005) with
-// progress polled from this row — the same "durable row instead of
-// in-memory state" shape `PendingAiAction` already established for
-// long-running background work in this codebase.
+// driven from the app itself). A company connects one or more external data
+// sources ("connectors") via `ImportConnection`, then runs one or more
+// `ImportJob`s against a given connection. The Google Apps Script connector
+// is the first of possibly several future providers (Excel/CSV upload, 1C,
+// BAS, Odoo, ...) — see `backend/src/modules/legacy-import/providers/` for
+// the provider interface every connector type implements; nothing in this
+// schema is Apps-Script-specific.
+//
+// Auth model: NOT "the URL is the secret" (deliberately rejected — a URL
+// passes through too many hands, e.g. clipboard/screenshots/browser
+// history/this very database, to serve as a bearer credential with no way
+// to revoke it selectively). Instead, a device-pairing handshake (same
+// shape as `gh auth login` / smart-TV Google sign-in): SH ERP generates a
+// short-lived, one-time `pairingCode`; the user enters it into the
+// CONNECTOR'S OWN runtime UI (a native `ui.prompt()` dialog inside the
+// Google Sheet, added by the connector's own `onOpen` menu — never inside
+// the `.gs` source, so the user is never editing code). The connector then
+// calls SH ERP directly with that code and its own URL
+// (`ScriptApp.getService().getUrl()`), and SH ERP mints a real
+// high-entropy `connectionToken` in response — this token, not the URL, is
+// the actual bearer credential from then on, independently revocable per
+// connection.
+model ImportConnection {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  companyId            String                 @db.Uuid
+  providerType         String // 'GOOGLE_APPS_SCRIPT' today — plain string (not a Postgres enum) validated against the app-level provider registry, so a future provider is addable without a schema migration
+  label                String // user-facing name, e.g. "Головна таблиця" — a company can have several connections at once
+
+  configEncrypted      String? // provider-specific JSON blob (for Apps Script: {webAppUrl, connectionToken}), AES-256-GCM envelope-encrypted (same scheme as CompanyAiSettings.apiKeyEncrypted, backend/src/modules/ai/ai-crypto.util.ts) — null while still PENDING pairing
+  status               ImportConnectionStatus @default(PENDING)
+
+  pairingCode          String? // set while PENDING, cleared once PAIRED; one-time use
+  pairingCodeExpiresAt DateTime?              @db.Timestamptz(3)
+
+  protocolVersion      String? // last-seen connector protocol version (handshake/health-check) — compatibility diagnostics, see SUPPORTED_PROTOCOL_VERSIONS
+  connectorVersion     String? // last-seen connector's own self-reported version string, display-only
+
+  lastHealthCheckAt    DateTime?              @db.Timestamptz(3)
+  lastHealthStatus     Json? // last ConnectorHealth result (reachable, capabilities, diagnostics[]) — shown in the connections list
+
+  createdByUserId      String                 @db.Uuid
+  createdAt            DateTime               @default(now()) @db.Timestamptz(3)
+  pairedAt             DateTime?              @db.Timestamptz(3)
+  revokedAt            DateTime?              @db.Timestamptz(3)
+
+  company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  importJobs           ImportJob[]
+
+  @@index([companyId])
+  @@map("import_connections")
+}
+
+enum ImportConnectionStatus {
+  PENDING
+  PAIRED
+  REVOKED
+}
+
 model ImportJob {
   id                String          @id @default(uuid()) @db.Uuid
   companyId         String          @db.Uuid
+  connectionId      String          @db.Uuid
   status            ImportJobStatus @default(PENDING)
   step              String? // "fetching" | "transforming" | "loading" | "importing_photos" | "verifying" — human-readable substage within `status`, shown in the wizard's progress bar
 
-  sourceUrl         String // Apps Script Web App /exec URL, customer-supplied
-  sourceTokenEncrypted String // same AES-256-GCM envelope scheme as CompanyAiSettings.apiKeyEncrypted (backend/src/modules/ai/ai-crypto.util.ts) — never stored plaintext
-  dryRun            Boolean         @default(false) // true = validate-only run (§ wizard step 2), never writes business data
+  dryRun            Boolean         @default(false) // true = validate-only run, never writes business data
 
   totalPhotos       Int?
   processedPhotos   Int             @default(0)
 
-  warnings          Json? // TransformWarning[] collected during transform
-  report            Json? // counts-by-entity + warnings, the wizard's final summary screen
+  warnings          Json? // TransformWarning[] — non-blocking, per-row data-quality notes
+  errors            Json? // NEW: blocking, structural problems (missing required sheet, unsupported protocol version, failed health check) — distinct from warnings; a non-empty errors[] on the connection's most recent dry run blocks starting a real import (checked both client-side and server-side)
+  report            Json? // full ImportReport: per-entity total/create/update/skip/failed counts, conflicts, photosDiscovered/Missing — see legacy-import.service.ts
   errorMessage      String?
+
+  durationMs        Int? // completedAt - createdAt, computed on completion, surfaced directly rather than making the UI re-derive it
 
   startedByUserId   String          @db.Uuid
 
@@ -1481,8 +1535,10 @@ model ImportJob {
   completedAt       DateTime?       @db.Timestamptz(3)
 
   company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  connection        ImportConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
 
   @@index([companyId, createdAt])
+  @@index([connectionId, createdAt])
   @@map("import_jobs")
 }
 

@@ -49,4 +49,5 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'CompanyFeatureFlagOverride',
   'FileAsset',
   'ImportJob',
+  'ImportConnection',
 ]);

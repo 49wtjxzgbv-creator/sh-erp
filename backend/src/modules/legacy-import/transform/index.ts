@@ -10,17 +10,19 @@ import { computeQtyAfterSeries } from './stock-movement-balance';
 import { parseDecimalStringOrZero, parseLegacyDate, parseOptionalString, parseRequiredString } from './parsing';
 
 /**
- * Transform orchestrator for the SHСклад import wizard — adapted from
+ * Transform orchestrator for the universal import platform (any provider
+ * that can produce a `LegacyExportPayload` — the SH ERP Import Connector
+ * for Google Apps Script is the first, see `../providers/`) — adapted from
  * migration-toolkit/src/transform/index.ts's `transformCompany` (Phase 4
  * design doc §2.2's dependency order), but for a DIFFERENT scenario:
  * `transformCompany` creates a brand-new Company + owner User from a Sheets
- * API extraction; this loads into the CALLER'S OWN EXISTING company from an
- * Apps Script Web App JSON export, so there is no company/owner/
- * companySettings/user creation here at all — `existingCompanyId` and
- * `actorUserId` (the wizard operator, already authenticated) stand in for
- * those everywhere a `createdById`-shaped field is needed.
+ * API extraction; this loads into the CALLER'S OWN EXISTING company from a
+ * connector's JSON export, so there is no company/owner/companySettings/
+ * user creation here at all — `existingCompanyId` and `actorUserId` (the
+ * wizard operator, already authenticated) stand in for those everywhere a
+ * `createdById`-shaped field is needed.
  *
- * Scope, disclosed: covers the entity set the SHСклад import plan names
+ * Scope, disclosed: covers the entity set the import plan names
  * explicitly (товари, вироби/специфікації, замовлення, клієнти,
  * постачальники, складські залишки, історія) — products, suppliers,
  * warehouses+stock, assemblies+BOM (current + versioned), customer orders,
