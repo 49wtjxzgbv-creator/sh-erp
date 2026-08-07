@@ -231,12 +231,11 @@ function ConnectionCard({
               </Button>
             </>
           )}
-          {connection.status !== 'REVOKED' && (
-            <Button size="sm" variant="outline" onClick={onReconnect} loading={reconnectPending}>
-              {t('reconnect')}
-            </Button>
-          )}
-          {connection.status !== 'REVOKED' && (
+          {/* Reconnect always available, regardless of status — it's how a REVOKED connection gets revived (same connection row, fresh pairing code, no need to recreate the Apps Script project), and how a PENDING one that lost its code gets a new one. */}
+          <Button size="sm" variant="outline" onClick={onReconnect} loading={reconnectPending}>
+            {t('reconnect')}
+          </Button>
+          {connection.status === 'PAIRED' && (
             <Button size="sm" variant="ghost" onClick={onRevoke} loading={revokePending}>
               <Unplug className="mr-1.5 h-3.5 w-3.5" />
               {t('revoke')}
