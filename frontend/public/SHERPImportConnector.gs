@@ -76,12 +76,33 @@ var SHEETS = {
 // ============================================================================
 
 function onOpen() {
+  sherpAddMenu_();
+}
+
+// If this connector is added to a spreadsheet that ALREADY has its own
+// onOpen() function (a large existing project, for example), the plain
+// onOpen() above will collide with it — Apps Script only keeps one
+// function per name across the whole project, so one of them silently
+// never runs. If that's your situation:
+//   1. Delete (or comment out) the onOpen() function right above this.
+//   2. In the Apps Script editor, open Triggers (clock icon, left sidebar).
+//   3. + Add Trigger -> Choose function: sherpOnOpen -> Event source: From
+//      spreadsheet -> Event type: On open -> Save (Google will ask you to
+//      approve permissions — normal, one-time).
+//   4. Reload the spreadsheet tab. The "SH ERP" menu appears independently
+//      of your own onOpen, with zero changes to your existing code.
+function sherpOnOpen() {
+  sherpAddMenu_();
+}
+
+function sherpAddMenu_() {
   // SpreadsheetApp.getUi() only works when this fires as a real trigger
   // (the spreadsheet actually being opened in the browser) — it throws
   // "Cannot call SpreadsheetApp.getUi() from this context" if someone runs
-  // onOpen manually from the Apps Script editor's own Run button (no UI
-  // context there). That's a normal, harmless thing for anyone testing the
-  // script to try, so this no-ops instead of showing a scary error.
+  // onOpen/sherpOnOpen manually from the Apps Script editor's own Run
+  // button (no UI context there). That's a normal, harmless thing for
+  // anyone testing the script to try, so this no-ops instead of showing a
+  // scary error.
   try {
     SpreadsheetApp.getUi()
       .createMenu('SH ERP')
