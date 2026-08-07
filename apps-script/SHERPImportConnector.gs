@@ -76,11 +76,21 @@ var SHEETS = {
 // ============================================================================
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('SH ERP')
-    .addItem('Підключити', 'showConnectPrompt')
-    .addItem('Статус підключення', 'showConnectionStatus')
-    .addToUi();
+  // SpreadsheetApp.getUi() only works when this fires as a real trigger
+  // (the spreadsheet actually being opened in the browser) — it throws
+  // "Cannot call SpreadsheetApp.getUi() from this context" if someone runs
+  // onOpen manually from the Apps Script editor's own Run button (no UI
+  // context there). That's a normal, harmless thing for anyone testing the
+  // script to try, so this no-ops instead of showing a scary error.
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('SH ERP')
+      .addItem('Підключити', 'showConnectPrompt')
+      .addItem('Статус підключення', 'showConnectionStatus')
+      .addToUi();
+  } catch (e) {
+    // No UI context (e.g. run manually from the editor) — nothing to do.
+  }
 }
 
 function showConnectPrompt() {
