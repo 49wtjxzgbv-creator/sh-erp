@@ -165,7 +165,26 @@ function completePairing(pairingCode) {
 // Web App entry point — called BY SH ERP, not by the user
 // ============================================================================
 
+// A Web App deployment only ever has ONE doGet, project-wide — unlike
+// onOpen (which can coexist via an installable trigger), there's no way
+// around that. If your project already has its own doGet(e):
+//   1. Delete the plain doGet(e) function right below this comment (keep
+//      sherpHandleRequest_ — that's the part that does the actual work).
+//   2. At the very TOP of YOUR existing doGet(e), before anything else,
+//      add:
+//        var sherpAction = (e.parameter || {}).action;
+//        if (sherpAction === 'data' || sherpAction === 'health' || sherpAction === 'photo' || sherpAction === 'revoke') {
+//          return sherpHandleRequest_(e);
+//        }
+//      Your own code runs unchanged for every other request (no action
+//      param, or some other value) — SH ERP's calls always include one of
+//      those four action values, so this never intercepts your existing
+//      traffic.
 function doGet(e) {
+  return sherpHandleRequest_(e);
+}
+
+function sherpHandleRequest_(e) {
   var params = (e && e.parameter) || {};
   var storedToken = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY_KEY);
 
