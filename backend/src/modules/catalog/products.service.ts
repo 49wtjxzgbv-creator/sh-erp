@@ -36,6 +36,18 @@ export class ProductsService {
     return product;
   }
 
+  /**
+   * Many products in one call by id — avoids an N-request fan-out from a
+   * list view that only has `productId`s to resolve into names (e.g. Stock
+   * Levels, which shows raw `WarehouseStock.productId` today; see that
+   * page's own header comment). Mirrors `FilesService.listForEntities`'s
+   * batch shape/reasoning.
+   */
+  async findByIds(user: RequestUser, ids: string[]) {
+    if (ids.length === 0) return [];
+    return this.prisma.tenant.product.findMany({ where: { id: { in: ids } } });
+  }
+
   async query(user: RequestUser, query: QueryProductsDto) {
     const where: Prisma.ProductWhereInput = {};
     if (!query.includeDeleted) where.deletedAt = null;

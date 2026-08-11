@@ -59,6 +59,17 @@ export class ProductsController {
     return this.importExportService.importProducts(user, file.buffer);
   }
 
+  /**
+   * Declared BEFORE `GET /:id` for the same reason as `export` above —
+   * otherwise `:id` would swallow the literal path segment "batch".
+   */
+  @Get('batch')
+  @RequirePermissions('products:read')
+  @ApiOperation({ summary: 'Many products in one call by id — avoids an N-request fan-out resolving productIds into names/photos for a list view.' })
+  async findByIds(@CurrentUser() user: RequestUser, @Query('ids') ids: string) {
+    return this.productsService.findByIds(user, ids.split(',').filter(Boolean));
+  }
+
   @Get(':id')
   @RequirePermissions('products:read')
   @ApiOperation({ summary: 'Get one product.' })

@@ -41,7 +41,7 @@ export default function CatalogPage() {
       {
         id: 'photo',
         header: '',
-        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="sm" />,
+        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="xl" />,
       },
       { accessorKey: 'article', header: t('article') },
       { accessorKey: 'name', header: t('name') },

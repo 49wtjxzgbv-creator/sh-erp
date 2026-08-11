@@ -17,6 +17,7 @@ const avatarVariants = cva('relative flex shrink-0 items-center justify-center o
       md: 'h-10 w-10',
       lg: 'h-16 w-16',
       xl: 'h-32 w-32',
+      '2xl': 'h-48 w-48',
     },
   },
   defaultVariants: { size: 'md' },

@@ -32,7 +32,7 @@ export default function BomPage() {
       {
         id: 'photo',
         header: '',
-        cell: ({ row }) => <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="sm" />,
+        cell: ({ row }) => <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="xl" />,
       },
       { accessorKey: 'name', header: t('name') },
       { accessorKey: 'article', header: t('article'), cell: ({ getValue }) => (getValue() as string) ?? '—' },

@@ -89,7 +89,7 @@ export function FileUploadField({
             className="rounded-md ring-offset-background transition-opacity hover:opacity-80 disabled:opacity-50"
             aria-label={tc('edit')}
           >
-            <Avatar src={downloadUrl} size="lg" />
+            <Avatar src={downloadUrl} size="2xl" />
           </button>
           <div className="flex flex-col gap-1">
             <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
