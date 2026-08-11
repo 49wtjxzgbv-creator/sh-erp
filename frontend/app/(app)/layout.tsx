@@ -1,6 +1,7 @@
 import { SessionBoundary } from '@/components/domain/shell/session-boundary';
 import { Sidebar } from '@/components/domain/shell/sidebar';
 import { Topbar } from '@/components/domain/shell/topbar';
+import { MobileNavProvider } from '@/components/domain/shell/mobile-nav-context';
 
 /**
  * Authenticated shell (Phase 2 §3.1). Every route under app/(app)/ renders
@@ -14,13 +15,15 @@ import { Topbar } from '@/components/domain/shell/topbar';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionBoundary>
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <MobileNavProvider>
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Topbar />
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+          </div>
         </div>
-      </div>
+      </MobileNavProvider>
     </SessionBoundary>
   );
 }

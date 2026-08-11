@@ -56,7 +56,25 @@
   },
   "dashboard": {
     "welcome": "Witamy",
-    "overview": "Przegląd"
+    "overview": "Przegląd",
+    "productsTotal": "Products in catalog",
+    "assembliesTotal": "BOM specifications",
+    "lowStock": "Products low on stock",
+    "lowStockOk": "All good",
+    "activeProductionOrders": "Production orders in progress",
+    "pendingCustomerOrders": "Customer orders in progress",
+    "openPurchaseOrders": "Open supplier orders",
+    "activeEmployees": "Active employees",
+    "loadFailed": "Failed to load overview."
+  },
+  "search": {
+    "placeholder": "Search products, BOMs, orders, suppliers...",
+    "products": "Products",
+    "assemblies": "BOM specifications",
+    "customerOrders": "Customer orders",
+    "suppliers": "Suppliers",
+    "typeToSearch": "Type at least 2 characters",
+    "noResults": "No results found"
   },
   "catalog": {
     "title": "Produkty",

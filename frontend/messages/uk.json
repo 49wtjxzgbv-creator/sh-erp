@@ -56,7 +56,25 @@
   },
   "dashboard": {
     "welcome": "Вітаємо",
-    "overview": "Огляд"
+    "overview": "Огляд",
+    "productsTotal": "Товарів у каталозі",
+    "assembliesTotal": "Специфікацій (BOM)",
+    "lowStock": "Товарів з низьким залишком",
+    "lowStockOk": "Все в нормі",
+    "activeProductionOrders": "Замовлень у виробництві",
+    "pendingCustomerOrders": "Замовлень клієнтів у роботі",
+    "openPurchaseOrders": "Відкритих замовлень постачальникам",
+    "activeEmployees": "Активних співробітників",
+    "loadFailed": "Не вдалося завантажити огляд."
+  },
+  "search": {
+    "placeholder": "Пошук товарів, специфікацій, замовлень, постачальників...",
+    "products": "Товари",
+    "assemblies": "Специфікації (BOM)",
+    "customerOrders": "Замовлення клієнтів",
+    "suppliers": "Постачальники",
+    "typeToSearch": "Введіть щонайменше 2 символи",
+    "noResults": "Нічого не знайдено"
   },
   "catalog": {
     "title": "Товари",

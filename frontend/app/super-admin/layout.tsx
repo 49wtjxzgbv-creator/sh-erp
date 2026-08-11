@@ -41,19 +41,19 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 bg-slate-900">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-6">
-            <span className="font-semibold tracking-tight">{t('panelTitle')}</span>
-            <nav className="flex gap-4 text-sm text-slate-300">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+            <span className="text-sm font-semibold tracking-tight sm:text-base">{t('panelTitle')}</span>
+            <nav className="flex flex-wrap gap-3 text-sm text-slate-300 sm:gap-4">
               <Link href="/super-admin" className="hover:text-white">{t('navCompanies')}</Link>
               <Link href="/super-admin/users" className="hover:text-white">{t('navUsers')}</Link>
               <Link href="/super-admin/plans" className="hover:text-white">{t('navPlans')}</Link>
               <Link href="/super-admin/audit" className="hover:text-white">{t('navAudit')}</Link>
             </nav>
           </div>
-          <div className="flex items-center gap-3 text-sm text-slate-400">
+          <div className="flex items-center gap-2 text-sm text-slate-400 sm:gap-3">
             <LanguageSwitcher />
-            <span>{email}</span>
+            <span className="hidden sm:inline">{email}</span>
             <Button
               variant="outline"
               size="sm"
@@ -67,7 +67,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
     </div>
   );
 }

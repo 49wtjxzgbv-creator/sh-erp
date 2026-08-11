@@ -19,6 +19,8 @@ import { ProcurementModule } from './modules/procurement/procurement.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { HrModule } from './modules/hr/hr.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { SearchModule } from './modules/search/search.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -52,6 +54,8 @@ import { LegacyImportModule } from './modules/legacy-import/legacy-import.module
     SalesModule,
     HrModule,
     ReportsModule,
+    DashboardModule,
+    SearchModule,
     AiModule,
     LegacyImportModule,
     NotificationsModule,
