@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCheckAvailability, useProduceAssembly } from '@/lib/hooks/use-bom';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useProduct } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ApiError } from '@/lib/api-client/types';
 import type { AvailabilityResult } from '@/lib/api-client/bom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
@@ -24,6 +27,20 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+
+/** AvailabilityResult's shortages only carry a raw productId — resolve to a real name/photo, same fix as everywhere else that showed a raw id. */
+function ShortageProductCell({ productId }: { productId: string }) {
+  const { data: product } = useProduct(productId);
+  const { data: photosByProduct } = useFilesForEntities('Product', [productId]);
+  return (
+    <div className="flex items-center gap-2.5">
+      <Avatar src={photosByProduct?.[productId]?.[0]?.downloadUrl} size="sm" />
+      <span className="max-w-[180px] truncate" title={product?.name ?? productId}>
+        {product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : productId}
+      </span>
+    </div>
+  );
+}
 
 export default function AssemblyAvailabilityPage() {
   const params = useParams<{ id: string }>();
@@ -120,7 +137,7 @@ export default function AssemblyAvailabilityPage() {
                   <TableBody>
                     {result.shortages.map((s) => (
                       <TableRow key={s.productId}>
-                        <TableCell className="max-w-[220px] truncate">{s.productId}</TableCell>
+                        <TableCell><ShortageProductCell productId={s.productId} /></TableCell>
                         <TableCell>{s.needed}</TableCell>
                         <TableCell>{s.available}</TableCell>
                         <TableCell>{s.shortage}</TableCell>

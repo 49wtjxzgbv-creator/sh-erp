@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Search } from 'lucide-react';
 import { useGlobalSearch } from '@/lib/hooks/use-search';
 import type { SearchResultItem } from '@/lib/api-client/search';
+import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
 const GROUPS: { key: 'products' | 'assemblies' | 'customerOrders' | 'suppliers'; labelKey: string }[] = [
@@ -83,6 +84,7 @@ export function GlobalSearch({ className }: { className?: string }) {
             GROUPS.map(({ key, labelKey }) => {
               const items = data?.[key] ?? [];
               if (items.length === 0) return null;
+              const hasPhotos = key === 'products' || key === 'assemblies';
               return (
                 <div key={key} className="border-b border-border py-1 last:border-b-0">
                   <p className="px-3 py-1 text-xs font-medium uppercase text-muted-foreground">{t(labelKey)}</p>
@@ -91,10 +93,13 @@ export function GlobalSearch({ className }: { className?: string }) {
                       key={item.id}
                       type="button"
                       onClick={() => go(item)}
-                      className="flex w-full flex-col items-start px-3 py-1.5 text-left text-sm hover:bg-accent"
+                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-accent"
                     >
-                      <span className="truncate">{item.label}</span>
-                      {item.sublabel && <span className="truncate text-xs text-muted-foreground">{item.sublabel}</span>}
+                      {hasPhotos && <Avatar src={item.photoUrl} size="sm" />}
+                      <span className="flex min-w-0 flex-col items-start">
+                        <span className="truncate">{item.label}</span>
+                        {item.sublabel && <span className="truncate text-xs text-muted-foreground">{item.sublabel}</span>}
+                      </span>
                     </button>
                   ))}
                 </div>

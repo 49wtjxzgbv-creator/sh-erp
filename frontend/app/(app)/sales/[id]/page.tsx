@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCustomerOrder,
@@ -12,11 +12,14 @@ import {
   useGiveItemToProduction,
   useGiveAllToProduction,
 } from '@/lib/hooks/use-sales';
+import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ApiError } from '@/lib/api-client/types';
 import type { CustomerOrderStatus } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
   Dialog,
@@ -29,6 +32,20 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
+
+/** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
+function AssemblyCell({ assemblyId }: { assemblyId: string }) {
+  const { data: assembly } = useAssembly(assemblyId);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId]);
+  return (
+    <div className="flex items-center gap-2.5">
+      <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />
+      <span className="max-w-[220px] truncate" title={assembly?.name ?? assemblyId}>
+        {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
+      </span>
+    </div>
+  );
+}
 
 const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
   NEW: 'secondary',
@@ -202,7 +219,7 @@ export default function CustomerOrderDetailPage() {
             <TableBody>
               {(order.items ?? []).map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell className="max-w-[220px] truncate" title={item.assemblyId}>{item.assemblyId}</TableCell>
+                  <TableCell><AssemblyCell assemblyId={item.assemblyId} /></TableCell>
                   <TableCell>{item.qty}</TableCell>
                   <TableCell>
                     {item.productionOrderId ? (

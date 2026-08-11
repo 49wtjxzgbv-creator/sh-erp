@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useProducts } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Input } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
 /**
@@ -29,6 +31,8 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { data } = useProducts({ search: query, limit: 20 });
+  const productIds = useMemo(() => (data?.items ?? []).map((p) => p.id), [data]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
 
   // Reset the visible text if the caller clears `value` externally (e.g. form reset).
   useEffect(() => {
@@ -62,12 +66,15 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
                   onChange(product.id, `${product.article} — ${product.name}`);
                 }}
                 className={cn(
-                  'flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary',
+                  'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-secondary',
                   product.id === value && 'bg-secondary',
                 )}
               >
-                <span className="font-medium">{product.article}</span>
-                <span className="text-xs text-muted-foreground">{product.name}</span>
+                <Avatar src={photosByProduct?.[product.id]?.[0]?.downloadUrl} size="sm" />
+                <span className="flex min-w-0 flex-col items-start">
+                  <span className="truncate font-medium">{product.article}</span>
+                  <span className="truncate text-xs text-muted-foreground">{product.name}</span>
+                </span>
               </button>
             ))
           ) : (

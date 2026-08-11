@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -9,10 +9,13 @@ import {
   useRecordInventoryCount,
   useCompleteInventorySession,
 } from '@/lib/hooks/use-inventory';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ApiError } from '@/lib/api-client/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
   Dialog,
@@ -35,6 +38,12 @@ export default function InventorySessionDetailPage() {
   const { data: items, isLoading } = useInventorySessionItems(params.id);
   const recordCount = useRecordInventoryCount(params.id);
   const completeSession = useCompleteInventorySession(params.id);
+
+  // InventorySessionItem is a thin count-ledger row (no Product join) —
+  // same productId-resolution shape as Stock Levels' own list.
+  const productIds = useMemo(() => Array.from(new Set((items ?? []).map((i) => i.productId))), [items]);
+  const { data: productsById } = useProductsByIds(productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -129,9 +138,17 @@ export default function InventorySessionDetailPage() {
               </TableCell>
             </TableRow>
           ) : (
-            items.map((item) => (
+            items.map((item) => {
+              const product = productsById?.get(item.productId);
+              const productLabel = product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : item.productId;
+              return (
               <TableRow key={item.id}>
-                <TableCell className="max-w-[240px] truncate">{item.productId}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2.5">
+                    <Avatar src={photosByProduct?.[item.productId]?.[0]?.downloadUrl} size="sm" />
+                    <span className="max-w-[200px] truncate" title={productLabel}>{productLabel}</span>
+                  </div>
+                </TableCell>
                 <TableCell>{item.expectedQty}</TableCell>
                 <TableCell>{item.actualQty ?? '—'}</TableCell>
                 <TableCell>{item.counted ? '✓' : '—'}</TableCell>
@@ -157,7 +174,8 @@ export default function InventorySessionDetailPage() {
                   </TableCell>
                 )}
               </TableRow>
-            ))
+              );
+            })
           )}
         </TableBody>
       </Table>

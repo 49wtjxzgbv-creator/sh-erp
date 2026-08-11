@@ -5,6 +5,7 @@ export interface SearchResultItem {
   label: string;
   sublabel?: string;
   href: string;
+  photoUrl?: string;
 }
 
 export interface SearchResults {

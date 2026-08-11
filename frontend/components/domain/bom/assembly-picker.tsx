@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssemblies } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Input } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,6 +38,8 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
 
   const { data } = useAssemblies({ search: query, limit: 20 });
   const results = data?.items.filter((a) => a.id !== excludeId) ?? [];
+  const assemblyIds = useMemo(() => results.map((a) => a.id), [results]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
 
   useEffect(() => {
     if (!value) setQuery('');
@@ -68,12 +72,15 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
                   onChange(assembly.id, assembly.name);
                 }}
                 className={cn(
-                  'flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary',
+                  'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-secondary',
                   assembly.id === value && 'bg-secondary',
                 )}
               >
-                <span className="font-medium">{assembly.name}</span>
-                {assembly.article && <span className="text-xs text-muted-foreground">{assembly.article}</span>}
+                <Avatar src={photosByAssembly?.[assembly.id]?.[0]?.downloadUrl} size="sm" />
+                <span className="flex min-w-0 flex-col items-start">
+                  <span className="truncate font-medium">{assembly.name}</span>
+                  {assembly.article && <span className="truncate text-xs text-muted-foreground">{assembly.article}</span>}
+                </span>
               </button>
             ))
           ) : (

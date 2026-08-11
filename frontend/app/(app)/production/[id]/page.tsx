@@ -13,6 +13,8 @@ import {
   useAdvanceProductionOrderStage,
 } from '@/lib/hooks/use-production';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ApiError } from '@/lib/api-client/types';
 import type { ProductionOrderStatus, FinishedGoodStatus } from '@/lib/api-client/production';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
@@ -20,6 +22,7 @@ import { PickListPrint } from '@/components/domain/production/pick-list-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import Link from 'next/link';
@@ -57,6 +60,8 @@ export default function ProductionOrderDetailPage() {
   const { data: order, isLoading } = useProductionOrder(params.id);
   const { data: stages } = useProductionStages();
   const { data: warehouses } = useWarehouses();
+  const { data: assembly } = useAssembly(order?.assemblyId);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', order ? [order.assemblyId] : []);
 
   const setWorkers = useSetProductionOrderWorkers(params.id);
   const cancelOrder = useCancelProductionOrder(params.id);
@@ -169,7 +174,12 @@ export default function ProductionOrderDetailPage() {
         <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-4">
           <div>
             <p className="text-xs text-muted-foreground">{t('assembly')}</p>
-            <p className="max-w-[200px] truncate text-sm" title={order.assemblyId}>{order.assemblyId}</p>
+            <div className="flex items-center gap-2">
+              <Avatar src={photosByAssembly?.[order.assemblyId]?.[0]?.downloadUrl} size="sm" />
+              <p className="max-w-[160px] truncate text-sm" title={assembly?.name ?? order.assemblyId}>
+                {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : order.assemblyId}
+              </p>
+            </div>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('unitsPlanned')}</p>

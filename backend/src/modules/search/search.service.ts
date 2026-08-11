@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { FilesService } from '../files/files.service';
 
 export interface SearchResultItem {
   id: string;
   label: string;
   sublabel?: string;
   href: string;
+  photoUrl?: string;
 }
 
 export interface SearchResults {
@@ -28,7 +30,10 @@ const RESULTS_PER_GROUP = 5;
  */
 @Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly filesService: FilesService,
+  ) {}
 
   async search(user: RequestUser, q: string): Promise<SearchResults> {
     const query = q.trim();
@@ -70,18 +75,28 @@ export class SearchService {
       }),
     ]);
 
+    // Same batch-presigned-URL lookup every list view already uses
+    // (files.service.ts#listForEntities) — two small groups, not one per
+    // row, since this is exactly the N+1 that method exists to avoid.
+    const [productPhotos, assemblyPhotos] = await Promise.all([
+      this.filesService.listForEntities(user, 'Product', products.map((p) => p.id)),
+      this.filesService.listForEntities(user, 'Assembly', assemblies.map((a) => a.id)),
+    ]);
+
     return {
       products: products.map((p) => ({
         id: p.id,
         label: p.name,
         sublabel: p.article,
         href: `/catalog/${p.id}`,
+        photoUrl: productPhotos[p.id]?.[0]?.downloadUrl,
       })),
       assemblies: assemblies.map((a) => ({
         id: a.id,
         label: a.name,
         sublabel: a.article ?? undefined,
         href: `/bom/${a.id}`,
+        photoUrl: assemblyPhotos[a.id]?.[0]?.downloadUrl,
       })),
       customerOrders: customerOrders.map((o) => ({
         id: o.id,
