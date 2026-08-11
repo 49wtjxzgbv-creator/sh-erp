@@ -29,22 +29,29 @@ export class AuditService {
    * Writes one audit row. Deliberately takes a plain companyId rather than
    * relying on the AsyncLocalStorage tenant context, so background jobs and
    * the Phase 4 migration engine (which run outside a request's tenant
-   * context) can log too. Uses the raw client, not `.tenant`, for the same
-   * reason — the caller is always explicit about which company this event
-   * belongs to.
+   * context) can log too. Opens its own short transaction and sets
+   * `app.current_company_id` itself (mirroring `runInTenantTransaction`)
+   * rather than relying on an ambient one, since a caller running outside a
+   * request has none — this used to silently work only because the DB role
+   * was (incorrectly) a superuser and bypassed RLS outright; now that RLS is
+   * actually enforced, `audit_events`' FORCE RLS policy rejects an insert
+   * with no `app.current_company_id` set at all.
    */
   async record(input: LogAuditEventInput): Promise<void> {
-    await this.prisma.auditEvent.create({
-      data: {
-        companyId: input.companyId,
-        actorUserId: input.actorUserId ?? null,
-        action: input.action,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        before: input.before === undefined ? undefined : (input.before as any),
-        after: input.after === undefined ? undefined : (input.after as any),
-        metadata: input.metadata === undefined ? undefined : (input.metadata as any),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${input.companyId}'`);
+      await tx.auditEvent.create({
+        data: {
+          companyId: input.companyId,
+          actorUserId: input.actorUserId ?? null,
+          action: input.action,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          before: input.before === undefined ? undefined : (input.before as any),
+          after: input.after === undefined ? undefined : (input.after as any),
+          metadata: input.metadata === undefined ? undefined : (input.metadata as any),
+        },
+      });
     });
   }
 
