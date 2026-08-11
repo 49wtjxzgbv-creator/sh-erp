@@ -84,6 +84,27 @@ function rows(payload: LegacyExportPayload, key: keyof LegacyExportPayload): Raw
   return (payload[key] as RawRow[] | undefined) ?? [];
 }
 
+/**
+ * `legacyId -> id` lookup, FIRST occurrence wins — real incident this
+ * fixes: a plain `new Map(items.map(x => [x.legacyId, x.id]))` keeps the
+ * LAST occurrence when the source sheet has a duplicate legacyId (real,
+ * messy legacy data — seen in practice), but `load.ts` upserts by
+ * `(companyId, legacyId)`, so the row that actually gets CREATED (and
+ * whose id survives forever, since a later same-legacyId row only updates
+ * it) is the FIRST occurrence. Any reference resolved through the
+ * last-wins map (e.g. a Product's `defaultSupplierId`) could therefore
+ * point at an id that was never persisted at all, failing its foreign key
+ * at load time. Every legacyId->id map below needs this, not just the one
+ * that happened to surface the bug.
+ */
+function firstIdByLegacyId<T extends { legacyId: string; id: string }>(items: T[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    if (!map.has(item.legacyId)) map.set(item.legacyId, item.id);
+  }
+  return map;
+}
+
 export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyImportContext): TransformedImportGraph {
   const warnings: TransformWarning[] = [];
   const warn = (step: string, message: string) => warnings.push({ step, message });
@@ -120,7 +141,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
       createdAt: parseLegacyDate(row.CreatedAt),
     };
   });
-  const supplierIdByLegacyId = new Map(suppliers.map((s) => [s.legacyId, s.id]));
+  const supplierIdByLegacyId = firstIdByLegacyId(suppliers);
 
   // --- Products ---
   const products = productRows.map((row) => {
@@ -135,7 +156,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
     }
     return { id, ...result.record };
   });
-  const productIdByLegacyId = new Map(products.map((p) => [p.legacyId, p.id]));
+  const productIdByLegacyId = firstIdByLegacyId(products);
 
   // --- Warehouses ---
   const warehouses = rows(payload, 'warehouses').map((row) => {
@@ -150,7 +171,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
       createdAt: parseLegacyDate(row.CreatedAt),
     };
   });
-  const warehouseIdByLegacyId = new Map(warehouses.map((w) => [w.legacyId, w.id]));
+  const warehouseIdByLegacyId = firstIdByLegacyId(warehouses);
   const defaultWarehouse = warehouses.find((w) => w.isDefault) ?? warehouses[0];
   if (!defaultWarehouse) warn('warehouses', 'No warehouse found in the source export at all — the default-warehouse-remainder step will have nowhere to materialize stock and will be skipped entirely.');
 
@@ -181,7 +202,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
       createdAt: parseLegacyDate(row.CreatedAt),
     };
   });
-  const assemblyIdByLegacyId = new Map(assemblies.map((a) => [a.legacyId, a.id]));
+  const assemblyIdByLegacyId = firstIdByLegacyId(assemblies);
 
   const componentResolutionCtx: ComponentResolutionContext = { productIdByLegacyId, assemblyIdByLegacyId, warehouseIdByLegacyId };
 
@@ -273,7 +294,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
       createdAt: parseLegacyDate(row.CreatedAt),
     };
   });
-  const customerOrderIdByLegacyId = new Map(customerOrders.map((co) => [co.legacyId, co.id]));
+  const customerOrderIdByLegacyId = firstIdByLegacyId(customerOrders);
 
   const customerOrderItems = rows(payload, 'customerOrderItems')
     .map((row) => {
