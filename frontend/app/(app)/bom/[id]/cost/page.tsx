@@ -3,11 +3,38 @@
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { RefreshCw } from 'lucide-react';
-import { useAssemblyCost } from '@/lib/hooks/use-bom';
+import { useAssemblyCost, useAssembly } from '@/lib/hooks/use-bom';
+import { useProduct } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import type { CostBreakdownLine } from '@/lib/api-client/bom';
+
+/** CostBreakdownLine only carries a raw productId/subAssemblyId — resolve to a real name/article/photo, same fix applied to the print view and every other list that showed a raw id. */
+function ComponentCell({ line }: { line: CostBreakdownLine }) {
+  const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
+  const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
+  const photoEntityIds = line.componentType === 'PRODUCT' ? (line.productId ? [line.productId] : []) : line.subAssemblyId ? [line.subAssemblyId] : [];
+  const { data: photos } = useFilesForEntities(line.componentType === 'PRODUCT' ? 'Product' : 'Assembly', photoEntityIds);
+  const id = line.componentType === 'PRODUCT' ? line.productId : line.subAssemblyId;
+  const label =
+    line.componentType === 'PRODUCT'
+      ? product
+        ? `${product.article} — ${product.name}`
+        : line.productId
+      : subAssembly
+        ? `${subAssembly.name}${subAssembly.article ? ` (${subAssembly.article})` : ''}`
+        : line.subAssemblyId;
+  return (
+    <div className="flex items-center gap-2.5">
+      <Avatar src={id ? photos?.[id]?.[0]?.downloadUrl : undefined} size="sm" />
+      <span className="max-w-[280px] truncate" title={label}>{label}</span>
+    </div>
+  );
+}
 
 export default function AssemblyCostPage() {
   const params = useParams<{ id: string }>();
@@ -65,7 +92,7 @@ export default function AssemblyCostPage() {
             cost.breakdown.map((line, i) => (
               <TableRow key={i}>
                 <TableCell>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</TableCell>
-                <TableCell className="max-w-[240px] truncate">{line.productId ?? line.subAssemblyId}</TableCell>
+                <TableCell><ComponentCell line={line} /></TableCell>
                 <TableCell>{line.qtyPerUnit}</TableCell>
                 <TableCell>{line.lineLocalCost.toFixed(2)}</TableCell>
                 <TableCell>{line.lineGermanCost.toFixed(2)}</TableCell>

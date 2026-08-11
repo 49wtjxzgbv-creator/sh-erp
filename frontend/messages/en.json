@@ -224,6 +224,7 @@
     "component": "Component",
     "warehouseOptional": "Warehouse (optional)",
     "qtyPerUnit": "Qty per unit",
+    "qty": "Quantity",
     "componentTypeProduct": "Product",
     "componentTypeAssembly": "Sub-assembly",
     "addLine": "Add line",

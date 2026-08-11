@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useProducts } from '@/lib/hooks/use-catalog';
+import { useProducts, useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Input } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
@@ -34,13 +34,31 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
   const productIds = useMemo(() => (data?.items ?? []).map((p) => p.id), [data]);
   const { data: photosByProduct } = useFilesForEntities('Product', productIds);
 
+  // A row hydrated from the server only ever has a bare `value` (id) — this
+  // resolves and fills in the visible text once, the first time that
+  // happens, without fighting a user's own subsequent typing/selection (a
+  // real bug: rows loaded into an existing BOM/order previously showed a
+  // permanently empty search box even though a real component was saved).
+  const { data: selectedProduct } = useProduct(value);
+  const { data: photosBySelected } = useFilesForEntities('Product', value ? [value] : []);
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current || !value || !selectedProduct) return;
+    hydratedRef.current = true;
+    setQuery(`${selectedProduct.article} — ${selectedProduct.name}`);
+  }, [value, selectedProduct]);
+
   // Reset the visible text if the caller clears `value` externally (e.g. form reset).
   useEffect(() => {
-    if (!value) setQuery('');
+    if (!value) {
+      setQuery('');
+      hydratedRef.current = false;
+    }
   }, [value]);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative flex items-center gap-2">
+      {value && <Avatar src={photosBySelected?.[value]?.[0]?.downloadUrl} size="sm" className="shrink-0" />}
       <Input
         placeholder={placeholder ?? t('searchPlaceholder')}
         value={query}
@@ -53,7 +71,7 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
         onBlur={() => setTimeout(() => setOpen(false), 100)}
       />
       {open && query && (
-        <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
+        <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-md">
           {data?.items.length ? (
             data.items.map((product) => (
               <button
@@ -62,6 +80,7 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setQuery(`${product.article} — ${product.name}`);
+                  hydratedRef.current = true;
                   setOpen(false);
                   onChange(product.id, `${product.article} — ${product.name}`);
                 }}

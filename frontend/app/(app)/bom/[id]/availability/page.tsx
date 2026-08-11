@@ -35,7 +35,7 @@ function ShortageProductCell({ productId }: { productId: string }) {
   return (
     <div className="flex items-center gap-2.5">
       <Avatar src={photosByProduct?.[productId]?.[0]?.downloadUrl} size="sm" />
-      <span className="max-w-[180px] truncate" title={product?.name ?? productId}>
+      <span className="max-w-[320px] truncate" title={product?.name ?? productId}>
         {product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : productId}
       </span>
     </div>

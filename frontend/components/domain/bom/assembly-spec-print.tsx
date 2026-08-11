@@ -100,10 +100,21 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
             ))}
           </tbody>
         </table>
-        <p className="mt-4 text-sm font-semibold">
-          {t('localCost')}: {cost.localCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()} &nbsp;·&nbsp;
-          {t('germanCost')}: {cost.germanCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
-        </p>
+        {(printOptions.isColumnVisible('localCost') || printOptions.isColumnVisible('germanCost')) && (
+          <p className="mt-4 text-sm font-semibold">
+            {printOptions.isColumnVisible('localCost') && (
+              <>
+                {t('localCost')}: {cost.localCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
+              </>
+            )}
+            {printOptions.isColumnVisible('localCost') && printOptions.isColumnVisible('germanCost') && <>&nbsp;·&nbsp;</>}
+            {printOptions.isColumnVisible('germanCost') && (
+              <>
+                {t('germanCost')}: {cost.germanCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
+              </>
+            )}
+          </p>
+        )}
       </PrintArea>
     </>
   );

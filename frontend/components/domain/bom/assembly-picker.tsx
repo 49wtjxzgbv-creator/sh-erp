@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAssemblies } from '@/lib/hooks/use-bom';
+import { useAssemblies, useAssembly } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Input } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
@@ -41,12 +41,29 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
   const assemblyIds = useMemo(() => results.map((a) => a.id), [results]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
 
+  // Same hydration fix as ProductPicker: a row loaded from the server only
+  // ever has a bare `value` (id) — resolve and fill in the visible text
+  // once, so an existing BOM/order line doesn't render as a permanently
+  // empty search box.
+  const { data: selectedAssembly } = useAssembly(value);
+  const { data: photosBySelected } = useFilesForEntities('Assembly', value ? [value] : []);
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    if (!value) setQuery('');
+    if (hydratedRef.current || !value || !selectedAssembly) return;
+    hydratedRef.current = true;
+    setQuery(selectedAssembly.name);
+  }, [value, selectedAssembly]);
+
+  useEffect(() => {
+    if (!value) {
+      setQuery('');
+      hydratedRef.current = false;
+    }
   }, [value]);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative flex items-center gap-2">
+      {value && <Avatar src={photosBySelected?.[value]?.[0]?.downloadUrl} size="sm" className="shrink-0" />}
       <Input
         placeholder={placeholder ?? t('searchAssemblies')}
         value={query}
@@ -59,7 +76,7 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
         onBlur={() => setTimeout(() => setOpen(false), 100)}
       />
       {open && query && (
-        <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
+        <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-md">
           {results.length ? (
             results.map((assembly) => (
               <button
@@ -68,6 +85,7 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setQuery(assembly.name);
+                  hydratedRef.current = true;
                   setOpen(false);
                   onChange(assembly.id, assembly.name);
                 }}

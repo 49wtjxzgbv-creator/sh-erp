@@ -224,6 +224,7 @@
     "component": "Компонент",
     "warehouseOptional": "Склад (необов'язково)",
     "qtyPerUnit": "К-сть на одиницю",
+    "qty": "Кількість",
     "componentTypeProduct": "Товар",
     "componentTypeAssembly": "Вузол (специфікація)",
     "addLine": "Додати рядок",
