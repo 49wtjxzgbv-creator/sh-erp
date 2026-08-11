@@ -780,6 +780,22 @@
     "tenantEvents": "Усі події компаній, з усіх компаній",
     "company": "Компанія",
     "entity": "Сутність",
-    "noEventsYet": "Подій ще немає."
+    "noEventsYet": "Подій ще немає.",
+    "deletePlan": "Видалити",
+    "deletePlanConfirm": "Видалити тариф \"{name}\"? Це можливо, лише якщо жодна компанія на нього не підписана.",
+    "deletePlanFailed": "Не вдалося видалити тариф.",
+    "details": "Деталі",
+    "companyDetailTitle": "Деталі компанії",
+    "saveChanges": "Зберегти зміни",
+    "updateFailed": "Не вдалося оновити компанію.",
+    "subscription": "Підписка",
+    "subscriptionStatus": "Статус підписки",
+    "members": "Учасники",
+    "role": "Роль",
+    "removeMember": "Прибрати",
+    "removeMemberConfirm": "Прибрати {email} з цієї компанії? Обліковий запис користувача залишиться, зникне лише доступ до цієї компанії.",
+    "removeMemberFailed": "Не вдалося прибрати учасника.",
+    "cannotRemoveLast": "Неможливо прибрати останнього учасника компанії.",
+    "noMembers": "Учасників немає."
   }
 }

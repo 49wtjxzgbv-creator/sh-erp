@@ -780,6 +780,22 @@
     "tenantEvents": "Every tenant event, across every company",
     "company": "Company",
     "entity": "Entity",
-    "noEventsYet": "No events yet."
+    "noEventsYet": "No events yet.",
+    "deletePlan": "Delete",
+    "deletePlanConfirm": "Delete plan \"{name}\"? Only possible if no company is subscribed to it.",
+    "deletePlanFailed": "Failed to delete plan.",
+    "details": "Details",
+    "companyDetailTitle": "Company details",
+    "saveChanges": "Save changes",
+    "updateFailed": "Failed to update company.",
+    "subscription": "Subscription",
+    "subscriptionStatus": "Subscription status",
+    "members": "Members",
+    "role": "Role",
+    "removeMember": "Remove",
+    "removeMemberConfirm": "Remove {email} from this company? The user account itself stays — only access to this company is revoked.",
+    "removeMemberFailed": "Failed to remove member.",
+    "cannotRemoveLast": "Cannot remove the last remaining member of a company.",
+    "noMembers": "No members."
   }
 }

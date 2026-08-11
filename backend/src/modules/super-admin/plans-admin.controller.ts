@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { SuperAdminGuard, CurrentSuperAdmin, RequestSuperAdmin } from './super-admin-context';
@@ -23,5 +23,11 @@ export class PlansAdminController {
   @ApiOperation({ summary: '[Super Admin] Create or update a plan tier (upsert by key).' })
   async upsert(@CurrentSuperAdmin() actor: RequestSuperAdmin, @Body() dto: UpsertPlanDto) {
     return this.plansAdminService.upsert(actor, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '[Super Admin] Delete a plan tier (fails if any company is still subscribed to it).' })
+  async delete(@CurrentSuperAdmin() actor: RequestSuperAdmin, @Param('id') id: string) {
+    return this.plansAdminService.delete(actor, id);
   }
 }

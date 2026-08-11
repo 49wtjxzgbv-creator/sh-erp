@@ -7,6 +7,7 @@ import { useSessionStore } from '@/lib/auth/session-store';
 import { logout } from '@/lib/auth/actions';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,7 @@ export function Topbar() {
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-4">
       <span className="text-sm font-medium text-muted-foreground">{companySlug}</span>
       <div className="flex items-center gap-1">
+        <LanguageSwitcher />
         <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

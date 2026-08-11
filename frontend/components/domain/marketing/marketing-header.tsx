@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
@@ -65,6 +66,7 @@ export function MarketingHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
+          <LanguageSwitcher />
           <ThemeToggle />
           {/* Plain Link + buttonVariants(), not Button asChild — see hero.tsx's comment for why. */}
           <Link href="/login" className={buttonVariants({ variant: 'ghost' })}>
@@ -76,6 +78,7 @@ export function MarketingHeader() {
         </div>
 
         <div className="flex items-center gap-1 md:hidden">
+          <LanguageSwitcher />
           <ThemeToggle />
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen((v) => !v)} aria-label="Menu">
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

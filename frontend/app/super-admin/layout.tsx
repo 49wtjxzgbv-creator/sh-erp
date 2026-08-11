@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useSuperAdminSessionStore } from '@/lib/super-admin/session-store';
 import { Button } from '@/components/ui/button';
+import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 
 /**
  * Root of the Super Admin panel — a genuinely separate route tree from the
@@ -51,6 +52,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-400">
+            <LanguageSwitcher />
             <span>{email}</span>
             <Button
               variant="outline"

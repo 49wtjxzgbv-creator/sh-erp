@@ -1,16 +1,8 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies } from 'next/headers';
+import { locales, defaultLocale, LOCALE_COOKIE_NAME, type Locale } from '@/lib/i18n-locales';
 
-/**
- * Supported locales (Phase 2 §3.6). `uk` is the complete, default catalogue —
- * the legacy Apps Script system was Ukrainian-only. en/pl/de are scaffolded
- * placeholders (keys present, many values still mirror the English/uk source)
- * so the message-key surface is stable for translators to fill in later.
- */
-export const locales = ['uk', 'en', 'pl', 'de'] as const;
-export type Locale = (typeof locales)[number];
-export const defaultLocale: Locale = 'uk';
-export const LOCALE_COOKIE_NAME = 'sh_locale';
+export { locales, defaultLocale, LOCALE_COOKIE_NAME, type Locale };
 
 /**
  * Deliberate adaptation, disclosed here: Phase 2 §3.1 specifies

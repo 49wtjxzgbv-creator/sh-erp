@@ -1,11 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminAuditService } from './super-admin-audit.service';
 import { RequestSuperAdmin } from './super-admin-context';
 import { CreateCompanyDto } from '../tenancy/dto/create-company.dto';
 import { CompanyService } from '../tenancy/company.service';
 import { ImpersonateDto } from './dto/impersonate.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 /**
  * "Бачити всі компанії; входити в будь-яку компанію; ... блокувати
@@ -87,6 +89,64 @@ export class CompaniesAdminService {
       targetId: companyId,
     });
     return company;
+  }
+
+  async update(actor: RequestSuperAdmin, companyId: string, dto: UpdateCompanyDto) {
+    const existing = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (!existing) throw new NotFoundException('Company not found.');
+
+    let updated;
+    try {
+      updated = await this.prisma.company.update({
+        where: { id: companyId },
+        data: { name: dto.name, slug: dto.slug },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('That slug is already taken by another company.');
+      }
+      throw err;
+    }
+
+    await this.superAdminAudit.record({
+      superAdminId: actor.superAdminId,
+      action: 'company.updated',
+      targetType: 'Company',
+      targetId: companyId,
+      metadata: { before: { name: existing.name, slug: existing.slug }, after: { name: updated.name, slug: updated.slug } },
+    });
+    return updated;
+  }
+
+  /**
+   * "Видалити учасника з компанії" — revokes access without touching the
+   * User account itself (they may belong to other companies, or sign up
+   * again elsewhere with the same email). Refuses to remove the last
+   * remaining membership: a company with zero members is an orphaned
+   * tenant nothing in the regular app UI can recover from (no "invite the
+   * first user" flow exists once every membership is gone).
+   */
+  async removeMembership(actor: RequestSuperAdmin, companyId: string, userId: string) {
+    const membership = await this.prisma.companyMembership.findUnique({
+      where: { companyId_userId: { companyId, userId } },
+    });
+    if (!membership) throw new NotFoundException('That user is not a member of this company.');
+
+    const memberCount = await this.prisma.companyMembership.count({ where: { companyId } });
+    if (memberCount <= 1) {
+      throw new BadRequestException('Cannot remove the last remaining member of a company.');
+    }
+
+    await this.prisma.companyMembership.delete({ where: { companyId_userId: { companyId, userId } } });
+
+    await this.superAdminAudit.record({
+      superAdminId: actor.superAdminId,
+      action: 'company.member_removed',
+      targetType: 'Company',
+      targetId: companyId,
+      metadata: { userId },
+    });
+    return { removed: true };
   }
 
   private async setStatus(companyId: string, status: 'ACTIVE' | 'SUSPENDED') {

@@ -23,6 +23,8 @@ export default function SuperAdminPlansPage() {
   const [form, setForm] = useState({ key: '', name: '', monthlyPriceEur: '', limitsJson: '{}' });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await superAdminApi.get<PlanRow[]>('super-admin/plans');
@@ -40,6 +42,20 @@ export default function SuperAdminPlansPage() {
       monthlyPriceEur: String(plan.monthlyPriceEur),
       limitsJson: JSON.stringify(plan.limits, null, 2),
     });
+  }
+
+  async function onDelete(plan: PlanRow) {
+    if (!window.confirm(t('deletePlanConfirm', { name: plan.name }))) return;
+    setDeleteError(null);
+    setBusyId(plan.id);
+    try {
+      await superAdminApi.delete(`super-admin/plans/${plan.id}`);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : t('deletePlanFailed'));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -113,6 +129,7 @@ export default function SuperAdminPlansPage() {
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
           <CardTitle className="text-base">{t('existingPlans')}</CardTitle>
+          {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
         </CardHeader>
         <CardContent>
           <Table>
@@ -132,9 +149,12 @@ export default function SuperAdminPlansPage() {
                   <TableCell>{p.name}</TableCell>
                   <TableCell>€{p.monthlyPriceEur}</TableCell>
                   <TableCell className="text-slate-400">{JSON.stringify(p.limits)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="space-x-2 text-right">
                     <Button size="sm" variant="outline" onClick={() => edit(p)}>
                       {t('edit')}
+                    </Button>
+                    <Button size="sm" variant="destructive" loading={busyId === p.id} onClick={() => onDelete(p)}>
+                      {t('deletePlan')}
                     </Button>
                   </TableCell>
                 </TableRow>

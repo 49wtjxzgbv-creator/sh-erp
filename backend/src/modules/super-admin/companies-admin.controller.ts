@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { SuperAdminGuard, CurrentSuperAdmin, RequestSuperAdmin } from './super-admin-context';
 import { CompaniesAdminService } from './companies-admin.service';
 import { CreateCompanyDto } from '../tenancy/dto/create-company.dto';
 import { ImpersonateDto } from './dto/impersonate.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 // Every route here carries BOTH @Public() (opt out of the regular
 // JwtAuthGuard/TenantScopeInterceptor pipeline — there is no tenant
@@ -40,6 +41,26 @@ export class CompaniesAdminController {
   @ApiOperation({ summary: '[Super Admin] Create a company manually — same flow as public self-service signup.' })
   async create(@CurrentSuperAdmin() actor: RequestSuperAdmin, @Body() dto: CreateCompanyDto) {
     return this.companiesAdminService.create(actor, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '[Super Admin] Rename a company or change its slug.' })
+  async update(
+    @CurrentSuperAdmin() actor: RequestSuperAdmin,
+    @Param('id') id: string,
+    @Body() dto: UpdateCompanyDto,
+  ) {
+    return this.companiesAdminService.update(actor, id, dto);
+  }
+
+  @Delete(':id/members/:userId')
+  @ApiOperation({ summary: "[Super Admin] Remove a user's membership from this company (not the User account itself)." })
+  async removeMembership(
+    @CurrentSuperAdmin() actor: RequestSuperAdmin,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.companiesAdminService.removeMembership(actor, id, userId);
   }
 
   @Post(':id/block')

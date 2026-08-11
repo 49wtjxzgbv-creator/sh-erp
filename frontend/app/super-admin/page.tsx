@@ -8,6 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { superAdminApi } from '@/lib/super-admin/api';
 
 interface CompanyRow {
@@ -19,6 +27,16 @@ interface CompanyRow {
   subscription?: { plan?: { key: string } } | null;
 }
 
+interface CompanyDetail extends CompanyRow {
+  subscription?: { status: string; plan?: { key: string; name: string } } | null;
+  memberships: {
+    userId: string;
+    roleId: string;
+    user: { id: string; email: string; fullName: string };
+    role: { id: string; name: string };
+  }[];
+}
+
 export default function SuperAdminCompaniesPage() {
   const t = useTranslations('superAdmin');
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
@@ -26,6 +44,7 @@ export default function SuperAdminCompaniesPage() {
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +157,9 @@ export default function SuperAdminCompaniesPage() {
                   <TableCell>{c.subscription?.plan?.key ?? '—'}</TableCell>
                   <TableCell className="text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell className="space-x-2 text-right">
+                    <Button size="sm" variant="outline" onClick={() => setDetailId(c.id)}>
+                      {t('details')}
+                    </Button>
                     <Button size="sm" variant="outline" loading={busyId === c.id} onClick={() => impersonate(c.id)}>
                       {t('impersonate')}
                     </Button>
@@ -164,7 +186,162 @@ export default function SuperAdminCompaniesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <CompanyDetailDialog
+        companyId={detailId}
+        onClose={() => setDetailId(null)}
+        onChanged={load}
+      />
     </div>
+  );
+}
+
+function CompanyDetailDialog({
+  companyId,
+  onClose,
+  onChanged,
+}: {
+  companyId: string | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const t = useTranslations('superAdmin');
+  const [company, setCompany] = useState<CompanyDetail | null>(null);
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!companyId) return;
+    const res = await superAdminApi.get<CompanyDetail>(`super-admin/companies/${companyId}`);
+    setCompany(res);
+    setName(res.name);
+    setSlug(res.slug);
+  }, [companyId]);
+
+  useEffect(() => {
+    setSaveError(null);
+    setRemoveError(null);
+    load();
+  }, [load]);
+
+  async function save() {
+    if (!companyId) return;
+    setSaveError(null);
+    setSaving(true);
+    try {
+      await superAdminApi.patch(`super-admin/companies/${companyId}`, { name, slug });
+      await load();
+      onChanged();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : t('updateFailed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeMember(userId: string, email: string) {
+    if (!companyId) return;
+    if (!window.confirm(t('removeMemberConfirm', { email }))) return;
+    setRemoveError(null);
+    setRemovingUserId(userId);
+    try {
+      await superAdminApi.delete(`super-admin/companies/${companyId}/members/${userId}`);
+      await load();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : t('removeMemberFailed'));
+    } finally {
+      setRemovingUserId(null);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(companyId)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg border-slate-800 bg-slate-900 text-slate-100">
+        <DialogHeader>
+          <DialogTitle>{t('companyDetailTitle')}</DialogTitle>
+        </DialogHeader>
+
+        {company && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{t('name')}</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-slate-950" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('slug')}</Label>
+                <Input value={slug} onChange={(e) => setSlug(e.target.value)} className="bg-slate-950" />
+              </div>
+              {saveError && <p className="text-sm text-red-400 sm:col-span-2">{saveError}</p>}
+              <div className="sm:col-span-2">
+                <Button type="button" size="sm" loading={saving} onClick={save}>
+                  {t('saveChanges')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 text-sm text-slate-300">
+              <p className="font-medium text-slate-100">{t('subscription')}</p>
+              <p>
+                {t('plan')}: {company.subscription?.plan?.name ?? '—'} · {t('subscriptionStatus')}:{' '}
+                {company.subscription?.status ?? '—'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-100">{t('members')}</p>
+              {removeError && <p className="text-sm text-red-400">{removeError}</p>}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('email')}</TableHead>
+                    <TableHead>{t('role')}</TableHead>
+                    <TableHead className="text-right">{t('actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {company.memberships.map((m) => (
+                    <TableRow key={m.userId}>
+                      <TableCell>{m.user.email}</TableCell>
+                      <TableCell className="text-slate-400">{m.role.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          loading={removingUserId === m.userId}
+                          onClick={() => removeMember(m.userId, m.user.email)}
+                        >
+                          {t('removeMember')}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {company.memberships.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-slate-500">
+                        {t('noMembers')}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              {t('close')}
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

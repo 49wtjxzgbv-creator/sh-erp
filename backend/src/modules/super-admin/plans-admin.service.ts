@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminAuditService } from './super-admin-audit.service';
 import { RequestSuperAdmin } from './super-admin-context';
@@ -35,5 +36,32 @@ export class PlansAdminService {
       metadata: { key: plan.key, monthlyPriceEur: dto.monthlyPriceEur },
     });
     return plan;
+  }
+
+  async delete(actor: RequestSuperAdmin, planId: string) {
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('Plan not found.');
+
+    try {
+      await this.prisma.plan.delete({ where: { id: planId } });
+    } catch (err) {
+      // CompanySubscription.plan has no onDelete override (Restrict by
+      // default) — deliberately: silently cascading would leave a company
+      // with no plan at all. Surface it as a clear, actionable error
+      // instead of a raw 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new ConflictException('Cannot delete a plan that companies are still subscribed to.');
+      }
+      throw err;
+    }
+
+    await this.superAdminAudit.record({
+      superAdminId: actor.superAdminId,
+      action: 'plan.deleted',
+      targetType: 'Plan',
+      targetId: planId,
+      metadata: { key: plan.key },
+    });
+    return { deleted: true };
   }
 }
