@@ -59,29 +59,13 @@ export async function loadImportGraph(
     counts.suppliers = graph.suppliers.length;
 
     // --- Products ---
-    const supplierIds = new Set(graph.suppliers.map((s) => s.id));
     for (const p of graph.products) {
       if (!p.unitId) continue; // already warned during transform — cannot load without the required FK
-      // TEMPORARY diagnostic for a real, still-unexplained FK failure
-      // (products_defaultSupplierId_fkey) that survived the
-      // first-occurrence-wins legacyId map fix — console.error's output
-      // was not reliably reaching the journald-captured log, so this
-      // throws instead, a channel already proven to surface in full via
-      // job.errorMessage/the pino error log. Safe to revert once root
-      // cause is confirmed from a real production error.
-      try {
-        await tx.product.upsert({
-          where: { companyId_legacyId: { companyId, legacyId: p.legacyId } },
-          create: { id: p.id, companyId, ...productFields(p) },
-          update: productFields(p),
-        });
-      } catch (err) {
-        throw new Error(
-          `[load][diagnostic] Product legacyId=${p.legacyId} article=${p.article} defaultSupplierId=${p.defaultSupplierId ?? 'null'} ` +
-            `(in this run's ${supplierIds.size} supplier id(s): ${p.defaultSupplierId ? supplierIds.has(p.defaultSupplierId) : 'n/a'}) failed: ${err instanceof Error ? err.message : String(err)}. ` +
-            `Suppliers this run: ${JSON.stringify(graph.suppliers.map((s) => ({ legacyId: s.legacyId, id: s.id })))}`,
-        );
-      }
+      await tx.product.upsert({
+        where: { companyId_legacyId: { companyId, legacyId: p.legacyId } },
+        create: { id: p.id, companyId, ...productFields(p) },
+        update: productFields(p),
+      });
     }
     counts.products = graph.products.filter((p) => p.unitId).length;
 

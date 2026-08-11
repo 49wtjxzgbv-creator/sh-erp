@@ -54,6 +54,27 @@ export interface LegacyImportContext {
   actorUserId: string;
   /** Existing CompanyUnit rows already in this company (name -> id) — required BEFORE this runs so ad hoc unit creation doesn't collide with a real, already-existing unit of the same name. */
   existingUnitIdByName: ReadonlyMap<string, string>;
+  /**
+   * Existing legacyId -> id for every other legacyId-keyed entity type,
+   * same reason as `existingUnitIdByName` and just as required — a real
+   * incident this fixes: on a RE-RUN against a company that already has
+   * data loaded, `load.ts` upserts each of these by `(companyId,
+   * legacyId)`, which for an already-existing row hits the UPDATE branch
+   * (never touches `id`) — so the row's REAL persisted id is whatever it
+   * was assigned on the run that first created it, not whatever fresh
+   * `randomUUID()` THIS run's transform happens to generate for the same
+   * legacyId. Any OTHER entity that references this row via a
+   * legacyId-resolved FK (e.g. `Product.defaultSupplierId`,
+   * `AssemblyComponent.productId`) must use the SAME id the row will
+   * actually end up with, or that FK fails at load time even though,
+   * from this run's own in-memory bookkeeping, everything "resolved
+   * correctly" — `products_defaultSupplierId_fkey` was exactly this.
+   */
+  existingSupplierIdByLegacyId: ReadonlyMap<string, string>;
+  existingProductIdByLegacyId: ReadonlyMap<string, string>;
+  existingWarehouseIdByLegacyId: ReadonlyMap<string, string>;
+  existingAssemblyIdByLegacyId: ReadonlyMap<string, string>;
+  existingCustomerOrderIdByLegacyId: ReadonlyMap<string, string>;
 }
 
 export interface TransformWarning {
@@ -128,7 +149,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Suppliers ---
   const suppliers = rows(payload, 'suppliers').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = randomUUID();
+    const newId = ctx.existingSupplierIdByLegacyId.get(legacyId) ?? randomUUID();
     ids.set('supplier', legacyId, newId);
     return {
       id: newId,
@@ -147,7 +168,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   const products = productRows.map((row) => {
     const result = transformProductRow(row, { unitIdByName, supplierIdByLegacyId });
     result.warnings.forEach((w) => warn('products', w));
-    const id = randomUUID();
+    const id = ctx.existingProductIdByLegacyId.get(result.record.legacyId) ?? randomUUID();
     ids.set('product', result.record.legacyId, id);
     const photoUrl = parseOptionalString(row.PhotoUrl);
     if (photoUrl) {
@@ -161,7 +182,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Warehouses ---
   const warehouses = rows(payload, 'warehouses').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = randomUUID();
+    const newId = ctx.existingWarehouseIdByLegacyId.get(legacyId) ?? randomUUID();
     ids.set('warehouse', legacyId, newId);
     return {
       id: newId,
@@ -178,7 +199,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Assemblies + AssemblyComponents (current BOM) + AssemblyVersions (ComponentsJson) ---
   const assemblies = rows(payload, 'assemblies').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = randomUUID();
+    const newId = ctx.existingAssemblyIdByLegacyId.get(legacyId) ?? randomUUID();
     ids.set('assembly', legacyId, newId);
     const photoUrl = parseOptionalString(row.PhotoUrl);
     if (photoUrl) {
@@ -279,7 +300,7 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- CustomerOrders + Items (clients are inline on CustomerOrder.clientName — this schema has no separate Customer entity) ---
   const customerOrders = rows(payload, 'customerOrders').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = randomUUID();
+    const newId = ctx.existingCustomerOrderIdByLegacyId.get(legacyId) ?? randomUUID();
     ids.set('customerOrder', legacyId, newId);
     return {
       id: newId,

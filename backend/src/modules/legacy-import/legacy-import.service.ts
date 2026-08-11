@@ -230,8 +230,8 @@ export class LegacyImportService {
     const config = this.decryptConfig(connection);
 
     const payload = await provider.fetchData(config);
-    const existingUnitIdByName = await this.loadExistingUnitMap(user);
-    const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, existingUnitIdByName });
+    const existingIdMaps = await this.loadExistingIdMaps(user);
+    const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, ...existingIdMaps });
 
     return buildImportReport(this.prisma, user.companyId, user.userId, payload, graph, {
       protocolVersion: connection.protocolVersion ?? undefined,
@@ -257,8 +257,8 @@ export class LegacyImportService {
       const provider = getImportProvider(connection.providerType);
       const config = this.decryptConfig(connection);
       const payload = await provider.fetchData(config);
-      const existingUnitIdByName = await this.loadExistingUnitMap(user);
-      const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, existingUnitIdByName });
+      const existingIdMaps = await this.loadExistingIdMaps(user);
+      const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, ...existingIdMaps });
       const report = await buildImportReport(this.prisma, user.companyId, user.userId, payload, graph, {
         protocolVersion: connection.protocolVersion ?? undefined,
         connectorVersion: connection.connectorVersion ?? undefined,
@@ -320,8 +320,8 @@ export class LegacyImportService {
       const payload: LegacyExportPayload = await provider.fetchData(config);
 
       await this.updateJob(companyId, actorUserId, jobId, { status: 'TRANSFORMING', step: 'transforming' });
-      const existingUnitIdByName = await this.readExistingUnitMap(companyId, actorUserId);
-      const graph = transformLegacyImport(payload, { companyId, actorUserId, existingUnitIdByName });
+      const existingIdMaps = await this.readExistingIdMaps(companyId, actorUserId);
+      const graph = transformLegacyImport(payload, { companyId, actorUserId, ...existingIdMaps });
 
       const report = await buildImportReport(this.prisma, companyId, actorUserId, payload, graph, {
         protocolVersion: connection.protocolVersion ?? undefined,
@@ -428,17 +428,47 @@ export class LegacyImportService {
     );
   }
 
-  /** Reads the requesting user's already-existing CompanyUnit rows, inside the normal request's RLS context. */
-  private async loadExistingUnitMap(user: RequestUser): Promise<Map<string, string>> {
-    const units = await this.prisma.tenant.companyUnit.findMany({ where: { companyId: user.companyId } });
-    return new Map(units.map((u) => [u.name, u.id]));
+  /**
+   * Every "legacyId (or name, for units) -> id" map `transformLegacyImport`
+   * needs to know what ALREADY exists in this company, for EVERY
+   * legacyId-keyed entity type — not just units. Real incident this fixes:
+   * without this, a re-run against a company that already has data loaded
+   * generates a FRESH `randomUUID()` for an already-existing row's id;
+   * `load.ts` upserts by `(companyId, legacyId)`, so that fresh id is
+   * silently discarded for the row itself (the update branch never touches
+   * `id`), but any OTHER entity referencing it via a legacyId-resolved FK
+   * (e.g. `Product.defaultSupplierId`) still points at the discarded,
+   * never-persisted id — `products_defaultSupplierId_fkey` was exactly
+   * this, and the same class of bug applies to every other cross-reference
+   * in `transform/index.ts` (products, warehouses, assemblies,
+   * customerOrders all have at least one downstream FK resolved the same
+   * way).
+   */
+  private async loadExistingIdMaps(user: RequestUser): Promise<ExistingIdMaps> {
+    const companyId = user.companyId;
+    const [units, suppliers, products, warehouses, assemblies, customerOrders] = await Promise.all([
+      this.prisma.tenant.companyUnit.findMany({ where: { companyId } }),
+      this.prisma.tenant.supplier.findMany({ where: { companyId, legacyId: { not: null } } }),
+      this.prisma.tenant.product.findMany({ where: { companyId, legacyId: { not: null } } }),
+      this.prisma.tenant.warehouse.findMany({ where: { companyId, legacyId: { not: null } } }),
+      this.prisma.tenant.assembly.findMany({ where: { companyId, legacyId: { not: null } } }),
+      this.prisma.tenant.customerOrder.findMany({ where: { companyId, legacyId: { not: null } } }),
+    ]);
+    return buildExistingIdMaps({ units, suppliers, products, warehouses, assemblies, customerOrders });
   }
 
-  /** Same read, but explicit about tenant context — this is called from the un-awaited background job, not from inside a request, per PrismaService's own guidance for code running outside a request lifecycle. */
-  private async readExistingUnitMap(companyId: string, actorUserId: string): Promise<Map<string, string>> {
+  /** Same reads, but explicit about tenant context — this is called from the un-awaited background job, not from inside a request, per `PrismaService`'s own guidance for code running outside a request lifecycle. */
+  private async readExistingIdMaps(companyId: string, actorUserId: string): Promise<ExistingIdMaps> {
     return this.prisma.runInTenantTransaction({ companyId, userId: actorUserId }, async (tx) => {
-      const units = await tx.companyUnit.findMany({ where: { companyId } });
-      return new Map(units.map((u) => [u.name, u.id]));
+      const [units, suppliers, products, warehouses, assemblies, customerOrders] = await Promise.all([
+        tx.companyUnit.findMany({ where: { companyId } }),
+        tx.supplier.findMany({ where: { companyId, legacyId: { not: null } } }),
+        tx.product.findMany({ where: { companyId, legacyId: { not: null } } }),
+        tx.warehouse.findMany({ where: { companyId, legacyId: { not: null } } }),
+        tx.assembly.findMany({ where: { companyId, legacyId: { not: null } } }),
+        tx.customerOrder.findMany({ where: { companyId, legacyId: { not: null } } }),
+      ]);
+      return buildExistingIdMaps({ units, suppliers, products, warehouses, assemblies, customerOrders });
     });
   }
 
@@ -460,4 +490,34 @@ export class LegacyImportService {
 function sanitizeConnection<T extends { configEncrypted?: string | null }>(connection: T): Omit<T, 'configEncrypted'> {
   const { configEncrypted: _configEncrypted, ...rest } = connection;
   return rest;
+}
+
+interface ExistingIdMaps {
+  existingUnitIdByName: Map<string, string>;
+  existingSupplierIdByLegacyId: Map<string, string>;
+  existingProductIdByLegacyId: Map<string, string>;
+  existingWarehouseIdByLegacyId: Map<string, string>;
+  existingAssemblyIdByLegacyId: Map<string, string>;
+  existingCustomerOrderIdByLegacyId: Map<string, string>;
+}
+
+/** Shared by `loadExistingIdMaps` (request-scoped) and `readExistingIdMaps` (background-job-scoped) — both fetch the same six row sets, just through different Prisma contexts, so the id -> map assembly itself is factored out once. */
+function buildExistingIdMaps(rows: {
+  units: { name: string; id: string }[];
+  suppliers: { legacyId: string | null; id: string }[];
+  products: { legacyId: string | null; id: string }[];
+  warehouses: { legacyId: string | null; id: string }[];
+  assemblies: { legacyId: string | null; id: string }[];
+  customerOrders: { legacyId: string | null; id: string }[];
+}): ExistingIdMaps {
+  const byLegacyId = (items: { legacyId: string | null; id: string }[]) =>
+    new Map(items.filter((i): i is { legacyId: string; id: string } => i.legacyId !== null).map((i) => [i.legacyId, i.id]));
+  return {
+    existingUnitIdByName: new Map(rows.units.map((u) => [u.name, u.id])),
+    existingSupplierIdByLegacyId: byLegacyId(rows.suppliers),
+    existingProductIdByLegacyId: byLegacyId(rows.products),
+    existingWarehouseIdByLegacyId: byLegacyId(rows.warehouses),
+    existingAssemblyIdByLegacyId: byLegacyId(rows.assemblies),
+    existingCustomerOrderIdByLegacyId: byLegacyId(rows.customerOrders),
+  };
 }
