@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,7 @@ interface CompanyRow {
 }
 
 export default function SuperAdminCompaniesPage() {
+  const t = useTranslations('superAdmin');
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,8 +90,8 @@ export default function SuperAdminCompaniesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Companies</h1>
-        <Button onClick={() => setShowCreate((v) => !v)}>{showCreate ? 'Cancel' : 'Create company'}</Button>
+        <h1 className="text-xl font-semibold">{t('companiesHeading')}</h1>
+        <Button onClick={() => setShowCreate((v) => !v)}>{showCreate ? t('cancel') : t('createCompany')}</Button>
       </div>
 
       {showCreate && (
@@ -103,10 +105,10 @@ export default function SuperAdminCompaniesPage() {
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-base">All companies</CardTitle>
+          <CardTitle className="text-base">{t('allCompanies')}</CardTitle>
           <div className="pt-2">
             <Input
-              placeholder="Search by name or slug..."
+              placeholder={t('searchCompanies')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="max-w-xs bg-slate-950"
@@ -117,12 +119,12 @@ export default function SuperAdminCompaniesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t('name')}</TableHead>
+                <TableHead>{t('slug')}</TableHead>
+                <TableHead>{t('status')}</TableHead>
+                <TableHead>{t('plan')}</TableHead>
+                <TableHead>{t('created')}</TableHead>
+                <TableHead className="text-right">{t('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -137,15 +139,15 @@ export default function SuperAdminCompaniesPage() {
                   <TableCell className="text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell className="space-x-2 text-right">
                     <Button size="sm" variant="outline" loading={busyId === c.id} onClick={() => impersonate(c.id)}>
-                      Impersonate
+                      {t('impersonate')}
                     </Button>
                     {c.status === 'ACTIVE' ? (
                       <Button size="sm" variant="destructive" loading={busyId === c.id} onClick={() => block(c.id)}>
-                        Block
+                        {t('block')}
                       </Button>
                     ) : (
                       <Button size="sm" variant="secondary" loading={busyId === c.id} onClick={() => unblock(c.id)}>
-                        Unblock
+                        {t('unblock')}
                       </Button>
                     )}
                   </TableCell>
@@ -154,7 +156,7 @@ export default function SuperAdminCompaniesPage() {
               {!loading && companies.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-slate-500">
-                    No companies found.
+                    {t('noCompaniesFound')}
                   </TableCell>
                 </TableRow>
               )}
@@ -167,6 +169,7 @@ export default function SuperAdminCompaniesPage() {
 }
 
 function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
+  const t = useTranslations('superAdmin');
   const [form, setForm] = useState({
     companyName: '',
     slug: '',
@@ -185,7 +188,7 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
       await superAdminApi.post('super-admin/companies', form);
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create company.');
+      setError(err instanceof Error ? err.message : t('createFailed'));
     } finally {
       setLoading(false);
     }
@@ -194,20 +197,20 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
   return (
     <Card className="border-slate-800 bg-slate-900 text-slate-100">
       <CardHeader>
-        <CardTitle className="text-base">Create a company manually</CardTitle>
+        <CardTitle className="text-base">{t('createCompanyManually')}</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Company name</Label>
+            <Label>{t('companyName')}</Label>
             <Input required value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} />
           </div>
           <div className="space-y-1.5">
-            <Label>Slug</Label>
+            <Label>{t('slug')}</Label>
             <Input required value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
           </div>
           <div className="space-y-1.5">
-            <Label>Owner email</Label>
+            <Label>{t('ownerEmail')}</Label>
             <Input
               type="email"
               required
@@ -216,7 +219,7 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Owner password</Label>
+            <Label>{t('ownerPassword')}</Label>
             <Input
               type="password"
               required
@@ -226,7 +229,7 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Owner full name</Label>
+            <Label>{t('ownerFullName')}</Label>
             <Input
               required
               value={form.ownerFullName}
@@ -236,7 +239,7 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
           {error && <p className="text-sm text-red-400 md:col-span-2">{error}</p>}
           <div className="md:col-span-2">
             <Button type="submit" loading={loading}>
-              Create
+              {t('create')}
             </Button>
           </div>
         </form>

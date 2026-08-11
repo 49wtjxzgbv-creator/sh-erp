@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useSuperAdminSessionStore } from '@/lib/super-admin/session-store';
 import { Button } from '@/components/ui/button';
 
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button';
  * there if `accessToken` is null.
  */
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
+  const t = useTranslations('superAdmin');
   const router = useRouter();
   const pathname = usePathname();
   const { accessToken, email, clearSession } = useSuperAdminSessionStore();
@@ -40,12 +42,12 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       <header className="border-b border-slate-800 bg-slate-900">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-6">
-            <span className="font-semibold tracking-tight">SH ERP — Super Admin</span>
+            <span className="font-semibold tracking-tight">{t('panelTitle')}</span>
             <nav className="flex gap-4 text-sm text-slate-300">
-              <Link href="/super-admin" className="hover:text-white">Companies</Link>
-              <Link href="/super-admin/users" className="hover:text-white">Users</Link>
-              <Link href="/super-admin/plans" className="hover:text-white">Plans</Link>
-              <Link href="/super-admin/audit" className="hover:text-white">Audit log</Link>
+              <Link href="/super-admin" className="hover:text-white">{t('navCompanies')}</Link>
+              <Link href="/super-admin/users" className="hover:text-white">{t('navUsers')}</Link>
+              <Link href="/super-admin/plans" className="hover:text-white">{t('navPlans')}</Link>
+              <Link href="/super-admin/audit" className="hover:text-white">{t('navAudit')}</Link>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-400">
@@ -58,7 +60,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                 router.replace('/super-admin/login');
               }}
             >
-              Sign out
+              {t('signOut')}
             </Button>
           </div>
         </div>

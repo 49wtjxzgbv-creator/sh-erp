@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ interface PlanRow {
 }
 
 export default function SuperAdminPlansPage() {
+  const t = useTranslations('superAdmin');
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [form, setForm] = useState({ key: '', name: '', monthlyPriceEur: '', limitsJson: '{}' });
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export default function SuperAdminPlansPage() {
       setForm({ key: '', name: '', monthlyPriceEur: '', limitsJson: '{}' });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save plan.');
+      setError(err instanceof Error ? err.message : t('saveFailed'));
     } finally {
       setLoading(false);
     }
@@ -68,24 +70,24 @@ export default function SuperAdminPlansPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Plans</h1>
+      <h1 className="text-xl font-semibold">{t('plansHeading')}</h1>
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-base">Create or update a plan tier</CardTitle>
+          <CardTitle className="text-base">{t('createOrUpdatePlan')}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Key (stable, never change once companies subscribe)</Label>
+              <Label>{t('key')}</Label>
               <Input required value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>{t('name')}</Label>
               <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>Monthly price (EUR)</Label>
+              <Label>{t('monthlyPrice')}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -95,13 +97,13 @@ export default function SuperAdminPlansPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Limits (JSON)</Label>
+              <Label>{t('limitsJson')}</Label>
               <Input value={form.limitsJson} onChange={(e) => setForm({ ...form, limitsJson: e.target.value })} />
             </div>
             {error && <p className="text-sm text-red-400 md:col-span-2">{error}</p>}
             <div className="md:col-span-2">
               <Button type="submit" loading={loading}>
-                Save plan
+                {t('savePlan')}
               </Button>
             </div>
           </form>
@@ -110,17 +112,17 @@ export default function SuperAdminPlansPage() {
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-base">Existing plans</CardTitle>
+          <CardTitle className="text-base">{t('existingPlans')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Price/mo</TableHead>
-                <TableHead>Limits</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t('key')}</TableHead>
+                <TableHead>{t('name')}</TableHead>
+                <TableHead>{t('pricePerMonth')}</TableHead>
+                <TableHead>{t('limits')}</TableHead>
+                <TableHead className="text-right">{t('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -132,7 +134,7 @@ export default function SuperAdminPlansPage() {
                   <TableCell className="text-slate-400">{JSON.stringify(p.limits)}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="outline" onClick={() => edit(p)}>
-                      Edit
+                      {t('edit')}
                     </Button>
                   </TableCell>
                 </TableRow>

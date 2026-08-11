@@ -69,6 +69,16 @@ export class TenantScopeInterceptor implements NestInterceptor {
           throw new ForbiddenException('This company has been suspended. Contact support.');
         }
 
+        // Same gap, same fix, for a Super Admin blocking an individual user
+        // (UsersAdminService.setActive) rather than a whole company: the
+        // block already revokes refresh tokens so no NEW access token can
+        // be minted, but without this, an already-issued access token
+        // would keep working for the rest of its ~15-minute lifetime.
+        const requester = await tenantDb.user.findUnique({ where: { id: user.userId } });
+        if (!requester || !requester.active) {
+          throw new ForbiddenException('Your account has been blocked. Contact your administrator.');
+        }
+
         if (required && required.length > 0) {
           const role = await tenantDb.role.findUnique({
             where: { id: user.roleId },

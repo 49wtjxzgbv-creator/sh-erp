@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { superAdminApi } from '@/lib/super-admin/api';
@@ -24,6 +25,7 @@ interface AuditEventRow {
 }
 
 export default function SuperAdminAuditPage() {
+  const t = useTranslations('superAdmin');
   const [actions, setActions] = useState<SuperAdminActionRow[]>([]);
   const [events, setEvents] = useState<AuditEventRow[]>([]);
 
@@ -34,20 +36,20 @@ export default function SuperAdminAuditPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Global audit logs</h1>
+      <h1 className="text-xl font-semibold">{t('auditHeading')}</h1>
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-base">Super Admin actions (who blocked/impersonated/etc, and when)</CardTitle>
+          <CardTitle className="text-base">{t('superAdminActions')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Super Admin</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Target</TableHead>
+                <TableHead>{t('when')}</TableHead>
+                <TableHead>{t('superAdminColumn')}</TableHead>
+                <TableHead>{t('action')}</TableHead>
+                <TableHead>{t('target')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -64,7 +66,7 @@ export default function SuperAdminAuditPage() {
               {actions.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-slate-500">
-                    No actions logged yet.
+                    {t('noActionsYet')}
                   </TableCell>
                 </TableRow>
               )}
@@ -75,16 +77,16 @@ export default function SuperAdminAuditPage() {
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-base">Every tenant AuditEvent, across every company</CardTitle>
+          <CardTitle className="text-base">{t('tenantEvents')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Entity</TableHead>
+                <TableHead>{t('when')}</TableHead>
+                <TableHead>{t('company')}</TableHead>
+                <TableHead>{t('action')}</TableHead>
+                <TableHead>{t('entity')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -101,7 +103,7 @@ export default function SuperAdminAuditPage() {
               {events.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-slate-500">
-                    No events yet.
+                    {t('noEventsYet')}
                   </TableCell>
                 </TableRow>
               )}
