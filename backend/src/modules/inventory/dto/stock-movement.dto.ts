@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, NotEquals } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, NotEquals } from 'class-validator';
 
 const SINGLE_WAREHOUSE_MOVEMENT_TYPES = [
   'RECEIVE',
@@ -73,4 +73,30 @@ export class QueryStockDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+}
+
+/**
+ * `QueryStockDto & { limit?: number; offset?: number }` (the previous
+ * shape here) is a TypeScript-only lie: Nest's ValidationPipe resolves the
+ * runtime metatype from the parameter's reflected design type, which for
+ * an intersection type is just `Object` — so validation/transform silently
+ * never ran, and `limit`/`offset` reached the service as raw query
+ * strings, which Prisma's `take`/`skip` (expecting `number`) rejected. A
+ * real subclass gives Nest an actual metatype to transform against.
+ */
+export class QueryStockHistoryDto extends QueryStockDto {
+  @ApiPropertyOptional({ default: 50, maximum: 200 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }

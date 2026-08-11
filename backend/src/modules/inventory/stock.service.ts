@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
-import { MoveStockDto, QueryStockDto, RecordStockMovementDto } from './dto/stock-movement.dto';
+import { MoveStockDto, QueryStockDto, QueryStockHistoryDto, RecordStockMovementDto } from './dto/stock-movement.dto';
 
 export interface InternalMovementInput {
   productId: string;
@@ -166,7 +166,7 @@ export class StockService {
     return this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] });
   }
 
-  async getHistory(user: RequestUser, query: QueryStockDto & { limit?: number; offset?: number }) {
+  async getHistory(user: RequestUser, query: QueryStockHistoryDto) {
     const where: Record<string, any> = {};
     if (query.productId) where.productId = query.productId;
     if (query.warehouseId) where.warehouseId = query.warehouseId;

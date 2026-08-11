@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { MoveStockDto, QueryStockDto, RecordStockMovementDto } from './dto/stock-movement.dto';
+import { MoveStockDto, QueryStockDto, QueryStockHistoryDto, RecordStockMovementDto } from './dto/stock-movement.dto';
 import { StockService } from './stock.service';
 
 @ApiTags('inventory')
@@ -34,7 +34,7 @@ export class StockController {
   @Get('movements')
   @RequirePermissions('stock:read')
   @ApiOperation({ summary: 'Stock movement history, paginated, newest first.' })
-  async history(@CurrentUser() user: RequestUser, @Query() query: QueryStockDto & { limit?: number; offset?: number }) {
+  async history(@CurrentUser() user: RequestUser, @Query() query: QueryStockHistoryDto) {
     return this.stockService.getHistory(user, query);
   }
 }

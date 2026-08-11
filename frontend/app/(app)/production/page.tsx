@@ -7,10 +7,13 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useProductionOrders } from '@/lib/hooks/use-production';
+import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { ProductionOrder, ProductionOrderStatus } from '@/lib/api-client/production';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const PAGE_SIZE = 50;
@@ -22,6 +25,17 @@ const STATUS_VARIANT: Record<ProductionOrderStatus, 'secondary' | 'warning' | 's
   CANCELLED: 'destructive',
 };
 
+/** Production orders only carry a raw `assemblyId` — resolve it to a real name/article for the list, same fix as Stock Levels' productId. */
+function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
+  const { data: assembly } = useAssembly(assemblyId);
+  return <span className="max-w-[220px] truncate block" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
+}
+
+function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId]);
+  return <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />;
+}
+
 export default function ProductionOrdersPage() {
   const t = useTranslations('production');
   const router = useRouter();
@@ -32,9 +46,16 @@ export default function ProductionOrdersPage() {
 
   const columns = useMemo<ColumnDef<ProductionOrder>[]>(
     () => [
-      { accessorKey: 'assemblyId', header: t('assembly'), cell: ({ getValue }) => (
-        <span className="max-w-[220px] truncate block" title={getValue() as string}>{getValue() as string}</span>
-      ) },
+      {
+        id: 'photo',
+        header: '',
+        cell: ({ row }) => <AssemblyPhotoCell assemblyId={row.original.assemblyId} />,
+      },
+      {
+        accessorKey: 'assemblyId',
+        header: t('assembly'),
+        cell: ({ getValue }) => <AssemblyNameCell assemblyId={getValue() as string} />,
+      },
       { accessorKey: 'unitsPlanned', header: t('unitsPlanned') },
       {
         accessorKey: 'status',

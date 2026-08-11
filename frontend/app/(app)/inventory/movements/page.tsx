@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { useStockHistory, useWarehouses } from '@/lib/hooks/use-inventory';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import type { StockMovement } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,11 @@ export default function StockHistoryPage() {
     return map;
   }, [warehouses]);
 
+  // StockMovement is a thin ledger row (no Product join) — same
+  // productId-resolution shape as Stock Levels' own list.
+  const productIds = useMemo(() => Array.from(new Set((data?.items ?? []).map((m) => m.productId))), [data]);
+  const { data: productsById } = useProductsByIds(productIds);
+
   const columns = useMemo<ColumnDef<StockMovement>[]>(
     () => [
       {
@@ -33,7 +39,14 @@ export default function StockHistoryPage() {
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleString(),
       },
       { accessorKey: 'type', header: t('movementType'), cell: ({ getValue }) => <Badge variant="outline">{getValue() as string}</Badge> },
-      { accessorKey: 'productId', header: t('product') },
+      {
+        accessorKey: 'productId',
+        header: t('product'),
+        cell: ({ getValue }) => {
+          const product = productsById?.get(getValue() as string);
+          return product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : (getValue() as string);
+        },
+      },
       {
         accessorKey: 'warehouseId',
         header: t('warehouse'),
@@ -45,7 +58,7 @@ export default function StockHistoryPage() {
       { accessorKey: 'qtyDelta', header: t('qtyDelta') },
       { accessorKey: 'comment', header: t('comment'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
     ],
-    [t, warehouseName],
+    [t, warehouseName, productsById],
   );
 
   return (
