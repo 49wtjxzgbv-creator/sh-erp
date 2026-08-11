@@ -81,6 +81,21 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"] // required for citext (decision 3 — case-insensitive article/email/login)
+  // Pinned explicitly: without `output`, Prisma resolves the default
+  // location by walking up from THIS file's directory (prisma/) looking
+  // for an ancestor node_modules, which is a DIFFERENT directory than the
+  // one backend/dist actually resolves `@prisma/client` from (backend's
+  // own node_modules, a sibling of prisma/, never an ancestor of it) --
+  // that mismatch produced a real incident: `npm ci` (which runs
+  // @prisma/client's own postinstall `prisma generate`, using ITS default
+  // resolution relative to backend/) writes a real client into
+  // backend/node_modules/.prisma/client, but a subsequent explicit
+  // `prisma generate --schema=../prisma/schema.prisma` run from backend/
+  // (ops/deploy.sh's own step) would silently regenerate into the WRONG
+  // place instead of overwriting that one, leaving backend/dist to load
+  // a stale/placeholder client and crash with "@prisma/client did not
+  // initialize yet." Pinning this removes the ambiguity outright.
+  output = "../backend/node_modules/.prisma/client"
 }
 
 datasource db {

@@ -22,7 +22,14 @@
 // Per-company seeding (default roles, warehouse, units, production stages,
 // QC checklist, VAT rate, subscription) happens at signup time in
 // CompanyService, not here — see backend/src/modules/tenancy/company.service.ts.
-import { PrismaClient } from '@prisma/client';
+// Relative import, not the bare `@prisma/client` specifier: this file has
+// no node_modules of its own to resolve a bare specifier through (Node's
+// resolution only walks up through ANCESTOR node_modules directories, and
+// backend/ is a sibling of prisma/, never an ancestor) -- same reasoning
+// as this file's existing relative import of permissions.catalogue below,
+// and it's also the exact directory schema.prisma's own `output` now
+// pins the real generated client to.
+import { PrismaClient } from '../backend/node_modules/@prisma/client';
 import * as argon2 from 'argon2';
 import { PERMISSIONS_CATALOGUE } from '../backend/src/modules/authorization/permissions.catalogue';
 
