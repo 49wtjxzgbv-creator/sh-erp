@@ -92,19 +92,32 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   ): Promise<T> {
     const extended = extendWithTenantScoping(this);
     return tenantContextStorage.run(context, () =>
-      extended.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-          `SET LOCAL app.current_company_id = '${context.companyId}'`,
-        );
-        // `tx` here is Prisma's own interactive-transaction client shape for
-        // an extended PrismaClient — structurally compatible with
-        // TenantPrismaClient for every model-delegate call this codebase
-        // actually makes (`tx.role.findUnique`, `tx.company.create`, etc.),
-        // but not nominally identical to it, so this cast (pre-existing,
-        // just retargeted from `PrismaClient` to the correct
-        // `TenantPrismaClient`) stays.
-        return tenantTxStorage.run(tx as unknown as TenantPrismaClient, () => work(tx as unknown as TenantPrismaClient));
-      }),
+      extended.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(
+            `SET LOCAL app.current_company_id = '${context.companyId}'`,
+          );
+          // `tx` here is Prisma's own interactive-transaction client shape for
+          // an extended PrismaClient — structurally compatible with
+          // TenantPrismaClient for every model-delegate call this codebase
+          // actually makes (`tx.role.findUnique`, `tx.company.create`, etc.),
+          // but not nominally identical to it, so this cast (pre-existing,
+          // just retargeted from `PrismaClient` to the correct
+          // `TenantPrismaClient`) stays.
+          return tenantTxStorage.run(tx as unknown as TenantPrismaClient, () => work(tx as unknown as TenantPrismaClient));
+        },
+        // `TenantScopeInterceptor` opens one of these per request, wrapping
+        // the whole handler -- including any slow external calls a handler
+        // makes (e.g. legacy-import's fetch against a customer's Google
+        // Apps Script Web App, which can legitimately take many seconds for
+        // a real spreadsheet). Prisma's own interactive-transaction default
+        // is only 5000ms, counted from BEGIN, so any such request blew past
+        // it and every DB query after the slow call failed with "Transaction
+        // already closed" -- a real incident this raises the ceiling for,
+        // not a per-call tuning knob (ordinary fast requests still commit in
+        // milliseconds either way).
+        { timeout: 60000 },
+      ),
     );
   }
 }
