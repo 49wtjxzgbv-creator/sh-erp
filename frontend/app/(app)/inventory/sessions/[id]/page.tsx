@@ -146,7 +146,7 @@ export default function InventorySessionDetailPage() {
                 <TableCell>
                   <div className="flex items-center gap-2.5">
                     <Avatar src={photosByProduct?.[item.productId]?.[0]?.downloadUrl} size="sm" />
-                    <span className="max-w-[200px] truncate" title={productLabel}>{productLabel}</span>
+                    <span className="max-w-[280px] truncate" title={productLabel}>{productLabel}</span>
                   </div>
                 </TableCell>
                 <TableCell>{item.expectedQty}</TableCell>

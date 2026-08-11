@@ -26,7 +26,7 @@ const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 's
 /** FinishedGood only carries a raw `assemblyId` — resolve it to a real name/article, same fix as Stock Levels' productId. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
-  return <span className="block max-w-[220px] truncate" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
+  return <span className="block max-w-[300px] truncate" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
 }
 
 function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {

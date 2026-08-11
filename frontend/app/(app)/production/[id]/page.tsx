@@ -176,7 +176,7 @@ export default function ProductionOrderDetailPage() {
             <p className="text-xs text-muted-foreground">{t('assembly')}</p>
             <div className="flex items-center gap-2">
               <Avatar src={photosByAssembly?.[order.assemblyId]?.[0]?.downloadUrl} size="sm" />
-              <p className="max-w-[160px] truncate text-sm" title={assembly?.name ?? order.assemblyId}>
+              <p className="max-w-[280px] truncate text-sm" title={assembly?.name ?? order.assemblyId}>
                 {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : order.assemblyId}
               </p>
             </div>

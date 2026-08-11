@@ -40,7 +40,7 @@ function AssemblyCell({ assemblyId }: { assemblyId: string }) {
   return (
     <div className="flex items-center gap-2.5">
       <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />
-      <span className="max-w-[220px] truncate" title={assembly?.name ?? assemblyId}>
+      <span className="max-w-[320px] truncate" title={assembly?.name ?? assemblyId}>
         {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
       </span>
     </div>

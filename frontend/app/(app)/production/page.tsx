@@ -28,7 +28,7 @@ const STATUS_VARIANT: Record<ProductionOrderStatus, 'secondary' | 'warning' | 's
 /** Production orders only carry a raw `assemblyId` — resolve it to a real name/article for the list, same fix as Stock Levels' productId. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
-  return <span className="max-w-[220px] truncate block" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
+  return <span className="max-w-[300px] truncate block" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
 }
 
 function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {

@@ -30,6 +30,11 @@ export interface AssemblyPickerProps {
   placeholder?: string;
 }
 
+/** Matches ProductPicker's "article — name" convention — this picker previously showed the name alone, dropping the article everywhere it hydrated or was picked (only the dropdown's own sublabel had it). */
+function assemblyLabel(assembly: { name: string; article?: string | null }): string {
+  return assembly.article ? `${assembly.article} — ${assembly.name}` : assembly.name;
+}
+
 export function AssemblyPicker({ value, onChange, excludeId, placeholder }: AssemblyPickerProps) {
   const t = useTranslations('bom');
   const [query, setQuery] = useState('');
@@ -51,7 +56,7 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
   useEffect(() => {
     if (hydratedRef.current || !value || !selectedAssembly) return;
     hydratedRef.current = true;
-    setQuery(selectedAssembly.name);
+    setQuery(assemblyLabel(selectedAssembly));
   }, [value, selectedAssembly]);
 
   useEffect(() => {
@@ -84,10 +89,10 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
                 key={assembly.id}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  setQuery(assembly.name);
+                  setQuery(assemblyLabel(assembly));
                   hydratedRef.current = true;
                   setOpen(false);
-                  onChange(assembly.id, assembly.name);
+                  onChange(assembly.id, assemblyLabel(assembly));
                 }}
                 className={cn(
                   'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-secondary',
