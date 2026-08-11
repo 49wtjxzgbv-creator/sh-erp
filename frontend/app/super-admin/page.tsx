@@ -251,11 +251,11 @@ function CompanyDetailDialog({
     setRemovingUserId(removeTarget.userId);
     try {
       await superAdminApi.delete(`super-admin/companies/${companyId}/members/${removeTarget.userId}`);
-      setRemoveTarget(null);
       await load();
     } catch (err) {
       setRemoveError(err instanceof Error ? err.message : t('removeMemberFailed'));
     } finally {
+      setRemoveTarget(null);
       setRemovingUserId(null);
     }
   }

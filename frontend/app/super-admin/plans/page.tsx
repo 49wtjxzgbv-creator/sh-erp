@@ -52,11 +52,11 @@ export default function SuperAdminPlansPage() {
     setBusyId(deleteTarget.id);
     try {
       await superAdminApi.delete(`super-admin/plans/${deleteTarget.id}`);
-      setDeleteTarget(null);
       await load();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : t('deletePlanFailed'));
     } finally {
+      setDeleteTarget(null);
       setBusyId(null);
     }
   }
