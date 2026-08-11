@@ -9,6 +9,7 @@ import type { ImportConnectorProvider } from './providers/provider.interface';
 import { transformLegacyImport, type LegacyExportPayload } from './transform';
 import { loadImportGraph } from './load';
 import { buildImportReport, type ImportReport } from './report';
+import { PhotoImportService } from './photo-import.service';
 import { StartConnectionDto } from './dto/start-connection.dto';
 import { CompletePairingDto } from './dto/complete-pairing.dto';
 import { RunImportDto } from './dto/run-import.dto';
@@ -31,6 +32,7 @@ export class LegacyImportService {
     private readonly prisma: PrismaService,
     private readonly pairingPrisma: ImportPairingPrismaService,
     private readonly auditService: AuditService,
+    private readonly photoImportService: PhotoImportService,
   ) {}
 
   // ==========================================================================
@@ -348,7 +350,26 @@ export class LegacyImportService {
       await this.updateJob(companyId, actorUserId, jobId, { status: 'LOADING', step: 'loading' });
       const { counts, skippedLedgers } = await loadImportGraph(this.prisma, companyId, actorUserId, graph);
 
-      const finalReport: ImportReport = { ...report, loadedCounts: counts, skippedLedgers, durationMs: Date.now() - startedAt };
+      let photosMissing = 0;
+      if (graph.photoRefs.length > 0) {
+        await this.updateJob(companyId, actorUserId, jobId, {
+          status: 'IMPORTING_PHOTOS',
+          step: 'importing_photos',
+          totalPhotos: graph.photoRefs.length,
+          processedPhotos: 0,
+        });
+        const photoSummary = await this.photoImportService.importPhotos(
+          companyId,
+          actorUserId,
+          provider,
+          config,
+          graph.photoRefs,
+          (processed) => this.updateJob(companyId, actorUserId, jobId, { processedPhotos: processed }),
+        );
+        photosMissing = photoSummary.failed + photoSummary.skippedMissingEntity;
+      }
+
+      const finalReport: ImportReport = { ...report, loadedCounts: counts, skippedLedgers, photosMissing, durationMs: Date.now() - startedAt };
       await this.updateJob(companyId, actorUserId, jobId, {
         status: 'COMPLETED',
         step: null,

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import type { FileDomain } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
@@ -159,6 +160,80 @@ export class FilesService {
     });
 
     return { downloadUrl, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS };
+  }
+
+  /**
+   * Server-side "bytes already in hand, no live request" ingest path —
+   * used by legacy-import's background photo-migration job
+   * (`photo-import.service.ts`), which has no `RequestUser`/presigned-PUT
+   * round trip to drive and must not hold a DB transaction open across the
+   * slow external fetch (see `PrismaService.runInTenantTransaction`'s own
+   * header comment on why background-job code opens its own transaction
+   * rather than reading off ambient `prisma.tenant`). The R2 PUT happens
+   * here directly (bytes in hand already, no presigned URL needed); only
+   * the FileAsset row write opens a transaction, and only for as long as
+   * that single upsert takes.
+   *
+   * Upserts on `(companyId, legacyId)` (see `FileAsset`'s own unique
+   * constraint) so re-running an import job is idempotent — a re-fetched
+   * photo overwrites its own row's object/metadata rather than piling up
+   * duplicates. The OLD R2 object at the previous storageKey is left
+   * orphaned on re-import, same as this module's existing soft-delete
+   * convention (a lifecycle rule handles real purging, out of scope here).
+   */
+  async ingestPhotoAsset(input: {
+    companyId: string;
+    actorUserId: string;
+    domain: FileDomain;
+    entityType: string;
+    entityId: string;
+    legacyId: string;
+    originalName: string;
+    mimeType: string;
+    bytes: Buffer;
+  }): Promise<{ fileAssetId: string }> {
+    const safeName = sanitizeFilename(input.originalName);
+    const storageKey = `tenants/${input.companyId}/${input.domain.toLowerCase()}/${input.entityType.toLowerCase()}/${input.entityId}/${randomUUID()}-${safeName}`;
+
+    await this.r2.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: storageKey,
+        Body: input.bytes,
+        ContentType: input.mimeType,
+        ContentLength: input.bytes.byteLength,
+      }),
+    );
+
+    const fileAsset = await this.prisma.runInTenantTransaction(
+      { companyId: input.companyId, userId: input.actorUserId },
+      (tx) =>
+        tx.fileAsset.upsert({
+          where: { companyId_legacyId: { companyId: input.companyId, legacyId: input.legacyId } },
+          create: {
+            companyId: input.companyId,
+            domain: input.domain,
+            entityType: input.entityType,
+            entityId: input.entityId,
+            storageKey,
+            originalName: safeName,
+            mimeType: input.mimeType,
+            sizeBytes: input.bytes.byteLength,
+            uploadedById: input.actorUserId,
+            legacyId: input.legacyId,
+          },
+          update: {
+            entityType: input.entityType,
+            entityId: input.entityId,
+            storageKey,
+            originalName: safeName,
+            mimeType: input.mimeType,
+            sizeBytes: input.bytes.byteLength,
+          },
+        }),
+    );
+
+    return { fileAssetId: fileAsset.id };
   }
 
   async getDownloadUrl(user: RequestUser, fileAssetId: string) {
