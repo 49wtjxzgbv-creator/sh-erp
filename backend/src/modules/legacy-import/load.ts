@@ -59,8 +59,20 @@ export async function loadImportGraph(
     counts.suppliers = graph.suppliers.length;
 
     // --- Products ---
+    const supplierIds = new Set(graph.suppliers.map((s) => s.id));
     for (const p of graph.products) {
       if (!p.unitId) continue; // already warned during transform — cannot load without the required FK
+      if (p.defaultSupplierId && !supplierIds.has(p.defaultSupplierId)) {
+        // TEMPORARY diagnostic for a real, still-unexplained FK failure
+        // (products_defaultSupplierId_fkey) that survived the
+        // first-occurrence-wins legacyId map fix — logging the exact
+        // mismatch instead of guessing again. Safe to remove once root
+        // cause is confirmed from a real production log.
+        console.error(
+          `[load][diagnostic] Product legacyId=${p.legacyId} article=${p.article} has defaultSupplierId=${p.defaultSupplierId}, ` +
+            `which is NOT in this run's ${supplierIds.size} resolved supplier id(s): ${JSON.stringify(graph.suppliers.map((s) => ({ legacyId: s.legacyId, id: s.id })))}`,
+        );
+      }
       await tx.product.upsert({
         where: { companyId_legacyId: { companyId, legacyId: p.legacyId } },
         create: { id: p.id, companyId, ...productFields(p) },
