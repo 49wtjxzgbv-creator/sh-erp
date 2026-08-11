@@ -1,9 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { Avatar } from '@/components/ui/avatar';
 import type { CostBreakdownLine } from '@/lib/api-client/bom';
 
 /**
@@ -29,11 +33,38 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
   const { data: cost } = useAssemblyCost(assemblyId);
 
-  if (!assembly || !cost) return <PrintButton label={tp('printSpecification')} className="opacity-50" />;
+  const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
+  const assemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+
+  const columns: PrintColumnOption[] = [
+    { id: 'component', label: t('component') },
+    { id: 'componentType', label: t('componentType') },
+    { id: 'qtyPerUnit', label: t('qtyPerUnit') },
+    { id: 'localCost', label: t('localCost') },
+    { id: 'germanCost', label: t('germanCost') },
+  ];
+  const printOptions = usePrintOptions({ columns, hasPhotos: true });
+
+  if (!assembly || !cost) return null;
+
+  function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
+    if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
+    if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
+    return undefined;
+  }
 
   return (
     <>
-      <PrintButton label={tp('printSpecification')} />
+      <PrintOptionsDialog
+        open={printOptions.open}
+        onOpenChange={printOptions.setOpen}
+        columns={columns}
+        hasPhotos
+        onConfirm={printOptions.confirm}
+        triggerLabel={tp('printSpecification')}
+      />
       <PrintArea>
         <PrintDocumentHeader
           title={tp('specificationTitle')}
@@ -43,22 +74,28 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
           <thead>
             <tr>
               <th>#</th>
-              <th>{t('component')}</th>
-              <th>{t('componentType')}</th>
-              <th>{t('qtyPerUnit')}</th>
-              <th>{t('localCost')}</th>
-              <th>{t('germanCost')}</th>
+              {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
+              {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}
+              {printOptions.isColumnVisible('qtyPerUnit') && <th>{t('qtyPerUnit')}</th>}
+              {printOptions.isColumnVisible('localCost') && <th>{t('localCost')}</th>}
+              {printOptions.isColumnVisible('germanCost') && <th>{t('germanCost')}</th>}
             </tr>
           </thead>
           <tbody>
             {cost.breakdown.map((line, i) => (
               <tr key={i}>
                 <td>{i + 1}</td>
-                <td><ComponentNameCell line={line} /></td>
-                <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
-                <td>{line.qtyPerUnit}</td>
-                <td>{line.lineLocalCost.toFixed(2)}</td>
-                <td>{line.lineGermanCost.toFixed(2)}</td>
+                {printOptions.includePhotos && (
+                  <td>
+                    <Avatar src={lineDownloadUrl(line)} size="lg" />
+                  </td>
+                )}
+                {printOptions.isColumnVisible('component') && <td><ComponentNameCell line={line} /></td>}
+                {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
+                {printOptions.isColumnVisible('localCost') && <td>{line.lineLocalCost.toFixed(2)}</td>}
+                {printOptions.isColumnVisible('germanCost') && <td>{line.lineGermanCost.toFixed(2)}</td>}
               </tr>
             ))}
           </tbody>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 
 export interface SupplierRequestGroupForPrint {
   supplierId?: string;
@@ -25,9 +26,21 @@ export function SupplierRequestsPrint({ groups }: { groups: SupplierRequestGroup
   const tp = useTranslations('print');
   const printable = groups.filter((g) => g.lines.some((l) => l.qty > 0));
 
+  const columns: PrintColumnOption[] = [
+    { id: 'description', label: t('description') },
+    { id: 'qtyToOrder', label: t('qtyToOrder') },
+  ];
+  const printOptions = usePrintOptions({ columns });
+
   return (
     <>
-      <PrintButton label={tp('printPurchaseRequest')} />
+      <PrintOptionsDialog
+        open={printOptions.open}
+        onOpenChange={printOptions.setOpen}
+        columns={columns}
+        onConfirm={printOptions.confirm}
+        triggerLabel={tp('printPurchaseRequest')}
+      />
       <PrintArea>
         <PrintDocumentHeader title={tp('supplierRequestsTitle')} />
         {printable.map((group, gi) => (
@@ -37,8 +50,8 @@ export function SupplierRequestsPrint({ groups }: { groups: SupplierRequestGroup
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>{t('description')}</th>
-                  <th>{t('qtyToOrder')}</th>
+                  {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
+                  {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -47,8 +60,8 @@ export function SupplierRequestsPrint({ groups }: { groups: SupplierRequestGroup
                   .map((line, li) => (
                     <tr key={li}>
                       <td>{li + 1}</td>
-                      <td>{line.description}</td>
-                      <td>{line.qty}</td>
+                      {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
+                      {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                     </tr>
                   ))}
               </tbody>

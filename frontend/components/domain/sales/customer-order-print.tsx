@@ -1,8 +1,12 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssembly } from '@/lib/hooks/use-bom';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder } from '@/lib/api-client/sales';
 
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
@@ -26,9 +30,25 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const t = useTranslations('sales');
   const tp = useTranslations('print');
 
+  const assemblyIds = useMemo(() => Array.from(new Set((order.items ?? []).map((i) => i.assemblyId))), [order.items]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+
+  const columns: PrintColumnOption[] = [
+    { id: 'assembly', label: t('assembly') },
+    { id: 'qty', label: t('qty') },
+  ];
+  const printOptions = usePrintOptions({ columns, hasPhotos: true });
+
   return (
     <>
-      <PrintButton label={tp('printOrder')} />
+      <PrintOptionsDialog
+        open={printOptions.open}
+        onOpenChange={printOptions.setOpen}
+        columns={columns}
+        hasPhotos
+        onConfirm={printOptions.confirm}
+        triggerLabel={tp('printOrder')}
+      />
       <PrintArea>
         <PrintDocumentHeader
           title={tp('customerOrderTitle')}
@@ -46,16 +66,22 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           <thead>
             <tr>
               <th>#</th>
-              <th>{t('assembly')}</th>
-              <th>{t('qty')}</th>
+              {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.isColumnVisible('assembly') && <th>{t('assembly')}</th>}
+              {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
             </tr>
           </thead>
           <tbody>
             {(order.items ?? []).map((item, i) => (
               <tr key={item.id}>
                 <td>{i + 1}</td>
-                <td><AssemblyNameCell assemblyId={item.assemblyId} /></td>
-                <td>{item.qty}</td>
+                {printOptions.includePhotos && (
+                  <td>
+                    <Avatar src={photosByAssembly?.[item.assemblyId]?.[0]?.downloadUrl} size="lg" />
+                  </td>
+                )}
+                {printOptions.isColumnVisible('assembly') && <td><AssemblyNameCell assemblyId={item.assemblyId} /></td>}
+                {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
               </tr>
             ))}
           </tbody>

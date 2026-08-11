@@ -618,7 +618,12 @@
     "supplierRequestsTitle": "Supplier purchase requests",
     "requestTo": "Request to",
     "printLabels": "Print labels",
-    "labelsTitle": "Product labels"
+    "labelsTitle": "Product labels",
+    "printOptionsTitle": "Print options",
+    "columnsToInclude": "Columns to print",
+    "includePhotos": "Include photos",
+    "printAction": "Print",
+    "photoColumn": "Photo"
   },
   "legacyImport": {
     "title": "Źródła importu",

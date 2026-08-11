@@ -2,7 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 import { useAssembly } from '@/lib/hooks/use-bom';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import type { ProductionOrderPickListItem } from '@/lib/api-client/production';
 import type { DecimalString } from '@/lib/api-client/decimal';
 
@@ -34,9 +35,23 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
 
+  const columns: PrintColumnOption[] = [
+    { id: 'description', label: t('description') },
+    { id: 'qty', label: t('qty') },
+    { id: 'unitPrice', label: t('unitPrice') },
+    { id: 'lineTotal', label: t('lineTotal') },
+  ];
+  const printOptions = usePrintOptions({ columns });
+
   return (
     <>
-      <PrintButton label={tp('printPickList')} />
+      <PrintOptionsDialog
+        open={printOptions.open}
+        onOpenChange={printOptions.setOpen}
+        columns={columns}
+        onConfirm={printOptions.confirm}
+        triggerLabel={tp('printPickList')}
+      />
       <PrintArea>
         <PrintDocumentHeader
           title={tp('pickListTitle')}
@@ -45,19 +60,19 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
         <table>
           <thead>
             <tr>
-              <th>{t('description')}</th>
-              <th>{t('qty')}</th>
-              <th>{t('unitPrice')}</th>
-              <th>{t('lineTotal')}</th>
+              {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
+              {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
+              {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
+              {printOptions.isColumnVisible('lineTotal') && <th>{t('lineTotal')}</th>}
             </tr>
           </thead>
           <tbody>
             {pickListItems.map((line) => (
               <tr key={line.id}>
-                <td>{line.description}</td>
-                <td>{line.qty}</td>
-                <td>{line.unitPriceEur ?? '—'}</td>
-                <td>{line.lineTotalEur ?? '—'}</td>
+                {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
+                {printOptions.isColumnVisible('qty') && <td>{line.qty}</td>}
+                {printOptions.isColumnVisible('unitPrice') && <td>{line.unitPriceEur ?? '—'}</td>}
+                {printOptions.isColumnVisible('lineTotal') && <td>{line.lineTotalEur ?? '—'}</td>}
               </tr>
             ))}
           </tbody>

@@ -618,7 +618,12 @@
     "supplierRequestsTitle": "Заявки постачальникам",
     "requestTo": "Заявка постачальнику",
     "printLabels": "Друк етикеток",
-    "labelsTitle": "Етикетки товарів"
+    "labelsTitle": "Етикетки товарів",
+    "printOptionsTitle": "Параметри друку",
+    "columnsToInclude": "Стовпці для друку",
+    "includePhotos": "Включити фото",
+    "printAction": "Друкувати",
+    "photoColumn": "Фото"
   },
   "legacyImport": {
     "title": "Джерела імпорту",
