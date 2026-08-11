@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   queryProducts,
   getProduct,
+  getProductsByIds,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -38,6 +39,19 @@ export function useProduct(id: string | undefined) {
     queryKey: productKey(id ?? ''),
     queryFn: () => getProduct(id as string),
     enabled: Boolean(id),
+  });
+}
+
+/** Many products in one call, keyed by id, for list views that only have `productId`s to resolve (e.g. Stock Levels). Mirrors `useFilesForEntities`'s shape. */
+export function useProductsByIds(ids: string[]) {
+  const sortedIds = [...ids].sort();
+  return useQuery({
+    queryKey: ['products', 'batch', sortedIds] as const,
+    queryFn: async () => {
+      const products = await getProductsByIds(sortedIds);
+      return new Map(products.map((p) => [p.id, p]));
+    },
+    enabled: sortedIds.length > 0,
   });
 }
 

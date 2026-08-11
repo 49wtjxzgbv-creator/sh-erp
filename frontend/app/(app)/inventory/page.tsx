@@ -5,9 +5,12 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { ArrowLeftRight, Plus } from 'lucide-react';
 import { useStockLevels, useWarehouses } from '@/lib/hooks/use-inventory';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { WarehouseStock } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
@@ -28,17 +31,30 @@ export default function StockLevelsPage() {
     return map;
   }, [warehouses]);
 
-  // Known simplification: this shows the raw productId rather than the
-  // article/name. GET /stock/levels doesn't join Product (it's a thin
-  // pass-through over WarehouseStock), and there's no batch
-  // products-by-ids endpoint yet to resolve a whole page of rows in one
-  // call — building a full N-lookup or a new backend endpoint for this is
-  // deferred rather than either silently degrading (spamming useProduct per
-  // row) or adding an unrequested backend change. Worth revisiting once a
-  // batch lookup exists (would also help Production/BOM/Sales list views).
+  // GET /stock/levels is a thin pass-through over WarehouseStock (no
+  // Product join), so productId is resolved into a name/article/photo
+  // client-side via one batch call each — GET /products/batch and
+  // GET /files/batch, same N-request-avoidance shape already used by
+  // Catalog/BOM's list views (see products.controller.ts's own comment).
+  const productIds = useMemo(() => Array.from(new Set((levels ?? []).map((l) => l.productId))), [levels]);
+  const { data: productsById } = useProductsByIds(productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+
   const columns = useMemo<ColumnDef<WarehouseStock>[]>(
     () => [
-      { accessorKey: 'productId', header: t('product') },
+      {
+        id: 'photo',
+        header: '',
+        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.productId]?.[0]?.downloadUrl} size="lg" />,
+      },
+      {
+        accessorKey: 'productId',
+        header: t('product'),
+        cell: ({ getValue }) => {
+          const product = productsById?.get(getValue() as string);
+          return product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : (getValue() as string);
+        },
+      },
       {
         accessorKey: 'warehouseId',
         header: t('warehouse'),
@@ -46,7 +62,7 @@ export default function StockLevelsPage() {
       },
       { accessorKey: 'qty', header: t('qty') },
     ],
-    [t, warehouseName],
+    [t, warehouseName, productsById, photosByProduct],
   );
 
   return (

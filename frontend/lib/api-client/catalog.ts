@@ -127,6 +127,12 @@ export function getProduct(id: string): Promise<Product> {
   return apiClient.get<Product>(`products/${id}`);
 }
 
+/** Many products in one call by id — avoids an N-request fan-out resolving productIds into names/photos for a list view (e.g. Stock Levels). */
+export function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return Promise.resolve([]);
+  return apiClient.get<Product[]>('products/batch', { query: { ids: ids.join(',') } });
+}
+
 export function createProduct(dto: CreateProductInput): Promise<Product> {
   return apiClient.post<Product>('products', dto);
 }
