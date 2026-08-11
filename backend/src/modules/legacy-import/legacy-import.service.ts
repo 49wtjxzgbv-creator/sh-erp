@@ -231,7 +231,7 @@ export class LegacyImportService {
     const existingUnitIdByName = await this.loadExistingUnitMap(user);
     const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, existingUnitIdByName });
 
-    return buildImportReport(this.prisma, user.companyId, payload, graph, {
+    return buildImportReport(this.prisma, user.companyId, user.userId, payload, graph, {
       protocolVersion: connection.protocolVersion ?? undefined,
       connectorVersion: connection.connectorVersion ?? undefined,
     });
@@ -257,7 +257,7 @@ export class LegacyImportService {
       const payload = await provider.fetchData(config);
       const existingUnitIdByName = await this.loadExistingUnitMap(user);
       const graph = transformLegacyImport(payload, { companyId: user.companyId, actorUserId: user.userId, existingUnitIdByName });
-      const report = await buildImportReport(this.prisma, user.companyId, payload, graph, {
+      const report = await buildImportReport(this.prisma, user.companyId, user.userId, payload, graph, {
         protocolVersion: connection.protocolVersion ?? undefined,
         connectorVersion: connection.connectorVersion ?? undefined,
       });
@@ -321,7 +321,7 @@ export class LegacyImportService {
       const existingUnitIdByName = await this.readExistingUnitMap(companyId, actorUserId);
       const graph = transformLegacyImport(payload, { companyId, actorUserId, existingUnitIdByName });
 
-      const report = await buildImportReport(this.prisma, companyId, payload, graph, {
+      const report = await buildImportReport(this.prisma, companyId, actorUserId, payload, graph, {
         protocolVersion: connection.protocolVersion ?? undefined,
         connectorVersion: connection.connectorVersion ?? undefined,
       });
