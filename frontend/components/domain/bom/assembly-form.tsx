@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
+import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -42,9 +43,19 @@ export interface AssemblyFormProps {
   onSubmit: (values: CreateAssemblyInput) => Promise<void>;
   submitting: boolean;
   submitError: string | null;
+  /** Only used in create mode (no `assembly` yet) — see PendingPhotoField. */
+  pendingPhoto?: File | null;
+  onPendingPhotoChange?: (file: File | null) => void;
 }
 
-export function AssemblyForm({ assembly, onSubmit, submitting, submitError }: AssemblyFormProps) {
+export function AssemblyForm({
+  assembly,
+  onSubmit,
+  submitting,
+  submitError,
+  pendingPhoto,
+  onPendingPhotoChange,
+}: AssemblyFormProps) {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
 
@@ -70,16 +81,18 @@ export function AssemblyForm({ assembly, onSubmit, submitting, submitError }: As
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit(submit)} noValidate>
-      {assembly && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('photo')}</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('photo')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {assembly ? (
             <EntityPhotoField domain="ASSEMBLY_PHOTO" entityType="Assembly" entityId={assembly.id} />
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <PendingPhotoField value={pendingPhoto ?? null} onChange={onPendingPhotoChange ?? (() => {})} />
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

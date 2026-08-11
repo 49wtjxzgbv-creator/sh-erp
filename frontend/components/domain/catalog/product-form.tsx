@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
+import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
@@ -90,9 +91,19 @@ export interface ProductFormProps {
   onSubmit: (values: CreateProductInput) => Promise<void>;
   submitting: boolean;
   submitError: string | null;
+  /** Only used in create mode (no `product` yet) — see PendingPhotoField. */
+  pendingPhoto?: File | null;
+  onPendingPhotoChange?: (file: File | null) => void;
 }
 
-export function ProductForm({ product, onSubmit, submitting, submitError }: ProductFormProps) {
+export function ProductForm({
+  product,
+  onSubmit,
+  submitting,
+  submitError,
+  pendingPhoto,
+  onPendingPhotoChange,
+}: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
   const { data: units } = useCompanyUnits();
@@ -127,16 +138,18 @@ export function ProductForm({ product, onSubmit, submitting, submitError }: Prod
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit(submit)} noValidate>
-      {product && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('photo')}</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('photo')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {product ? (
             <EntityPhotoField domain="PRODUCT_PHOTO" entityType="Product" entityId={product.id} />
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <PendingPhotoField value={pendingPhoto ?? null} onChange={onPendingPhotoChange ?? (() => {})} />
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
