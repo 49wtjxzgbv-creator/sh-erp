@@ -564,6 +564,9 @@ function ProgressView({ job }: { job: ImportJob }) {
       <div className="flex items-center gap-2">
         <StatusBadge status={job.status} />
         {job.step && <span className="text-sm text-muted-foreground">{job.step}</span>}
+        {job.status === 'IMPORTING_PHOTOS' && job.totalPhotos !== null && (
+          <span className="text-sm text-muted-foreground">{t('photosProgress', { done: job.processedPhotos, total: job.totalPhotos })}</span>
+        )}
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
         <div
@@ -581,6 +584,9 @@ function ProgressView({ job }: { job: ImportJob }) {
             )}
           </div>
           <EntityReportTable report={job.report} />
+          {!!job.report.photosMissing && job.report.photosMissing > 0 && (
+            <p className="text-sm text-destructive">{t('photosMissingCount', { count: job.report.photosMissing })}</p>
+          )}
           {job.report.warnings.length > 0 && <IssuesBlock title={t('warningsCount', { count: job.report.warnings.length })} issues={job.report.warnings} tone="warning" />}
           <Button variant="outline" size="sm" onClick={() => downloadReport(job)}>
             <Download className="mr-2 h-4 w-4" />
