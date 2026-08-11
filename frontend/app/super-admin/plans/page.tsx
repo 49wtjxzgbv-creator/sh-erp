@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ConfirmDialog } from '@/components/domain/shell/confirm-dialog';
 import { superAdminApi } from '@/lib/super-admin/api';
 
 interface PlanRow {
@@ -25,6 +26,7 @@ export default function SuperAdminPlansPage() {
   const [loading, setLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PlanRow | null>(null);
 
   const load = useCallback(async () => {
     const res = await superAdminApi.get<PlanRow[]>('super-admin/plans');
@@ -44,12 +46,13 @@ export default function SuperAdminPlansPage() {
     });
   }
 
-  async function onDelete(plan: PlanRow) {
-    if (!window.confirm(t('deletePlanConfirm', { name: plan.name }))) return;
+  async function onDelete() {
+    if (!deleteTarget) return;
     setDeleteError(null);
-    setBusyId(plan.id);
+    setBusyId(deleteTarget.id);
     try {
-      await superAdminApi.delete(`super-admin/plans/${plan.id}`);
+      await superAdminApi.delete(`super-admin/plans/${deleteTarget.id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : t('deletePlanFailed'));
@@ -153,7 +156,7 @@ export default function SuperAdminPlansPage() {
                     <Button size="sm" variant="outline" onClick={() => edit(p)}>
                       {t('edit')}
                     </Button>
-                    <Button size="sm" variant="destructive" loading={busyId === p.id} onClick={() => onDelete(p)}>
+                    <Button size="sm" variant="destructive" loading={busyId === p.id} onClick={() => setDeleteTarget(p)}>
                       {t('deletePlan')}
                     </Button>
                   </TableCell>
@@ -163,6 +166,16 @@ export default function SuperAdminPlansPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={t('deletePlan')}
+        description={deleteTarget ? t('deletePlanConfirm', { name: deleteTarget.name }) : ''}
+        onConfirm={onDelete}
+        confirmLabel={t('deletePlan')}
+        confirming={Boolean(busyId)}
+      />
     </div>
   );
 }

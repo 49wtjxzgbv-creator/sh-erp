@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/domain/shell/confirm-dialog';
 import { superAdminApi } from '@/lib/super-admin/api';
 
 interface CompanyRow {
@@ -213,6 +214,7 @@ function CompanyDetailDialog({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ userId: string; email: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -243,13 +245,13 @@ function CompanyDetailDialog({
     }
   }
 
-  async function removeMember(userId: string, email: string) {
-    if (!companyId) return;
-    if (!window.confirm(t('removeMemberConfirm', { email }))) return;
+  async function removeMember() {
+    if (!companyId || !removeTarget) return;
     setRemoveError(null);
-    setRemovingUserId(userId);
+    setRemovingUserId(removeTarget.userId);
     try {
-      await superAdminApi.delete(`super-admin/companies/${companyId}/members/${userId}`);
+      await superAdminApi.delete(`super-admin/companies/${companyId}/members/${removeTarget.userId}`);
+      setRemoveTarget(null);
       await load();
     } catch (err) {
       setRemoveError(err instanceof Error ? err.message : t('removeMemberFailed'));
@@ -313,7 +315,7 @@ function CompanyDetailDialog({
                           size="sm"
                           variant="destructive"
                           loading={removingUserId === m.userId}
-                          onClick={() => removeMember(m.userId, m.user.email)}
+                          onClick={() => setRemoveTarget({ userId: m.userId, email: m.user.email })}
                         >
                           {t('removeMember')}
                         </Button>
@@ -341,6 +343,16 @@ function CompanyDetailDialog({
           </DialogClose>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={Boolean(removeTarget)}
+        onOpenChange={(open) => !open && setRemoveTarget(null)}
+        title={t('removeMember')}
+        description={removeTarget ? t('removeMemberConfirm', { email: removeTarget.email }) : ''}
+        onConfirm={removeMember}
+        confirmLabel={t('removeMember')}
+        confirming={Boolean(removingUserId)}
+      />
     </Dialog>
   );
 }
