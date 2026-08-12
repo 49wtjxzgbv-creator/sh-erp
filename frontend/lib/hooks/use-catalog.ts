@@ -85,7 +85,7 @@ export function useDeleteProduct() {
 export function useImportProducts() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => importProducts(file),
+    mutationFn: ({ file, updateQuantities }: { file: File; updateQuantities: boolean }) => importProducts(file, updateQuantities),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 }

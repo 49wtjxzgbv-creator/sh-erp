@@ -144,7 +144,9 @@
     "gridDeleteConfirmTitle": "Delete {count} product(s)? This cannot be undone.",
     "noDefaultWarehouseForGrid": "No default warehouse configured — cannot change stock.",
     "gridQtyAdjustComment": "Changed via product grid",
-    "gridBulkDeletePartialFailure": "Failed to delete {count} product(s)."
+    "gridBulkDeletePartialFailure": "Failed to delete {count} product(s).",
+    "importUpdateQuantities": "Also update warehouse quantities",
+    "importUpdateQuantitiesHint": "Off by default — the file will only update names/prices/other fields. Enable only if you want the \"Quantity\" column to overwrite current stock."
   },
   "settings": {
     "title": "Company settings",

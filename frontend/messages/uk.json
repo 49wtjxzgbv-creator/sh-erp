@@ -144,7 +144,9 @@
     "gridDeleteConfirmTitle": "Видалити {count} товар(ів)? Дію неможливо скасувати.",
     "noDefaultWarehouseForGrid": "Немає складу за замовчуванням — неможливо змінити залишок.",
     "gridQtyAdjustComment": "Змінено через таблицю товарів",
-    "gridBulkDeletePartialFailure": "Не вдалося видалити {count} товар(ів)."
+    "gridBulkDeletePartialFailure": "Не вдалося видалити {count} товар(ів).",
+    "importUpdateQuantities": "Також оновити кількість на складі",
+    "importUpdateQuantitiesHint": "Вимкнено за замовчуванням — файл лише оновить назви/ціни/інші поля. Увімкніть, тільки якщо хочете, щоб колонка \"Кількість\" перезаписала поточні залишки на складі."
   },
   "settings": {
     "title": "Налаштування компанії",

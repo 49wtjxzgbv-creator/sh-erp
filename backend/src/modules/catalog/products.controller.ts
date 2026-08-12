@@ -53,10 +53,21 @@ export class ProductsController {
   @RequirePermissions('products:write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_BYTES } }))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Bulk import/update products from an .xlsx file. Fuzzy multi-language header matching, upsert by article — see ProductsImportExportService header comment.' })
-  async import(@CurrentUser() user: RequestUser, @UploadedFile() file: Express.Multer.File) {
+  @ApiOperation({
+    summary:
+      'Bulk import/update products from an .xlsx file. Fuzzy multi-language header matching, upsert by article — ' +
+      'see ProductsImportExportService header comment. `updateQuantities` defaults to false: a plain re-import ' +
+      'only touches name/price/etc columns, never silently posts a stock ADJUST from a possibly-stale "Кількість" ' +
+      'column (real incident: exporting then re-importing an unmodified file posted wrong ADJUST movements for ' +
+      'every row, because the sheet\'s qty snapshot no longer matched live stock by the time it was re-imported).',
+  })
+  async import(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('updateQuantities') updateQuantities?: string,
+  ) {
     if (!file) throw new BadRequestException('No file uploaded (expected multipart field "file").');
-    return this.importExportService.importProducts(user, file.buffer);
+    return this.importExportService.importProducts(user, file.buffer, updateQuantities === 'true');
   }
 
   /**

@@ -28,11 +28,13 @@ export function ImportProductsDialog({ open, onOpenChange }: ImportProductsDialo
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [updateQuantities, setUpdateQuantities] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportProductsResult | null>(null);
 
   function reset() {
     setFile(null);
+    setUpdateQuantities(false);
     setError(null);
     setResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -42,7 +44,7 @@ export function ImportProductsDialog({ open, onOpenChange }: ImportProductsDialo
     if (!file) return;
     setError(null);
     try {
-      const res = await importMutation.mutateAsync(file);
+      const res = await importMutation.mutateAsync({ file, updateQuantities });
       setResult(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : tc('error'));
@@ -85,6 +87,18 @@ export function ImportProductsDialog({ open, onOpenChange }: ImportProductsDialo
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
             />
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-input"
+                checked={updateQuantities}
+                onChange={(e) => setUpdateQuantities(e.target.checked)}
+              />
+              <span>
+                {t('importUpdateQuantities')}
+                <span className="block text-xs text-muted-foreground">{t('importUpdateQuantitiesHint')}</span>
+              </span>
+            </label>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
               <Button onClick={handleImport} loading={importMutation.isPending} disabled={!file}>

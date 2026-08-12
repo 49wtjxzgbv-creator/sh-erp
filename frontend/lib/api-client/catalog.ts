@@ -167,8 +167,16 @@ export interface ImportProductsResult {
  * 1-based and match what a user would see opening the file in Excel
  * (header = row 1).
  */
-export function importProducts(file: File): Promise<ImportProductsResult> {
-  return apiClient.postFile<ImportProductsResult>('products/import', file);
+/**
+ * `updateQuantities` defaults to false — see the backend controller's own
+ * header comment for the real incident this guards against (a plain
+ * re-import of an unmodified export silently posted stock ADJUST
+ * movements from every row's now-stale "Кількість" column). Only check
+ * this when you actually mean for the file's quantity column to overwrite
+ * current stock.
+ */
+export function importProducts(file: File, updateQuantities = false): Promise<ImportProductsResult> {
+  return apiClient.postFile<ImportProductsResult>(`products/import?updateQuantities=${updateQuantities}`, file);
 }
 
 /**

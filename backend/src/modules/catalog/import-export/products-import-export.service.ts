@@ -66,7 +66,7 @@ export class ProductsImportExportService {
     private readonly stockService: StockService,
   ) {}
 
-  async importProducts(user: RequestUser, fileBuffer: Buffer): Promise<ImportProductsResult> {
+  async importProducts(user: RequestUser, fileBuffer: Buffer, updateQuantities = false): Promise<ImportProductsResult> {
     const workbook = new ExcelJS.Workbook();
     try {
       await workbook.xlsx.load(fileBuffer as any);
@@ -132,7 +132,7 @@ export class ProductsImportExportService {
       }
 
       try {
-        const outcome = await this.importOneRow(user, mapped, unitsByLowerName, defaultWarehouse?.id ?? null);
+        const outcome = await this.importOneRow(user, mapped, unitsByLowerName, defaultWarehouse?.id ?? null, updateQuantities);
         if (outcome === 'created') created++;
         else updated++;
       } catch (err) {
@@ -157,6 +157,7 @@ export class ProductsImportExportService {
     row: MappedProductRow,
     unitsByLowerName: Map<string, { id: string; name: string }>,
     defaultWarehouseId: string | null,
+    updateQuantities: boolean,
   ): Promise<'created' | 'updated'> {
     const article = String(row.article).trim();
 
@@ -199,7 +200,7 @@ export class ProductsImportExportService {
     if (existing) {
       if (unitId) data.unitId = unitId;
       const updated = await this.prisma.tenant.product.update({ where: { id: existing.id }, data });
-      await this.applyImportedQty(user, updated.id, importedQty, Number(existing.qty), defaultWarehouseId);
+      if (updateQuantities) await this.applyImportedQty(user, updated.id, importedQty, Number(existing.qty), defaultWarehouseId);
       return 'updated';
     }
 
