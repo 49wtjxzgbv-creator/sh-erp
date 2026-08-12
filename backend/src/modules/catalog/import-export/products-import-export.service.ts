@@ -115,8 +115,25 @@ export class ProductsImportExportService {
 
     const imagesByRow = this.extractRowImages(workbook, worksheet);
 
-    let created = 0;
-    let updated = 0;
+    // Two passes, not one — a real production incident. `TenantScopeInterceptor`
+    // wraps the WHOLE request (see PrismaService#runInTenantTransaction's own
+    // comment for the identical class of incident this already happened for
+    // once, with legacy-import's Apps Script fetch) in a single 60s Prisma
+    // transaction. The original version of this method resolved each row's
+    // Google Drive photo link with a sequential, unbounded `fetch()` inside
+    // the same loop as the DB write — a moderately sized import with several
+    // Drive-linked photos summed well past 60 seconds and the whole import
+    // failed with "Transaction already closed." Parsing every row first
+    // (cheap, no I/O) lets every Drive lookup that's actually needed run
+    // together in parallel next, each individually timeout-bounded — the
+    // whole batch costs roughly the slowest single fetch, not their sum —
+    // before the sequential DB-write loop (which still has to be sequential:
+    // it does real, ordered create/update/stock-movement work) even starts.
+    interface ParsedRow {
+      rowNumber: number;
+      mapped: MappedProductRow;
+    }
+    const parsedRows: ParsedRow[] = [];
     const errors: ImportRowError[] = [];
 
     for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
@@ -141,7 +158,23 @@ export class ProductsImportExportService {
         errors.push({ row: rowNumber, message: 'Missing article or name.' });
         continue;
       }
+      parsedRows.push({ rowNumber, mapped });
+    }
 
+    const driveImagesByRow = new Map<number, RowImage>();
+    await Promise.all(
+      parsedRows
+        .filter((r) => !imagesByRow.has(r.rowNumber) && typeof r.mapped.photoUrl === 'string')
+        .map(async (r) => {
+          const image = await this.resolveDrivePhotoUrl(r.mapped.photoUrl as string);
+          if (image) driveImagesByRow.set(r.rowNumber, image);
+        }),
+    );
+
+    let created = 0;
+    let updated = 0;
+
+    for (const { rowNumber, mapped } of parsedRows) {
       try {
         const outcome = await this.importOneRow(
           user,
@@ -149,7 +182,7 @@ export class ProductsImportExportService {
           unitsByLowerName,
           defaultWarehouse?.id ?? null,
           updateQuantities,
-          imagesByRow.get(rowNumber),
+          imagesByRow.get(rowNumber) ?? driveImagesByRow.get(rowNumber),
         );
         if (outcome === 'created') created++;
         else updated++;
@@ -216,11 +249,13 @@ export class ProductsImportExportService {
     const existing = await this.prisma.tenant.product.findFirst({ where: { article } });
     const importedQty = row.qty !== undefined ? Number(row.qty) : undefined;
 
-    // An embedded picture in the row wins over a photoUrl column — both are
-    // rare together in practice, but an actual picture already sitting in
-    // the workbook is a stronger signal than a link that depends on Drive
-    // sharing settings still being correct whenever this import runs.
-    const resolvedImage = rowImage ?? (await this.resolveDrivePhotoUrl(typeof row.photoUrl === 'string' ? row.photoUrl : undefined));
+    // Already resolved by `importProducts` before this per-row loop began —
+    // either an embedded picture (which wins over a photoUrl column: both
+    // are rare together in practice, but an actual picture already sitting
+    // in the workbook is a stronger signal than a link that depends on
+    // Drive sharing settings still being correct whenever this import
+    // runs) or a Drive-fetched one, resolved in that earlier parallel pass.
+    const resolvedImage = rowImage;
 
     if (existing) {
       if (unitId) data.unitId = unitId;
@@ -352,7 +387,13 @@ export class ProductsImportExportService {
     if (!fileId) return undefined;
 
     try {
-      const response = await fetch(`https://drive.google.com/uc?export=download&id=${fileId}`);
+      // Individually timeout-bounded — this now runs as part of a parallel
+      // batch (see importProducts), but an unbounded fetch could still hang
+      // that whole batch (and the request's 60s transaction budget with it)
+      // on a single slow/unresponsive Drive URL.
+      const response = await fetch(`https://drive.google.com/uc?export=download&id=${fileId}`, {
+        signal: AbortSignal.timeout(8000),
+      });
       if (!response.ok) return undefined;
       const contentType = response.headers.get('content-type') ?? '';
       const match = contentType.match(/^image\/(jpeg|png|gif)/);
