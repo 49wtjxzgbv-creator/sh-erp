@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
+import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -58,6 +59,7 @@ export function AssemblyForm({
 }: AssemblyFormProps) {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
+  const tf = useTranslations('files');
 
   const {
     register,
@@ -93,6 +95,17 @@ export function AssemblyForm({
           )}
         </CardContent>
       </Card>
+
+      {assembly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{tf('documents')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

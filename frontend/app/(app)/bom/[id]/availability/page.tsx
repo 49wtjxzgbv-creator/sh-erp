@@ -27,11 +27,12 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { AvailabilityPrint } from '@/components/domain/bom/availability-print';
 
 /** AvailabilityResult's shortages only carry a raw productId — resolve to a real name/photo, same fix as everywhere else that showed a raw id. */
 function ShortageProductCell({ productId }: { productId: string }) {
   const { data: product } = useProduct(productId);
-  const { data: photosByProduct } = useFilesForEntities('Product', [productId]);
+  const { data: photosByProduct } = useFilesForEntities('Product', [productId], 'PRODUCT_PHOTO');
   return (
     <div className="flex items-center gap-2.5">
       <Avatar src={photosByProduct?.[productId]?.[0]?.downloadUrl} size="sm" />
@@ -121,9 +122,12 @@ export default function AssemblyAvailabilityPage() {
 
           {result && (
             <div className="space-y-3">
-              <Badge variant={result.sufficient ? 'success' : 'destructive'}>
-                {result.sufficient ? t('sufficient') : t('insufficientStock')}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant={result.sufficient ? 'success' : 'destructive'}>
+                  {result.sufficient ? t('sufficient') : t('insufficientStock')}
+                </Badge>
+                <AvailabilityPrint assemblyId={params.id} result={result} />
+              </div>
               {result.shortages.length > 0 && (
                 <Table>
                   <TableHeader>

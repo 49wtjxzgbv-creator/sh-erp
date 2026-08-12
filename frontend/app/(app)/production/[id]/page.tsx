@@ -61,7 +61,7 @@ export default function ProductionOrderDetailPage() {
   const { data: stages } = useProductionStages();
   const { data: warehouses } = useWarehouses();
   const { data: assembly } = useAssembly(order?.assemblyId);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', order ? [order.assemblyId] : []);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', order ? [order.assemblyId] : [], 'ASSEMBLY_PHOTO');
 
   const setWorkers = useSetProductionOrderWorkers(params.id);
   const cancelOrder = useCancelProductionOrder(params.id);

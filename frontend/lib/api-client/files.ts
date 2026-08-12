@@ -10,8 +10,10 @@ import { apiClient } from './http';
 
 export type FileDomain =
   | 'PRODUCT_PHOTO'
+  | 'PRODUCT_DOCUMENT'
   | 'ASSEMBLY_PHOTO'
   | 'ASSEMBLY_DRAWING'
+  | 'ASSEMBLY_DOCUMENT'
   | 'CUSTOMER_ORDER_DOCUMENT'
   | 'PURCHASE_INVOICE'
   | 'EMPLOYEE_PHOTO'
@@ -63,8 +65,9 @@ export function getFileDownloadUrl(fileAssetId: string): Promise<{ downloadUrl: 
   return apiClient.get(`files/${fileAssetId}/download-url`);
 }
 
-export function listFilesForEntity(entityType: string, entityId: string): Promise<FileAsset[]> {
-  return apiClient.get<FileAsset[]>('files', { query: { entityType, entityId } });
+/** `domain` narrows to one or more `FileDomain`s (e.g. only `PRODUCT_PHOTO`, excluding `PRODUCT_DOCUMENT`) — omit to list every file on the entity regardless of domain. */
+export function listFilesForEntity(entityType: string, entityId: string, domain?: FileDomain | FileDomain[]): Promise<FileAsset[]> {
+  return apiClient.get<FileAsset[]>('files', { query: { entityType, entityId, ...domainQuery(domain) } });
 }
 
 /** `FileAsset` plus a presigned download URL — only the batch endpoint returns this (see files.service.ts#listForEntities's header comment for why: signing locally, in one server-side pass, is what actually avoids an N+1 for a list view's worth of thumbnails). */
@@ -73,9 +76,20 @@ export interface FileAssetWithUrl extends FileAsset {
 }
 
 /** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */
-export function listFilesForEntities(entityType: string, entityIds: string[]): Promise<Record<string, FileAssetWithUrl[]>> {
+export function listFilesForEntities(
+  entityType: string,
+  entityIds: string[],
+  domain?: FileDomain | FileDomain[],
+): Promise<Record<string, FileAssetWithUrl[]>> {
   if (entityIds.length === 0) return Promise.resolve({});
-  return apiClient.get<Record<string, FileAssetWithUrl[]>>('files/batch', { query: { entityType, entityIds: entityIds.join(',') } });
+  return apiClient.get<Record<string, FileAssetWithUrl[]>>('files/batch', {
+    query: { entityType, entityIds: entityIds.join(','), ...domainQuery(domain) },
+  });
+}
+
+function domainQuery(domain?: FileDomain | FileDomain[]): { domain?: string } {
+  if (!domain) return {};
+  return { domain: Array.isArray(domain) ? domain.join(',') : domain };
 }
 
 export function deleteFile(fileAssetId: string): Promise<{ ok: true }> {

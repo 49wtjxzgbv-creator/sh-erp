@@ -25,7 +25,7 @@ export default function BomPage() {
   const { data, isLoading } = useAssemblies({ search: search || undefined, limit: PAGE_SIZE, offset });
 
   const assemblyIds = useMemo(() => data?.items.map((a) => a.id) ?? [], [data]);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
 
   const columns = useMemo<ColumnDef<Assembly>[]>(
     () => [

@@ -43,7 +43,7 @@ export default function InventorySessionDetailPage() {
   // same productId-resolution shape as Stock Levels' own list.
   const productIds = useMemo(() => Array.from(new Set((items ?? []).map((i) => i.productId))), [items]);
   const { data: productsById } = useProductsByIds(productIds);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);

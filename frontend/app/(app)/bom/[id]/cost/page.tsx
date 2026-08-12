@@ -18,7 +18,11 @@ function ComponentCell({ line }: { line: CostBreakdownLine }) {
   const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
   const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
   const photoEntityIds = line.componentType === 'PRODUCT' ? (line.productId ? [line.productId] : []) : line.subAssemblyId ? [line.subAssemblyId] : [];
-  const { data: photos } = useFilesForEntities(line.componentType === 'PRODUCT' ? 'Product' : 'Assembly', photoEntityIds);
+  const { data: photos } = useFilesForEntities(
+    line.componentType === 'PRODUCT' ? 'Product' : 'Assembly',
+    photoEntityIds,
+    line.componentType === 'PRODUCT' ? 'PRODUCT_PHOTO' : 'ASSEMBLY_PHOTO',
+  );
   const id = line.componentType === 'PRODUCT' ? line.productId : line.subAssemblyId;
   const label =
     line.componentType === 'PRODUCT'

@@ -31,7 +31,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const tp = useTranslations('print');
 
   const assemblyIds = useMemo(() => Array.from(new Set((order.items ?? []).map((i) => i.assemblyId))), [order.items]);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
 
   const columns: PrintColumnOption[] = [
     { id: 'assembly', label: t('assembly') },

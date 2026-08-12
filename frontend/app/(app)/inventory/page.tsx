@@ -38,7 +38,7 @@ export default function StockLevelsPage() {
   // Catalog/BOM's list views (see products.controller.ts's own comment).
   const productIds = useMemo(() => Array.from(new Set((levels ?? []).map((l) => l.productId))), [levels]);
   const { data: productsById } = useProductsByIds(productIds);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
 
   const columns = useMemo<ColumnDef<WarehouseStock>[]>(
     () => [

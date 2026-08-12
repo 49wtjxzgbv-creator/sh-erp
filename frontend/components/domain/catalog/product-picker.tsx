@@ -32,7 +32,7 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
 
   const { data } = useProducts({ search: query, limit: 20 });
   const productIds = useMemo(() => (data?.items ?? []).map((p) => p.id), [data]);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
 
   // A row hydrated from the server only ever has a bare `value` (id) — this
   // resolves and fills in the visible text once, the first time that
@@ -40,7 +40,7 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
   // real bug: rows loaded into an existing BOM/order previously showed a
   // permanently empty search box even though a real component was saved).
   const { data: selectedProduct } = useProduct(value);
-  const { data: photosBySelected } = useFilesForEntities('Product', value ? [value] : []);
+  const { data: photosBySelected } = useFilesForEntities('Product', value ? [value] : [], 'PRODUCT_PHOTO');
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (hydratedRef.current || !value || !selectedProduct) return;

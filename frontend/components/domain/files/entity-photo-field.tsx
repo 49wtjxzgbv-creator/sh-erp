@@ -26,7 +26,7 @@ export interface EntityPhotoFieldProps {
 
 export function EntityPhotoField({ domain, entityType, entityId }: EntityPhotoFieldProps) {
   const qc = useQueryClient();
-  const { data: files } = useFilesForEntity(entityType, entityId);
+  const { data: files } = useFilesForEntity(entityType, entityId, domain);
   const current = files?.[0];
 
   return (

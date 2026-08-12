@@ -50,7 +50,7 @@ export function PendingPhotoField({ value, onChange, accept = 'image/*' }: Pendi
         className="rounded-md ring-offset-background transition-opacity hover:opacity-80"
         aria-label={tc('edit')}
       >
-        <Avatar src={previewUrl} size="2xl" />
+        <Avatar src={previewUrl} size="2xl" zoomable={false} />
       </button>
       <div className="flex flex-col gap-1">
         <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>

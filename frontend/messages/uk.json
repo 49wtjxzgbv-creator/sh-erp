@@ -642,7 +642,9 @@
     "columnsToInclude": "Стовпці для друку",
     "includePhotos": "Включити фото",
     "printAction": "Друкувати",
-    "photoColumn": "Фото"
+    "photoColumn": "Фото",
+    "printAvailability": "Друк наявності",
+    "availabilityTitle": "Перевірка наявності"
   },
   "legacyImport": {
     "title": "Джерела імпорту",
@@ -816,5 +818,14 @@
     "removeMemberFailed": "Не вдалося прибрати учасника.",
     "cannotRemoveLast": "Неможливо прибрати останнього учасника компанії.",
     "noMembers": "Учасників немає."
+  },
+  "files": {
+    "documents": "Документи",
+    "addDocument": "Додати документ",
+    "noDocuments": "Документів ще немає",
+    "download": "Завантажити",
+    "view": "Переглянути",
+    "loadingModel": "Завантаження 3D-моделі…",
+    "modelLoadError": "Не вдалося завантажити 3D-модель"
   }
 }

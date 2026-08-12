@@ -35,8 +35,9 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
 
   const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
   const assemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  const { data: photosOfThisAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
 
   const columns: PrintColumnOption[] = [
     { id: 'component', label: t('component') },
@@ -69,6 +70,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
         <PrintDocumentHeader
           title={tp('specificationTitle')}
           subtitle={`${assembly.article ?? ''} ${assembly.name}`}
+          photoUrl={photosOfThisAssembly?.[assemblyId]?.[0]?.downloadUrl}
         />
         <table>
           <thead>

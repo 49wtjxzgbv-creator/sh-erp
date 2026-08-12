@@ -79,8 +79,8 @@ export class SearchService {
     // (files.service.ts#listForEntities) — two small groups, not one per
     // row, since this is exactly the N+1 that method exists to avoid.
     const [productPhotos, assemblyPhotos] = await Promise.all([
-      this.filesService.listForEntities(user, 'Product', products.map((p) => p.id)),
-      this.filesService.listForEntities(user, 'Assembly', assemblies.map((a) => a.id)),
+      this.filesService.listForEntities(user, 'Product', products.map((p) => p.id), ['PRODUCT_PHOTO']),
+      this.filesService.listForEntities(user, 'Assembly', assemblies.map((a) => a.id), ['ASSEMBLY_PHOTO']),
     ]);
 
     return {

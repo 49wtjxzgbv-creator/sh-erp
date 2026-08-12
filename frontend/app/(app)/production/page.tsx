@@ -32,7 +32,7 @@ function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
 }
 
 function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
   return <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />;
 }
 

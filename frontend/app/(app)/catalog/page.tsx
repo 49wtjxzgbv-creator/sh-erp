@@ -34,7 +34,7 @@ export default function CatalogPage() {
   // One batch request for every row's photo instead of PAGE_SIZE separate
   // ones — see files.service.ts#listForEntities's header comment.
   const productIds = useMemo(() => data?.items.map((p) => p.id) ?? [], [data]);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
 
   const columns = useMemo<ColumnDef<Product>[]>(
     () => [

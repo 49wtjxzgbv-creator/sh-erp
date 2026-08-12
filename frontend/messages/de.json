@@ -642,7 +642,9 @@
     "columnsToInclude": "Columns to print",
     "includePhotos": "Include photos",
     "printAction": "Print",
-    "photoColumn": "Photo"
+    "photoColumn": "Photo",
+    "printAvailability": "Print availability",
+    "availabilityTitle": "Availability check"
   },
   "legacyImport": {
     "title": "Importquellen",
@@ -816,5 +818,14 @@
     "removeMemberFailed": "Failed to remove member.",
     "cannotRemoveLast": "Cannot remove the last remaining member of a company.",
     "noMembers": "No members."
+  },
+  "files": {
+    "documents": "Documents",
+    "addDocument": "Add document",
+    "noDocuments": "No documents yet",
+    "download": "Download",
+    "view": "View",
+    "loadingModel": "Loading 3D model…",
+    "modelLoadError": "Failed to load 3D model"
   }
 }

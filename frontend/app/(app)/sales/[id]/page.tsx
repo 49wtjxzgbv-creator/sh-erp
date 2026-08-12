@@ -36,7 +36,7 @@ import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-pri
 /** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
 function AssemblyCell({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
   return (
     <div className="flex items-center gap-2.5">
       <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />

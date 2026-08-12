@@ -44,14 +44,14 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
   const { data } = useAssemblies({ search: query, limit: 20 });
   const results = data?.items.filter((a) => a.id !== excludeId) ?? [];
   const assemblyIds = useMemo(() => results.map((a) => a.id), [results]);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
 
   // Same hydration fix as ProductPicker: a row loaded from the server only
   // ever has a bare `value` (id) — resolve and fill in the visible text
   // once, so an existing BOM/order line doesn't render as a permanently
   // empty search box.
   const { data: selectedAssembly } = useAssembly(value);
-  const { data: photosBySelected } = useFilesForEntities('Assembly', value ? [value] : []);
+  const { data: photosBySelected } = useFilesForEntities('Assembly', value ? [value] : [], 'ASSEMBLY_PHOTO');
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (hydratedRef.current || !value || !selectedAssembly) return;

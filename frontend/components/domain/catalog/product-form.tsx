@@ -15,6 +15,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
+import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
@@ -106,6 +107,7 @@ export function ProductForm({
 }: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const tf = useTranslations('files');
   const { data: units } = useCompanyUnits();
 
   const {
@@ -150,6 +152,17 @@ export function ProductForm({
           )}
         </CardContent>
       </Card>
+
+      {product && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{tf('documents')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityDocumentsField domain="PRODUCT_DOCUMENT" entityType="Product" entityId={product.id} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

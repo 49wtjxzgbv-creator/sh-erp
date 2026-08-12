@@ -3,6 +3,7 @@
 import { type ReactNode } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
 
 /**
  * Shared print scaffolding for every document/label print view (production-
@@ -32,13 +33,16 @@ export function PrintButton({ label, className }: { label: string; className?: s
   );
 }
 
-/** Shared header block every printed document uses — company name placeholder, document title, generation timestamp. Legacy's equivalent pulled a per-company logo from Settings; that's deferred here (see frontend/README's "Known gap: pre-login branding images" — the authenticated-shell logo isn't wired in yet either), so this prints a plain text title only, disclosed rather than faking a logo. */
-export function PrintDocumentHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+/** Shared header block every printed document uses — company name placeholder, document title, generation timestamp. Legacy's equivalent pulled a per-company logo from Settings; that's deferred here (see frontend/README's "Known gap: pre-login branding images" — the authenticated-shell logo isn't wired in yet either), so this prints a plain text title only, disclosed rather than faking a logo. `photoUrl` is unrelated to that gap — it's the printed document's own subject photo (e.g. the assembly being specified), not a company logo. */
+export function PrintDocumentHeader({ title, subtitle, photoUrl }: { title: string; subtitle?: string; photoUrl?: string }) {
   return (
-    <div className="mb-4 border-b border-black pb-2">
-      <h1 className="text-lg font-bold">{title}</h1>
-      {subtitle && <p className="text-sm">{subtitle}</p>}
-      <p className="text-xs text-gray-600">{new Date().toLocaleString()}</p>
+    <div className="mb-4 flex items-start gap-4 border-b border-black pb-2">
+      {photoUrl && <Avatar src={photoUrl} size="xl" zoomable={false} className="rounded-none" />}
+      <div>
+        <h1 className="text-lg font-bold">{title}</h1>
+        {subtitle && <p className="text-sm">{subtitle}</p>}
+        <p className="text-xs text-gray-600">{new Date().toLocaleString()}</p>
+      </div>
     </div>
   );
 }

@@ -248,9 +248,9 @@ export class FilesService {
     return { downloadUrl, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS };
   }
 
-  async listForEntity(user: RequestUser, entityType: string, entityId: string) {
+  async listForEntity(user: RequestUser, entityType: string, entityId: string, domains?: FileDomain[]) {
     return this.prisma.tenant.fileAsset.findMany({
-      where: { entityType, entityId, deletedAt: null },
+      where: { entityType, entityId, deletedAt: null, ...(domains ? { domain: { in: domains } } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -270,11 +270,11 @@ export class FilesService {
    * cheap and is what actually avoids the N+1 this endpoint exists for;
    * returning bare `storageKey`s would just move the N+1 to the client.
    */
-  async listForEntities(user: RequestUser, entityType: string, entityIds: string[]) {
+  async listForEntities(user: RequestUser, entityType: string, entityIds: string[], domains?: FileDomain[]) {
     if (entityIds.length === 0) return {};
 
     const files = await this.prisma.tenant.fileAsset.findMany({
-      where: { entityType, entityId: { in: entityIds }, deletedAt: null },
+      where: { entityType, entityId: { in: entityIds }, deletedAt: null, ...(domains ? { domain: { in: domains } } : {}) },
       orderBy: { createdAt: 'desc' },
     });
 
