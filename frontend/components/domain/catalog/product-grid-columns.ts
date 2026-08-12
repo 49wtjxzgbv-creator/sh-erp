@@ -12,11 +12,13 @@ import type { Product } from '@/lib/api-client/catalog';
  *    column anywhere in legacy's `SS_COLUMNS` (only text/number/photo) —
  *    this grid adds one real `type: 'unit'` column, rendered as a
  *    `<select>` of the company's units, because the schema now requires it.
- *  - `photoUrl` is dropped entirely — `Product` has no photo column in this
- *    backend at all (confirmed repeatedly across the Excel import/export
- *    and printing work in this same pass); photos are `FileAsset`
+ *  - `photoUrl` as a grid-editable text field is dropped — `Product` has no
+ *    photo column in this backend at all; photos are `FileAsset`
  *    attachments added after a product exists, a different flow (Task 43's
- *    `FileUploadField`), not a grid-editable field.
+ *    `FileUploadField`). A read-only photo thumbnail is still shown in the
+ *    grid (fixed leading column, not part of `PRODUCT_GRID_COLUMNS`/the
+ *    column-visibility toggle, same treatment as the row-select checkbox
+ *    column), matching the photo column already on the plain Catalog list.
  *  - `usedInAssemblies` (legacy's server-computed "which assemblies use
  *    this component" readonly column, from `Products.gs#getProductUsageMap_`)
  *    has no equivalent endpoint in this backend — dropped, flagged here as

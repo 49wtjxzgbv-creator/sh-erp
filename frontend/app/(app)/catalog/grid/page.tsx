@@ -8,9 +8,11 @@ import { ArrowLeft, Eye, ListChecks, Trash2 } from 'lucide-react';
 import { useProducts, useCompanyUnits } from '@/lib/hooks/use-catalog';
 import { updateProduct, deleteProduct, type Product } from '@/lib/api-client/catalog';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { recordStockMovement } from '@/lib/api-client/inventory';
 import { ApiError } from '@/lib/api-client/types';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { Avatar } from '@/components/ui/avatar';
 import {
   PRODUCT_GRID_COLUMNS,
   FILTERABLE_COLUMNS,
@@ -92,6 +94,23 @@ export default function ProductGridPage() {
 
   const visibleColumns = PRODUCT_GRID_COLUMNS.filter((c) => visibleKeys.has(c.key));
   const filteredRows = useMemo(() => filterProductsByFieldValues(rows, filters), [rows, filters]);
+
+  // Same "one batch request for every row's photo" pattern as the plain
+  // Catalog list — see files.service.ts#listForEntities's header comment.
+  const productIds = useMemo(() => rows.map((p) => p.id), [rows]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+
+  const allFilteredSelected = filteredRows.length > 0 && filteredRows.every((p) => selected.has(p.id));
+  const someFilteredSelected = filteredRows.some((p) => selected.has(p.id));
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filteredRows.forEach((p) => next.delete(p.id));
+      else filteredRows.forEach((p) => next.add(p.id));
+      return next;
+    });
+  }
 
   const jumpMatches = useMemo(() => {
     if (!jumpQuery.trim()) return [];
@@ -264,7 +283,20 @@ export default function ProductGridPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            {selectMode && <TableHead className="w-8" />}
+            {selectMode && (
+              <TableHead className="w-8">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someFilteredSelected && !allFilteredSelected;
+                  }}
+                  onChange={toggleSelectAll}
+                  aria-label={tc('selectAll')}
+                />
+              </TableHead>
+            )}
+            <TableHead className="w-14" />
             {visibleColumns.map((col) => (
               <TableHead key={col.key}>{t(col.labelKey as any)}</TableHead>
             ))}
@@ -279,9 +311,13 @@ export default function ProductGridPage() {
                     type="checkbox"
                     checked={selected.has(product.id)}
                     onChange={(e) => toggleSelected(product.id, e.target.checked)}
+                    aria-label={tc('selectRow')}
                   />
                 </TableCell>
               )}
+              <TableCell>
+                <Avatar src={photosByProduct?.[product.id]?.[0]?.downloadUrl} size="sm" />
+              </TableCell>
               {visibleColumns.map((col) => (
                 <TableCell key={col.key} className={cn(savingCell === `${product.id}:${col.key}` && 'opacity-50')}>
                   {col.type === 'unit' ? (
