@@ -55,15 +55,9 @@ export default function AssemblyCostPage() {
       <div className="flex gap-4">
         <Card className="flex-1">
           <CardHeader>
-            <CardTitle className="text-base">{t('localCost')}</CardTitle>
+            <CardTitle className="text-base">{t('cost')}</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{cost?.localCostPerUnit.toFixed(2)}</CardContent>
-        </Card>
-        <Card className="flex-1">
-          <CardHeader>
-            <CardTitle className="text-base">{t('germanCost')}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">{cost?.germanCostPerUnit.toFixed(2)}</CardContent>
+          <CardContent className="text-2xl font-semibold">{cost?.costPerUnit.toFixed(2)}</CardContent>
         </Card>
       </div>
 
@@ -81,14 +75,13 @@ export default function AssemblyCostPage() {
             <TableHead>{t('componentType')}</TableHead>
             <TableHead>{t('component')}</TableHead>
             <TableHead>{t('qtyPerUnit')}</TableHead>
-            <TableHead>{t('localCost')}</TableHead>
-            <TableHead>{t('germanCost')}</TableHead>
+            <TableHead>{t('cost')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {!cost || cost.breakdown.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
@@ -98,8 +91,7 @@ export default function AssemblyCostPage() {
                 <TableCell>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</TableCell>
                 <TableCell><ComponentCell line={line} /></TableCell>
                 <TableCell>{line.qtyPerUnit}</TableCell>
-                <TableCell>{line.lineLocalCost.toFixed(2)}</TableCell>
-                <TableCell>{line.lineGermanCost.toFixed(2)}</TableCell>
+                <TableCell>{line.lineCost.toFixed(2)}</TableCell>
               </TableRow>
             ))
           )}

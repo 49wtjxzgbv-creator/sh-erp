@@ -43,8 +43,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
     { id: 'component', label: t('component') },
     { id: 'componentType', label: t('componentType') },
     { id: 'qtyPerUnit', label: t('qtyPerUnit') },
-    { id: 'localCost', label: t('localCost') },
-    { id: 'germanCost', label: t('germanCost') },
+    { id: 'cost', label: t('cost') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -80,8 +79,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
               {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
               {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}
               {printOptions.isColumnVisible('qtyPerUnit') && <th>{t('qtyPerUnit')}</th>}
-              {printOptions.isColumnVisible('localCost') && <th>{t('localCost')}</th>}
-              {printOptions.isColumnVisible('germanCost') && <th>{t('germanCost')}</th>}
+              {printOptions.isColumnVisible('cost') && <th>{t('cost')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -96,25 +94,14 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                 {printOptions.isColumnVisible('component') && <td><ComponentNameCell line={line} /></td>}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
-                {printOptions.isColumnVisible('localCost') && <td>{line.lineLocalCost.toFixed(2)}</td>}
-                {printOptions.isColumnVisible('germanCost') && <td>{line.lineGermanCost.toFixed(2)}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{line.lineCost.toFixed(2)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
-        {(printOptions.isColumnVisible('localCost') || printOptions.isColumnVisible('germanCost')) && (
+        {printOptions.isColumnVisible('cost') && (
           <p className="mt-4 text-sm font-semibold">
-            {printOptions.isColumnVisible('localCost') && (
-              <>
-                {t('localCost')}: {cost.localCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
-              </>
-            )}
-            {printOptions.isColumnVisible('localCost') && printOptions.isColumnVisible('germanCost') && <>&nbsp;·&nbsp;</>}
-            {printOptions.isColumnVisible('germanCost') && (
-              <>
-                {t('germanCost')}: {cost.germanCostPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
-              </>
-            )}
+            {t('cost')}: {cost.costPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
           </p>
         )}
       </PrintArea>

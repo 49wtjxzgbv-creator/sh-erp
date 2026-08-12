@@ -35,7 +35,7 @@ describe('produceAssembly', () => {
 
 describe('calculateAssemblyCost', () => {
   it('is a GET, not a POST — cost calculation has no side effects', async () => {
-    (mockedApiClient.get as jest.Mock).mockResolvedValue({ assemblyId: 'a1', localCostPerUnit: 10, germanCostPerUnit: 12, breakdown: [] });
+    (mockedApiClient.get as jest.Mock).mockResolvedValue({ assemblyId: 'a1', costPerUnit: 10, breakdown: [] });
     await calculateAssemblyCost('a1');
     expect(mockedApiClient.get).toHaveBeenCalledWith('assemblies/a1/cost');
     expect(mockedApiClient.post).not.toHaveBeenCalled();

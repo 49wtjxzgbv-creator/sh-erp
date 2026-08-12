@@ -71,20 +71,20 @@ describe('ReportsService', () => {
     });
   });
 
-  describe('getWarehouseValuation — 5 legacy price fields, grouped by category (Phase 1 §5, admin-only)', () => {
-    it('sums qty * each price field per category and rolls up a grand total', async () => {
+  describe('getWarehouseValuation — qty * sellPriceEur only, grouped by category (Phase 1 §5, admin-only)', () => {
+    it('sums qty * sellPriceEur per category and rolls up a grand total — other price fields are informational, never summed', async () => {
       prisma.tenant.product.findMany.mockResolvedValue([
         {
           id: 'p1', category: 'Electronics', qty: 10,
-          localPriceExclVat: 1, localPriceInclVat: 1.2, germanPriceExclVat: 2, germanPriceInclVat: 2.4, sellPriceEur: 5,
+          localPriceExclVat: 999, localPriceInclVat: 999, germanPriceExclVat: 999, germanPriceInclVat: 999, sellPriceEur: 5,
         },
         {
           id: 'p2', category: 'Electronics', qty: 5,
-          localPriceExclVat: 2, localPriceInclVat: 2.4, germanPriceExclVat: 3, germanPriceInclVat: 3.6, sellPriceEur: 8,
+          localPriceExclVat: 999, localPriceInclVat: 999, germanPriceExclVat: 999, germanPriceInclVat: 999, sellPriceEur: 8,
         },
         {
           id: 'p3', category: 'Hardware', qty: 1,
-          localPriceExclVat: 10, localPriceInclVat: 12, germanPriceExclVat: 20, germanPriceInclVat: 24, sellPriceEur: 40,
+          localPriceExclVat: 999, localPriceInclVat: 999, germanPriceExclVat: 999, germanPriceInclVat: 999, sellPriceEur: 40,
         },
       ]);
 
@@ -92,17 +92,15 @@ describe('ReportsService', () => {
 
       const electronics = byCategory.find((c) => c.category === 'Electronics')!;
       expect(electronics.productCount).toBe(2);
-      expect(electronics.totalLocalExclVat).toBe(10 * 1 + 5 * 2); // 20
-      expect(electronics.totalSellEur).toBe(10 * 5 + 5 * 8); // 90
+      expect(electronics.totalValue).toBe(10 * 5 + 5 * 8); // 90
 
       expect(grandTotal.productCount).toBe(3);
-      expect(grandTotal.totalLocalExclVat).toBe(20 + 1 * 10); // 30
-      expect(grandTotal.totalSellEur).toBe(90 + 1 * 40); // 130
+      expect(grandTotal.totalValue).toBe(90 + 1 * 40); // 130
     });
 
     it('groups products with no category under a null bucket rather than dropping them', async () => {
       prisma.tenant.product.findMany.mockResolvedValue([
-        { id: 'p1', category: null, qty: 2, localPriceExclVat: 3, localPriceInclVat: 3, germanPriceExclVat: 3, germanPriceInclVat: 3, sellPriceEur: 3 },
+        { id: 'p1', category: null, qty: 2, sellPriceEur: 3 },
       ]);
       const { byCategory } = await service.getWarehouseValuation(user);
       expect(byCategory).toHaveLength(1);

@@ -78,7 +78,7 @@ export class AiService {
       if (lineTotalLocal === undefined && assembly) {
         try {
           const cost = await this.assembliesService.calculateCost(user, assembly.id);
-          lineTotalLocal = cost.localCostPerUnit * Number(item.qty);
+          lineTotalLocal = cost.costPerUnit * Number(item.qty);
         } catch {
           lineTotalLocal = undefined;
         }

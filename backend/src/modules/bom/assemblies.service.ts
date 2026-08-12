@@ -14,16 +14,13 @@ export interface CostBreakdownLine {
   productId?: string;
   subAssemblyId?: string;
   qtyPerUnit: number;
-  unitLocalCost: number;
-  unitGermanCost: number;
-  lineLocalCost: number;
-  lineGermanCost: number;
+  unitCost: number;
+  lineCost: number;
 }
 
 export interface AssemblyCostResult {
   assemblyId: string;
-  localCostPerUnit: number;
-  germanCostPerUnit: number;
+  costPerUnit: number;
   breakdown: CostBreakdownLine[];
 }
 
@@ -344,18 +341,25 @@ export class AssembliesService {
       throw new NotFoundException(`Assembly ${assemblyId} not found.`);
     }
 
-    // Own per-unit costs (labor/packaging/delivery/other) have no separate
-    // German-market variant in the schema, so they contribute identically
-    // to both currency totals — only Product component prices differ
-    // between localPriceExclVat and germanPriceExclVat.
+    // `sellPriceEur` is the ONE price every calculation in this app is
+    // pinned to (explicit business rule, not a technical default) —
+    // localPriceExclVat/localPriceInclVat/germanPriceExclVat/
+    // germanPriceInclVat are informational reference fields only (still
+    // stored, still shown/editable on the product and in import/export),
+    // never multiplied into a cost/value total anywhere. This used to track
+    // a separate cost basis per those two supplier prices instead
+    // (localCostPerUnit/germanCostPerUnit) — real behavior change, not a
+    // bug fix: this is a deliberate switch to a single sellPriceEur-based
+    // cost, matching the same rule applied to production materials cost
+    // (production-orders.service.ts) and the valuation report
+    // (reports.service.ts).
     const ownCost =
       Number(assembly.laborCostPerUnit) +
       Number(assembly.packagingCostPerUnit) +
       Number(assembly.deliveryCostPerUnit) +
       Number(assembly.otherCostPerUnit);
 
-    let localCostPerUnit = ownCost;
-    let germanCostPerUnit = ownCost;
+    let costPerUnit = ownCost;
     const breakdown: CostBreakdownLine[] = [];
 
     for (const line of assembly.components) {
@@ -364,37 +368,30 @@ export class AssembliesService {
       if (line.componentType === 'PRODUCT' && line.productId) {
         const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
         if (!product) throw new NotFoundException(`Component product ${line.productId} not found.`);
-        const unitLocalCost = Number(product.localPriceExclVat ?? 0);
-        const unitGermanCost = Number(product.germanPriceExclVat ?? 0);
-        localCostPerUnit += unitLocalCost * qtyPerUnit;
-        germanCostPerUnit += unitGermanCost * qtyPerUnit;
+        const unitCost = Number(product.sellPriceEur ?? 0);
+        costPerUnit += unitCost * qtyPerUnit;
         breakdown.push({
           componentType: 'PRODUCT',
           productId: line.productId,
           qtyPerUnit,
-          unitLocalCost,
-          unitGermanCost,
-          lineLocalCost: unitLocalCost * qtyPerUnit,
-          lineGermanCost: unitGermanCost * qtyPerUnit,
+          unitCost,
+          lineCost: unitCost * qtyPerUnit,
         });
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
         const sub = await this.calcAssemblyCostRecursive(line.subAssemblyId, visited);
-        localCostPerUnit += sub.localCostPerUnit * qtyPerUnit;
-        germanCostPerUnit += sub.germanCostPerUnit * qtyPerUnit;
+        costPerUnit += sub.costPerUnit * qtyPerUnit;
         breakdown.push({
           componentType: 'ASSEMBLY',
           subAssemblyId: line.subAssemblyId,
           qtyPerUnit,
-          unitLocalCost: sub.localCostPerUnit,
-          unitGermanCost: sub.germanCostPerUnit,
-          lineLocalCost: sub.localCostPerUnit * qtyPerUnit,
-          lineGermanCost: sub.germanCostPerUnit * qtyPerUnit,
+          unitCost: sub.costPerUnit,
+          lineCost: sub.costPerUnit * qtyPerUnit,
         });
       }
     }
 
     visited.delete(assemblyId);
-    return { assemblyId, localCostPerUnit, germanCostPerUnit, breakdown };
+    return { assemblyId, costPerUnit, breakdown };
   }
 
   // ============================================================
@@ -509,10 +506,8 @@ export class AssembliesService {
       warehouseId,
       consumedMovements: movements,
       costEstimate: {
-        localCostPerUnit: cost.localCostPerUnit,
-        germanCostPerUnit: cost.germanCostPerUnit,
-        totalLocalCost: cost.localCostPerUnit * dto.qty,
-        totalGermanCost: cost.germanCostPerUnit * dto.qty,
+        costPerUnit: cost.costPerUnit,
+        totalCost: cost.costPerUnit * dto.qty,
       },
     };
   }

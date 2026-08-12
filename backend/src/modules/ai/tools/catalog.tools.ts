@@ -96,19 +96,19 @@ export class SearchAssembliesTool implements AiTool {
       const availableInStock = await this.prisma.tenant.finishedGood.count({
         where: { assemblyId: a.id, status: 'IN_STOCK' },
       });
-      let costLocal = 0;
+      let costPerUnit = 0;
       try {
         const cost = await this.assembliesService.calculateCost({} as any, a.id);
-        costLocal = cost.localCostPerUnit;
+        costPerUnit = cost.costPerUnit;
       } catch {
-        costLocal = 0; // cycle or missing component — don't fail the whole search over one bad assembly
+        costPerUnit = 0; // cycle or missing component — don't fail the whole search over one bad assembly
       }
       results.push({
         article: a.article,
         name: a.name,
         availableInStock,
         componentCount: (a as any).components?.length ?? 0,
-        costEur: costLocal,
+        costEur: costPerUnit,
       });
     }
 
@@ -158,7 +158,7 @@ export class GetAssemblyDetailTool implements AiTool {
       name: found.name,
       article: found.article,
       components: componentDescriptions,
-      totalCostLocal: cost.localCostPerUnit,
+      totalCost: cost.costPerUnit,
       defaultSupplierId: (found as any).defaultSupplierId || null,
     };
   }

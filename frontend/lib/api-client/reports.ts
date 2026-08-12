@@ -39,14 +39,11 @@ export function getReorderSuggestions(query: ReorderSuggestionsQuery = {}): Prom
   return apiClient.get<ReorderSuggestion[]>('reports/reorder-suggestions', { query: query as Record<string, number> });
 }
 
+/** Costed from Product.sellPriceEur — the one price every calculation in this app is pinned to; other price fields are informational only, never summed into this. */
 export interface CategoryValuation {
   category: string | null;
   productCount: number;
-  totalLocalExclVat: number;
-  totalLocalInclVat: number;
-  totalGermanExclVat: number;
-  totalGermanInclVat: number;
-  totalSellEur: number;
+  totalValue: number;
 }
 
 export interface WarehouseValuation {
@@ -54,7 +51,7 @@ export interface WarehouseValuation {
   grandTotal: CategoryValuation;
 }
 
-/** All 5 legacy price fields, grouped by category — admin-only (reports:valuation). */
+/** qty * sellPriceEur, grouped by category — admin-only (reports:valuation). */
 export function getWarehouseValuation(): Promise<WarehouseValuation> {
   return apiClient.get<WarehouseValuation>('reports/warehouse-valuation');
 }

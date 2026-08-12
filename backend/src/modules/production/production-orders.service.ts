@@ -223,6 +223,23 @@ export class ProductionOrdersService {
     }
 
     // ---- Pass 2: consume ----
+    // `sellPriceEur` is the ONE price every calculation in this app is
+    // pinned to (explicit business rule) — localPriceExclVat/
+    // germanPriceExclVat are informational reference fields only, never
+    // multiplied into a cost total anywhere (matches the same rule applied
+    // to BOM cost in assemblies.service.ts and the valuation report in
+    // reports.service.ts). `materialsLocalCost`/`materialsGermanCost` (and
+    // the ProductionOrder.totalLocalCostEur/totalGermanCostEur columns they
+    // feed below) are NOT being collapsed into one column — unlike BOM
+    // cost, this is a real, persisted, frozen-at-start-time snapshot
+    // (Phase 1 §6.4: "current prices at the moment of starting, frozen
+    // permanently"), and a schema migration to consolidate them isn't
+    // worth the risk against live production-order history just to remove
+    // a now-redundant duplicate. Both are simply sourced from the same
+    // sellPriceEur going forward, so they end up equal for every NEW order
+    // — existing completed orders keep whatever their historical local vs.
+    // German split actually was at the time, which is correct: a frozen
+    // snapshot must never be recomputed after the fact.
     let materialsLocalCost = 0;
     let materialsGermanCost = 0;
     const pickListRows: Array<{
@@ -244,9 +261,9 @@ export class ProductionOrdersService {
         sourceType: 'ProductionOrder',
         sourceId: order.id,
       });
-      const unitPrice = Number(product.localPriceExclVat ?? 0);
+      const unitPrice = Number(product.sellPriceEur ?? 0);
       materialsLocalCost += unitPrice * needed;
-      materialsGermanCost += Number(product.germanPriceExclVat ?? 0) * needed;
+      materialsGermanCost += unitPrice * needed;
       pickListRows.push({
         productId,
         description: `${product.article} — ${product.name}`,

@@ -86,7 +86,7 @@ export class AssembliesController {
 
   @Get(':id/cost')
   @RequirePermissions('assemblies:read')
-  @ApiOperation({ summary: 'Recursive per-unit cost calculation (local + German), cycle-protected (calcAssemblyCost_ port).' })
+  @ApiOperation({ summary: 'Recursive per-unit cost calculation from Product.sellPriceEur, cycle-protected (calcAssemblyCost_ port).' })
   async calculateCost(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.assembliesService.calculateCost(user, id);
   }

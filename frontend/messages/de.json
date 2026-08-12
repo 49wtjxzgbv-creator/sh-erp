@@ -240,6 +240,7 @@
     "bomSaved": "BOM saved, new version created",
     "invalidRow": "Fill in every field on each line correctly",
     "searchAssemblies": "Search assemblies…",
+    "cost": "Cost",
     "localCost": "Cost (local)",
     "germanCost": "Cost (DE)",
     "breakdown": "Breakdown",

@@ -140,16 +140,14 @@ export interface CostBreakdownLine {
   productId?: string;
   subAssemblyId?: string;
   qtyPerUnit: number;
-  unitLocalCost: number;
-  unitGermanCost: number;
-  lineLocalCost: number;
-  lineGermanCost: number;
+  unitCost: number;
+  lineCost: number;
 }
 
+/** Costed from Product.sellPriceEur — the one price every calculation in this app is pinned to (localPriceExclVat/germanPriceExclVat/localPriceInclVat/germanPriceInclVat are informational reference fields only, never part of a cost total). */
 export interface AssemblyCostResult {
   assemblyId: string;
-  localCostPerUnit: number;
-  germanCostPerUnit: number;
+  costPerUnit: number;
   breakdown: CostBreakdownLine[];
 }
 
@@ -181,10 +179,8 @@ export interface ProduceAssemblyResult {
   warehouseId: string;
   consumedMovements: Array<{ id: string; productId: string; qtyDelta: string }>;
   costEstimate: {
-    localCostPerUnit: number;
-    germanCostPerUnit: number;
-    totalLocalCost: number;
-    totalGermanCost: number;
+    costPerUnit: number;
+    totalCost: number;
   };
 }
 

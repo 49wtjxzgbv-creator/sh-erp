@@ -113,7 +113,7 @@ describe('AssembliesService', () => {
   });
 
   describe('calculateCost — recursive calcAssemblyCost_ port', () => {
-    it('sums own per-unit costs + PRODUCT component costs (local vs German)', async () => {
+    it('sums own per-unit costs + PRODUCT component costs from sellPriceEur', async () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({
         id: 'a1',
         laborCostPerUnit: 10,
@@ -122,13 +122,15 @@ describe('AssembliesService', () => {
         otherCostPerUnit: 0,
         components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 3 }],
       });
-      prisma.tenant.product.findUnique.mockResolvedValue({ localPriceExclVat: 5, germanPriceExclVat: 8 });
+      // localPriceExclVat/germanPriceExclVat are informational only — never
+      // part of the calculation — so a component's cost must come from
+      // sellPriceEur alone, not either of those.
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 5, localPriceExclVat: 999, germanPriceExclVat: 999 });
 
       const result = await service.calculateCost(user, 'a1');
 
-      // own = 13, plus 3 * 5 = 15 local -> 28; 3 * 8 = 24 german -> 37
-      expect(result.localCostPerUnit).toBe(28);
-      expect(result.germanCostPerUnit).toBe(37);
+      // own = 13, plus 3 * 5 = 15 -> 28
+      expect(result.costPerUnit).toBe(28);
     });
 
     it('recurses into ASSEMBLY components and multiplies by qtyPerUnit', async () => {
@@ -152,8 +154,7 @@ describe('AssembliesService', () => {
 
       const result = await service.calculateCost(user, 'parent');
 
-      expect(result.localCostPerUnit).toBe(10); // child costs 5/unit, parent needs 2
-      expect(result.germanCostPerUnit).toBe(10);
+      expect(result.costPerUnit).toBe(10); // child costs 5/unit, parent needs 2
     });
 
     it('throws ConflictException on a circular BOM rather than looping forever', async () => {

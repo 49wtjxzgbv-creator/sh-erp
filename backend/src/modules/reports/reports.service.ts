@@ -15,14 +15,11 @@ export interface ReorderSuggestion {
   suggestedOrderQty: number;
 }
 
+/** Costed from Product.sellPriceEur — the one price every calculation in this app is pinned to. localPriceExclVat/localPriceInclVat/germanPriceExclVat/germanPriceInclVat are informational reference fields only and are deliberately NOT summed into a report total anywhere (real behavior change from the original 5-parallel-total port — see this method's own comment). */
 export interface CategoryValuation {
   category: string | null;
   productCount: number;
-  totalLocalExclVat: number;
-  totalLocalInclVat: number;
-  totalGermanExclVat: number;
-  totalGermanInclVat: number;
-  totalSellEur: number;
+  totalValue: number;
 }
 
 export interface MonthlyProductionRollupLine {
@@ -44,9 +41,12 @@ export interface MonthlyProductionRollupLine {
  *    `getReservedQtyMap_`, Phase 1 §3.3) — batched into 2 queries total
  *    regardless of product/order count, not one query per product, per
  *    the same N+1 lesson Module 9's payroll summary already applied.
- *  - Warehouse valuation: all 5 legacy price fields (local/German ×
- *    excl/incl VAT, plus `sellPriceEur`), grouped by category, admin-only
- *    (`reports:valuation`) because it's cost/price data (Phase 1 §5).
+ *  - Warehouse valuation: qty × `sellPriceEur` (the one price every
+ *    calculation in this app is pinned to — the other 4 legacy price
+ *    fields the original port summed in parallel are informational
+ *    reference data only, not part of any calculated total), grouped by
+ *    category, admin-only (`reports:valuation`) because it's cost/price
+ *    data (Phase 1 §5).
  *  - Monthly production rollup: COMPLETED `ProductionOrder`s grouped by
  *    assembly over a date range.
  */
@@ -124,51 +124,24 @@ export class ReportsService {
     const products = await this.prisma.tenant.product.findMany({ where: { deletedAt: null } });
 
     const byCategory = new Map<string | null, CategoryValuation>();
-    const grandTotal: CategoryValuation = {
-      category: null,
-      productCount: 0,
-      totalLocalExclVat: 0,
-      totalLocalInclVat: 0,
-      totalGermanExclVat: 0,
-      totalGermanInclVat: 0,
-      totalSellEur: 0,
-    };
+    const grandTotal: CategoryValuation = { category: null, productCount: 0, totalValue: 0 };
 
     for (const product of products as any[]) {
       const qty = Number(product.qty);
       const category = product.category ?? null;
       if (!byCategory.has(category)) {
-        byCategory.set(category, {
-          category,
-          productCount: 0,
-          totalLocalExclVat: 0,
-          totalLocalInclVat: 0,
-          totalGermanExclVat: 0,
-          totalGermanInclVat: 0,
-          totalSellEur: 0,
-        });
+        byCategory.set(category, { category, productCount: 0, totalValue: 0 });
       }
       const line = byCategory.get(category)!;
 
-      const localExclVat = qty * Number(product.localPriceExclVat ?? 0);
-      const localInclVat = qty * Number(product.localPriceInclVat ?? 0);
-      const germanExclVat = qty * Number(product.germanPriceExclVat ?? 0);
-      const germanInclVat = qty * Number(product.germanPriceInclVat ?? 0);
-      const sellEur = qty * Number(product.sellPriceEur ?? 0);
+      // sellPriceEur only — see CategoryValuation's own comment.
+      const value = qty * Number(product.sellPriceEur ?? 0);
 
       line.productCount += 1;
-      line.totalLocalExclVat += localExclVat;
-      line.totalLocalInclVat += localInclVat;
-      line.totalGermanExclVat += germanExclVat;
-      line.totalGermanInclVat += germanInclVat;
-      line.totalSellEur += sellEur;
+      line.totalValue += value;
 
       grandTotal.productCount += 1;
-      grandTotal.totalLocalExclVat += localExclVat;
-      grandTotal.totalLocalInclVat += localInclVat;
-      grandTotal.totalGermanExclVat += germanExclVat;
-      grandTotal.totalGermanInclVat += germanInclVat;
-      grandTotal.totalSellEur += sellEur;
+      grandTotal.totalValue += value;
     }
 
     return {
