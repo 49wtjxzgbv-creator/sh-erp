@@ -6,6 +6,7 @@ import { CurrentUser, RequestUser } from '../../common/decorators/current-user.d
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
+import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 import { ProductsService } from './products.service';
 import { ProductsImportExportService } from './import-export/products-import-export.service';
 
@@ -100,5 +101,16 @@ export class ProductsController {
   @ApiOperation({ summary: 'Soft-delete a product.' })
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.productsService.remove(user, id);
+  }
+
+  @Post('bulk-delete')
+  @RequirePermissions('products:write')
+  @ApiOperation({
+    summary:
+      'Soft-delete many products in one request — the Catalog table\'s "select all, delete selected" action. ' +
+      'One request regardless of selection size, not N parallel DELETE calls (see ProductsService#bulkRemove).',
+  })
+  async bulkRemove(@CurrentUser() user: RequestUser, @Body() dto: BulkDeleteProductsDto) {
+    return this.productsService.bulkRemove(user, dto.ids);
   }
 }

@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Eye, ListChecks, Trash2 } from 'lucide-react';
 import { useProducts, useCompanyUnits } from '@/lib/hooks/use-catalog';
-import { updateProduct, deleteProduct, type Product } from '@/lib/api-client/catalog';
+import { updateProduct, bulkDeleteProducts, type Product } from '@/lib/api-client/catalog';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { recordStockMovement } from '@/lib/api-client/inventory';
@@ -53,13 +53,13 @@ import { cn } from '@/lib/utils';
  *    it — a company with more than 200 products would need real
  *    server-side pagination added to this grid, flagged here as a known
  *    v1 boundary rather than silently truncating without a note.
- *  - **Bulk delete is N parallel single-item calls, not a new batch
- *    endpoint.** Legacy had a dedicated `deleteProductsBulk` RPC; this
- *    backend only has `DELETE /products/:id` (soft-delete, already
- *    idempotent). Rather than add a new backend endpoint for one grid
- *    feature, bulk delete fires `Promise.allSettled` over the existing
- *    endpoint and reports any per-row failures — functionally equivalent,
- *    no new API surface.
+ *  - **Bulk delete is one request, `POST /products/bulk-delete`** (added
+ *    alongside this grid's own select-all/delete UI, matching legacy's
+ *    dedicated `deleteProductsBulk` RPC). The first version of this fired
+ *    N parallel `DELETE /products/:id` calls instead — a real incident: a
+ *    "select all" delete of a full catalog blew through the backend's
+ *    per-client rate limit (100 req/60s), so only a couple of requests
+ *    fit under whatever budget was left and the rest silently 429'd.
  */
 export default function ProductGridPage() {
   const t = useTranslations('catalog');
@@ -179,20 +179,18 @@ export default function ProductGridPage() {
     setDeleting(true);
     setError(null);
     const ids = [...selected];
-    const results = await Promise.allSettled(ids.map((id) => deleteProduct(id)));
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    // Keep a row only if it wasn't part of this batch, or if its own delete call failed.
-    setRows((prev) =>
-      prev.filter((p) => {
-        const idx = ids.indexOf(p.id);
-        return idx === -1 || results[idx].status !== 'fulfilled';
-      }),
-    );
-    setSelected(new Set());
+    try {
+      const { deletedCount } = await bulkDeleteProducts(ids);
+      setRows((prev) => prev.filter((p) => !ids.includes(p.id)));
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ['products'] });
+      const missing = ids.length - deletedCount;
+      if (missing > 0) setError(t('gridBulkDeletePartialFailure', { count: missing }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : tc('error'));
+    }
     setDeleting(false);
     setDeleteConfirmOpen(false);
-    qc.invalidateQueries({ queryKey: ['products'] });
-    if (failed > 0) setError(t('gridBulkDeletePartialFailure', { count: failed }));
   }
 
   if (isLoading) return <LoadingBlock />;

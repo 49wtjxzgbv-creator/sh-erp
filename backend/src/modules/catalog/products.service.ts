@@ -108,6 +108,42 @@ export class ProductsService {
     return product;
   }
 
+  /**
+   * One request soft-deletes every id, instead of the frontend firing N
+   * parallel `DELETE /products/:id` calls — real incident: a "select all"
+   * bulk delete of ~140 products blew straight through the global
+   * per-client rate limit (`app.module.ts`'s `ThrottlerModule`, 100
+   * req/60s), so only however many requests fit under whatever budget was
+   * left actually succeeded and the rest silently 429'd. A single request
+   * doesn't touch that limit at all, however many rows it covers.
+   */
+  async bulkRemove(user: RequestUser, ids: string[]) {
+    const products = await this.prisma.tenant.product.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+    });
+    if (products.length === 0) return { deletedCount: 0 };
+
+    await this.prisma.tenant.product.updateMany({
+      where: { id: { in: products.map((p) => p.id) } },
+      data: { deletedAt: new Date() },
+    });
+
+    await Promise.all(
+      products.map((before) =>
+        this.auditService.record({
+          companyId: user.companyId,
+          actorUserId: user.userId,
+          action: 'product.deleted',
+          entityType: 'Product',
+          entityId: before.id,
+          before,
+        }),
+      ),
+    );
+
+    return { deletedCount: products.length };
+  }
+
   private translatePrismaError(err: unknown, article?: string): Error {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2002') {

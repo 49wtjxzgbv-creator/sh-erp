@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
 import { ArrowLeftRight, Plus } from 'lucide-react';
 import { useStockLevels, useWarehouses } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { updateProduct } from '@/lib/api-client/catalog';
+import { ApiError } from '@/lib/api-client/types';
 import type { WarehouseStock } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
@@ -15,15 +18,19 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
+import { cn } from '@/lib/utils';
 
 export default function StockLevelsPage() {
   const t = useTranslations('inventory');
   const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
+  const qc = useQueryClient();
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [movementOpen, setMovementOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [cellError, setCellError] = useState<string | null>(null);
 
   const { data: warehouses } = useWarehouses();
   const { data: levels, isLoading } = useStockLevels({ warehouseId });
@@ -55,6 +62,25 @@ export default function StockLevelsPage() {
     });
   }, [levels, productsById, search]);
 
+  // `cell` ("Комірка" — bin/shelf location) lives on `Product`, not per
+  // warehouse (schema.prisma), so editing it here is a plain
+  // `PATCH /products/:id` — the same field the Catalog grid already edits.
+  // Invalidating the `products` query family (not just this page's own
+  // `products/batch` cache) is what makes the edit show up everywhere else
+  // that reads it (Catalog grid, product detail page), not just here.
+  async function saveCell(productId: string, value: string) {
+    setCellError(null);
+    setSavingCell(productId);
+    try {
+      await updateProduct(productId, { cell: value });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    } catch (err) {
+      setCellError(err instanceof ApiError ? err.message : tc('error'));
+    } finally {
+      setSavingCell(null);
+    }
+  }
+
   const columns = useMemo<ColumnDef<WarehouseStock>[]>(
     () => [
       {
@@ -75,13 +101,32 @@ export default function StockLevelsPage() {
         cell: ({ getValue }) => productsById?.get(getValue() as string)?.name ?? (getValue() as string),
       },
       {
+        id: 'cell',
+        header: tCatalog('cell'),
+        cell: ({ row }) => {
+          const product = productsById?.get(row.original.productId);
+          return (
+            <Input
+              defaultValue={product?.cell ?? ''}
+              disabled={!product}
+              className={cn('h-8 w-28', savingCell === row.original.productId && 'opacity-50')}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                if (!product || e.target.value === (product.cell ?? '')) return;
+                saveCell(product.id, e.target.value);
+              }}
+            />
+          );
+        },
+      },
+      {
         accessorKey: 'warehouseId',
         header: t('warehouse'),
         cell: ({ getValue }) => warehouseName.get(getValue() as string) ?? (getValue() as string),
       },
       { accessorKey: 'qty', header: t('qty') },
     ],
-    [t, tCatalog, warehouseName, productsById, photosByProduct],
+    [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell],
   );
 
   return (
@@ -119,6 +164,8 @@ export default function StockLevelsPage() {
           </Button>
         </div>
       </div>
+
+      {cellError && <p className="text-sm text-destructive">{cellError}</p>}
 
       <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
 

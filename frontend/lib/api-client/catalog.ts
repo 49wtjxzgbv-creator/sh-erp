@@ -146,6 +146,20 @@ export function deleteProduct(id: string): Promise<Product> {
   return apiClient.delete<Product>(`products/${id}`);
 }
 
+/**
+ * One request for the whole selection — NOT `ids.map(deleteProduct)`. A
+ * "select all, delete selected" action firing N parallel single-product
+ * DELETE calls blew through the backend's per-client rate limit
+ * (`app.module.ts`'s `ThrottlerModule`, 100 req/60s) in a real production
+ * incident: only however many requests fit under whatever budget was left
+ * actually went through, the rest silently 429'd, so most of a large
+ * selection never got deleted. This is a single request regardless of
+ * selection size.
+ */
+export function bulkDeleteProducts(ids: string[]): Promise<{ deletedCount: number }> {
+  return apiClient.post<{ deletedCount: number }>('products/bulk-delete', { ids });
+}
+
 export interface ImportRowError {
   row: number;
   message: string;
