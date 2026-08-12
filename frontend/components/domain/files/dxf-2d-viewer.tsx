@@ -335,17 +335,12 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       draw();
     }
 
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && measureModeRef.current) setMeasureMode(false);
-    }
-
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDoubleClick);
-    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       resizeObserver.disconnect();
@@ -355,7 +350,6 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('dblclick', onDoubleClick);
-      window.removeEventListener('keydown', onKeyDown);
     };
   }, [state]);
 
