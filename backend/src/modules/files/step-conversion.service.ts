@@ -13,14 +13,20 @@ const STEP_EXTENSION = /\.(step|stp)$/i;
 // A real multi-part mechanical assembly can legitimately need several
 // minutes and multiple gigabytes of WASM linear memory to tessellate —
 // confirmed directly: a 17.4MB real customer file was still running after
-// 15+ minutes and 2.7GB RSS on this VPS (3.8GB total, shared with the live
+// 15+ minutes and 2.7GB RSS on this VPS (3.8GB RAM, shared with the live
 // API and Postgres) before being killed by hand during testing, with
-// MemAvailable down to ~230MB. Both limits below exist purely to bound
-// that risk automatically — a file this demanding fails conversion
-// cleanly (FAILED status, client-side fallback still works) rather than
-// threatening to OOM the box it shares with production traffic.
-const MAX_CONVERSION_MS = 5 * 60 * 1000;
-const MAX_CONVERSION_RSS_BYTES = 1.5 * 1024 * 1024 * 1024;
+// MemAvailable down to ~230MB. A 4GB swap file was added to the VPS after
+// that finding specifically to give conversions like this room to
+// complete instead of OOM-killing something else — the kernel pages out
+// cold/idle memory (e.g. Postgres's own cache) under pressure rather than
+// invoking the OOM killer. Both limits below still exist to bound the
+// worst case automatically: a file demanding enough to hit either one
+// fails conversion cleanly (FAILED status, client-side fallback still
+// works) rather than degrading the box indefinitely. RSS is allowed
+// higher than physical RAM alone (2.5GB, vs 3.8GB total) precisely
+// because swap now exists as backing for the overflow.
+const MAX_CONVERSION_MS = 15 * 60 * 1000;
+const MAX_CONVERSION_RSS_BYTES = 2.5 * 1024 * 1024 * 1024;
 const MEMORY_CHECK_INTERVAL_MS = 3000;
 
 /**
