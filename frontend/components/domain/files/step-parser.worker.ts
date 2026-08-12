@@ -20,16 +20,30 @@ import type { OcctReadParams, OcctReadResult } from 'occt-import-js';
  * `null` params means OCCT's own default tessellation quality, which is
  * tuned for CAD precision, not for a quick shop-floor preview — on a real
  * 16.6MB multi-part assembly it made `ReadStepFile` take several minutes.
- * A visibly coarser mesh (1% of the model's bounding box, well above
- * OCCT's default sub-0.1% precision) cuts the triangle count enormously
- * and is plenty for "what does this part look like" in this app; nothing
- * here needs machining-grade surface accuracy.
+ * A visibly coarser mesh (well above OCCT's default sub-0.1% precision)
+ * cuts the triangle count enormously and is plenty for "what does this
+ * part look like" in this app; nothing here needs machining-grade
+ * surface accuracy.
+ *
+ * Scaled by input file size — kept in sync with
+ * `step-convert-child.js#pickTessellationParams` on the backend (see that
+ * function's header comment for why: file size alone doesn't measure
+ * tessellation cost, but it's the only cheap signal available before
+ * parsing, and in practice a bigger STEP text blob generally means more
+ * individual solids, e.g. bolts/threads, which is what actually drives
+ * triangle count and — for this client-side path specifically — how long
+ * the fallback viewer takes to render at all).
  */
-const TESSELLATION_PARAMS: OcctReadParams = {
-  linearDeflectionType: 'bounding_box_ratio',
-  linearDeflection: 0.01,
-  angularDeflection: 0.5,
-};
+function pickTessellationParams(stepFileSizeBytes: number): OcctReadParams {
+  const MB = 1024 * 1024;
+  if (stepFileSizeBytes < 5 * MB) {
+    return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.01, angularDeflection: 0.5 };
+  }
+  if (stepFileSizeBytes < 15 * MB) {
+    return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.03, angularDeflection: 0.8 };
+  }
+  return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.06, angularDeflection: 1.2 };
+}
 
 export interface StepParseRequest {
   buffer: ArrayBuffer;
@@ -55,7 +69,7 @@ worker.onmessage = async (event) => {
   try {
     if (!occtPromise) occtPromise = init();
     const occt = await occtPromise;
-    const result = occt.ReadStepFile(new Uint8Array(event.data.buffer), TESSELLATION_PARAMS);
+    const result = occt.ReadStepFile(new Uint8Array(event.data.buffer), pickTessellationParams(event.data.buffer.byteLength));
     worker.postMessage({ ok: true, result });
   } catch (err) {
     worker.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) });

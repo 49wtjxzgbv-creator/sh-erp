@@ -147,7 +147,17 @@ export class StepConversionService {
 function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const childScript = join(__dirname, 'step-convert-child.js');
-    const child = spawn(process.execPath, [childScript, stepPath, glbPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+    // --max-old-space-size: found via a real test, not speculatively — the
+    // actual crash on the real 17.4MB file wasn't a system OOM kill or WASM
+    // memory at all, it was Node's OWN default V8 heap ceiling (~2GB),
+    // exhausted holding OCCT's output arrays as plain JS numbers before
+    // @gltf-transform ever got to build the .glb. Safe to raise well past
+    // the default here specifically because this runs in its own process —
+    // MAX_CONVERSION_RSS_BYTES below still bounds the child's total OS-level
+    // memory regardless of what V8 itself would allow.
+    const child = spawn(process.execPath, ['--max-old-space-size=4096', childScript, stepPath, glbPath], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
 
     let stderr = '';
     child.stderr?.on('data', (chunk) => (stderr += chunk.toString()));
