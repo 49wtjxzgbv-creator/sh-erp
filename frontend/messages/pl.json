@@ -825,7 +825,7 @@
     "noDocuments": "No documents yet",
     "download": "Download",
     "view": "View",
-    "loadingModel": "Loading 3D model…",
+    "loadingModel": "Loading 3D model… Large files can take several minutes.",
     "modelLoadError": "Failed to load 3D model"
   }
 }

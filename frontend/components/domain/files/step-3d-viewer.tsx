@@ -37,7 +37,17 @@ export interface Step3DViewerProps {
 
 type ViewerState = 'loading' | 'ready' | 'error';
 
-const PARSE_TIMEOUT_MS = 3 * 60 * 1000;
+/**
+ * A real multi-part mechanical assembly (tens of MB) can legitimately take
+ * several minutes to tessellate in single-threaded WASM — confirmed via a
+ * real 16.6MB file that was still genuinely parsing (not stuck: the worker
+ * keeps posting no message because the synchronous OCCT call hadn't
+ * returned yet) well past an earlier, too-aggressive 3-minute cutoff. This
+ * is deliberately generous — it exists only to turn a truly pathological
+ * file (corrupt data, infinite loop) into an eventual error instead of a
+ * silent unbounded wait, not to rush normal large-file parsing.
+ */
+const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function Step3DViewer({ url }: Step3DViewerProps) {
   const t = useTranslations('files');
