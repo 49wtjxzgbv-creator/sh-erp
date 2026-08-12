@@ -135,7 +135,8 @@ export function Step3DViewer({ url }: Step3DViewerProps) {
         resizeObserver.observe(container);
 
         setState('ready');
-      } catch {
+      } catch (err) {
+        console.error('[Step3DViewer] failed to load/render model:', err);
         if (!cancelled) setState('error');
       }
     }
