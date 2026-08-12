@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Upload, X, FileText, Box, Image as ImageIcon, File as FileIcon, Download, Eye } from 'lucide-react';
+import { Upload, X, FileText, Box, Ruler, Image as ImageIcon, File as FileIcon, Download, Eye } from 'lucide-react';
 import { uploadFile, deleteFile, type FileDomain, type FileAssetWithUrl } from '@/lib/api-client/files';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Button } from '@/components/ui/button';
@@ -15,14 +15,25 @@ const Step3DViewer = dynamic(() => import('./step-3d-viewer').then((m) => m.Step
   ssr: false,
   loading: () => <StepViewerLoading />,
 });
+const Dxf2DViewer = dynamic(() => import('./dxf-2d-viewer').then((m) => m.Dxf2DViewer), {
+  ssr: false,
+  loading: () => <DrawingViewerLoading />,
+});
 
 function StepViewerLoading() {
   const t = useTranslations('files');
   return <p className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>;
 }
+function DrawingViewerLoading() {
+  const t = useTranslations('files');
+  return <p className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('loadingDrawing')}</p>;
+}
 
 function isStepFile(name: string): boolean {
   return /\.(step|stp)$/i.test(name);
+}
+function isDxfFile(name: string): boolean {
+  return /\.dxf$/i.test(name);
 }
 function isPdfFile(mimeType: string, name: string): boolean {
   return mimeType === 'application/pdf' || /\.pdf$/i.test(name);
@@ -34,6 +45,7 @@ function isImageFile(mimeType: string): boolean {
 function fileIcon(file: FileAssetWithUrl) {
   if (isImageFile(file.mimeType)) return ImageIcon;
   if (isStepFile(file.originalName)) return Box;
+  if (isDxfFile(file.originalName)) return Ruler;
   if (isPdfFile(file.mimeType, file.originalName)) return FileText;
   return FileIcon;
 }
@@ -59,7 +71,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,image/*' }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.dxf,image/*' }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -68,6 +80,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   const [error, setError] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [stepDoc, setStepDoc] = useState<FileAssetWithUrl | null>(null);
+  const [dxfDoc, setDxfDoc] = useState<FileAssetWithUrl | null>(null);
 
   const { data: byEntity, isLoading } = useFilesForEntities(entityType, [entityId], domain);
   const files = byEntity?.[entityId] ?? [];
@@ -102,13 +115,15 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
       setLightboxSrc(file.downloadUrl);
     } else if (isStepFile(file.originalName)) {
       setStepDoc(file);
+    } else if (isDxfFile(file.originalName)) {
+      setDxfDoc(file);
     } else if (isPdfFile(file.mimeType, file.originalName)) {
       window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
   function isViewable(file: FileAssetWithUrl): boolean {
-    return isImageFile(file.mimeType) || isStepFile(file.originalName) || isPdfFile(file.mimeType, file.originalName);
+    return isImageFile(file.mimeType) || isStepFile(file.originalName) || isDxfFile(file.originalName) || isPdfFile(file.mimeType, file.originalName);
   }
 
   return (
@@ -180,6 +195,15 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
           <div className="min-h-0 flex-1">
             {stepDoc && <Step3DViewer url={stepDoc.downloadUrl} glbUrl={stepDoc.convertedDownloadUrl} />}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(dxfDoc)} onOpenChange={(open) => !open && setDxfDoc(null)}>
+        <DialogContent className="flex h-[85vh] w-[95vw] max-w-4xl flex-col">
+          <DialogHeader>
+            <DialogTitle className="truncate">{dxfDoc?.originalName}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">{dxfDoc && <Dxf2DViewer url={dxfDoc.downloadUrl} />}</div>
         </DialogContent>
       </Dialog>
     </div>
