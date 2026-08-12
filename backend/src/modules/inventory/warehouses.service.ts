@@ -14,9 +14,25 @@ export class WarehousesService {
     private readonly auditService: AuditService,
   ) {}
 
-  /** Called from CompanyService at signup, inside its transaction. */
+  /**
+   * Called from CompanyService at signup, inside its transaction. Guarded
+   * to be idempotent — a real production incident traced back to this
+   * running twice for the same company (root cause never pinned down, but
+   * plausibly a retried signup request), creating a second "Основний
+   * склад" with `isDefault: true` alongside the first without clearing
+   * it, unlike `create()`/`update()` above which both go through
+   * `clearExistingDefault()`. That silently split the company's real
+   * stock across two identically-named warehouses — every write after the
+   * duplicate's creation could land on either one depending on which
+   * `findFirst({ isDefault: true })` call happened to return, while the
+   * other warehouse's balances just sat frozen. Checking for an existing
+   * default first makes a second seed call a no-op instead of a silent
+   * duplicate, regardless of what triggers the repeat call.
+   */
   async seedDefault(tx: Prisma.TransactionClient, companyId: string) {
-    await tx.warehouse.create({
+    const existingDefault = await tx.warehouse.findFirst({ where: { companyId, isDefault: true, deletedAt: null } });
+    if (existingDefault) return existingDefault;
+    return tx.warehouse.create({
       data: { companyId, name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
     });
   }

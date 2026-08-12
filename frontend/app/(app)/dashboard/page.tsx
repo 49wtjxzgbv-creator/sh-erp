@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Package, Layers, AlertTriangle, Factory, ShoppingCart, Truck, Users } from 'lucide-react';
+import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { useDashboardSummary } from '@/lib/hooks/use-dashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,19 +32,23 @@ export default function DashboardPage() {
     warn: boolean;
   }[] = [
     { key: 'products', navKey: 'catalog', href: '/catalog', icon: Package, label: t('productsTotal'), value: data?.productsCount, warn: false },
-    { key: 'assemblies', navKey: 'bom', href: '/bom', icon: Layers, label: t('assembliesTotal'), value: data?.assembliesCount, warn: false },
     {
+      // Icon (not just color) reflects the actual state — a triangle-with-!
+      // inside an otherwise-neutral gray box read as "something's wrong"
+      // even when lowStockCount was 0 and every other style already said
+      // "fine" (no red border/background/text, per `warn` below).
       key: 'lowStock',
       navKey: 'inventory',
       href: '/inventory',
-      icon: AlertTriangle,
+      icon: (data?.lowStockCount ?? 0) > 0 ? AlertTriangle : PackageCheck,
       label: (data?.lowStockCount ?? 0) > 0 ? t('lowStock') : t('lowStockOk'),
       value: data?.lowStockCount,
       warn: (data?.lowStockCount ?? 0) > 0,
     },
+    { key: 'assemblies', navKey: 'bom', href: '/bom', icon: Layers, label: t('assembliesTotal'), value: data?.assembliesCount, warn: false },
     { key: 'production', navKey: 'production', href: '/production', icon: Factory, label: t('activeProductionOrders'), value: data?.activeProductionOrders, warn: false },
-    { key: 'sales', navKey: 'sales', href: '/sales', icon: ShoppingCart, label: t('pendingCustomerOrders'), value: data?.pendingCustomerOrders, warn: false },
     { key: 'procurement', navKey: 'procurement', href: '/procurement', icon: Truck, label: t('openPurchaseOrders'), value: data?.openPurchaseOrders, warn: false },
+    { key: 'sales', navKey: 'sales', href: '/sales', icon: ShoppingCart, label: t('pendingCustomerOrders'), value: data?.pendingCustomerOrders, warn: false },
     { key: 'hr', navKey: 'hr', href: '/hr', icon: Users, label: t('activeEmployees'), value: data?.activeEmployees, warn: false },
   ];
 
