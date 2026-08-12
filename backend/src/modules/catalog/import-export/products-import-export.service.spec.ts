@@ -14,6 +14,7 @@ describe('ProductsImportExportService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
+  let files: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'admin@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -35,7 +36,8 @@ describe('ProductsImportExportService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({}) };
-    service = new ProductsImportExportService(prisma, audit, stock);
+    files = { ingestPhotoAsset: jest.fn().mockResolvedValue({ fileAssetId: 'f-new' }) };
+    service = new ProductsImportExportService(prisma, audit, stock, files);
   });
 
   describe('importProducts', () => {

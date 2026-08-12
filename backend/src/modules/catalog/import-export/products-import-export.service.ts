@@ -5,6 +5,7 @@ import { RequestUser } from '../../../common/decorators/current-user.decorator';
 import { loadPermissionSet } from '../../../common/authorization/permission-set.util';
 import { AuditService } from '../../audit/audit.service';
 import { StockService } from '../../inventory/stock.service';
+import { FilesService } from '../../files/files.service';
 import {
   EXPORT_HEADERS,
   buildHeaderMap,
@@ -21,6 +22,11 @@ export interface ImportProductsResult {
   created: number;
   updated: number;
   errors: ImportRowError[];
+}
+
+interface RowImage {
+  buffer: Buffer;
+  extension: string; // 'jpeg' | 'png' | 'gif', per exceljs's own Image type
 }
 
 /** Every editable, non-computed Product column an import row can set. `qty` is handled separately (ledger, see below), `id`/timestamps/company/unit are handled separately too. */
@@ -64,6 +70,7 @@ export class ProductsImportExportService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
+    private readonly filesService: FilesService,
   ) {}
 
   async importProducts(user: RequestUser, fileBuffer: Buffer, updateQuantities = false): Promise<ImportProductsResult> {
@@ -104,6 +111,8 @@ export class ProductsImportExportService {
       existingUnits.map((u: any) => [String(u.name).toLowerCase(), { id: u.id, name: u.name }]),
     );
 
+    const imagesByRow = this.extractRowImages(workbook, worksheet);
+
     let created = 0;
     let updated = 0;
     const errors: ImportRowError[] = [];
@@ -132,7 +141,14 @@ export class ProductsImportExportService {
       }
 
       try {
-        const outcome = await this.importOneRow(user, mapped, unitsByLowerName, defaultWarehouse?.id ?? null, updateQuantities);
+        const outcome = await this.importOneRow(
+          user,
+          mapped,
+          unitsByLowerName,
+          defaultWarehouse?.id ?? null,
+          updateQuantities,
+          imagesByRow.get(rowNumber),
+        );
         if (outcome === 'created') created++;
         else updated++;
       } catch (err) {
@@ -158,6 +174,7 @@ export class ProductsImportExportService {
     unitsByLowerName: Map<string, { id: string; name: string }>,
     defaultWarehouseId: string | null,
     updateQuantities: boolean,
+    rowImage: RowImage | undefined,
   ): Promise<'created' | 'updated'> {
     const article = String(row.article).trim();
 
@@ -201,6 +218,7 @@ export class ProductsImportExportService {
       if (unitId) data.unitId = unitId;
       const updated = await this.prisma.tenant.product.update({ where: { id: existing.id }, data });
       if (updateQuantities) await this.applyImportedQty(user, updated.id, importedQty, Number(existing.qty), defaultWarehouseId);
+      if (rowImage) await this.ingestRowPhoto(user, updated.id, article, rowImage);
       return 'updated';
     }
 
@@ -216,6 +234,7 @@ export class ProductsImportExportService {
       data: { ...data, article, name: String(row.name), unitId } as any,
     });
     await this.applyImportedQty(user, created.id, importedQty, 0, defaultWarehouseId);
+    if (rowImage) await this.ingestRowPhoto(user, created.id, article, rowImage);
     return 'created';
   }
 
@@ -251,6 +270,54 @@ export class ProductsImportExportService {
       qtyDelta: delta,
       comment: 'Excel import',
       sourceType: 'ProductImport',
+    });
+  }
+
+  /**
+   * Reads every picture embedded in the worksheet (a supplier parts
+   * catalog commonly has a photo dropped into/over each product's row,
+   * not a text URL or filename column — there is no other way to carry an
+   * actual image inside an .xlsx cell) and maps each one to the 1-based
+   * worksheet row it's anchored over, matching `importProducts`'s own
+   * `rowNumber` loop. `getImages()`'s anchor row is 0-based and can be
+   * fractional (an image doesn't have to start exactly at a row
+   * boundary) — `Math.floor(...) + 1` converts "0-based, mid-row" to the
+   * same 1-based row numbering `worksheet.getRow(n)` uses everywhere else
+   * in this file. If a row somehow has more than one image anchored to
+   * it, the last one wins (rare in practice — one photo per part row is
+   * the actual shape this exists for).
+   */
+  private extractRowImages(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Worksheet): Map<number, RowImage> {
+    const imagesByRow = new Map<number, RowImage>();
+    for (const img of worksheet.getImages()) {
+      const media = workbook.getImage(Number(img.imageId));
+      if (!media?.buffer) continue;
+      const rowNumber = Math.floor(img.range.tl.row) + 1;
+      imagesByRow.set(rowNumber, { buffer: Buffer.from(media.buffer), extension: media.extension });
+    }
+    return imagesByRow;
+  }
+
+  /**
+   * Same `FilesService.ingestPhotoAsset` legacy-import's own photo
+   * migration uses for the identical "bytes already in hand, no live
+   * upload request" situation — see that method's header comment.
+   * `legacyId` is synthesized from the article rather than left absent so
+   * re-importing the same catalog file (a real, expected recurring
+   * workflow, not a one-off) updates the existing photo in place instead
+   * of piling up a fresh duplicate `FileAsset` on every run.
+   */
+  private async ingestRowPhoto(user: RequestUser, productId: string, article: string, image: RowImage): Promise<void> {
+    await this.filesService.ingestPhotoAsset({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      domain: 'PRODUCT_PHOTO',
+      entityType: 'Product',
+      entityId: productId,
+      legacyId: `excel-import-photo:${article}`,
+      originalName: `${article}.${image.extension}`,
+      mimeType: `image/${image.extension}`,
+      bytes: image.buffer,
     });
   }
 
