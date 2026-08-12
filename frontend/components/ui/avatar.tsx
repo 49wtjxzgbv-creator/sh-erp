@@ -61,7 +61,7 @@ function Avatar({ src, alt = '', fallbackIcon: FallbackIcon = ImageOff, size, cl
     >
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element -- R2 presigned URLs are short-lived and cross-origin; next/image's remote-pattern allowlist doesn't fit a per-request signed URL.
-        <img src={src as string} alt={alt} className="h-full w-full object-cover" onError={() => setFailed(true)} />
+        <img src={src as string} alt={alt} className="h-full w-full object-contain" onError={() => setFailed(true)} />
       ) : (
         <FallbackIcon className="h-1/3 w-1/3 text-muted-foreground" aria-hidden="true" />
       )}

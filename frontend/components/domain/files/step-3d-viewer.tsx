@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { OcctReadResult } from 'occt-import-js';
+import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 
 /**
  * Renders a STEP (.step/.stp) CAD file in-browser. STEP is a B-rep CAD
@@ -14,6 +16,15 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
  * `next/dynamic` from `entity-documents-field.tsx` (`ssr: false`) so this
  * ~7MB WASM module and the three.js runtime never enter any page's main
  * bundle — only fetched the moment someone actually opens a .step file.
+ *
+ * The actual CAD parse (`ReadStepFile`) runs in `step-parser.worker.ts`,
+ * not here — for a real multi-part assembly that's synchronous WASM work
+ * that can take a long time, and running it on the main thread froze the
+ * whole tab for that entire duration (looked exactly like "hung forever"
+ * to a real user testing a real file, even though it would have finished
+ * eventually). The worker keeps the tab responsive while it parses; a
+ * hard `PARSE_TIMEOUT_MS` below turns a truly pathological file into a
+ * clear error instead of an unbounded wait either way.
  *
  * `OrbitControls` handles mouse AND touch out of the box (one-finger
  * rotate, two-finger pinch-zoom/pan on mobile) — no separate mobile code
@@ -26,6 +37,8 @@ export interface Step3DViewerProps {
 
 type ViewerState = 'loading' | 'ready' | 'error';
 
+const PARSE_TIMEOUT_MS = 3 * 60 * 1000;
+
 export function Step3DViewer({ url }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +50,7 @@ export function Step3DViewer({ url }: Step3DViewerProps) {
     let controls: OrbitControls | undefined;
     let resizeObserver: ResizeObserver | undefined;
     let animationFrame: number | undefined;
+    let worker: Worker | undefined;
 
     async function init() {
       const container = containerRef.current;
@@ -44,16 +58,15 @@ export function Step3DViewer({ url }: Step3DViewerProps) {
 
       setState('loading');
       try {
-        const [occtimportjs, response] = await Promise.all([
-          loadOcct(),
-          fetch(url).then((r) => {
-            if (!r.ok) throw new Error(`Failed to download model (${r.status})`);
-            return r.arrayBuffer();
-          }),
-        ]);
+        const response = await fetch(url).then((r) => {
+          if (!r.ok) throw new Error(`Failed to download model (${r.status})`);
+          return r.arrayBuffer();
+        });
         if (cancelled) return;
 
-        const result = occtimportjs.ReadStepFile(new Uint8Array(response), null);
+        const result = await parseInWorker(response, (w) => {
+          worker = w;
+        });
         if (cancelled) return;
         if (!result.success || result.meshes.length === 0) {
           throw new Error('No geometry found in file.');
@@ -131,6 +144,7 @@ export function Step3DViewer({ url }: Step3DViewerProps) {
 
     return () => {
       cancelled = true;
+      worker?.terminate();
       if (animationFrame) cancelAnimationFrame(animationFrame);
       resizeObserver?.disconnect();
       controls?.dispose();
@@ -154,15 +168,35 @@ export function Step3DViewer({ url }: Step3DViewerProps) {
   );
 }
 
-let occtPromise: ReturnType<typeof loadOcctUncached> | undefined;
+/**
+ * Runs the actual parse in `step-parser.worker.ts`, transferring the file
+ * bytes into the worker (zero-copy) rather than copying them. `onWorker`
+ * hands the created `Worker` back to the caller immediately so it can be
+ * terminated on unmount even while a parse is still in flight.
+ */
+function parseInWorker(buffer: ArrayBuffer, onWorker: (worker: Worker) => void): Promise<OcctReadResult> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./step-parser.worker.ts', import.meta.url));
+    onWorker(worker);
 
-/** WASM init is expensive (~seconds) — cache the module across every viewer instance opened in the same session instead of re-initializing per file. */
-function loadOcct() {
-  if (!occtPromise) occtPromise = loadOcctUncached();
-  return occtPromise;
-}
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error('Parsing timed out.'));
+    }, PARSE_TIMEOUT_MS);
 
-async function loadOcctUncached() {
-  const { default: occtimportjs } = await import('occt-import-js');
-  return occtimportjs({ locateFile: () => '/occt/occt-import-js.wasm' });
+    worker.onmessage = (event: MessageEvent<StepParseResponse>) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      if (event.data.ok) resolve(event.data.result);
+      else reject(new Error(event.data.error));
+    };
+    worker.onerror = (event) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error(event.message || 'Worker error.'));
+    };
+
+    const request: StepParseRequest = { buffer };
+    worker.postMessage(request, [buffer]);
+  });
 }
