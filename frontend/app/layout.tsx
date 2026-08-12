@@ -55,6 +55,11 @@ export const metadata: Metadata = {
     images: ['/opengraph-image'],
   },
   robots: { index: true, follow: true },
+  // Belt-and-suspenders with the <html translate="no"> below — this is the
+  // Google-specific legacy signal, `translate="no"` the general HTML one.
+  // Both exist because browser translate-crash reports (see that attribute's
+  // own comment) don't agree on which one every Chrome build honors.
+  other: { google: 'notranslate' },
 };
 
 export const viewport: Viewport = {
@@ -68,8 +73,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getLocale();
   const messages = await getMessages();
 
+  // translate="no": the app already ships real, human-translated copy for
+  // every supported language via next-intl (see messages/*.json) — the
+  // browser's own auto-translate has no legitimate reason to ever engage
+  // here, and when it does it actively breaks the app. Confirmed live:
+  // Chrome/Google Translate rewrites DOM text nodes outside React's
+  // control, and when a Radix Select (portal-based) commits a change to
+  // the same text at the same moment, React's reconciler tries to
+  // remove/reposition a node the translator already moved — "NotFoundError:
+  // Failed to execute 'removeChild' — not a child of this node", crashing
+  // the whole page. Reproduced reliably on /catalog/new's Unit select (any
+  // first real selection); a documented class of bug for portal-based UI
+  // libraries (Radix, shadcn/ui) under browser translation.
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang={locale} translate="no" suppressHydrationWarning>
       <head>
         {/* Sets the .dark class before hydration — avoids a flash of the wrong theme. See components/theme/theme-provider.tsx's own comment for why this can't just be a useEffect. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
