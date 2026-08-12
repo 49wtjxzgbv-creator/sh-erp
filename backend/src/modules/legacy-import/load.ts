@@ -14,13 +14,28 @@ import type { TransformedImportGraph } from './transform';
  * it can use the real thing directly rather than replicating its `SET
  * LOCAL` statement by hand).
  *
- * Same idempotency conventions as the original: upsert by
- * `(companyId, legacyId)` where the schema has that unique key, `findFirst`
- * + conditional insert for child rows that don't, and an
- * existing-row-count gate for the two append-only ledgers (StockMovement,
- * AuditEvent) that have no natural per-row idempotency key at all — a
- * second import run against a company that already has ANY stock movements
- * imports zero more (flagged in the report, never silently duplicates).
+ * Same idempotency conventions as the original: upsert by `id` for the four
+ * entity types that can ALSO already exist outside the legacyId system
+ * (products, suppliers, warehouses, assemblies — manual entry, or the
+ * separate Excel import for products specifically) — `transform/index.ts`
+ * resolves each row's `id` to whatever it will ACTUALLY persist under
+ * (legacyId match first, then the entity's own natural key: article/name)
+ * before this ever runs, so upserting by `id` here just means "update that
+ * real row if it exists, create it otherwise." A real incident, twice:
+ * upserting by `(companyId, legacyId)` instead treated an already-existing,
+ * legacyId-less row as "doesn't exist yet" and tried to CREATE a duplicate,
+ * crashing on the entity's own unique constraint (products' article, then
+ * a company's single default warehouse's unique-default-per-company
+ * index). Every OTHER entity below still upserts by `(companyId, legacyId)`
+ * directly — customerOrders has no equivalent natural key to fall back to
+ * (clientName isn't unique), and the rest (assemblyComponents,
+ * assemblyVersions, warehouseStock) have their own natural idempotency
+ * keys instead. `findFirst` + conditional insert for child rows that don't
+ * have ANY idempotency key, and an existing-row-count gate for the two
+ * append-only ledgers (StockMovement, AuditEvent) that have no natural
+ * per-row idempotency key at all — a second import run against a company
+ * that already has ANY stock movements imports zero more (flagged in the
+ * report, never silently duplicates).
  */
 
 export interface LoadResult {
@@ -48,12 +63,12 @@ export async function loadImportGraph(
     }
     counts.newUnits = graph.newUnits.length;
 
-    // --- Suppliers ---
+    // --- Suppliers --- (upserts by `id`, not `(companyId, legacyId)` — see the products section below for why)
     for (const s of graph.suppliers) {
       await tx.supplier.upsert({
-        where: { companyId_legacyId: { companyId, legacyId: s.legacyId } },
+        where: { id: s.id },
         create: { id: s.id, companyId, legacyId: s.legacyId, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes, createdAt: s.createdAt },
-        update: { name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes },
+        update: { legacyId: s.legacyId, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes },
       });
     }
     counts.suppliers = graph.suppliers.length;
@@ -78,22 +93,22 @@ export async function loadImportGraph(
     }
     counts.products = graph.products.filter((p) => p.unitId).length;
 
-    // --- Warehouses ---
+    // --- Warehouses --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why; real incident here specifically, not just theoretical: the company's own pre-existing default warehouse has no legacyId, and creating a "new" one collided with the unique-default-warehouse-per-company partial index)
     for (const w of graph.warehouses) {
       await tx.warehouse.upsert({
-        where: { companyId_legacyId: { companyId, legacyId: w.legacyId } },
+        where: { id: w.id },
         create: { id: w.id, companyId, legacyId: w.legacyId, name: w.name, isDefault: w.isDefault, createdAt: w.createdAt },
-        update: { name: w.name, isDefault: w.isDefault },
+        update: { legacyId: w.legacyId, name: w.name, isDefault: w.isDefault },
       });
     }
     counts.warehouses = graph.warehouses.length;
 
-    // --- Assemblies ---
+    // --- Assemblies --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why)
     for (const a of graph.assemblies) {
       await tx.assembly.upsert({
-        where: { companyId_legacyId: { companyId, legacyId: a.legacyId } },
+        where: { id: a.id },
         create: { id: a.id, companyId, legacyId: a.legacyId, name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit, defaultSupplierId: a.defaultSupplierId, createdAt: a.createdAt },
-        update: { name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit },
+        update: { legacyId: a.legacyId, name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit },
       });
     }
     counts.assemblies = graph.assemblies.length;

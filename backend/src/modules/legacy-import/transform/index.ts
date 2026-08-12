@@ -74,6 +74,10 @@ export interface LegacyImportContext {
   existingProductIdByLegacyId: ReadonlyMap<string, string>;
   /** Article-matched fallback for a product with no legacyId yet (manually entered, or from the separate Excel import) — see legacy-import.service.ts#ExistingIdMaps's own comment on the field this is threaded through from. */
   existingProductIdByArticle: ReadonlyMap<string, string>;
+  /** Same idea, by name — see legacy-import.service.ts#ExistingIdMaps's own comment. */
+  existingSupplierIdByName: ReadonlyMap<string, string>;
+  existingWarehouseIdByName: ReadonlyMap<string, string>;
+  existingAssemblyIdByArticleOrName: ReadonlyMap<string, string>;
   existingWarehouseIdByLegacyId: ReadonlyMap<string, string>;
   existingAssemblyIdByLegacyId: ReadonlyMap<string, string>;
   existingCustomerOrderIdByLegacyId: ReadonlyMap<string, string>;
@@ -151,12 +155,16 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Suppliers ---
   const suppliers = rows(payload, 'suppliers').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = ctx.existingSupplierIdByLegacyId.get(legacyId) ?? randomUUID();
+    const name = parseRequiredString(row.Name, `(unnamed supplier, legacyId=${legacyId})`).value;
+    // legacyId match first, then name match (already exists from manual
+    // entry — a real incident, same class as products' article fallback,
+    // see LegacyImportContext#existingProductIdByArticle).
+    const newId = ctx.existingSupplierIdByLegacyId.get(legacyId) ?? ctx.existingSupplierIdByName.get(name) ?? randomUUID();
     ids.set('supplier', legacyId, newId);
     return {
       id: newId,
       legacyId,
-      name: parseRequiredString(row.Name, `(unnamed supplier, legacyId=${legacyId})`).value,
+      name,
       contactPerson: parseOptionalString(row.ContactPerson),
       phone: parseOptionalString(row.Phone),
       email: parseOptionalString(row.Email),
@@ -193,12 +201,18 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Warehouses ---
   const warehouses = rows(payload, 'warehouses').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = ctx.existingWarehouseIdByLegacyId.get(legacyId) ?? randomUUID();
+    const name = parseRequiredString(row.Name, `(unnamed warehouse, legacyId=${legacyId})`).value;
+    // legacyId match first, then name match — a real, confirmed incident:
+    // the company's own pre-existing default warehouse (no legacyId) has
+    // no OTHER natural match here, so without this a run tried to CREATE a
+    // second "default" warehouse and crashed on the unique-default-
+    // warehouse-per-company partial index (see ExistingIdMaps's comment).
+    const newId = ctx.existingWarehouseIdByLegacyId.get(legacyId) ?? ctx.existingWarehouseIdByName.get(name) ?? randomUUID();
     ids.set('warehouse', legacyId, newId);
     return {
       id: newId,
       legacyId,
-      name: parseRequiredString(row.Name, `(unnamed warehouse, legacyId=${legacyId})`).value,
+      name,
       isDefault: String(row.IsDefault ?? '').toString().toLowerCase() === 'true' || row.IsDefault === true,
       createdAt: parseLegacyDate(row.CreatedAt),
     };
@@ -210,7 +224,15 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   // --- Assemblies + AssemblyComponents (current BOM) + AssemblyVersions (ComponentsJson) ---
   const assemblies = rows(payload, 'assemblies').map((row) => {
     const legacyId = String(row.ID ?? '');
-    const newId = ctx.existingAssemblyIdByLegacyId.get(legacyId) ?? randomUUID();
+    const name = parseRequiredString(row.Name, `(unnamed assembly, legacyId=${legacyId})`).value;
+    const article = parseOptionalString(row.Article);
+    // legacyId match first, then article-or-name match (already exists
+    // from manual entry — same class of incident as products' article
+    // fallback and warehouses' name fallback above).
+    const newId =
+      ctx.existingAssemblyIdByLegacyId.get(legacyId) ??
+      ctx.existingAssemblyIdByArticleOrName.get(article ?? name) ??
+      randomUUID();
     ids.set('assembly', legacyId, newId);
     const photoUrl = parseOptionalString(row.PhotoUrl);
     if (photoUrl) {
@@ -220,8 +242,8 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
     return {
       id: newId,
       legacyId,
-      name: parseRequiredString(row.Name, `(unnamed assembly, legacyId=${legacyId})`).value,
-      article: parseOptionalString(row.Article),
+      name,
+      article,
       note: parseOptionalString(row.Note),
       laborCostPerUnit: parseDecimalStringOrZero(row.LaborCostPerUnit).value,
       packagingCostPerUnit: parseDecimalStringOrZero(row.PackagingCostPerUnit).value,
