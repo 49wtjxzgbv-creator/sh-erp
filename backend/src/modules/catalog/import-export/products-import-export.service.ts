@@ -246,6 +246,15 @@ export class ProductsImportExportService {
       if (row[field] !== undefined) data[field] = row[field];
     }
 
+    // Deliberately no `deletedAt: null` filter — `article` is unique per
+    // company REGARDLESS of soft-delete (no partial index scoping that
+    // constraint to non-deleted rows), so a soft-deleted product with this
+    // article is exactly what a fresh `create` would collide with. Matching
+    // it here and reviving it (below) is correct anyway: real incident —
+    // "delete some products, re-import the same file" reported the delete
+    // as if it never happened (`deletedAt` update never came back to
+    // `null`), so the products stayed invisible everywhere despite the
+    // import claiming to have updated them.
     const existing = await this.prisma.tenant.product.findFirst({ where: { article } });
     const importedQty = row.qty !== undefined ? Number(row.qty) : undefined;
 
@@ -259,6 +268,7 @@ export class ProductsImportExportService {
 
     if (existing) {
       if (unitId) data.unitId = unitId;
+      if (existing.deletedAt) data.deletedAt = null; // revive — see this block's own comment above
       const updated = await this.prisma.tenant.product.update({ where: { id: existing.id }, data });
       if (updateQuantities) await this.applyImportedQty(user, updated.id, importedQty, Number(existing.qty), defaultWarehouseId);
       if (resolvedImage) await this.ingestRowPhoto(user, updated.id, article, resolvedImage);

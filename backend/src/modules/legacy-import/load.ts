@@ -63,12 +63,12 @@ export async function loadImportGraph(
     }
     counts.newUnits = graph.newUnits.length;
 
-    // --- Suppliers --- (upserts by `id`, not `(companyId, legacyId)` — see the products section below for why)
+    // --- Suppliers --- (upserts by `id`, not `(companyId, legacyId)` — see the products section below for why; `deletedAt: null` on update revives a matched row that was soft-deleted — see that same section for why matching doesn't filter deletedAt out in the first place)
     for (const s of graph.suppliers) {
       await tx.supplier.upsert({
         where: { id: s.id },
         create: { id: s.id, companyId, legacyId: s.legacyId, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes, createdAt: s.createdAt },
-        update: { legacyId: s.legacyId, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes },
+        update: { legacyId: s.legacyId, name: s.name, contactPerson: s.contactPerson, phone: s.phone, email: s.email, notes: s.notes, deletedAt: null },
       });
     }
     counts.suppliers = graph.suppliers.length;
@@ -82,33 +82,42 @@ export async function loadImportGraph(
     // yet. Upserting by `(companyId, legacyId)` instead — the original
     // shape — treated any such row as "doesn't exist," tried to CREATE a
     // duplicate, and crashed the whole import on the `article` unique
-    // constraint (real incident).
+    // constraint (real incident). The article match itself deliberately
+    // doesn't filter out soft-deleted rows either (see
+    // legacy-import.service.ts's ExistingIdMaps comment) — `article` stays
+    // unique per company even when deleted (no partial index scoping that
+    // constraint to non-deleted rows), so a soft-deleted product is exactly
+    // what a fresh `create` would collide with. `deletedAt: null` on update
+    // is what actually revives it: a second real incident found live — a
+    // user deleted some products, then re-imported the same source, and
+    // the import reported "updated" while the products stayed invisible,
+    // because matching found the soft-deleted row but never un-deleted it.
     for (const p of graph.products) {
       if (!p.unitId) continue; // already warned during transform — cannot load without the required FK
       await tx.product.upsert({
         where: { id: p.id },
         create: { id: p.id, companyId, ...productFields(p) },
-        update: productFields(p),
+        update: { ...productFields(p), deletedAt: null },
       });
     }
     counts.products = graph.products.filter((p) => p.unitId).length;
 
-    // --- Warehouses --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why; real incident here specifically, not just theoretical: the company's own pre-existing default warehouse has no legacyId, and creating a "new" one collided with the unique-default-warehouse-per-company partial index)
+    // --- Warehouses --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why; real incident here specifically, not just theoretical: the company's own pre-existing default warehouse has no legacyId, and creating a "new" one collided with the unique-default-warehouse-per-company partial index. `deletedAt: null` on update revives a soft-deleted match, same reasoning as products.)
     for (const w of graph.warehouses) {
       await tx.warehouse.upsert({
         where: { id: w.id },
         create: { id: w.id, companyId, legacyId: w.legacyId, name: w.name, isDefault: w.isDefault, createdAt: w.createdAt },
-        update: { legacyId: w.legacyId, name: w.name, isDefault: w.isDefault },
+        update: { legacyId: w.legacyId, name: w.name, isDefault: w.isDefault, deletedAt: null },
       });
     }
     counts.warehouses = graph.warehouses.length;
 
-    // --- Assemblies --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why)
+    // --- Assemblies --- (upserts by `id`, not `(companyId, legacyId)` — see the products section above for why; `deletedAt: null` on update revives a soft-deleted match, same reasoning as products.)
     for (const a of graph.assemblies) {
       await tx.assembly.upsert({
         where: { id: a.id },
         create: { id: a.id, companyId, legacyId: a.legacyId, name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit, defaultSupplierId: a.defaultSupplierId, createdAt: a.createdAt },
-        update: { legacyId: a.legacyId, name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit },
+        update: { legacyId: a.legacyId, name: a.name, article: a.article, note: a.note, laborCostPerUnit: a.laborCostPerUnit, packagingCostPerUnit: a.packagingCostPerUnit, deliveryCostPerUnit: a.deliveryCostPerUnit, otherCostPerUnit: a.otherCostPerUnit, deletedAt: null },
       });
     }
     counts.assemblies = graph.assemblies.length;
