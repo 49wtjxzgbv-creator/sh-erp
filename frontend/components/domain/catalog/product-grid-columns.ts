@@ -39,38 +39,49 @@ export interface GridColumn {
   basic?: boolean;
   filterable?: boolean;
   special?: 'qty';
+  /**
+   * Inline-edit input width in px. Table layout is `auto`, and a plain
+   * `w-full` input inside an auto-layout table cell collapses to the
+   * browser's tiny default form-control size rather than the cell's real
+   * content width — the cause of values like the product name reading as
+   * visually clipped. An explicit per-column width (generous enough for
+   * typical real values, not just the header label) fixes that; the table
+   * itself still scrolls horizontally (`Table`'s own `overflow-auto`) if the
+   * total exceeds the viewport, so nothing is ever cut off, just scrollable.
+   */
+  width: number;
 }
 
 export const PRODUCT_GRID_COLUMNS: GridColumn[] = [
-  { key: 'article', labelKey: 'article', type: 'text' },
-  { key: 'code', labelKey: 'code', type: 'text' },
-  { key: 'name', labelKey: 'name', type: 'text', basic: true },
-  { key: 'description', labelKey: 'description', type: 'text' },
-  { key: 'category', labelKey: 'category', type: 'text', basic: true, filterable: true },
-  { key: 'productGroup', labelKey: 'productGroup', type: 'text', filterable: true },
-  { key: 'family', labelKey: 'family', type: 'text', filterable: true },
-  { key: 'type', labelKey: 'type', type: 'text', filterable: true },
-  { key: 'kind', labelKey: 'kind', type: 'text', filterable: true },
-  { key: 'productLine', labelKey: 'productLine', type: 'text' },
-  { key: 'barcode', labelKey: 'barcode', type: 'text' },
-  { key: 'unitId', labelKey: 'unit', type: 'unit', basic: true },
-  { key: 'unitsPerPackage', labelKey: 'unitsPerPackage', type: 'number' },
-  { key: 'cell', labelKey: 'cell', type: 'text', basic: true },
-  { key: 'qty', labelKey: 'qty', type: 'number', basic: true, special: 'qty' },
-  { key: 'minQty', labelKey: 'minQty', type: 'number', basic: true },
-  { key: 'localPriceExclVat', labelKey: 'localPriceExclVat', type: 'number', basic: true },
-  { key: 'localPriceInclVat', labelKey: 'localPriceInclVat', type: 'number' },
-  { key: 'germanPriceExclVat', labelKey: 'germanPriceExclVat', type: 'number' },
-  { key: 'germanPriceInclVat', labelKey: 'germanPriceInclVat', type: 'number' },
-  { key: 'sellPriceEur', labelKey: 'sellPrice', type: 'number', basic: true },
-  { key: 'weightPerUnitKg', labelKey: 'weightPerUnitKg', type: 'number' },
-  { key: 'warrantyMonths', labelKey: 'warrantyMonths', type: 'text' },
-  { key: 'status', labelKey: 'status', type: 'text', filterable: true },
-  { key: 'manufacturer', labelKey: 'manufacturer', type: 'text', filterable: true },
-  { key: 'manufacturerCode', labelKey: 'manufacturerCode', type: 'text' },
-  { key: 'countryOfOrigin', labelKey: 'countryOfOrigin', type: 'text', filterable: true },
-  { key: 'priceListRef', labelKey: 'priceListRef', type: 'text' },
-  { key: 'note', labelKey: 'note', type: 'text' },
+  { key: 'article', labelKey: 'article', type: 'text', basic: true, width: 130 },
+  { key: 'code', labelKey: 'code', type: 'text', width: 110 },
+  { key: 'name', labelKey: 'name', type: 'text', basic: true, width: 340 },
+  { key: 'description', labelKey: 'description', type: 'text', width: 260 },
+  { key: 'category', labelKey: 'category', type: 'text', basic: true, filterable: true, width: 150 },
+  { key: 'productGroup', labelKey: 'productGroup', type: 'text', filterable: true, width: 150 },
+  { key: 'family', labelKey: 'family', type: 'text', filterable: true, width: 130 },
+  { key: 'type', labelKey: 'type', type: 'text', filterable: true, width: 110 },
+  { key: 'kind', labelKey: 'kind', type: 'text', filterable: true, width: 110 },
+  { key: 'productLine', labelKey: 'productLine', type: 'text', width: 150 },
+  { key: 'barcode', labelKey: 'barcode', type: 'text', width: 140 },
+  { key: 'unitId', labelKey: 'unit', type: 'unit', basic: true, width: 110 },
+  { key: 'unitsPerPackage', labelKey: 'unitsPerPackage', type: 'number', width: 90 },
+  { key: 'cell', labelKey: 'cell', type: 'text', basic: true, width: 120 },
+  { key: 'qty', labelKey: 'qty', type: 'number', basic: true, special: 'qty', width: 90 },
+  { key: 'minQty', labelKey: 'minQty', type: 'number', basic: true, width: 100 },
+  { key: 'localPriceExclVat', labelKey: 'localPriceExclVat', type: 'number', basic: true, width: 140 },
+  { key: 'localPriceInclVat', labelKey: 'localPriceInclVat', type: 'number', width: 140 },
+  { key: 'germanPriceExclVat', labelKey: 'germanPriceExclVat', type: 'number', width: 150 },
+  { key: 'germanPriceInclVat', labelKey: 'germanPriceInclVat', type: 'number', width: 150 },
+  { key: 'sellPriceEur', labelKey: 'sellPrice', type: 'number', basic: true, width: 130 },
+  { key: 'weightPerUnitKg', labelKey: 'weightPerUnitKg', type: 'number', width: 120 },
+  { key: 'warrantyMonths', labelKey: 'warrantyMonths', type: 'text', width: 110 },
+  { key: 'status', labelKey: 'status', type: 'text', filterable: true, width: 120 },
+  { key: 'manufacturer', labelKey: 'manufacturer', type: 'text', filterable: true, width: 150 },
+  { key: 'manufacturerCode', labelKey: 'manufacturerCode', type: 'text', width: 130 },
+  { key: 'countryOfOrigin', labelKey: 'countryOfOrigin', type: 'text', filterable: true, width: 150 },
+  { key: 'priceListRef', labelKey: 'priceListRef', type: 'text', width: 150 },
+  { key: 'note', labelKey: 'note', type: 'text', width: 220 },
 ];
 
 export const FILTERABLE_COLUMNS = PRODUCT_GRID_COLUMNS.filter((c) => c.filterable);

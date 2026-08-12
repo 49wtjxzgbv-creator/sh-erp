@@ -296,9 +296,11 @@ export default function ProductGridPage() {
                 />
               </TableHead>
             )}
-            <TableHead className="w-14" />
+            <TableHead className="w-14">{t('photo')}</TableHead>
             {visibleColumns.map((col) => (
-              <TableHead key={col.key}>{t(col.labelKey as any)}</TableHead>
+              <TableHead key={col.key} className="whitespace-normal align-bottom" style={{ minWidth: col.width }}>
+                {t(col.labelKey as any)}
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -324,7 +326,8 @@ export default function ProductGridPage() {
                     <select
                       defaultValue={product.unitId}
                       onChange={(e) => saveCell(product, col, e.target.value)}
-                      className="h-8 min-w-[100px] rounded-md border border-input bg-background px-1 text-sm"
+                      style={{ width: col.width }}
+                      className="h-8 rounded-md border border-input bg-background px-1 text-sm"
                     >
                       {units?.map((u) => (
                         <option key={u.id} value={u.id}>{u.name}</option>
@@ -339,7 +342,8 @@ export default function ProductGridPage() {
                         const original = (product as any)[col.key] ?? '';
                         if (e.target.value !== String(original)) saveCell(product, col, e.target.value);
                       }}
-                      className="h-8 min-w-[90px]"
+                      style={{ width: col.width }}
+                      className="h-8"
                     />
                   )}
                 </TableCell>
