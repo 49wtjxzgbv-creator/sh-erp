@@ -19,7 +19,9 @@
     "error": "Fehler",
     "success": "Erfolgreich",
     "noResults": "Keine Ergebnisse gefunden",
-    "requiredField": "Pflichtfeld"
+    "requiredField": "Pflichtfeld",
+    "selectAll": "Select all",
+    "selectRow": "Select row"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -146,7 +148,10 @@
     "gridQtyAdjustComment": "Changed via product grid",
     "gridBulkDeletePartialFailure": "Failed to delete {count} product(s).",
     "importUpdateQuantities": "Also update warehouse quantities",
-    "importUpdateQuantitiesHint": "Off by default — the file will only update names/prices/other fields. Enable only if you want the \"Quantity\" column to overwrite current stock."
+    "importUpdateQuantitiesHint": "Off by default — the file will only update names/prices/other fields. Enable only if you want the \"Quantity\" column to overwrite current stock.",
+    "deleteSelected": "Delete selected ({count})",
+    "deleteSelectedConfirmTitle": "Delete {count} products?",
+    "deleteSelectedConfirmDescription": "Products will be marked as deleted. Order and stock history will not be affected."
   },
   "settings": {
     "title": "Unternehmenseinstellungen",

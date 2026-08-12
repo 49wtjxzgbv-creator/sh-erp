@@ -34,6 +34,19 @@ export interface DataTableProps<TData, TValue> {
   };
   /** Shown in place of the default "no results" empty state — pass a module-specific icon/title/description/action (e.g. a "Create first product" button). */
   emptyState?: React.ReactNode;
+  /**
+   * Opt-in row-selection checkboxes (a leading column, header checkbox
+   * toggles every currently-loaded row). Selection state lives with the
+   * caller — same "this component owns rendering, the caller owns state"
+   * split as `pagination` above — so a bulk action (e.g. delete) can read
+   * `selectedIds` directly without this component needing to know what
+   * that action is.
+   */
+  selection?: {
+    selectedIds: Set<string>;
+    onSelectionChange: (ids: Set<string>) => void;
+    getRowId: (row: TData) => string;
+  };
 }
 
 export function DataTable<TData, TValue>({
@@ -43,9 +56,30 @@ export function DataTable<TData, TValue>({
   onRowClick,
   pagination,
   emptyState,
+  selection,
 }: DataTableProps<TData, TValue>) {
   const tc = useTranslations('common');
   const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
+
+  const rowIds = selection ? data.map(selection.getRowId) : [];
+  const allSelected = selection ? rowIds.length > 0 && rowIds.every((id) => selection.selectedIds.has(id)) : false;
+  const someSelected = selection ? rowIds.some((id) => selection.selectedIds.has(id)) : false;
+
+  function toggleAll() {
+    if (!selection) return;
+    const next = new Set(selection.selectedIds);
+    if (allSelected) rowIds.forEach((id) => next.delete(id));
+    else rowIds.forEach((id) => next.add(id));
+    selection.onSelectionChange(next);
+  }
+
+  function toggleOne(id: string) {
+    if (!selection) return;
+    const next = new Set(selection.selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selection.onSelectionChange(next);
+  }
 
   return (
     <div className="space-y-3">
@@ -53,6 +87,20 @@ export function DataTable<TData, TValue>({
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
+              {selection && (
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelected && !allSelected;
+                    }}
+                    onChange={toggleAll}
+                    aria-label={tc('selectAll')}
+                  />
+                </TableHead>
+              )}
               {headerGroup.headers.map((header) => (
                 <TableHead key={header.id}>
                   {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
@@ -65,6 +113,11 @@ export function DataTable<TData, TValue>({
           {isLoading ? (
             Array.from({ length: 6 }).map((_, rowIdx) => (
               <TableRow key={rowIdx}>
+                {selection && (
+                  <TableCell>
+                    <Skeleton className="h-4 w-4" />
+                  </TableCell>
+                )}
                 {columns.map((_col, colIdx) => (
                   <TableCell key={colIdx}>
                     <Skeleton className="h-4 w-full max-w-[10rem]" />
@@ -74,22 +127,36 @@ export function DataTable<TData, TValue>({
             ))
           ) : table.getRowModel().rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className="p-0">
+              <TableCell colSpan={columns.length + (selection ? 1 : 0)} className="p-0">
                 {emptyState ?? <EmptyState icon={Inbox} title={tc('noResults')} />}
               </TableCell>
             </TableRow>
           ) : (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                onClick={() => onRowClick?.(row.original)}
-                className={onRowClick ? 'cursor-pointer' : undefined}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                ))}
-              </TableRow>
-            ))
+            table.getRowModel().rows.map((row) => {
+              const rowId = selection?.getRowId(row.original);
+              return (
+                <TableRow
+                  key={row.id}
+                  onClick={() => onRowClick?.(row.original)}
+                  className={onRowClick ? 'cursor-pointer' : undefined}
+                >
+                  {selection && rowId !== undefined && (
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-input"
+                        checked={selection.selectedIds.has(rowId)}
+                        onChange={() => toggleOne(rowId)}
+                        aria-label={tc('selectRow')}
+                      />
+                    </TableCell>
+                  )}
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                  ))}
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>

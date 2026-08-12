@@ -82,6 +82,27 @@ export function useDeleteProduct() {
   });
 }
 
+/**
+ * Bulk delete for the catalog table's row-selection UI — no dedicated
+ * bulk-delete backend endpoint exists (or is needed): this just calls the
+ * same single-product `DELETE /products/:id` per selected row.
+ * `allSettled` rather than `all` so one product that can't be deleted
+ * (e.g. it has order/stock history elsewhere blocking it, if that's ever
+ * enforced) doesn't stop the rest of the selection from going through —
+ * the caller gets back which ids actually failed.
+ */
+export function useDeleteProducts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => deleteProduct(id)));
+      const failedIds = ids.filter((_, i) => results[i].status === 'rejected');
+      return { deletedCount: ids.length - failedIds.length, failedIds };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  });
+}
+
 export function useImportProducts() {
   const qc = useQueryClient();
   return useMutation({

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RequestUser } from '../../../common/decorators/current-user.decorator';
@@ -66,6 +66,8 @@ const PRODUCT_NUMERIC_FIELDS = [
  */
 @Injectable()
 export class ProductsImportExportService {
+  private readonly logger = new Logger(ProductsImportExportService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
@@ -214,11 +216,17 @@ export class ProductsImportExportService {
     const existing = await this.prisma.tenant.product.findFirst({ where: { article } });
     const importedQty = row.qty !== undefined ? Number(row.qty) : undefined;
 
+    // An embedded picture in the row wins over a photoUrl column — both are
+    // rare together in practice, but an actual picture already sitting in
+    // the workbook is a stronger signal than a link that depends on Drive
+    // sharing settings still being correct whenever this import runs.
+    const resolvedImage = rowImage ?? (await this.resolveDrivePhotoUrl(typeof row.photoUrl === 'string' ? row.photoUrl : undefined));
+
     if (existing) {
       if (unitId) data.unitId = unitId;
       const updated = await this.prisma.tenant.product.update({ where: { id: existing.id }, data });
       if (updateQuantities) await this.applyImportedQty(user, updated.id, importedQty, Number(existing.qty), defaultWarehouseId);
-      if (rowImage) await this.ingestRowPhoto(user, updated.id, article, rowImage);
+      if (resolvedImage) await this.ingestRowPhoto(user, updated.id, article, resolvedImage);
       return 'updated';
     }
 
@@ -234,7 +242,7 @@ export class ProductsImportExportService {
       data: { ...data, article, name: String(row.name), unitId } as any,
     });
     await this.applyImportedQty(user, created.id, importedQty, 0, defaultWarehouseId);
-    if (rowImage) await this.ingestRowPhoto(user, created.id, article, rowImage);
+    if (resolvedImage) await this.ingestRowPhoto(user, created.id, article, resolvedImage);
     return 'created';
   }
 
@@ -322,6 +330,42 @@ export class ProductsImportExportService {
   }
 
   /**
+   * A "Фото"/"Photo URL" column commonly holds a Google Drive share link
+   * (a supplier catalog pasted from Drive, or an export from this app's
+   * own legacy-import photo migration) rather than a directly-fetchable
+   * image URL. This backend has no Google Drive API integration anywhere
+   * (Drive access for the *legacy* import wizard goes through the
+   * customer's own paired Apps Script connector, which has no bearing
+   * here — see legacy-import/providers/google-apps-script.provider.ts's
+   * own comment on why a Drive link "isn't itself fetchable by the
+   * backend" in that context). What IS fetchable, unauthenticated, is any
+   * file shared "Anyone with the link" via Drive's public download
+   * endpoint — the common case for a supplier just pasting a link into a
+   * spreadsheet. A file NOT shared that way, or too large to skip Drive's
+   * virus-scan interstitial page, fails here — caught and swallowed
+   * (logged, not thrown) so one bad photo link never fails an otherwise-
+   * good row over a field that's supplementary to the product data itself.
+   */
+  private async resolveDrivePhotoUrl(url: string | undefined): Promise<RowImage | undefined> {
+    if (!url) return undefined;
+    const fileId = extractDriveFileId(url);
+    if (!fileId) return undefined;
+
+    try {
+      const response = await fetch(`https://drive.google.com/uc?export=download&id=${fileId}`);
+      if (!response.ok) return undefined;
+      const contentType = response.headers.get('content-type') ?? '';
+      const match = contentType.match(/^image\/(jpeg|png|gif)/);
+      if (!match) return undefined; // most often Drive's HTML "can't scan for viruses" interstitial instead of the real file
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return { buffer, extension: match[1] };
+    } catch (err) {
+      this.logger.warn(`Could not fetch Drive photo ${url}: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  /**
    * Export: price columns (5 of them) are stripped for any role lacking
    * `reports:valuation` — a real gap fix, not just a port. `ProductsService`
    * itself has no price-visibility restriction at all (any `products:read`
@@ -396,6 +440,12 @@ export class ProductsImportExportService {
     if (value === null || value === undefined) return null;
     if (typeof value === 'object') {
       // Rich text / hyperlink / formula-result cells — take the best plain-text approximation.
+      // A hyperlink cell's `.hyperlink` (the actual link target) wins over
+      // `.text` (just the displayed label) — pasting a Drive link into
+      // Excel commonly auto-converts it to exactly this shape, and for a
+      // photoUrl column specifically it's the target, not the label, that
+      // `resolveDrivePhotoUrl` needs to find a file id in.
+      if ('hyperlink' in (value as any)) return String((value as any).hyperlink);
       if ('text' in (value as any)) return String((value as any).text);
       if ('result' in (value as any)) return (value as any).result ?? null;
       if (value instanceof Date) return value.toISOString();
@@ -403,4 +453,24 @@ export class ProductsImportExportService {
     }
     return value as string | number;
   }
+}
+
+/**
+ * Parses a Google Drive share URL (`.../d/<fileId>/view` or
+ * `...?id=<fileId>`) into the bare file id `resolveDrivePhotoUrl` needs.
+ * A local, deliberately-duplicated copy of legacy-import/transform/
+ * index.ts's own `extractDriveFileId` (same regex) rather than an import
+ * from that module — legacy-import is a one-time-migration-tool module
+ * with its own Drive-access story (the paired Apps Script connector, see
+ * `resolveDrivePhotoUrl`'s header comment); this feature's Drive access
+ * is a completely different, unauthenticated-public-fetch story, and
+ * coupling this module to legacy-import's internals over one small regex
+ * would be the wrong kind of code reuse.
+ */
+function extractDriveFileId(url: string): string | undefined {
+  const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (dMatch) return dMatch[1];
+  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (idMatch) return idMatch[1];
+  return undefined;
 }

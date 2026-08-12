@@ -21,14 +21,14 @@
  *    the atomic stock ledger note in backend/README.md. The synonym is kept
  *    (a real column in real supplier files) but the service applies it as a
  *    `StockService` movement, never a raw `Product.qty` write.
- *  - `photoUrl`/embedded-photo import (`_photoBase64` in the legacy client)
- *    has NO analog in the new schema — `Product` has no photo column at
- *    all; photos are `FileAsset` attachments, a completely different,
- *    per-entity-after-creation upload flow (Task 43's `FileUploadField`).
- *    The `photoUrl` synonym is recognized here (so `previewImportColumns`-
- *    equivalent output still shows it mapped, matching legacy diagnostics)
- *    but `ProductsImportExportService` deliberately ignores the resolved
- *    value — disclosed, not silently dropped without a trace.
+ *  - `photoUrl` has no analog in the new schema as a Product COLUMN —
+ *    `Product` has no photo field at all; photos are `FileAsset`
+ *    attachments. It's no longer ignored on import, though: a recognized
+ *    `photoUrl` column is read by `ProductsImportExportService` and, if it
+ *    holds a Google Drive share link, fetched (public/unauthenticated —
+ *    only works for files shared "anyone with the link") and attached as
+ *    the product's PRODUCT_PHOTO, the same way an embedded picture in the
+ *    row is. It's just never written as a Product text/numeric column.
  */
 
 export const EXPORT_HEADERS = [
@@ -130,8 +130,8 @@ export const NUMERIC_FIELDS = [
   'sellPriceEur', 'weightPerUnitKg',
 ];
 
-/** Fields ignored on import — see this file's header comment for why. */
-export const IGNORED_ON_IMPORT_FIELDS = ['photoUrl'];
+/** Fields recognized in headers but never written as a plain Product column — each has its own dedicated handling instead (`qty` -> StockService, `photoUrl` -> FilesService; see this file's header comment). Currently empty: kept as a named list (rather than removed outright) in case a future column needs the same "recognized but not a direct column" treatment. */
+export const IGNORED_ON_IMPORT_FIELDS: string[] = [];
 
 export type MappedProductRow = Record<string, string | number>;
 
