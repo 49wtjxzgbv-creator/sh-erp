@@ -1,11 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { Document, NodeIO } from '@gltf-transform/core';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FileAsset } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { createR2Client, R2_BUCKET } from './r2-client';
 
 const STEP_EXTENSION = /\.(step|stp)$/i;
+
+// A real multi-part mechanical assembly can legitimately need several
+// minutes and multiple gigabytes of WASM linear memory to tessellate —
+// confirmed directly: a 17.4MB real customer file was still running after
+// 15+ minutes and 2.7GB RSS on this VPS (3.8GB total, shared with the live
+// API and Postgres) before being killed by hand during testing, with
+// MemAvailable down to ~230MB. Both limits below exist purely to bound
+// that risk automatically — a file this demanding fails conversion
+// cleanly (FAILED status, client-side fallback still works) rather than
+// threatening to OOM the box it shares with production traffic.
+const MAX_CONVERSION_MS = 5 * 60 * 1000;
+const MAX_CONVERSION_RSS_BYTES = 1.5 * 1024 * 1024 * 1024;
+const MEMORY_CHECK_INTERVAL_MS = 3000;
 
 /**
  * A STEP file is a raw CAD B-rep format — every viewer open re-tessellates
@@ -26,16 +42,16 @@ const STEP_EXTENSION = /\.(step|stp)$/i;
  * standard `GLTFLoader` — no WASM, no re-parsing, effectively instant
  * regardless of how large or complex the original STEP file was.
  *
- * Uses the SAME `occt-import-js` used client-side, just running under
- * plain Node instead of in a browser Worker (Emscripten's glue code
- * branches on `ENVIRONMENT_IS_NODE` and works unmodified — confirmed
- * directly before building this). `@gltf-transform/core` builds the
- * actual `.glb` binary from OCCT's raw position/normal/index arrays —
- * chosen over three.js's own `GLTFExporter` (browser/DOM-oriented) or a
- * hand-rolled binary format (glTF is a real, tool-portable standard other
- * software can also open, and `GLTFLoader` on the frontend is simpler and
- * more battle-tested than the manual `BufferGeometry` assembly the
- * client-side fallback path still does for not-yet-converted files).
+ * The actual parse+build (same `occt-import-js` used client-side, plus
+ * `@gltf-transform/core` to write the `.glb`) runs in `step-convert-
+ * child.js`, spawned as a **separate OS process**, not inline here — see
+ * `MAX_CONVERSION_MS`/`MAX_CONVERSION_RSS_BYTES` above for why: a runaway
+ * conversion's WASM memory isn't bounded by Node's own
+ * `--max-old-space-size` (V8-heap-only), so killing the whole child
+ * process from the outside is the only reliable way to guarantee it can't
+ * starve the box. Killing this NestJS process itself would take the live
+ * API down with it — the child is deliberately expendable, this service
+ * is not.
  */
 @Injectable()
 export class StepConversionService {
@@ -51,25 +67,23 @@ export class StepConversionService {
   /** Fire-and-forget entry point — see class header comment. Never throws; every failure path ends in a FAILED row update instead. */
   async convert(fileAsset: FileAsset): Promise<void> {
     const { id, companyId, storageKey, originalName } = fileAsset;
+    let workDir: string | undefined;
     try {
       await this.setStatus(companyId, id, 'PENDING');
 
-      const stepBytes = await this.getObjectBytes(storageKey);
-      const occt = await loadOcct();
-      const result = occt.ReadStepFile(new Uint8Array(stepBytes), TESSELLATION_PARAMS);
-      if (!result.success || result.meshes.length === 0) {
-        throw new Error('OCCT produced no geometry for this file.');
-      }
+      workDir = await mkdtemp(join(tmpdir(), 'step-convert-'));
+      const stepPath = join(workDir, 'input.step');
+      const glbPath = join(workDir, 'output.glb');
 
-      const glb = await buildGlb(result);
+      const stepBytes = await this.getObjectBytes(storageKey);
+      await writeFile(stepPath, stepBytes);
+
+      await runConvertChild(stepPath, glbPath);
+      const glb = await readFile(glbPath);
+
       const convertedStorageKey = storageKey.replace(STEP_EXTENSION, '') + '.glb';
       await this.r2.send(
-        new PutObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: convertedStorageKey,
-          Body: glb,
-          ContentType: 'model/gltf-binary',
-        }),
+        new PutObjectCommand({ Bucket: R2_BUCKET, Key: convertedStorageKey, Body: glb, ContentType: 'model/gltf-binary' }),
       );
 
       await this.setStatus(companyId, id, 'DONE', convertedStorageKey);
@@ -77,6 +91,8 @@ export class StepConversionService {
     } catch (err) {
       this.logger.error(`Failed to convert ${originalName} (${id}) to GLB: ${err instanceof Error ? err.message : String(err)}`);
       await this.setStatus(companyId, id, 'FAILED').catch(() => undefined);
+    } finally {
+      if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -113,58 +129,63 @@ export class StepConversionService {
   }
 }
 
-const TESSELLATION_PARAMS = { linearDeflectionType: 'bounding_box_ratio' as const, linearDeflection: 0.01, angularDeflection: 0.5 };
+/**
+ * Spawns `step-convert-child.js` (copied next to the compiled service by
+ * `nest-cli.json`'s `assets` config — plain `.js`, not part of the TS
+ * build) and enforces both limits externally: a wall-clock timeout, and a
+ * periodic `/proc/<pid>/status` RSS check (Linux-only — a no-op elsewhere,
+ * e.g. `npm run build` running on a contributor's Mac, since production is
+ * what actually needs this guard). Either limit kills the child with
+ * SIGKILL; the promise rejects, `convert()`'s catch marks the row FAILED.
+ */
+function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const childScript = join(__dirname, 'step-convert-child.js');
+    const child = spawn(process.execPath, [childScript, stepPath, glbPath], { stdio: ['ignore', 'ignore', 'pipe'] });
 
-let occtPromise: ReturnType<typeof loadOcctUncached> | undefined;
-function loadOcct() {
-  if (!occtPromise) occtPromise = loadOcctUncached();
-  return occtPromise;
-}
-async function loadOcctUncached() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires -- occt-import-js ships no ESM build; require() is its documented Node entry point.
-  const occtimportjs = require('occt-import-js');
-  return occtimportjs({ locateFile: () => require.resolve('occt-import-js/dist/occt-import-js.wasm') });
-}
+    let stderr = '';
+    child.stderr?.on('data', (chunk) => (stderr += chunk.toString()));
 
-interface OcctMesh {
-  name?: string;
-  color?: [number, number, number];
-  attributes: { position: { array: number[] }; normal?: { array: number[] } };
-  index: { array: number[] };
-}
-interface OcctReadResult {
-  success: boolean;
-  meshes: OcctMesh[];
-}
-
-async function buildGlb(result: OcctReadResult): Promise<Uint8Array> {
-  const doc = new Document();
-  const buffer = doc.createBuffer();
-  const scene = doc.createScene();
-
-  for (const mesh of result.meshes) {
-    const primitive = doc.createPrimitive();
-    primitive.setAttribute(
-      'POSITION',
-      doc.createAccessor().setType('VEC3').setArray(new Float32Array(mesh.attributes.position.array)).setBuffer(buffer),
-    );
-    if (mesh.attributes.normal) {
-      primitive.setAttribute(
-        'NORMAL',
-        doc.createAccessor().setType('VEC3').setArray(new Float32Array(mesh.attributes.normal.array)).setBuffer(buffer),
-      );
-    }
-    primitive.setIndices(doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(mesh.index.array)).setBuffer(buffer));
-
-    if (mesh.color) {
-      const material = doc.createMaterial().setBaseColorFactor([...mesh.color, 1]);
-      primitive.setMaterial(material);
+    let settled = false;
+    function settle(err?: Error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      clearInterval(memoryCheckHandle);
+      if (err) reject(err);
+      else resolve();
     }
 
-    const gltfMesh = doc.createMesh(mesh.name ?? 'mesh');
-    gltfMesh.addPrimitive(primitive);
-    scene.addChild(doc.createNode(mesh.name ?? 'node').setMesh(gltfMesh));
+    const timeoutHandle = setTimeout(() => {
+      child.kill('SIGKILL');
+      settle(new Error(`Conversion exceeded ${MAX_CONVERSION_MS / 1000}s and was terminated.`));
+    }, MAX_CONVERSION_MS);
+
+    const memoryCheckHandle = setInterval(async () => {
+      const rss = await readProcessRssBytes(child.pid);
+      if (rss !== undefined && rss > MAX_CONVERSION_RSS_BYTES) {
+        child.kill('SIGKILL');
+        settle(new Error(`Conversion exceeded ${(MAX_CONVERSION_RSS_BYTES / 1024 / 1024 / 1024).toFixed(1)}GB RSS and was terminated.`));
+      }
+    }, MEMORY_CHECK_INTERVAL_MS);
+
+    child.on('error', (err) => settle(err));
+    child.on('exit', (code) => {
+      if (settled) return;
+      if (code === 0) settle();
+      else settle(new Error(`step-convert-child exited with code ${code}: ${stderr.trim() || '(no stderr)'}`));
+    });
+  });
+}
+
+/** Linux-only (`/proc`) — returns `undefined` anywhere else (dev machines) rather than throwing, since the memory guard is a production-VPS safety net, not a cross-platform requirement. */
+async function readProcessRssBytes(pid: number | undefined): Promise<number | undefined> {
+  if (!pid || process.platform !== 'linux') return undefined;
+  try {
+    const status = await readFile(`/proc/${pid}/status`, 'utf8');
+    const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+    return match ? Number(match[1]) * 1024 : undefined;
+  } catch {
+    return undefined; // process already exited between the interval tick and the read
   }
-
-  return new NodeIO().writeBinary(doc);
 }
