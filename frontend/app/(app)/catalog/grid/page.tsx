@@ -291,6 +291,7 @@ export default function ProductGridPage() {
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10 text-right">{tc('rowNumber')}</TableHead>
             {selectMode && (
               <TableHead className="w-8">
                 <input
@@ -313,8 +314,9 @@ export default function ProductGridPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filteredRows.map((product) => (
+          {filteredRows.map((product, rowIndex) => (
             <TableRow key={product.id} data-product-row={product.id}>
+              <TableCell className="text-right text-muted-foreground">{rowIndex + 1}</TableCell>
               {selectMode && (
                 <TableCell>
                   <input

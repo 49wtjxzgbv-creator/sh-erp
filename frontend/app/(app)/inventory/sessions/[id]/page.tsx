@@ -118,6 +118,7 @@ export default function InventorySessionDetailPage() {
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10 text-right">{tc('rowNumber')}</TableHead>
             <TableHead>{tCatalog('photo')}</TableHead>
             <TableHead>{tCatalog('article')}</TableHead>
             <TableHead>{tCatalog('name')}</TableHead>
@@ -130,21 +131,22 @@ export default function InventorySessionDetailPage() {
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                 {tc('loading')}
               </TableCell>
             </TableRow>
           ) : !items || items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
           ) : (
-            items.map((item) => {
+            items.map((item, rowIndex) => {
               const product = productsById?.get(item.productId);
               return (
               <TableRow key={item.id}>
+                <TableCell className="text-right text-muted-foreground">{rowIndex + 1}</TableCell>
                 <TableCell>
                   <Avatar src={photosByProduct?.[item.productId]?.[0]?.downloadUrl} size="sm" />
                 </TableCell>

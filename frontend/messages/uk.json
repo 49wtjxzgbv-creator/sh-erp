@@ -21,7 +21,8 @@
     "noResults": "Нічого не знайдено",
     "requiredField": "Обов'язкове поле",
     "selectAll": "Вибрати всі",
-    "selectRow": "Вибрати рядок"
+    "selectRow": "Вибрати рядок",
+    "rowNumber": "№"
   },
   "nav": {
     "dashboard": "Дашборд",

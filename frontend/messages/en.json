@@ -21,7 +21,8 @@
     "noResults": "No results found",
     "requiredField": "Required field",
     "selectAll": "Select all",
-    "selectRow": "Select row"
+    "selectRow": "Select row",
+    "rowNumber": "№"
   },
   "nav": {
     "dashboard": "Dashboard",

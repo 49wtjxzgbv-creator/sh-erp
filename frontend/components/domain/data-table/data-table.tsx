@@ -20,6 +20,10 @@ import { EmptyState } from '@/components/ui/empty-state';
  * definitions/rendering, the caller owns data fetching (TanStack Query) and
  * pagination state, so this component has no opinion about where rows come
  * from.
+ *
+ * Always renders a leading row-number column (not opt-in, unlike
+ * `selection` below) — numbers continue across pages via `pagination.offset`
+ * rather than resetting to 1 on every page.
  */
 export interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -81,12 +85,18 @@ export function DataTable<TData, TValue>({
     selection.onSelectionChange(next);
   }
 
+  // Continues across pages (offset + index), not reset to 1 on every page —
+  // otherwise page 2 would restart at "1" right under page 1's "50", which
+  // reads as a data error rather than a page boundary.
+  const rowNumberBase = pagination?.offset ?? 0;
+
   return (
     <div className="space-y-3">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
+              <TableHead className="w-10 text-right">{tc('rowNumber')}</TableHead>
               {selection && (
                 <TableHead className="w-10">
                   <input
@@ -113,6 +123,9 @@ export function DataTable<TData, TValue>({
           {isLoading ? (
             Array.from({ length: 6 }).map((_, rowIdx) => (
               <TableRow key={rowIdx}>
+                <TableCell>
+                  <Skeleton className="h-4 w-4" />
+                </TableCell>
                 {selection && (
                   <TableCell>
                     <Skeleton className="h-4 w-4" />
@@ -127,12 +140,12 @@ export function DataTable<TData, TValue>({
             ))
           ) : table.getRowModel().rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length + (selection ? 1 : 0)} className="p-0">
+              <TableCell colSpan={columns.length + 1 + (selection ? 1 : 0)} className="p-0">
                 {emptyState ?? <EmptyState icon={Inbox} title={tc('noResults')} />}
               </TableCell>
             </TableRow>
           ) : (
-            table.getRowModel().rows.map((row) => {
+            table.getRowModel().rows.map((row, rowIndex) => {
               const rowId = selection?.getRowId(row.original);
               return (
                 <TableRow
@@ -140,6 +153,7 @@ export function DataTable<TData, TValue>({
                   onClick={() => onRowClick?.(row.original)}
                   className={onRowClick ? 'cursor-pointer' : undefined}
                 >
+                  <TableCell className="text-right text-muted-foreground">{rowNumberBase + rowIndex + 1}</TableCell>
                   {selection && rowId !== undefined && (
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <input
