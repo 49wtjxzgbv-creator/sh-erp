@@ -243,7 +243,22 @@ export function ProductForm({
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="unitId">{t('unit')}</Label>
-            <Select value={unitId} onValueChange={(v) => setValue('unitId', v, { shouldValidate: true })}>
+            <Select
+              value={unitId}
+              onValueChange={(v) => {
+                // Deferred one tick: committing this in the same pass as
+                // Radix's own onValueChange causes a real, reproducible
+                // crash the FIRST time a value goes from unset to set
+                // (confirmed live — "NotFoundError: removeChild ... not a
+                // child of this node", only on Create where `unitId` starts
+                // `undefined`, never on Edit where a real value is already
+                // selected). React's re-render of this controlled Select's
+                // checkmark/scroll-into-view state races Radix's own portal
+                // teardown for the just-closed dropdown; letting Radix finish
+                // its own commit before ours runs avoids the race.
+                setTimeout(() => setValue('unitId', v, { shouldValidate: true }), 0);
+              }}
+            >
               <SelectTrigger id="unitId">
                 <SelectValue placeholder={t('unit')} />
               </SelectTrigger>
