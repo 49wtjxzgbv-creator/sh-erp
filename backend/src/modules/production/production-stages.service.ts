@@ -60,7 +60,7 @@ export class ProductionStagesService {
       actorUserId: user.userId,
       action: 'production_stage.reordered',
       entityType: 'ProductionStage',
-      entityId: 'bulk',
+      entityId: user.companyId,
       after: { orderedIds: dto.orderedIds },
     });
 

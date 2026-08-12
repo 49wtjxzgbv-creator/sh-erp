@@ -145,7 +145,7 @@ export class ProductsImportExportService {
       actorUserId: user.userId,
       action: 'product.imported',
       entityType: 'Product',
-      entityId: '',
+      entityId: user.companyId,
       after: { created, updated, errorCount: errors.length },
     });
 
@@ -312,7 +312,7 @@ export class ProductsImportExportService {
       actorUserId: user.userId,
       action: 'product.exported',
       entityType: 'Product',
-      entityId: '',
+      entityId: user.companyId,
       after: { count: products.length, pricesIncluded: canSeePrices },
     });
 
