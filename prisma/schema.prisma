@@ -430,6 +430,14 @@ model FileAsset {
   uploadedById String?  @db.Uuid
   legacyId     String?  // old Drive file ID, for migration traceability
 
+  // STEP/.stp files are converted to GLB server-side once at upload time
+  // (StepConversionService) so viewing never re-parses raw CAD in the
+  // browser — see that service's header comment. NONE for every non-STEP
+  // file (the overwhelming majority of rows); PENDING while the
+  // fire-and-forget conversion job is running.
+  conversionStatus    FileConversionStatus @default(NONE)
+  convertedStorageKey String? // R2 key of the generated .glb, set once conversionStatus = DONE
+
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   deletedAt    DateTime? @db.Timestamptz(3)
 
@@ -452,6 +460,13 @@ enum FileDomain {
   QC_PHOTO
   SHIPMENT_PHOTO
   BRANDING
+}
+
+enum FileConversionStatus {
+  NONE
+  PENDING
+  DONE
+  FAILED
 }
 
 // ============================================================================

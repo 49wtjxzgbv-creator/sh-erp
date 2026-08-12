@@ -8,6 +8,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
 import { createR2Client, R2_BUCKET } from './r2-client';
 import { CreatePresignedUploadDto } from './dto/create-presigned-upload.dto';
+import { StepConversionService } from './step-conversion.service';
 
 const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 const DOWNLOAD_URL_TTL_SECONDS = 60 * 60;
@@ -19,6 +20,7 @@ export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly stepConversionService: StepConversionService,
   ) {}
 
   /**
@@ -103,6 +105,14 @@ export class FilesService {
       entityId: fileAsset.id,
       metadata: { domain: fileAsset.domain, entityType: fileAsset.entityType, entityId: fileAsset.entityId },
     });
+
+    // Deliberately not awaited — see StepConversionService's header comment
+    // (same "fire-and-forget, own try/catch persists status onto the row"
+    // pattern as legacy-import.service.ts#startImport). A multi-minute STEP
+    // parse has no business blocking the upload-confirm response.
+    if (this.stepConversionService.isStepFile(fileAsset.originalName)) {
+      void this.stepConversionService.convert(fileAsset);
+    }
 
     return fileAsset;
   }
@@ -284,6 +294,16 @@ export class FilesService {
         downloadUrl: await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey }), {
           expiresIn: DOWNLOAD_URL_TTL_SECONDS,
         }),
+        // Only set once StepConversionService finishes — lets the frontend
+        // load the small pre-tessellated .glb via GLTFLoader instead of
+        // re-parsing the raw STEP client-side (see that service's header
+        // comment for why that matters for a large real assembly).
+        convertedDownloadUrl:
+          file.conversionStatus === 'DONE' && file.convertedStorageKey
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.convertedStorageKey }), {
+                expiresIn: DOWNLOAD_URL_TTL_SECONDS,
+              })
+            : undefined,
       })),
     );
 

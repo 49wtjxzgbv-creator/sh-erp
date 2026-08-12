@@ -23,6 +23,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.0",
     "@aws-sdk/s3-request-presigner": "^3.658.0",
+    "@gltf-transform/core": "^4.4.2",
     "@nestjs/common": "^10.4.0",
     "@nestjs/config": "^3.2.0",
     "@nestjs/core": "^10.4.0",
@@ -38,6 +39,7 @@
     "multer": "^1.4.5-lts.1",
     "nestjs-pino": "^4.1.0",
     "nodemailer": "^6.9.15",
+    "occt-import-js": "^0.0.23",
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

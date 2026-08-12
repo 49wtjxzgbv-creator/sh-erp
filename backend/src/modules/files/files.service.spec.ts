@@ -14,6 +14,7 @@ describe('FilesService', () => {
   let service: FilesService;
   let prisma: any;
   let audit: any;
+  let stepConversion: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -28,7 +29,8 @@ describe('FilesService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new FilesService(prisma, audit);
+    stepConversion = { isStepFile: jest.fn().mockReturnValue(false), convert: jest.fn() };
+    service = new FilesService(prisma, audit, stepConversion);
   });
 
   it('createPresignedUpload builds the tenants/{companyId}/{domain}/{entityType}/{entityId}/{filename} key layout (Phase 2 §7)', async () => {

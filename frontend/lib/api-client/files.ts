@@ -21,6 +21,8 @@ export type FileDomain =
   | 'SHIPMENT_PHOTO'
   | 'BRANDING';
 
+export type FileConversionStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
+
 export interface FileAsset {
   id: string;
   companyId: string;
@@ -33,6 +35,8 @@ export interface FileAsset {
   sizeBytes: number;
   isPublic: boolean;
   uploadedById: string | null;
+  /** Set for .step/.stp uploads only — see backend's StepConversionService. NONE for every other file. */
+  conversionStatus: FileConversionStatus;
   createdAt: string;
   deletedAt: string | null;
 }
@@ -73,6 +77,8 @@ export function listFilesForEntity(entityType: string, entityId: string, domain?
 /** `FileAsset` plus a presigned download URL — only the batch endpoint returns this (see files.service.ts#listForEntities's header comment for why: signing locally, in one server-side pass, is what actually avoids an N+1 for a list view's worth of thumbnails). */
 export interface FileAssetWithUrl extends FileAsset {
   downloadUrl: string;
+  /** Presigned URL for the converted .glb — only present when `conversionStatus === 'DONE'`. */
+  convertedDownloadUrl?: string;
 }
 
 /** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */

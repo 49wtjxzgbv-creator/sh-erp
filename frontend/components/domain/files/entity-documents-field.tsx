@@ -177,7 +177,9 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
           <DialogHeader>
             <DialogTitle className="truncate">{stepDoc?.originalName}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1">{stepDoc && <Step3DViewer url={stepDoc.downloadUrl} />}</div>
+          <div className="min-h-0 flex-1">
+            {stepDoc && <Step3DViewer url={stepDoc.downloadUrl} glbUrl={stepDoc.convertedDownloadUrl} />}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
