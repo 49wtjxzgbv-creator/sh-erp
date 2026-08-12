@@ -4,8 +4,10 @@ import { FileDomain } from '@prisma/client';
 
 const FILE_DOMAINS: FileDomain[] = [
   'PRODUCT_PHOTO',
+  'PRODUCT_DOCUMENT',
   'ASSEMBLY_PHOTO',
   'ASSEMBLY_DRAWING',
+  'ASSEMBLY_DOCUMENT',
   'CUSTOMER_ORDER_DOCUMENT',
   'PURCHASE_INVOICE',
   'EMPLOYEE_PHOTO',
