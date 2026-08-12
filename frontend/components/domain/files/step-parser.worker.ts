@@ -14,7 +14,22 @@
  * worker-global APIs used below are accessed through a narrow `self as
  * WorkerGlobal` cast instead of typing the whole ambient scope.
  */
-import type { OcctReadResult } from 'occt-import-js';
+import type { OcctReadParams, OcctReadResult } from 'occt-import-js';
+
+/**
+ * `null` params means OCCT's own default tessellation quality, which is
+ * tuned for CAD precision, not for a quick shop-floor preview — on a real
+ * 16.6MB multi-part assembly it made `ReadStepFile` take several minutes.
+ * A visibly coarser mesh (1% of the model's bounding box, well above
+ * OCCT's default sub-0.1% precision) cuts the triangle count enormously
+ * and is plenty for "what does this part look like" in this app; nothing
+ * here needs machining-grade surface accuracy.
+ */
+const TESSELLATION_PARAMS: OcctReadParams = {
+  linearDeflectionType: 'bounding_box_ratio',
+  linearDeflection: 0.01,
+  angularDeflection: 0.5,
+};
 
 export interface StepParseRequest {
   buffer: ArrayBuffer;
@@ -40,7 +55,7 @@ worker.onmessage = async (event) => {
   try {
     if (!occtPromise) occtPromise = init();
     const occt = await occtPromise;
-    const result = occt.ReadStepFile(new Uint8Array(event.data.buffer), null);
+    const result = occt.ReadStepFile(new Uint8Array(event.data.buffer), TESSELLATION_PARAMS);
     worker.postMessage({ ok: true, result });
   } catch (err) {
     worker.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) });

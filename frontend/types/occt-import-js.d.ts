@@ -13,8 +13,13 @@ declare module 'occt-import-js' {
     success: boolean;
     meshes: OcctMesh[];
   }
+  export interface OcctReadParams {
+    linearDeflectionType?: 'bounding_box_ratio' | 'absolute_value';
+    linearDeflection?: number;
+    angularDeflection?: number;
+  }
   export interface OcctModule {
-    ReadStepFile(buffer: Uint8Array, params: unknown): OcctReadResult;
+    ReadStepFile(buffer: Uint8Array, params: OcctReadParams | null): OcctReadResult;
   }
   export type OcctFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<OcctModule>;
   const factory: OcctFactory;
