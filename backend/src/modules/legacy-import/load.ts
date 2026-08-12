@@ -59,10 +59,19 @@ export async function loadImportGraph(
     counts.suppliers = graph.suppliers.length;
 
     // --- Products ---
+    // Upserts by `id`, not `(companyId, legacyId)` — `p.id` is already the
+    // CORRECT persisted id by this point (transform/index.ts resolves it
+    // against a legacyId match first, then an article match), so this
+    // update-if-that-id-exists/create-otherwise is exactly right for a
+    // product that already existed under this article without a legacyId
+    // yet. Upserting by `(companyId, legacyId)` instead — the original
+    // shape — treated any such row as "doesn't exist," tried to CREATE a
+    // duplicate, and crashed the whole import on the `article` unique
+    // constraint (real incident).
     for (const p of graph.products) {
       if (!p.unitId) continue; // already warned during transform — cannot load without the required FK
       await tx.product.upsert({
-        where: { companyId_legacyId: { companyId, legacyId: p.legacyId } },
+        where: { id: p.id },
         create: { id: p.id, companyId, ...productFields(p) },
         update: productFields(p),
       });

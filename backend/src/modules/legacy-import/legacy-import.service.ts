@@ -449,7 +449,8 @@ export class LegacyImportService {
     const [units, suppliers, products, warehouses, assemblies, customerOrders] = await Promise.all([
       this.prisma.tenant.companyUnit.findMany({ where: { companyId } }),
       this.prisma.tenant.supplier.findMany({ where: { companyId, legacyId: { not: null } } }),
-      this.prisma.tenant.product.findMany({ where: { companyId, legacyId: { not: null } } }),
+      // Every product, not just legacyId-having ones — see #existingProductIdByArticle.
+      this.prisma.tenant.product.findMany({ where: { companyId } }),
       this.prisma.tenant.warehouse.findMany({ where: { companyId, legacyId: { not: null } } }),
       this.prisma.tenant.assembly.findMany({ where: { companyId, legacyId: { not: null } } }),
       this.prisma.tenant.customerOrder.findMany({ where: { companyId, legacyId: { not: null } } }),
@@ -463,7 +464,7 @@ export class LegacyImportService {
       const [units, suppliers, products, warehouses, assemblies, customerOrders] = await Promise.all([
         tx.companyUnit.findMany({ where: { companyId } }),
         tx.supplier.findMany({ where: { companyId, legacyId: { not: null } } }),
-        tx.product.findMany({ where: { companyId, legacyId: { not: null } } }),
+        tx.product.findMany({ where: { companyId } }),
         tx.warehouse.findMany({ where: { companyId, legacyId: { not: null } } }),
         tx.assembly.findMany({ where: { companyId, legacyId: { not: null } } }),
         tx.customerOrder.findMany({ where: { companyId, legacyId: { not: null } } }),
@@ -496,6 +497,23 @@ interface ExistingIdMaps {
   existingUnitIdByName: Map<string, string>;
   existingSupplierIdByLegacyId: Map<string, string>;
   existingProductIdByLegacyId: Map<string, string>;
+  /**
+   * A product with a given article may already exist WITHOUT a legacyId —
+   * manually entered, or brought in through the separate Excel import,
+   * which never sets one. Real incident this fixes: resolving a product's
+   * persisted id from `existingProductIdByLegacyId` ALONE treats any such
+   * row as "doesn't exist yet," so `load.ts` tried to CREATE a fresh row
+   * with the same article and crashed on `products`'s
+   * `@@unique([companyId, article])` constraint — every legacy-import run
+   * failed outright the moment it reached a product whose article already
+   * existed in the catalog from any other source. `article` is the schema's
+   * own "unique business key" (see Product.article's comment), so it's the
+   * right fallback match here, same idea as `existingProductIdByLegacyId`
+   * one line up: resolve to whatever id the row will ACTUALLY persist
+   * under before `transform/index.ts` hands out a fresh `randomUUID()` for
+   * something that already exists.
+   */
+  existingProductIdByArticle: Map<string, string>;
   existingWarehouseIdByLegacyId: Map<string, string>;
   existingAssemblyIdByLegacyId: Map<string, string>;
   existingCustomerOrderIdByLegacyId: Map<string, string>;
@@ -505,7 +523,7 @@ interface ExistingIdMaps {
 function buildExistingIdMaps(rows: {
   units: { name: string; id: string }[];
   suppliers: { legacyId: string | null; id: string }[];
-  products: { legacyId: string | null; id: string }[];
+  products: { legacyId: string | null; id: string; article: string }[];
   warehouses: { legacyId: string | null; id: string }[];
   assemblies: { legacyId: string | null; id: string }[];
   customerOrders: { legacyId: string | null; id: string }[];
@@ -516,6 +534,7 @@ function buildExistingIdMaps(rows: {
     existingUnitIdByName: new Map(rows.units.map((u) => [u.name, u.id])),
     existingSupplierIdByLegacyId: byLegacyId(rows.suppliers),
     existingProductIdByLegacyId: byLegacyId(rows.products),
+    existingProductIdByArticle: new Map(rows.products.map((p) => [p.article, p.id])),
     existingWarehouseIdByLegacyId: byLegacyId(rows.warehouses),
     existingAssemblyIdByLegacyId: byLegacyId(rows.assemblies),
     existingCustomerOrderIdByLegacyId: byLegacyId(rows.customerOrders),

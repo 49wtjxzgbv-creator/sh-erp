@@ -265,12 +265,18 @@ export class ProductsImportExportService {
       return 'updated';
     }
 
+    // Real incident: this used to fall back to whichever CompanyUnit sorts
+    // first alphabetically when a brand-new row had no recognized Unit
+    // value — which is "кг" (kg) given the seeded defaults' Cyrillic sort
+    // order (SEED_UNIT_NAMES's own comment lists them; кг sorts before
+    // шт/уп/etc.), so every such row silently got created in kilograms
+    // regardless of what it actually was counted in. A guessed-wrong unit
+    // is worse than no row at all — this now fails the row with a clear
+    // per-row error instead (surfaced in the import result the same way a
+    // missing article/name already is), same "no silent fallback" idiom
+    // this file's own header comment on `defaultWarehouseId` follows.
     if (!unitId) {
-      const fallback = [...unitsByLowerName.values()].sort((a, b) => a.name.localeCompare(b.name))[0];
-      if (!fallback) {
-        throw new Error('No unit column recognized in this file and the company has no units configured yet.');
-      }
-      unitId = fallback.id;
+      throw new Error('New product has no recognized unit ("Одиниця виміру"/"Unit") column value — add one to create it.');
     }
 
     const created = await this.prisma.tenant.product.create({

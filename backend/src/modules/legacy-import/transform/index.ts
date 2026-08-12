@@ -72,6 +72,8 @@ export interface LegacyImportContext {
    */
   existingSupplierIdByLegacyId: ReadonlyMap<string, string>;
   existingProductIdByLegacyId: ReadonlyMap<string, string>;
+  /** Article-matched fallback for a product with no legacyId yet (manually entered, or from the separate Excel import) — see legacy-import.service.ts#ExistingIdMaps's own comment on the field this is threaded through from. */
+  existingProductIdByArticle: ReadonlyMap<string, string>;
   existingWarehouseIdByLegacyId: ReadonlyMap<string, string>;
   existingAssemblyIdByLegacyId: ReadonlyMap<string, string>;
   existingCustomerOrderIdByLegacyId: ReadonlyMap<string, string>;
@@ -168,7 +170,16 @@ export function transformLegacyImport(payload: LegacyExportPayload, ctx: LegacyI
   const products = productRows.map((row) => {
     const result = transformProductRow(row, { unitIdByName, supplierIdByLegacyId });
     result.warnings.forEach((w) => warn('products', w));
-    const id = ctx.existingProductIdByLegacyId.get(result.record.legacyId) ?? randomUUID();
+    // legacyId match first (this row was already loaded by an earlier
+    // legacy-import run), then article match (this row already exists from
+    // manual entry or the separate Excel import, just never got a
+    // legacyId) — only a genuinely new article gets a fresh id. See
+    // LegacyImportContext#existingProductIdByArticle's own comment for the
+    // incident this ordering fixes.
+    const id =
+      ctx.existingProductIdByLegacyId.get(result.record.legacyId) ??
+      (result.record.article ? ctx.existingProductIdByArticle.get(result.record.article) : undefined) ??
+      randomUUID();
     ids.set('product', result.record.legacyId, id);
     const photoUrl = parseOptionalString(row.PhotoUrl);
     if (photoUrl) {
