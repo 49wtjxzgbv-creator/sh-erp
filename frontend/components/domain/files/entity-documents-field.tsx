@@ -38,14 +38,21 @@ function isDxfFile(name: string): boolean {
 function isPdfFile(mimeType: string, name: string): boolean {
   return mimeType === 'application/pdf' || /\.pdf$/i.test(name);
 }
-function isImageFile(mimeType: string): boolean {
-  return mimeType.startsWith('image/');
+/**
+ * Extension excludes first: browsers/OS report DXF uploads with the real,
+ * registered `image/vnd.dxf` MIME type (confirmed live — a user's actual
+ * upload came back with exactly that type), which would otherwise match
+ * `image/*` and get routed into the photo lightbox — an `<img>` can't
+ * decode a DXF, so that silently rendered a blank overlay forever.
+ */
+function isImageFile(mimeType: string, name: string): boolean {
+  return mimeType.startsWith('image/') && !isDxfFile(name) && !isStepFile(name);
 }
 
 function fileIcon(file: FileAssetWithUrl) {
-  if (isImageFile(file.mimeType)) return ImageIcon;
   if (isStepFile(file.originalName)) return Box;
   if (isDxfFile(file.originalName)) return Ruler;
+  if (isImageFile(file.mimeType, file.originalName)) return ImageIcon;
   if (isPdfFile(file.mimeType, file.originalName)) return FileText;
   return FileIcon;
 }
@@ -111,19 +118,19 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   }
 
   function handleView(file: FileAssetWithUrl) {
-    if (isImageFile(file.mimeType)) {
-      setLightboxSrc(file.downloadUrl);
-    } else if (isStepFile(file.originalName)) {
+    if (isStepFile(file.originalName)) {
       setStepDoc(file);
     } else if (isDxfFile(file.originalName)) {
       setDxfDoc(file);
+    } else if (isImageFile(file.mimeType, file.originalName)) {
+      setLightboxSrc(file.downloadUrl);
     } else if (isPdfFile(file.mimeType, file.originalName)) {
       window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
   function isViewable(file: FileAssetWithUrl): boolean {
-    return isImageFile(file.mimeType) || isStepFile(file.originalName) || isDxfFile(file.originalName) || isPdfFile(file.mimeType, file.originalName);
+    return isImageFile(file.mimeType, file.originalName) || isStepFile(file.originalName) || isDxfFile(file.originalName) || isPdfFile(file.mimeType, file.originalName);
   }
 
   return (
