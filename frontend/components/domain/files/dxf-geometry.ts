@@ -23,6 +23,21 @@ export interface BBox {
   maxY: number;
 }
 
+/** DXF header variable `$INSUNITS` (group 70) — only the drawing units actually seen from real shop files so far; anything else (0/unset/astronomical units etc.) is left unlabeled rather than guessed. */
+const INSUNITS_LABELS: Record<number, string> = {
+  1: 'in',
+  2: 'ft',
+  4: 'mm',
+  5: 'cm',
+  6: 'm',
+  10: 'yd',
+};
+
+export function resolveUnitLabel(dxf: IDxf): string | null {
+  const raw = dxf.header?.['$INSUNITS'];
+  return typeof raw === 'number' ? (INSUNITS_LABELS[raw] ?? null) : null;
+}
+
 export function computeBoundingBox(segments: Segment[]): BBox {
   let minX = Infinity;
   let minY = Infinity;

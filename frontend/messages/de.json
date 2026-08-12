@@ -837,6 +837,8 @@
     "loadingModel": "Loading 3D model… Large files can take several minutes.",
     "modelLoadError": "Failed to load 3D model",
     "loadingDrawing": "Loading drawing…",
-    "drawingLoadError": "Failed to load drawing"
+    "drawingLoadError": "Failed to load drawing",
+    "measure": "Ruler (measure distance)",
+    "measureHint": "Click two points on the drawing"
   }
 }

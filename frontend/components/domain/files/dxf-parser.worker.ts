@@ -17,13 +17,15 @@
  * below go through a narrow `self as WorkerGlobal` cast instead.
  */
 import DxfParser from 'dxf-parser';
-import { extractSegments, computeBoundingBox, type Segment, type BBox } from './dxf-geometry';
+import { extractSegments, computeBoundingBox, resolveUnitLabel, type Segment, type BBox } from './dxf-geometry';
 
 export interface DxfParseRequest {
   text: string;
 }
 
-export type DxfParseResponse = { ok: true; segments: Segment[]; bbox: BBox } | { ok: false; error: string };
+export type DxfParseResponse =
+  | { ok: true; segments: Segment[]; bbox: BBox; unitLabel: string | null }
+  | { ok: false; error: string };
 
 interface WorkerGlobal {
   onmessage: ((event: { data: DxfParseRequest }) => void) | null;
@@ -40,7 +42,7 @@ worker.onmessage = (event) => {
     const segments = extractSegments(dxf);
     if (segments.length === 0) throw new Error('No supported geometry found in file.');
 
-    worker.postMessage({ ok: true, segments, bbox: computeBoundingBox(segments) });
+    worker.postMessage({ ok: true, segments, bbox: computeBoundingBox(segments), unitLabel: resolveUnitLabel(dxf) });
   } catch (err) {
     worker.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }

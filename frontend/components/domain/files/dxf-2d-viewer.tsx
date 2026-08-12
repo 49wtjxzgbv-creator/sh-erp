@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import type { Segment, BBox } from './dxf-geometry';
+import { Ruler } from 'lucide-react';
+import type { Segment, BBox, Pt } from './dxf-geometry';
 import type { DxfParseRequest, DxfParseResponse } from './dxf-parser.worker';
 
 /**
@@ -33,6 +34,12 @@ interface View {
 
 const DEFAULT_STROKE = '#1f2937';
 const BACKGROUND = '#f3f4f6';
+const MEASURE_COLOR = '#dc2626';
+
+interface Measurement {
+  start: Pt | null;
+  end: Pt | null;
+}
 
 /**
  * A pathological file (huge entity count, deeply nested blocks) could in
@@ -48,9 +55,26 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [state, setState] = useState<ViewerState>('loading');
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measureDistance, setMeasureDistance] = useState<number | null>(null);
   const segmentsRef = useRef<Segment[]>([]);
   const bboxRef = useRef<BBox | null>(null);
+  const unitLabelRef = useRef<string | null>(null);
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0 });
+  const measureModeRef = useRef(false);
+  const measureRef = useRef<Measurement>({ start: null, end: null });
+  const hoverRef = useRef<Pt | null>(null);
+  const drawRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    measureModeRef.current = measureMode;
+    if (!measureMode) {
+      measureRef.current = { start: null, end: null };
+      hoverRef.current = null;
+      setMeasureDistance(null);
+    }
+    drawRef.current();
+  }, [measureMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,11 +89,12 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
         });
         if (cancelled) return;
 
-        const { segments, bbox } = await parseInWorker(text, (w) => (worker = w));
+        const { segments, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
         if (cancelled) return;
 
         segmentsRef.current = segments;
         bboxRef.current = bbox;
+        unitLabelRef.current = unitLabel;
         setState('ready');
       } catch (err) {
         console.error('[Dxf2DViewer] failed to load/render drawing:', err);
@@ -110,6 +135,60 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
         for (const p of rest) ctx!.lineTo(offsetX + p.x * scale, offsetY - p.y * scale);
         ctx!.stroke();
       }
+
+      drawMeasurement();
+    }
+
+    function toScreen(p: Pt): Pt {
+      const { scale, offsetX, offsetY } = viewRef.current;
+      return { x: offsetX + p.x * scale, y: offsetY - p.y * scale };
+    }
+
+    /** Draws the ruler tool's own overlay: a marker at each placed point, a line between them (dashed while still following the pointer toward a second point), and a distance readout pinned above the line's midpoint. */
+    function drawMeasurement() {
+      const { start, end } = measureRef.current;
+      if (!start) return;
+      const to = end ?? hoverRef.current;
+      if (!to) {
+        drawMarker(start);
+        return;
+      }
+
+      const a = toScreen(start);
+      const b = toScreen(to);
+      ctx!.save();
+      ctx!.strokeStyle = MEASURE_COLOR;
+      ctx!.lineWidth = 1.5;
+      if (!end) ctx!.setLineDash([5, 4]);
+      ctx!.beginPath();
+      ctx!.moveTo(a.x, a.y);
+      ctx!.lineTo(b.x, b.y);
+      ctx!.stroke();
+      ctx!.restore();
+
+      drawMarker(start);
+      drawMarker(to);
+
+      const distance = Math.hypot(to.x - start.x, to.y - start.y);
+      const label = unitLabelRef.current ? `${distance.toFixed(2)} ${unitLabelRef.current}` : distance.toFixed(2);
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+
+      ctx!.font = '12px sans-serif';
+      const textWidth = ctx!.measureText(label).width;
+      ctx!.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx!.fillRect(midX - textWidth / 2 - 4, midY - 22, textWidth + 8, 16);
+      ctx!.fillStyle = MEASURE_COLOR;
+      ctx!.textAlign = 'center';
+      ctx!.fillText(label, midX, midY - 10);
+    }
+
+    function drawMarker(p: Pt) {
+      const s = toScreen(p);
+      ctx!.beginPath();
+      ctx!.arc(s.x, s.y, 3, 0, Math.PI * 2);
+      ctx!.fillStyle = MEASURE_COLOR;
+      ctx!.fill();
     }
 
     function fitToView() {
@@ -147,6 +226,25 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       draw();
     }
 
+    function screenToWorld(sx: number, sy: number): Pt {
+      const { scale, offsetX, offsetY } = viewRef.current;
+      return { x: (sx - offsetX) / scale, y: -(sy - offsetY) / scale };
+    }
+
+    function placeMeasurePoint(sx: number, sy: number) {
+      const world = screenToWorld(sx, sy);
+      const { start, end } = measureRef.current;
+      if (!start || end) {
+        measureRef.current = { start: world, end: null };
+        setMeasureDistance(null);
+      } else {
+        measureRef.current = { start, end: world };
+        setMeasureDistance(Math.hypot(world.x - start.x, world.y - start.y));
+      }
+      draw();
+    }
+
+    drawRef.current = draw;
     fitToView();
     resizeCanvas();
 
@@ -169,6 +267,13 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
     function onPointerDown(e: PointerEvent) {
       canvas!.setPointerCapture(e.pointerId);
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (measureModeRef.current && activePointers.size === 1) {
+        const rect = canvas!.getBoundingClientRect();
+        placeMeasurePoint(e.clientX - rect.left, e.clientY - rect.top);
+        return; // single-pointer taps place measurement points instead of panning
+      }
+
       if (activePointers.size === 1) {
         isPanning = true;
         lastX = e.clientX;
@@ -182,6 +287,12 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
     }
 
     function onPointerMove(e: PointerEvent) {
+      if (measureModeRef.current && measureRef.current.start && !measureRef.current.end) {
+        const rect = canvas!.getBoundingClientRect();
+        hoverRef.current = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        draw();
+      }
+
       if (!activePointers.has(e.pointerId)) return;
       activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -219,8 +330,13 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
     }
 
     function onDoubleClick() {
+      if (measureModeRef.current) return; // avoid recentering mid-measurement on two quick placement taps
       fitToView();
       draw();
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && measureModeRef.current) setMeasureMode(false);
     }
 
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -229,6 +345,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDoubleClick);
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       resizeObserver.disconnect();
@@ -238,6 +355,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('dblclick', onDoubleClick);
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, [state]);
 
@@ -250,6 +368,29 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       {state === 'error' && (
         <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('drawingLoadError')}</p>
       )}
+      {state === 'ready' && (
+        <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setMeasureMode((v) => !v)}
+            aria-pressed={measureMode}
+            aria-label={t('measure')}
+            title={t('measure')}
+            className={`flex h-9 w-9 items-center justify-center rounded-md border shadow-sm ${
+              measureMode ? 'border-destructive bg-destructive text-destructive-foreground' : 'border-border bg-background text-foreground'
+            }`}
+          >
+            <Ruler className="h-4 w-4" />
+          </button>
+          {measureMode && (
+            <p className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground shadow-sm">
+              {measureDistance != null
+                ? `${measureDistance.toFixed(2)}${unitLabelRef.current ? ` ${unitLabelRef.current}` : ''}`
+                : t('measureHint')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -260,7 +401,10 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
  * terminated on unmount even while a parse is still in flight — same
  * pattern as `Step3DViewer`'s `parseInWorker`.
  */
-function parseInWorker(text: string, onWorker: (worker: Worker) => void): Promise<{ segments: Segment[]; bbox: BBox }> {
+function parseInWorker(
+  text: string,
+  onWorker: (worker: Worker) => void,
+): Promise<{ segments: Segment[]; bbox: BBox; unitLabel: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./dxf-parser.worker.ts', import.meta.url));
     onWorker(worker);
@@ -273,7 +417,7 @@ function parseInWorker(text: string, onWorker: (worker: Worker) => void): Promis
     worker.onmessage = (event: MessageEvent<DxfParseResponse>) => {
       clearTimeout(timeout);
       worker.terminate();
-      if (event.data.ok) resolve({ segments: event.data.segments, bbox: event.data.bbox });
+      if (event.data.ok) resolve({ segments: event.data.segments, bbox: event.data.bbox, unitLabel: event.data.unitLabel });
       else reject(new Error(event.data.error));
     };
     worker.onerror = (event) => {
