@@ -80,7 +80,7 @@ export function AssemblyPicker({ value, onChange, excludeId, placeholder }: Asse
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 100)}
       />
-      {open && query && (
+      {open && (
         <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-md">
           {results.length ? (
             results.map((assembly) => (

@@ -70,7 +70,7 @@ export function ProductPicker({ value, onChange, placeholder }: ProductPickerPro
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 100)}
       />
-      {open && query && (
+      {open && (
         <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-md">
           {data?.items.length ? (
             data.items.map((product) => (

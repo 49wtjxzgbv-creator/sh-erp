@@ -37,40 +37,51 @@ export class SearchService {
 
   async search(user: RequestUser, q: string): Promise<SearchResults> {
     const query = q.trim();
-    if (!query) {
-      return { products: [], assemblies: [], customerOrders: [], suppliers: [] };
-    }
 
+    // An empty query still returns a page of results (most-recently-touched
+    // first) instead of nothing — the dropdown opens with real positions to
+    // browse as soon as the field is focused, rather than requiring the
+    // user to start typing before anything appears.
     const [products, assemblies, customerOrders, suppliers] = await Promise.all([
       this.prisma.tenant.product.findMany({
         where: {
           deletedAt: null,
-          OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
+          ...(query
+            ? { OR: [{ article: { contains: query, mode: 'insensitive' as const } }, { name: { contains: query, mode: 'insensitive' as const } }] }
+            : {}),
         },
         take: RESULTS_PER_GROUP,
+        orderBy: query ? undefined : { updatedAt: 'desc' },
         select: { id: true, name: true, article: true },
       }),
       this.prisma.tenant.assembly.findMany({
         where: {
           deletedAt: null,
-          OR: [{ name: { contains: query, mode: 'insensitive' } }, { article: { contains: query, mode: 'insensitive' } }],
+          ...(query
+            ? { OR: [{ name: { contains: query, mode: 'insensitive' as const } }, { article: { contains: query, mode: 'insensitive' as const } }] }
+            : {}),
         },
         take: RESULTS_PER_GROUP,
+        orderBy: query ? undefined : { updatedAt: 'desc' },
         select: { id: true, name: true, article: true },
       }),
       this.prisma.tenant.customerOrder.findMany({
-        where: {
-          OR: [
-            { clientName: { contains: query, mode: 'insensitive' } },
-            { orderNumber: { contains: query, mode: 'insensitive' } },
-          ],
-        },
+        where: query
+          ? {
+              OR: [
+                { clientName: { contains: query, mode: 'insensitive' } },
+                { orderNumber: { contains: query, mode: 'insensitive' } },
+              ],
+            }
+          : {},
         take: RESULTS_PER_GROUP,
+        orderBy: query ? undefined : { createdAt: 'desc' },
         select: { id: true, clientName: true, orderNumber: true },
       }),
       this.prisma.tenant.supplier.findMany({
-        where: { name: { contains: query, mode: 'insensitive' } },
+        where: query ? { name: { contains: query, mode: 'insensitive' } } : {},
         take: RESULTS_PER_GROUP,
+        orderBy: query ? undefined : { updatedAt: 'desc' },
         select: { id: true, name: true },
       }),
     ]);

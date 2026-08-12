@@ -20,8 +20,11 @@ const GROUPS: { key: 'products' | 'assemblies' | 'customerOrders' | 'suppliers';
  * Instant search dropdown — debounces locally (300ms) before hitting
  * GET /search, which itself mirrors each module's own list-page `search`
  * filter (see backend/src/modules/search/search.service.ts). No keyboard
- * shortcut/command-palette framing on purpose: this is a plain "type,
- * see matches, click one" affordance, not a power-user command runner.
+ * shortcut/command-palette framing on purpose: this is a plain "focus, see
+ * positions, click one" affordance, not a power-user command runner.
+ * Focusing the field alone (`open`, before any typing) already shows a
+ * dropdown of recently-touched items — `q=''` is a real request, not a
+ * disabled state, so there's nothing to wait for before results appear.
  */
 export function GlobalSearch({ className }: { className?: string }) {
   const t = useTranslations('search');
@@ -38,7 +41,7 @@ export function GlobalSearch({ className }: { className?: string }) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const { data, isFetching } = useGlobalSearch(debouncedQuery);
+  const { data, isFetching } = useGlobalSearch(debouncedQuery, open);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -57,7 +60,7 @@ export function GlobalSearch({ className }: { className?: string }) {
   }
 
   const hasAnyResults = data ? GROUPS.some((g) => data[g.key].length > 0) : false;
-  const showDropdown = open && query.trim().length > 0;
+  const showDropdown = open;
 
   return (
     <div ref={containerRef} className={cn('relative w-full max-w-sm', className)}>
@@ -74,9 +77,7 @@ export function GlobalSearch({ className }: { className?: string }) {
 
       {showDropdown && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-96 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
-          {query.trim().length < 2 ? (
-            <p className="px-3 py-3 text-sm text-muted-foreground">{t('typeToSearch')}</p>
-          ) : isFetching && !data ? (
+          {isFetching && !data ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">{tc('loading')}</p>
           ) : !hasAnyResults ? (
             <p className="px-3 py-3 text-sm text-muted-foreground">{t('noResults')}</p>

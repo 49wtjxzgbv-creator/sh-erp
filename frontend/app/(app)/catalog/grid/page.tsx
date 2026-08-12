@@ -87,6 +87,7 @@ export default function ProductGridPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [jumpQuery, setJumpQuery] = useState('');
+  const [jumpOpen, setJumpOpen] = useState(false);
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -112,9 +113,12 @@ export default function ProductGridPage() {
     });
   }
 
+  // No query yet (just focused) shows the first page of currently-loaded
+  // rows rather than nothing — same "open it, see positions immediately"
+  // behavior as the picker components and the header search.
   const jumpMatches = useMemo(() => {
-    if (!jumpQuery.trim()) return [];
     const q = jumpQuery.trim().toLowerCase();
+    if (!q) return filteredRows.slice(0, 30);
     return filteredRows
       .filter((p) => p.article.toLowerCase().includes(q) || p.name.toLowerCase().includes(q) || (p.code ?? '').toLowerCase().includes(q))
       .slice(0, 30);
@@ -122,6 +126,7 @@ export default function ProductGridPage() {
 
   function jumpTo(productId: string) {
     setJumpQuery('');
+    setJumpOpen(false);
     const el = document.querySelector<HTMLElement>(`[data-product-row="${productId}"]`);
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -207,15 +212,20 @@ export default function ProductGridPage() {
               placeholder={t('gridJumpSearchPlaceholder')}
               value={jumpQuery}
               onChange={(e) => setJumpQuery(e.target.value)}
+              onFocus={() => setJumpOpen(true)}
+              onBlur={() => setTimeout(() => setJumpOpen(false), 150)}
               className="w-64"
             />
-            {jumpMatches.length > 0 && (
+            {jumpOpen && jumpMatches.length > 0 && (
               <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
                 {jumpMatches.map((p) => (
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => jumpTo(p.id)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      jumpTo(p.id);
+                    }}
                     className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary"
                   >
                     <span className="font-medium">{p.article}</span>

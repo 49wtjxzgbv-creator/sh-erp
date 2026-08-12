@@ -11,6 +11,7 @@ import type { WarehouseStock } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
@@ -20,6 +21,7 @@ export default function StockLevelsPage() {
   const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
+  const [search, setSearch] = useState('');
   const [movementOpen, setMovementOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
 
@@ -40,6 +42,18 @@ export default function StockLevelsPage() {
   const productIds = useMemo(() => Array.from(new Set((levels ?? []).map((l) => l.productId))), [levels]);
   const { data: productsById } = useProductsByIds(productIds);
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+
+  // Client-side, same reason `levels` is resolved against Product client-side
+  // above: GET /stock/levels has no Product join to filter by name/article
+  // server-side against.
+  const filteredLevels = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return levels ?? [];
+    return (levels ?? []).filter((l) => {
+      const p = productsById?.get(l.productId);
+      return Boolean(p && (p.article.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)));
+    });
+  }, [levels, productsById, search]);
 
   const columns = useMemo<ColumnDef<WarehouseStock>[]>(
     () => [
@@ -73,19 +87,27 @@ export default function StockLevelsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Select value={warehouseId ?? '__all__'} onValueChange={(v) => setWarehouseId(v === '__all__' ? undefined : v)}>
-          <SelectTrigger className="max-w-xs">
-            <SelectValue placeholder={t('filterByWarehouse')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('allWarehouses')}</SelectItem>
-            {warehouses?.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            placeholder={t('filterByProduct')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-64"
+          />
+          <Select value={warehouseId ?? '__all__'} onValueChange={(v) => setWarehouseId(v === '__all__' ? undefined : v)}>
+            <SelectTrigger className="max-w-xs">
+              <SelectValue placeholder={t('filterByWarehouse')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('allWarehouses')}</SelectItem>
+              {warehouses?.map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setMoveOpen(true)}>
             <ArrowLeftRight className="mr-2 h-4 w-4" />
@@ -98,7 +120,7 @@ export default function StockLevelsPage() {
         </div>
       </div>
 
-      <DataTable columns={columns} data={levels ?? []} isLoading={isLoading} />
+      <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
 
       <RecordMovementDialog open={movementOpen} onOpenChange={setMovementOpen} />
       <MoveStockDialog open={moveOpen} onOpenChange={setMoveOpen} />

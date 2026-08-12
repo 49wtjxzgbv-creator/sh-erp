@@ -43,7 +43,7 @@ export function EmployeePicker({ value, onChange, placeholder }: EmployeePickerP
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 100)}
       />
-      {open && query && (
+      {open && (
         <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
           {data?.items.length ? (
             data.items.map((employee) => (
