@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsDate, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 /** PIECEWORK is deliberately excluded — those entries are system-generated only, from ProductionOrdersService.start() (Module 6). This endpoint is for the 3 manual entry types. */
 export const MANUAL_PAYROLL_ENTRY_TYPES = ['ADVANCE', 'BONUS', 'PENALTY'] as const;
@@ -25,10 +25,22 @@ export class RecordPayrollEntryDto {
   @Min(0.01)
   amount!: number;
 
+  // See employee.dto.ts's #hireDate for the real incident this same fix
+  // pattern addresses: dto.entryDate goes straight to Prisma, and
+  // PayrollEntry.entryDate is DateTime @db.Timestamptz(3), which needs a
+  // real Date/full ISO datetime, not the bare "YYYY-MM-DD" a date <input>
+  // sends — and an empty <input> submits '', not omitted, so the explicit
+  // ''/null check is what actually makes this optional.
+  // `PayrollSummaryQueryDto#from/to` below stay `@IsDateString()` on
+  // purpose — those are query filters the service explicitly wraps in
+  // `new Date(...)` itself (payroll.service.ts), not values handed
+  // straight to a Prisma `data:` object.
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
-  entryDate?: string;
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  entryDate?: Date;
 
   @ApiPropertyOptional()
   @IsOptional()

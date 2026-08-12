@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
-  IsDateString,
+  IsDate,
   IsIn,
   IsInt,
   IsNumber,
@@ -43,10 +43,19 @@ export class CreateCustomerOrderDto {
   @IsString()
   contactPerson?: string;
 
+  // See employee.dto.ts's #hireDate for the real incident this same fix
+  // pattern addresses: dto.deadline/dto as any goes straight to Prisma, and
+  // CustomerOrder.deadline is DateTime @db.Timestamptz(3), which needs a
+  // real Date/full ISO datetime, not the bare "YYYY-MM-DD" a date <input>
+  // sends (@IsDateString() alone would accept it but leave it a string) —
+  // and an empty <input> submits '', not omitted, so the explicit ''/null
+  // check is what actually makes this optional in practice.
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
-  deadline?: string;
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  deadline?: Date;
 
   @ApiPropertyOptional({ enum: ['LOW', 'NORMAL', 'HIGH', 'URGENT'], default: 'NORMAL' })
   @IsOptional()
@@ -82,10 +91,19 @@ export class CustomerOrderHeaderDto {
   @IsString()
   contactPerson?: string;
 
+  // See employee.dto.ts's #hireDate for the real incident this same fix
+  // pattern addresses: dto.deadline/dto as any goes straight to Prisma, and
+  // CustomerOrder.deadline is DateTime @db.Timestamptz(3), which needs a
+  // real Date/full ISO datetime, not the bare "YYYY-MM-DD" a date <input>
+  // sends (@IsDateString() alone would accept it but leave it a string) —
+  // and an empty <input> submits '', not omitted, so the explicit ''/null
+  // check is what actually makes this optional in practice.
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
-  deadline?: string;
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  deadline?: Date;
 
   @ApiPropertyOptional({ enum: ['LOW', 'NORMAL', 'HIGH', 'URGENT'] })
   @IsOptional()

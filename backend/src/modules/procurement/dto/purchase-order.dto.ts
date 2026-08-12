@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
-  IsDateString,
+  IsDate,
   IsInt,
   IsNumber,
   IsOptional,
@@ -55,10 +55,18 @@ export class CreatePurchaseOrderDto {
   @MinLength(1)
   supplierNameSnapshot!: string;
 
+  // See employee.dto.ts's #hireDate for the real incident this same fix
+  // pattern addresses: dto.expectedDeliveryDate goes straight to Prisma,
+  // and PurchaseOrder.expectedDeliveryDate is DateTime @db.Timestamptz(3),
+  // which needs a real Date/full ISO datetime, not the bare "YYYY-MM-DD" a
+  // date <input> sends — and an empty <input> submits '', not omitted, so
+  // the explicit ''/null check is what actually makes this optional.
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
-  expectedDeliveryDate?: string;
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  expectedDeliveryDate?: Date;
 
   @ApiPropertyOptional()
   @IsOptional()
