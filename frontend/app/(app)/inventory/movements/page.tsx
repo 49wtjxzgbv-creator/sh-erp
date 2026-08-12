@@ -5,15 +5,18 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { useStockHistory, useWarehouses } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { StockMovement } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const PAGE_SIZE = 50;
 
 export default function StockHistoryPage() {
   const t = useTranslations('inventory');
+  const tCatalog = useTranslations('catalog');
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
 
@@ -30,6 +33,7 @@ export default function StockHistoryPage() {
   // productId-resolution shape as Stock Levels' own list.
   const productIds = useMemo(() => Array.from(new Set((data?.items ?? []).map((m) => m.productId))), [data]);
   const { data: productsById } = useProductsByIds(productIds);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
 
   const columns = useMemo<ColumnDef<StockMovement>[]>(
     () => [
@@ -40,12 +44,21 @@ export default function StockHistoryPage() {
       },
       { accessorKey: 'type', header: t('movementType'), cell: ({ getValue }) => <Badge variant="outline">{getValue() as string}</Badge> },
       {
-        accessorKey: 'productId',
-        header: t('product'),
-        cell: ({ getValue }) => {
-          const product = productsById?.get(getValue() as string);
-          return product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : (getValue() as string);
-        },
+        id: 'photo',
+        header: tCatalog('photo'),
+        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.productId]?.[0]?.downloadUrl} size="sm" />,
+      },
+      {
+        id: 'article',
+        accessorFn: (row) => row.productId,
+        header: tCatalog('article'),
+        cell: ({ getValue }) => productsById?.get(getValue() as string)?.article ?? '—',
+      },
+      {
+        id: 'name',
+        accessorFn: (row) => row.productId,
+        header: tCatalog('name'),
+        cell: ({ getValue }) => productsById?.get(getValue() as string)?.name ?? (getValue() as string),
       },
       {
         accessorKey: 'warehouseId',
@@ -58,7 +71,7 @@ export default function StockHistoryPage() {
       { accessorKey: 'qtyDelta', header: t('qtyDelta') },
       { accessorKey: 'comment', header: t('comment'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
     ],
-    [t, warehouseName, productsById],
+    [t, tCatalog, warehouseName, productsById, photosByProduct],
   );
 
   return (

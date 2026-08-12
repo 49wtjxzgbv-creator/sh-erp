@@ -31,6 +31,7 @@ import {
 export default function InventorySessionDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('inventory');
+  const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
 
   const { data: sessions } = useInventorySessions();
@@ -117,7 +118,9 @@ export default function InventorySessionDetailPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t('product')}</TableHead>
+            <TableHead>{tCatalog('photo')}</TableHead>
+            <TableHead>{tCatalog('article')}</TableHead>
+            <TableHead>{tCatalog('name')}</TableHead>
             <TableHead>{t('expectedQty')}</TableHead>
             <TableHead>{t('actualQty')}</TableHead>
             <TableHead>{t('counted')}</TableHead>
@@ -127,28 +130,26 @@ export default function InventorySessionDetailPage() {
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                 {tc('loading')}
               </TableCell>
             </TableRow>
           ) : !items || items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
           ) : (
             items.map((item) => {
               const product = productsById?.get(item.productId);
-              const productLabel = product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : item.productId;
               return (
               <TableRow key={item.id}>
                 <TableCell>
-                  <div className="flex items-center gap-2.5">
-                    <Avatar src={photosByProduct?.[item.productId]?.[0]?.downloadUrl} size="sm" />
-                    <span className="max-w-[280px] truncate" title={productLabel}>{productLabel}</span>
-                  </div>
+                  <Avatar src={photosByProduct?.[item.productId]?.[0]?.downloadUrl} size="sm" />
                 </TableCell>
+                <TableCell>{product?.article ?? '—'}</TableCell>
+                <TableCell>{product?.name ?? item.productId}</TableCell>
                 <TableCell>{item.expectedQty}</TableCell>
                 <TableCell>{item.actualQty ?? '—'}</TableCell>
                 <TableCell>{item.counted ? '✓' : '—'}</TableCell>

@@ -17,6 +17,7 @@ import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog
 
 export default function StockLevelsPage() {
   const t = useTranslations('inventory');
+  const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [movementOpen, setMovementOpen] = useState(false);
@@ -44,16 +45,20 @@ export default function StockLevelsPage() {
     () => [
       {
         id: 'photo',
-        header: '',
+        header: tCatalog('photo'),
         cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.productId]?.[0]?.downloadUrl} size="lg" />,
       },
       {
-        accessorKey: 'productId',
-        header: t('product'),
-        cell: ({ getValue }) => {
-          const product = productsById?.get(getValue() as string);
-          return product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : (getValue() as string);
-        },
+        id: 'article',
+        accessorFn: (row) => row.productId,
+        header: tCatalog('article'),
+        cell: ({ getValue }) => productsById?.get(getValue() as string)?.article ?? '—',
+      },
+      {
+        id: 'name',
+        accessorFn: (row) => row.productId,
+        header: tCatalog('name'),
+        cell: ({ getValue }) => productsById?.get(getValue() as string)?.name ?? (getValue() as string),
       },
       {
         accessorKey: 'warehouseId',
@@ -62,7 +67,7 @@ export default function StockLevelsPage() {
       },
       { accessorKey: 'qty', header: t('qty') },
     ],
-    [t, warehouseName, productsById, photosByProduct],
+    [t, tCatalog, warehouseName, productsById, photosByProduct],
   );
 
   return (
