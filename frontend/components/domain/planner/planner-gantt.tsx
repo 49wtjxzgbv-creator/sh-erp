@@ -86,12 +86,14 @@ function riskOf(problems: PlannerProblem[]): RiskColor {
   return 'none';
 }
 
-// Bold, solid blocks — a professional dispatcher board reads at a glance
-// from filled cards, not thin translucent slivers.
-const CARD_COLOR: Record<RiskColor, string> = {
-  none: 'border-secondary-foreground/60 bg-secondary',
-  warning: 'border-warning bg-warning/70',
-  critical: 'border-destructive bg-destructive/70',
+// Physical index-card look — a neutral, raised card face with a coloured
+// status spine, not a flat solid-colour block. Depth (shadow + hover lift)
+// is what reads as "a card sitting on the board," the colour on its own
+// only reads as risk severity.
+const CARD_COLOR: Record<RiskColor, { border: string; icon: string }> = {
+  none: { border: 'border-l-muted-foreground/50', icon: 'text-muted-foreground' },
+  warning: { border: 'border-l-warning', icon: 'text-warning' },
+  critical: { border: 'border-l-destructive', icon: 'text-destructive' },
 };
 
 export function px(day: Date, viewFrom: Date, pxPerDay: number): number {
@@ -244,28 +246,29 @@ function StageCardBox({
       ref={registerRef}
       title={tooltip}
       className={cn(
-        'absolute overflow-hidden rounded-md border-l-4 shadow-sm transition-shadow hover:shadow-md',
-        CARD_COLOR[color],
+        'absolute overflow-hidden rounded-md border border-l-4 border-border/80 bg-card shadow-[0_1px_2px_rgba(0,0,0,0.08),0_2px_5px_rgba(0,0,0,0.08)]',
+        'transition-all duration-150 hover:-translate-y-px hover:shadow-[0_2px_4px_rgba(0,0,0,0.1),0_6px_14px_rgba(0,0,0,0.14)]',
+        CARD_COLOR[color].border,
         flashed && 'ring-2 ring-warning ring-offset-1',
       )}
       style={{ left, width, top, height: CARD_ROW_HEIGHT - CARD_GAP }}
     >
-      {progressPct != null && <div className="absolute inset-y-0 left-0 bg-foreground/20" style={{ width: `${progressPct}%` }} />}
+      {progressPct != null && <div className="absolute inset-y-0 left-0 bg-primary/12" style={{ width: `${progressPct}%` }} />}
       {rich ? (
         <div className="relative flex h-full items-center gap-1.5 px-1.5 py-1">
-          <Avatar src={photo} size="sm" zoomable={false} className="h-8 w-8 shrink-0" />
+          <Avatar src={photo} size="sm" zoomable={false} className="h-8 w-8 shrink-0 ring-1 ring-border" />
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-[10px] font-semibold">{card.item.assemblyName}</p>
-            <p className="truncate text-[9px] text-foreground/70">{card.item.article ?? t('noArticle')}</p>
-            <p className="truncate text-[9px] text-foreground/70">#{shortId(card.batch.id)} · {card.batch.unitsPlanned} шт.</p>
+            <p className="truncate text-[10px] font-semibold text-foreground">{card.item.assemblyName}</p>
+            <p className="truncate text-[9px] text-muted-foreground">{card.item.article ?? t('noArticle')}</p>
+            <p className="truncate text-[9px] text-muted-foreground">#{shortId(card.batch.id)} · {card.batch.unitsPlanned} шт.</p>
           </div>
         </div>
       ) : (
         <div className="relative flex h-full items-center px-1">
-          <p className="truncate text-[9px] font-medium">{card.item.assemblyName} · #{shortId(card.batch.id)}</p>
+          <p className="truncate text-[9px] font-medium text-foreground">{card.item.assemblyName} · #{shortId(card.batch.id)}</p>
         </div>
       )}
-      {color !== 'none' && <AlertTriangle className={cn('absolute right-1 top-1 h-3 w-3', color === 'critical' ? 'text-destructive' : 'text-warning')} />}
+      {color !== 'none' && <AlertTriangle className={cn('absolute right-1 top-1 h-3 w-3', CARD_COLOR[color].icon)} />}
     </Link>
   );
 }
@@ -279,7 +282,8 @@ function PurchaseCardBox({ card, viewFrom, pxPerDay, top, flashed, registerRef }
       ref={registerRef}
       title={`${card.supplierName} (${card.order.clientName}): ${card.window.start.toLocaleDateString()} → ${card.window.end.toLocaleDateString()}`}
       className={cn(
-        'absolute flex items-center gap-1 overflow-hidden rounded-md border-l-4 border-muted-foreground/60 bg-muted px-1.5 shadow-sm',
+        'absolute flex items-center gap-1 overflow-hidden rounded-md border border-l-4 border-border/80 border-l-muted-foreground/60 bg-card px-1.5',
+        'shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_2px_6px_rgba(0,0,0,0.12)]',
         flashed && 'ring-2 ring-warning ring-offset-1',
       )}
       style={{ left, width, top, height: MARKER_ROW_HEIGHT - CARD_GAP }}
