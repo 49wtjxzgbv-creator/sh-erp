@@ -18,16 +18,23 @@ export interface PhotoLightboxProps {
  * block behind `Avatar`'s `zoomable` prop and `EntityDocumentsField`'s
  * image preview.
  *
- * Close-on-click is wired as a raw `document` listener (mirroring the
- * Escape handler right below it), not React's synthetic `onClick` on the
- * backdrop/button — reported unreliable in some environments (click did
- * nothing, only Escape worked) despite the synthetic handlers being
- * present and correctly wired; a native listener checked against
- * `imgRef.contains(e.target)` is a strictly more robust mechanism since it
- * doesn't depend on which exact element the click lands on, only on
- * whether it's the photo itself. The button keeps its own onClick too —
- * redundant with the document listener, but harmless (onClose is
- * idempotent) and keeps the button self-contained/testable on its own.
+ * Close-on-click is wired as a raw `document` **capture-phase** listener
+ * (mirroring the Escape handler right below it, and deliberately NOT
+ * React's synthetic `onClick` on the backdrop/button). Root-caused live on
+ * production (2026-08-13): some always-mounted Radix primitive elsewhere
+ * on every page (the header's account/theme/language menus use Radix
+ * DropdownMenu) installs its own `document`-level "click after a
+ * pointerdown" bookkeeping listener for its own outside-click detection —
+ * confirmed via a live trace that a *bubble*-phase click listener on
+ * `document` reliably stopped arriving (event only ever reached
+ * `eventPhase: CAPTURING_PHASE`, never `BUBBLING_PHASE`), while a
+ * *capture*-phase listener on `document` always fires, since capture runs
+ * top-down before any of that later bubble-phase interference can happen.
+ * `imgRef.contains(e.target)` is the only thing gating it — not which
+ * specific element (button vs. backdrop) was clicked — so this one
+ * listener closes on both. The button keeps its own onClick too, but is
+ * effectively redundant now: this capture-phase listener already fires
+ * (and closes) before the click even reaches the button.
  */
 export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -41,10 +48,10 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
       onClose();
     }
     document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('click', onDocumentClick);
+    document.addEventListener('click', onDocumentClick, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('click', onDocumentClick);
+      document.removeEventListener('click', onDocumentClick, true);
     };
   }, [onClose]);
 
