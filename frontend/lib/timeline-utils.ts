@@ -25,3 +25,18 @@ export function timelineMonthMarks(from: Date, to: Date): { label: string; start
   }
   return marks;
 }
+
+/** Monday-aligned week boundaries within [from, to] — the finer gridline inside each month, so a bar's rough position can be read down to the week without needing exact dates. Capped at 400 iterations (~7.5 years) as a sanity guard, same style as timelineMonthMarks' 36-month cap. */
+export function timelineWeekMarks(from: Date, to: Date): Date[] {
+  const marks: Date[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const day = cursor.getDay();
+  cursor.setDate(cursor.getDate() + (day === 0 ? -6 : 1 - day)); // snap back to Monday
+  let guard = 0;
+  while (cursor <= to && guard < 400) {
+    if (cursor >= from) marks.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 7);
+    guard += 1;
+  }
+  return marks;
+}

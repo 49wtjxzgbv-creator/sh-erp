@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { timelinePercent as percent, timelineMonthMarks as monthMarks } from '@/lib/timeline-utils';
+import { timelinePercent as percent, timelineMonthMarks as monthMarks, timelineWeekMarks as weekMarks } from '@/lib/timeline-utils';
 import { Badge } from '@/components/ui/badge';
 import type { TimelineLine, TimelineStage } from '@/lib/api-client/dashboard';
 
@@ -23,7 +23,10 @@ import type { TimelineLine, TimelineStage } from '@/lib/api-client/dashboard';
  * and light month gridlines run down through the lanes so a bar can be
  * traced back to the calendar without hunting; alternating row stripes and
  * a bolder left-border-accented bar style (instead of a uniform thin
- * outline) carry more visual weight per stage.
+ * outline) carry more visual weight per stage. Follow-up: Monday-aligned
+ * week gridlines (lib/timeline-utils.ts#timelineWeekMarks) drawn fainter
+ * than the month lines, so a month visibly subdivides into its weeks
+ * instead of being one undifferentiated block.
  */
 const STAGE_BAR_STYLE: Record<TimelineStage, string> = {
   planned: 'border-l-secondary-foreground/40 bg-secondary text-secondary-foreground',
@@ -88,6 +91,7 @@ export interface OperationsTimelineSectionProps {
 export function OperationsTimelineSection({ title, icon: Icon, lines, from, to, emptyLabel, todayLabel, onItemClick, showMonthHeader }: OperationsTimelineSectionProps) {
   const lanes = useMemo(() => buildLanes(lines), [lines]);
   const months = useMemo(() => monthMarks(from, to), [from, to]);
+  const weeks = useMemo(() => weekMarks(from, to), [from, to]);
   const now = new Date();
   const showToday = now >= from && now <= to;
 
@@ -121,8 +125,11 @@ export function OperationsTimelineSection({ title, icon: Icon, lines, from, to, 
           ) : (
             // max-h + overflow-y-auto — a section with many lanes (e.g. dozens of suppliers) would otherwise push the rest of the dashboard far down the page; scoped scrolling keeps the section itself navigable. Lifted for print (print:max-h-none/overflow-visible) since a printed page has no scrollbar.
             <div className="relative max-h-[420px] overflow-y-auto rounded-md border border-border print:max-h-none print:overflow-visible">
-              {/* Month gridlines + "today" marker — an absolutely-positioned overlay behind the lane rows; it doesn't participate in layout (pointer-events-none, no in-flow content), so it simply stretches to match whatever height the lane rows below it end up needing. */}
+              {/* Week + month gridlines + "today" marker — an absolutely-positioned overlay behind the lane rows; it doesn't participate in layout (pointer-events-none, no in-flow content), so it simply stretches to match whatever height the lane rows below it end up needing. Weeks paint first (faint) so month lines (painted after, same z-index) sit visibly on top at the shared boundaries. */}
               <div className="pointer-events-none absolute inset-y-0 left-40 right-0">
+                {weeks.map((w, i) => (
+                  <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: `${percent(w, from, to)}%` }} />
+                ))}
                 {months.map((m, i) => (
                   <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: `${percent(m.start, from, to)}%` }} />
                 ))}
