@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { usePurchaseOrder, useReceivePurchaseOrder } from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { ApiError } from '@/lib/api-client/types';
+import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput } from '@/lib/api-client/procurement';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -124,8 +125,8 @@ export default function PurchaseOrderDetailPage() {
                   <TableCell className="max-w-[220px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
                   <TableCell>{item.qtyOrdered}</TableCell>
                   <TableCell>{item.qtyReceived}</TableCell>
-                  <TableCell>{item.expectedPrice ?? '—'}</TableCell>
-                  <TableCell>{item.actualPrice ?? '—'}</TableCell>
+                  <TableCell>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
+                  <TableCell>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
                   {!isDelivered && (
                     <TableCell>
                       <Input

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
@@ -94,14 +95,14 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                 {printOptions.isColumnVisible('component') && <td><ComponentNameCell line={line} /></td>}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
-                {printOptions.isColumnVisible('cost') && <td>{line.lineCost.toFixed(2)}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
         {printOptions.isColumnVisible('cost') && (
           <p className="mt-4 text-sm font-semibold">
-            {t('cost')}: {cost.costPerUnit.toFixed(2)} EUR / {tp('units').toLowerCase()}
+            {t('cost')}: {formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()}
           </p>
         )}
       </PrintArea>

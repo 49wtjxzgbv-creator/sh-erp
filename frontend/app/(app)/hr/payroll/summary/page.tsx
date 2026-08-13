@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { usePayrollSummary } from '@/lib/hooks/use-hr';
+import { formatEur } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,11 +75,11 @@ export default function PayrollSummaryPage() {
                 data.map((line) => (
                   <TableRow key={line.employeeId}>
                     <TableCell>{line.employeeName}</TableCell>
-                    <TableCell>{line.piecework.toFixed(2)}</TableCell>
-                    <TableCell>{line.advances.toFixed(2)}</TableCell>
-                    <TableCell>{line.bonuses.toFixed(2)}</TableCell>
-                    <TableCell>{line.penalties.toFixed(2)}</TableCell>
-                    <TableCell className="font-medium">{line.netTotal.toFixed(2)}</TableCell>
+                    <TableCell>{formatEur(line.piecework)}</TableCell>
+                    <TableCell>{formatEur(line.advances)}</TableCell>
+                    <TableCell>{formatEur(line.bonuses)}</TableCell>
+                    <TableCell>{formatEur(line.penalties)}</TableCell>
+                    <TableCell className="font-medium">{formatEur(line.netTotal)}</TableCell>
                     <TableCell>
                       {line.defectCount > 0 ? (
                         <Badge variant="warning">{line.defectCount}</Badge>

@@ -2,12 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 import { useWarehouseValuation } from '@/lib/hooks/use-reports';
+import { formatEur } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
-function fmt(n: number) {
-  return n.toFixed(2);
-}
+const fmt = formatEur;
 
 /** Admin-only (reports:valuation) — qty * sellPriceEur, grouped by category, plus a grand total row. sellPriceEur is the one price every calculation in this app is pinned to; the other legacy price fields (local/German, excl/incl VAT) are informational only and no longer appear in this report's totals. */
 export default function WarehouseValuationPage() {

@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useAssembly } from '@/lib/hooks/use-bom';
+import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import type { ProductionOrderPickListItem } from '@/lib/api-client/production';
@@ -71,8 +72,8 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
               <tr key={line.id}>
                 {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
                 {printOptions.isColumnVisible('qty') && <td>{line.qty}</td>}
-                {printOptions.isColumnVisible('unitPrice') && <td>{line.unitPriceEur ?? '—'}</td>}
-                {printOptions.isColumnVisible('lineTotal') && <td>{line.lineTotalEur ?? '—'}</td>}
+                {printOptions.isColumnVisible('unitPrice') && <td>{line.unitPriceEur != null ? formatEur(Number(line.unitPriceEur)) : '—'}</td>}
+                {printOptions.isColumnVisible('lineTotal') && <td>{line.lineTotalEur != null ? formatEur(Number(line.lineTotalEur)) : '—'}</td>}
               </tr>
             ))}
           </tbody>

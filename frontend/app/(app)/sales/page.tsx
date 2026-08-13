@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useCustomerOrders } from '@/lib/hooks/use-sales';
+import { formatEur } from '@/lib/utils';
 import type { CustomerOrder, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
@@ -59,7 +60,7 @@ export default function CustomerOrdersPage() {
         header: t('estimatedTotal'),
         cell: ({ getValue }) => {
           const v = getValue() as number | null | undefined;
-          return v != null ? v.toFixed(2) : t('pricePending');
+          return v != null ? formatEur(v) : t('pricePending');
         },
       },
       {
@@ -67,7 +68,7 @@ export default function CustomerOrdersPage() {
         header: t('actualTotal'),
         cell: ({ getValue }) => {
           const v = getValue() as number | null | undefined;
-          return v != null ? v.toFixed(2) : t('pricePending');
+          return v != null ? formatEur(v) : t('pricePending');
         },
       },
     ],

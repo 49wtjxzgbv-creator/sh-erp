@@ -6,6 +6,7 @@ import { RefreshCw } from 'lucide-react';
 import { useAssemblyCost, useAssembly } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
@@ -57,7 +58,7 @@ export default function AssemblyCostPage() {
           <CardHeader>
             <CardTitle className="text-base">{t('cost')}</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{cost?.costPerUnit.toFixed(2)}</CardContent>
+          <CardContent className="text-2xl font-semibold">{cost ? formatEur(cost.costPerUnit) : '—'}</CardContent>
         </Card>
       </div>
 
@@ -91,7 +92,7 @@ export default function AssemblyCostPage() {
                 <TableCell>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</TableCell>
                 <TableCell><ComponentCell line={line} /></TableCell>
                 <TableCell>{line.qtyPerUnit}</TableCell>
-                <TableCell>{line.lineCost.toFixed(2)}</TableCell>
+                <TableCell>{formatEur(line.lineCost)}</TableCell>
               </TableRow>
             ))
           )}

@@ -3,14 +3,13 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useMonthlyProductionRollup } from '@/lib/hooks/use-reports';
+import { formatEur } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
-function fmt(n: number) {
-  return n.toFixed(2);
-}
+const fmt = formatEur;
 
 /** COMPLETED production orders grouped by assembly over a date range (defaults to the current month, per the backend). */
 export default function MonthlyProductionRollupPage() {

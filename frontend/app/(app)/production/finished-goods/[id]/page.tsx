@@ -11,6 +11,7 @@ import {
   useRecordQcCheck,
 } from '@/lib/hooks/use-production';
 import { ApiError } from '@/lib/api-client/types';
+import { formatEur } from '@/lib/utils';
 import type { QcResult, QcCheckResultLine, FinishedGoodStatus } from '@/lib/api-client/production';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -104,11 +105,11 @@ export default function FinishedGoodDetailPage() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('localCost')}</p>
-            <p className="text-sm">{fg.unitCostLocalEur}</p>
+            <p className="text-sm">{formatEur(Number(fg.unitCostLocalEur))}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('germanCost')}</p>
-            <p className="text-sm">{fg.unitCostGermanEur}</p>
+            <p className="text-sm">{formatEur(Number(fg.unitCostGermanEur))}</p>
           </div>
           {fg.comment && (
             <div className="col-span-full">

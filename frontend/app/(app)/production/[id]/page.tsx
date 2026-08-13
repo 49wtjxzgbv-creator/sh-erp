@@ -15,6 +15,7 @@ import {
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
 import type { ProductionOrderStatus, FinishedGoodStatus } from '@/lib/api-client/production';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
@@ -51,6 +52,10 @@ const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 's
   REWORK: 'warning',
   DEFECTIVE: 'destructive',
 };
+
+function fmtEur(v: string | null | undefined): string {
+  return v != null ? formatEur(Number(v)) : '—';
+}
 
 export default function ProductionOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -293,31 +298,31 @@ export default function ProductionOrderDetailPage() {
           <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('laborCost')}</p>
-              <p className="text-sm">{order.laborCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.laborCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('packagingCost')}</p>
-              <p className="text-sm">{order.packagingCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.packagingCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('deliveryCost')}</p>
-              <p className="text-sm">{order.deliveryCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.deliveryCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('otherCost')}</p>
-              <p className="text-sm">{order.otherCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.otherCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('localCost')}</p>
-              <p className="text-sm">{order.totalLocalCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.totalLocalCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('germanCost')}</p>
-              <p className="text-sm">{order.totalGermanCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.totalGermanCostEur)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('fullCost')}</p>
-              <p className="text-sm">{order.fullCostEur ?? '—'}</p>
+              <p className="text-sm">{fmtEur(order.fullCostEur)}</p>
             </div>
           </CardContent>
         </Card>
@@ -349,8 +354,8 @@ export default function ProductionOrderDetailPage() {
                   <TableRow key={line.id}>
                     <TableCell className="max-w-[260px] truncate" title={line.description}>{line.description}</TableCell>
                     <TableCell>{line.qty}</TableCell>
-                    <TableCell>{line.unitPriceEur ?? '—'}</TableCell>
-                    <TableCell>{line.lineTotalEur ?? '—'}</TableCell>
+                    <TableCell>{fmtEur(line.unitPriceEur)}</TableCell>
+                    <TableCell>{fmtEur(line.lineTotalEur)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

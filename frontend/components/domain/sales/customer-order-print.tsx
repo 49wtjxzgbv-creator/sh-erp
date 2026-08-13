@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
@@ -20,14 +21,14 @@ function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
 function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
   const t = useTranslations('sales');
   const { data: cost } = useAssemblyCost(assemblyId);
-  return <td>{cost ? (cost.costPerUnit * qty).toFixed(2) : t('pricePending')}</td>;
+  return <td>{cost ? formatEur(cost.costPerUnit * qty) : t('pricePending')}</td>;
 }
 
 function ActualPriceCell({ productionOrderId }: { productionOrderId: string | null }) {
   const t = useTranslations('sales');
   const { data: po } = useProductionOrder(productionOrderId ?? undefined);
   if (!productionOrderId || !po || po.totalLocalCostEur == null) return <td>{t('pricePending')}</td>;
-  return <td>{Number(po.totalLocalCostEur).toFixed(2)}</td>;
+  return <td>{formatEur(Number(po.totalLocalCostEur))}</td>;
 }
 
 function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
@@ -57,9 +58,9 @@ function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
 
   return (
     <p className="mt-2 text-sm">
-      {t('estimatedTotal')}: {hasEstimate ? estimatedTotal.toFixed(2) : t('pricePending')}
+      {t('estimatedTotal')}: {hasEstimate ? formatEur(estimatedTotal) : t('pricePending')}
       {' · '}
-      {t('actualTotal')}: {hasActual ? actualTotal.toFixed(2) : t('pricePending')}
+      {t('actualTotal')}: {hasActual ? formatEur(actualTotal) : t('pricePending')}
     </p>
   );
 }

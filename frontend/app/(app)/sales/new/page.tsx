@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCreateCustomerOrder } from '@/lib/hooks/use-sales';
 import { useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { formatEur } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
 import type { CustomerOrderItemInput, CustomerOrderPriority } from '@/lib/api-client/sales';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
@@ -188,7 +189,7 @@ export default function NewCustomerOrderPage() {
                       />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {rowEstimates[i] != null ? rowEstimates[i]!.toFixed(2) : '—'}
+                      {rowEstimates[i] != null ? formatEur(rowEstimates[i]!) : '—'}
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeRow(row.key)}>
@@ -201,7 +202,7 @@ export default function NewCustomerOrderPage() {
               {estimatedTotal != null && (
                 <TableRow className="border-t-2 border-border font-medium">
                   <TableCell colSpan={2}>{t('estimatedTotal')}</TableCell>
-                  <TableCell colSpan={2}>{estimatedTotal.toFixed(2)}</TableCell>
+                  <TableCell colSpan={2}>{formatEur(estimatedTotal)}</TableCell>
                 </TableRow>
               )}
             </TableBody>

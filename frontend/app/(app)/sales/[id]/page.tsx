@@ -15,6 +15,7 @@ import {
 import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
 import type { CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,7 +53,7 @@ function AssemblyCell({ assemblyId }: { assemblyId: string }) {
 function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
   const t = useTranslations('sales');
   const { data: cost } = useAssemblyCost(assemblyId);
-  return <TableCell className="text-muted-foreground">{cost ? (cost.costPerUnit * qty).toFixed(2) : t('pricePending')}</TableCell>;
+  return <TableCell className="text-muted-foreground">{cost ? formatEur(cost.costPerUnit * qty) : t('pricePending')}</TableCell>;
 }
 
 /**
@@ -71,7 +72,7 @@ function ActualPriceCell({ productionOrderId }: { productionOrderId: string | nu
   if (!productionOrderId || !po || po.totalLocalCostEur == null) {
     return <TableCell className="text-muted-foreground">{t('pricePending')}</TableCell>;
   }
-  return <TableCell>{Number(po.totalLocalCostEur).toFixed(2)}</TableCell>;
+  return <TableCell>{formatEur(Number(po.totalLocalCostEur))}</TableCell>;
 }
 
 /** Order-level estimated/actual totals, batched — see EstimatedPriceCell/ActualPriceCell for what each is. */
@@ -104,11 +105,11 @@ function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
     <div className="flex gap-6">
       <div>
         <p className="text-xs text-muted-foreground">{t('estimatedTotal')}</p>
-        <p className="text-sm font-medium">{hasEstimate ? estimatedTotal.toFixed(2) : t('pricePending')}</p>
+        <p className="text-sm font-medium">{hasEstimate ? formatEur(estimatedTotal) : t('pricePending')}</p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground">{t('actualTotal')}</p>
-        <p className="text-sm font-medium">{hasActual ? actualTotal.toFixed(2) : t('pricePending')}</p>
+        <p className="text-sm font-medium">{hasActual ? formatEur(actualTotal) : t('pricePending')}</p>
       </div>
     </div>
   );
