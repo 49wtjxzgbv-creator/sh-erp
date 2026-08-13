@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCreateCustomerOrder } from '@/lib/hooks/use-sales';
 import { useAssemblyCosts } from '@/lib/hooks/use-bom';
-import { formatEur } from '@/lib/utils';
+import { formatEur, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CustomerOrderItemInput, CustomerOrderPriority } from '@/lib/api-client/sales';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
@@ -22,6 +22,9 @@ interface EditableItemRow {
   key: string;
   assemblyId?: string;
   qty: string;
+  plannedStartAt: string;
+  plannedEndAt: string;
+  itemDeadline: string;
 }
 
 let rowKeySeq = 0;
@@ -42,6 +45,10 @@ export default function NewCustomerOrderPage() {
   const [contactPerson, setContactPerson] = useState('');
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState<CustomerOrderPriority>('NORMAL');
+  const [plannedStartAt, setPlannedStartAt] = useState('');
+  const [plannedCompletionAt, setPlannedCompletionAt] = useState('');
+  const [plannedShipmentAt, setPlannedShipmentAt] = useState('');
+  const [plannedDeliveryAt, setPlannedDeliveryAt] = useState('');
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +70,7 @@ export default function NewCustomerOrderPage() {
     : null;
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), qty: '' }]);
+    setRows((r) => [...r, { key: newRowKey(), qty: '', plannedStartAt: '', plannedEndAt: '', itemDeadline: '' }]);
   }
   function removeRow(key: string) {
     setRows((r) => r.filter((row) => row.key !== key));
@@ -89,7 +96,13 @@ export default function NewCustomerOrderPage() {
         setError(t('invalidRow'));
         return;
       }
-      items.push({ assemblyId: row.assemblyId, qty });
+      items.push({
+        assemblyId: row.assemblyId,
+        qty,
+        plannedStartAt: fromDatetimeLocalValue(row.plannedStartAt),
+        plannedEndAt: fromDatetimeLocalValue(row.plannedEndAt),
+        itemDeadline: fromDatetimeLocalValue(row.itemDeadline),
+      });
     }
 
     try {
@@ -99,6 +112,10 @@ export default function NewCustomerOrderPage() {
         contactPerson: contactPerson || undefined,
         deadline: deadline || undefined,
         priority,
+        plannedStartAt: fromDatetimeLocalValue(plannedStartAt),
+        plannedCompletionAt: fromDatetimeLocalValue(plannedCompletionAt),
+        plannedShipmentAt: fromDatetimeLocalValue(plannedShipmentAt),
+        plannedDeliveryAt: fromDatetimeLocalValue(plannedDeliveryAt),
         comment: comment || undefined,
         items,
       });
@@ -146,6 +163,22 @@ export default function NewCustomerOrderPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="plannedStartAt">{t('plannedStartAt')}</Label>
+            <Input id="plannedStartAt" type="datetime-local" value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="plannedCompletionAt">{t('plannedCompletionAt')}</Label>
+            <Input id="plannedCompletionAt" type="datetime-local" value={plannedCompletionAt} onChange={(e) => setPlannedCompletionAt(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="plannedShipmentAt">{t('plannedShipmentAt')}</Label>
+            <Input id="plannedShipmentAt" type="datetime-local" value={plannedShipmentAt} onChange={(e) => setPlannedShipmentAt(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="plannedDeliveryAt">{t('plannedDeliveryAt')}</Label>
+            <Input id="plannedDeliveryAt" type="datetime-local" value={plannedDeliveryAt} onChange={(e) => setPlannedDeliveryAt(e.target.value)} />
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="comment">{t('comment')}</Label>
             <Textarea id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -176,28 +209,49 @@ export default function NewCustomerOrderPage() {
                 </TableRow>
               ) : (
                 rows.map((row, i) => (
-                  <TableRow key={row.key}>
-                    <TableCell>
-                      <AssemblyPicker value={row.assemblyId} onChange={(id) => updateRow(row.key, { assemblyId: id })} />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        step="any"
-                        min={0}
-                        value={row.qty}
-                        onChange={(e) => updateRow(row.key, { qty: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {rowEstimates[i] != null ? formatEur(rowEstimates[i]!) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => removeRow(row.key)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                  <Fragment key={row.key}>
+                    <TableRow>
+                      <TableCell>
+                        <AssemblyPicker value={row.assemblyId} onChange={(id) => updateRow(row.key, { assemblyId: id })} />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="any"
+                          min={0}
+                          value={row.qty}
+                          onChange={(e) => updateRow(row.key, { qty: e.target.value })}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {rowEstimates[i] != null ? formatEur(rowEstimates[i]!) : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => removeRow(row.key)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {/* Optional per-line planning targets, only if they differ from the order's own (План-графік §4) — never auto-derived. */}
+                    <TableRow className="border-0">
+                      <TableCell colSpan={4} className="pt-0">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <div className="space-y-1">
+                            <Label htmlFor={`${row.key}-start`} className="text-xs text-muted-foreground">{t('itemPlannedStartAt')}</Label>
+                            <Input id={`${row.key}-start`} type="datetime-local" value={row.plannedStartAt} onChange={(e) => updateRow(row.key, { plannedStartAt: e.target.value })} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`${row.key}-end`} className="text-xs text-muted-foreground">{t('itemPlannedEndAt')}</Label>
+                            <Input id={`${row.key}-end`} type="datetime-local" value={row.plannedEndAt} onChange={(e) => updateRow(row.key, { plannedEndAt: e.target.value })} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`${row.key}-deadline`} className="text-xs text-muted-foreground">{t('itemDeadline')}</Label>
+                            <Input id={`${row.key}-deadline`} type="datetime-local" value={row.itemDeadline} onChange={(e) => updateRow(row.key, { itemDeadline: e.target.value })} />
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
                 ))
               )}
               {estimatedTotal != null && (

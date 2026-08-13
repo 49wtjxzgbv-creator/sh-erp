@@ -13,14 +13,17 @@ import {
   useGiveAllToProduction,
 } from '@/lib/hooks/use-sales';
 import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
-import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
+import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
+import type { ProductionOrderStatus } from '@/lib/api-client/production';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
@@ -57,29 +60,34 @@ function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: numb
 }
 
 /**
- * The linked ProductionOrder's `totalLocalCostEur` — frozen the moment
- * production actually started (real components consumed then, sellPriceEur
- * at that moment), which is the only "what did this really cost" signal
- * this app has today. Stays "ще не визначено" until the line has been
- * given to production AND that order has been started — advancing through
- * production stages afterward doesn't change it (see
- * production-orders.service.ts: cost is frozen once at start(), never
+ * Sum of `totalLocalCostEur` across every batch (ProductionOrder) behind
+ * this line — a line can have several once split (План-графік §1), unlike
+ * the old single linked order this replaces. Frozen the moment each batch
+ * actually started; a batch that hasn't started yet contributes nothing
+ * (production-orders.service.ts: cost is frozen once at start(), never
  * recomputed at stage-advance or completion).
  */
-function ActualPriceCell({ productionOrderId }: { productionOrderId: string | null }) {
+function ActualPriceCell({ batchIds }: { batchIds: string[] }) {
   const t = useTranslations('sales');
-  const { data: po } = useProductionOrder(productionOrderId ?? undefined);
-  if (!productionOrderId || !po || po.totalLocalCostEur == null) {
-    return <TableCell className="text-muted-foreground">{t('pricePending')}</TableCell>;
+  const poResults = useProductionOrdersByIds(batchIds);
+  let total = 0;
+  let hasActual = false;
+  for (const r of poResults) {
+    if (r.data?.totalLocalCostEur != null) {
+      total += Number(r.data.totalLocalCostEur);
+      hasActual = true;
+    }
   }
-  return <TableCell>{formatEur(Number(po.totalLocalCostEur))}</TableCell>;
+  if (!hasActual) return <TableCell className="text-muted-foreground">{t('pricePending')}</TableCell>;
+  return <TableCell>{formatEur(total)}</TableCell>;
 }
 
 /** Order-level estimated/actual totals, batched — see EstimatedPriceCell/ActualPriceCell for what each is. */
 function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
   const t = useTranslations('sales');
   const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
-  const poResults = useProductionOrdersByIds(items.map((i) => i.productionOrderId ?? undefined));
+  const allBatchIds = items.flatMap((i) => i.quantitySummary?.batches.map((b) => b.id) ?? []);
+  const poResults = useProductionOrdersByIds(allBatchIds);
 
   let estimatedTotal = 0;
   let hasEstimate = false;
@@ -93,13 +101,12 @@ function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
 
   let actualTotal = 0;
   let hasActual = false;
-  items.forEach((item, i) => {
-    const po = poResults[i]?.data;
-    if (po?.totalLocalCostEur != null) {
-      actualTotal += Number(po.totalLocalCostEur);
+  for (const r of poResults) {
+    if (r.data?.totalLocalCostEur != null) {
+      actualTotal += Number(r.data.totalLocalCostEur);
       hasActual = true;
     }
-  });
+  }
 
   return (
     <div className="flex gap-6">
@@ -122,6 +129,125 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
   CANCELLED: 'destructive',
 };
 
+const BATCH_STATUS_VARIANT: Record<ProductionOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
+  PLANNED: 'secondary',
+  IN_PROGRESS: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'destructive',
+};
+
+function formatPlannedDate(iso: string | null | undefined, notPlannedLabel: string): string {
+  return iso ? new Date(iso).toLocaleString() : notPlannedLabel;
+}
+
+/**
+ * Batch-splitting entry point (План-графік §1) — every call creates a new,
+ * independent ProductionOrder batch as long as `remaining` > 0; qty/dates
+ * are this batch's own, never shared with any other batch on the line.
+ */
+function GiveToProductionDialog({
+  itemId,
+  remaining,
+  onSubmit,
+  pending,
+}: {
+  itemId: string;
+  remaining: number;
+  onSubmit: (itemId: string, dto: { unitsPlanned?: number; scheduledStartAt?: string; scheduledEndAt?: string }) => Promise<void>;
+  pending: boolean;
+}) {
+  const t = useTranslations('sales');
+  const tc = useTranslations('common');
+  const [open, setOpen] = useState(false);
+  const [qty, setQty] = useState(String(Math.ceil(remaining)));
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setLocalError(null);
+    const parsedQty = qty ? Number(qty) : undefined;
+    if (parsedQty != null && (!Number.isInteger(parsedQty) || parsedQty <= 0 || parsedQty > remaining + 1e-6)) {
+      setLocalError(t('invalidGiveToProduction'));
+      return;
+    }
+    await onSubmit(itemId, {
+      unitsPlanned: parsedQty,
+      scheduledStartAt: fromDatetimeLocalValue(start),
+      scheduledEndAt: fromDatetimeLocalValue(end),
+    });
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) { setQty(String(Math.ceil(remaining))); setStart(''); setEnd(''); setLocalError(null); } }}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          {t('giveToProduction')}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('giveToProductionDialogTitle')}</DialogTitle>
+          <DialogDescription>{t('giveToProductionDialogDescription')}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="batchQty">{t('batchQty')} ({t('remainingQty')}: {remaining})</Label>
+            <Input id="batchQty" type="number" step="1" min={1} max={remaining} value={qty} onChange={(e) => setQty(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="batchStart">{t('batchScheduledStartAt')}</Label>
+            <Input id="batchStart" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="batchEnd">{t('batchScheduledEndAt')}</Label>
+            <Input id="batchEnd" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          {localError && <p className="text-sm text-destructive">{localError}</p>}
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">{tc('cancel')}</Button>
+          </DialogClose>
+          <Button loading={pending} onClick={handleSubmit}>
+            {tc('confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Quantity summary + one row per batch (План-графік §1) — never a single link like the old 1:1 model. */
+function ItemBatchesCell({ item }: { item: CustomerOrderItem }) {
+  const t = useTranslations('sales');
+  const tp = useTranslations('production');
+  const summary = item.quantitySummary;
+  if (!summary) return <TableCell>—</TableCell>;
+  return (
+    <TableCell>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>{t('ordered')}: {summary.ordered} · {t('inProductionQty')}: {summary.inProduction} · {t('completedQty')}: {summary.completed}</p>
+        {summary.batches.length > 0 && (
+          <ul className="space-y-0.5">
+            {summary.batches.map((b) => (
+              <li key={b.id}>
+                <Link href={`/production/${b.id}`} className="text-primary hover:underline">
+                  {t('batch')} · {b.unitsPlanned}
+                </Link>{' '}
+                <Badge variant={BATCH_STATUS_VARIANT[b.status]} className="ml-1">
+                  {tp(`status${b.status}`)}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </TableCell>
+  );
+}
+
 export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
@@ -142,7 +268,7 @@ export default function CustomerOrderDetailPage() {
 
   const canCancel = order.status === 'NEW' || order.status === 'IN_PRODUCTION';
   const canComplete = order.status !== 'COMPLETED' && order.status !== 'CANCELLED';
-  const hasUngivenLines = (order.items ?? []).some((item) => !item.productionOrderId);
+  const hasUngivenLines = (order.items ?? []).some((item) => (item.quantitySummary?.remaining ?? 0) > 0);
 
   async function handleCancel() {
     setError(null);
@@ -162,12 +288,13 @@ export default function CustomerOrderDetailPage() {
     }
   }
 
-  async function handleGiveItem(itemId: string) {
+  async function handleGiveItem(itemId: string, dto: { unitsPlanned?: number; scheduledStartAt?: string; scheduledEndAt?: string }) {
     setError(null);
     try {
-      await giveItem.mutateAsync({ itemId });
+      await giveItem.mutateAsync({ itemId, dto });
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
+      throw err;
     }
   }
 
@@ -258,6 +385,22 @@ export default function CustomerOrderDetailPage() {
             <p className="text-xs text-muted-foreground">{t('deadline')}</p>
             <p className="text-sm">{order.deadline ? new Date(order.deadline).toLocaleDateString() : '—'}</p>
           </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('plannedStartAt')}</p>
+            <p className="text-sm">{formatPlannedDate(order.plannedStartAt, t('notPlanned'))}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('plannedCompletionAt')}</p>
+            <p className="text-sm">{formatPlannedDate(order.plannedCompletionAt, t('notPlanned'))}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('plannedShipmentAt')}</p>
+            <p className="text-sm">{formatPlannedDate(order.plannedShipmentAt, t('notPlanned'))}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('plannedDeliveryAt')}</p>
+            <p className="text-sm">{formatPlannedDate(order.plannedDeliveryAt, t('notPlanned'))}</p>
+          </div>
           {order.comment && (
             <div className="col-span-full">
               <p className="text-xs text-muted-foreground">{t('comment')}</p>
@@ -287,29 +430,29 @@ export default function CustomerOrderDetailPage() {
                 <TableHead>{t('qty')}</TableHead>
                 <TableHead>{t('estimatedPrice')}</TableHead>
                 <TableHead>{t('actualPrice')}</TableHead>
-                <TableHead>{t('productionStatus')}</TableHead>
+                <TableHead>{t('productionBatches')}</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(order.items ?? []).map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell><AssemblyCell assemblyId={item.assemblyId} /></TableCell>
-                  <TableCell>{item.qty}</TableCell>
-                  <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />
-                  <ActualPriceCell productionOrderId={item.productionOrderId} />
-                  <TableCell>
-                    {item.productionOrderId ? (
-                      <Link href={`/production/${item.productionOrderId}`} className="text-primary hover:underline">
-                        {t('viewProductionOrder')}
-                      </Link>
-                    ) : (
-                      <Button size="sm" variant="outline" loading={giveItem.isPending} onClick={() => handleGiveItem(item.id)}>
-                        {t('giveToProduction')}
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {(order.items ?? []).map((item) => {
+                const batchIds = item.quantitySummary?.batches.map((b) => b.id) ?? [];
+                const remaining = item.quantitySummary?.remaining ?? 0;
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell><AssemblyCell assemblyId={item.assemblyId} /></TableCell>
+                    <TableCell>{item.qty}</TableCell>
+                    <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />
+                    <ActualPriceCell batchIds={batchIds} />
+                    <ItemBatchesCell item={item} />
+                    <TableCell>
+                      {remaining > 0 && (
+                        <GiveToProductionDialog itemId={item.id} remaining={remaining} onSubmit={handleGiveItem} pending={giveItem.isPending} />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

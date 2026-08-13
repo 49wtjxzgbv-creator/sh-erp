@@ -21,14 +21,38 @@ import type { DecimalString } from './decimal';
 export type CustomerOrderPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 export type CustomerOrderStatus = 'NEW' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED';
 
+/** One production batch (ProductionOrder) behind this line — a line can have several (План-графік §1). */
+export interface ItemProductionBatch {
+  id: string;
+  unitsPlanned: number;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
+}
+
+/** "Замовлено / У виробництві / Готово / Залишилось передати" (План-графік §1) — always derived server-side, never computed client-side from raw batches. */
+export interface ItemQuantitySummary {
+  ordered: number;
+  inProduction: number;
+  completed: number;
+  remaining: number;
+  batches: ItemProductionBatch[];
+}
+
 export interface CustomerOrderItem {
   id: string;
   companyId: string;
   customerOrderId: string;
   assemblyId: string;
   qty: DecimalString;
-  /** Set once this line has been "given to production" (Phase 1 §6.2's staged workflow) — null until then. */
+  /** DEPRECATED — 1:1 legacy link, superseded by batches in quantitySummary. Do not use in new code. */
   productionOrderId: string | null;
+  /** Optional, only if it differs from the order's own — never auto-derived. */
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+  itemDeadline: string | null;
+  /** Present on findOne responses (not on query() list rows). */
+  quantitySummary?: ItemQuantitySummary;
 }
 
 export interface CustomerOrder {
@@ -40,6 +64,11 @@ export interface CustomerOrder {
   deadline: string | null;
   priority: CustomerOrderPriority;
   status: CustomerOrderStatus;
+  /** Planning targets for the order as a whole (План-графік §4) — optional, never auto-derived; null shows as "не заплановано". */
+  plannedStartAt: string | null;
+  plannedCompletionAt: string | null;
+  plannedShipmentAt: string | null;
+  plannedDeliveryAt: string | null;
   comment: string | null;
   createdById: string;
   createdAt: string;
@@ -59,6 +88,10 @@ export interface CustomerOrder {
 export interface CustomerOrderItemInput {
   assemblyId: string;
   qty: number;
+  /** Optional, only if it differs from the order's own planned dates/deadline. */
+  plannedStartAt?: string;
+  plannedEndAt?: string;
+  itemDeadline?: string;
 }
 
 export interface CreateCustomerOrderInput {
@@ -67,6 +100,10 @@ export interface CreateCustomerOrderInput {
   contactPerson?: string;
   deadline?: string;
   priority?: CustomerOrderPriority;
+  plannedStartAt?: string;
+  plannedCompletionAt?: string;
+  plannedShipmentAt?: string;
+  plannedDeliveryAt?: string;
   comment?: string;
   items: CustomerOrderItemInput[];
 }
@@ -110,8 +147,11 @@ export function completeCustomerOrder(id: string): Promise<CustomerOrder> {
 }
 
 export interface GiveItemToProductionInput {
-  /** Defaults to the line's own qty (rounded up) if omitted. */
+  /** This batch's quantity. Defaults to the line's full remaining (not-yet-given) qty if omitted. */
   unitsPlanned?: number;
+  /** Planned window for this specific batch — date AND time. */
+  scheduledStartAt?: string;
+  scheduledEndAt?: string;
 }
 
 export interface GiveToProductionResult {
@@ -119,7 +159,7 @@ export interface GiveToProductionResult {
   productionOrder: { id: string; [key: string]: unknown };
 }
 
-/** A line can only be given once — 400 if it already has a productionOrderId. */
+/** Creates a new batch (ProductionOrder) for this line — repeatable while quantity remains (План-графік §1); 400 once the line's full qty has been given across all batches. */
 export function giveItemToProduction(
   orderId: string,
   itemId: string,

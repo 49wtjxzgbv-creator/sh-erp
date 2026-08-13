@@ -11,15 +11,19 @@ import {
   useCancelProductionOrder,
   useStartProductionOrder,
   useAdvanceProductionOrderStage,
+  useProductionOrderStagePlan,
+  useSetProductionOrderStagePlan,
 } from '@/lib/hooks/use-production';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine } from '@/lib/api-client/production';
+import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine, ProductionStage } from '@/lib/api-client/production';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,6 +84,95 @@ function ShortageComponentCell({ line }: { line: ProductionShortageLine }) {
     <>
       {name} <span className="text-muted-foreground">— {t('subAssemblyNotProduced')}</span>
     </>
+  );
+}
+
+/**
+ * Per-batch plan (План-графік §2) — plan only, kept separate from
+ * stageEvents (fact). Every stage this company has configured is shown,
+ * merged from `stages` (the full catalogue) with whatever plan rows
+ * already exist; a stage with no dates yet shows "Етап не запланований",
+ * never a guessed date. Each stage's window is edited independently — no
+ * auto-split of the batch's overall window across stages.
+ */
+function StagePlanEditor({ productionOrderId, stages }: { productionOrderId: string; stages: ProductionStage[] }) {
+  const t = useTranslations('production');
+  const tc = useTranslations('common');
+  const { data: plan } = useProductionOrderStagePlan(productionOrderId);
+  const setPlan = useSetProductionOrderStagePlan(productionOrderId);
+  const apiErrorMessage = useApiErrorMessage();
+
+  const [rows, setRows] = useState<Record<string, { start: string; end: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    if (initialized.current || !plan) return;
+    initialized.current = true;
+    const byStage: Record<string, { start: string; end: string }> = {};
+    for (const stage of stages) {
+      const existing = plan.find((p) => p.productionStageId === stage.id);
+      byStage[stage.id] = {
+        start: toDatetimeLocalValue(existing?.plannedStartAt),
+        end: toDatetimeLocalValue(existing?.plannedEndAt),
+      };
+    }
+    setRows(byStage);
+  }, [plan, stages]);
+
+  if (stages.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t('stagePlanEmpty')}</p>;
+  }
+
+  async function handleSave() {
+    setError(null);
+    try {
+      await setPlan.mutateAsync(
+        stages.map((stage) => ({
+          productionStageId: stage.id,
+          plannedStartAt: fromDatetimeLocalValue(rows[stage.id]?.start ?? ''),
+          plannedEndAt: fromDatetimeLocalValue(rows[stage.id]?.end ?? ''),
+        })),
+      );
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {[...stages].sort((a, b) => a.sortOrder - b.sortOrder).map((stage) => {
+        const row = rows[stage.id] ?? { start: '', end: '' };
+        return (
+          <div key={stage.id} className="grid grid-cols-1 items-end gap-2 sm:grid-cols-3">
+            <p className="text-sm font-medium sm:col-span-1">
+              {stage.name}
+              {!row.start && !row.end && <span className="ml-2 text-xs text-muted-foreground">({t('stageNotPlanned')})</span>}
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('plannedStartAt')}</Label>
+              <Input
+                type="datetime-local"
+                value={row.start}
+                onChange={(e) => setRows((r) => ({ ...r, [stage.id]: { ...r[stage.id], start: e.target.value, end: r[stage.id]?.end ?? '' } }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('plannedEndAt')}</Label>
+              <Input
+                type="datetime-local"
+                value={row.end}
+                onChange={(e) => setRows((r) => ({ ...r, [stage.id]: { ...r[stage.id], end: e.target.value, start: r[stage.id]?.start ?? '' } }))}
+              />
+            </div>
+          </div>
+        );
+      })}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button variant="outline" onClick={handleSave} loading={setPlan.isPending}>
+        {t('savePlan')}
+      </Button>
+    </div>
   );
 }
 
@@ -236,6 +329,15 @@ export default function ProductionOrderDetailPage() {
               <p className="text-sm">{order.comment}</p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('stagePlan')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <StagePlanEditor productionOrderId={order.id} stages={stages ?? []} />
         </CardContent>
       </Card>
 

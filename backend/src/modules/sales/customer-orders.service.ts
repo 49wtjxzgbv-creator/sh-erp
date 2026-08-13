@@ -37,11 +37,21 @@ export class CustomerOrdersService {
         contactPerson: dto.contactPerson,
         deadline: dto.deadline,
         priority: dto.priority ?? 'NORMAL',
+        plannedStartAt: dto.plannedStartAt,
+        plannedCompletionAt: dto.plannedCompletionAt,
+        plannedShipmentAt: dto.plannedShipmentAt,
+        plannedDeliveryAt: dto.plannedDeliveryAt,
         comment: dto.comment,
         status: 'NEW',
         createdById: user.userId,
         items: {
-          create: dto.items.map((item) => ({ assemblyId: item.assemblyId, qty: item.qty })),
+          create: dto.items.map((item) => ({
+            assemblyId: item.assemblyId,
+            qty: item.qty,
+            plannedStartAt: item.plannedStartAt,
+            plannedEndAt: item.plannedEndAt,
+            itemDeadline: item.itemDeadline,
+          })),
         },
       } as any,
       include: { items: true },
@@ -61,7 +71,42 @@ export class CustomerOrdersService {
   async findOne(user: RequestUser, id: string) {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
-    return order;
+    const items = await Promise.all(
+      (order.items as any[]).map(async (item) => ({ ...item, quantitySummary: await this.getItemQuantitySummary(item.id, Number(item.qty)) })),
+    );
+    return { ...order, items };
+  }
+
+  /**
+   * "Замовлено / У виробництві / Готово / Залишилось передати" (План-графік
+   * §1) — ordered is the line's own qty; inProduction sums every non-
+   * cancelled batch's unitsPlanned; completed counts actual FinishedGood
+   * units those batches produced (IN_STOCK/SHIPPED/CONSUMED — i.e. actually
+   * manufactured, not REWORK/DEFECTIVE); remaining is what's left to give
+   * to a new batch. CustomerOrderItem.qty and the sum of batch
+   * unitsPlanned are deliberately different numbers once a line has
+   * multiple batches — never conflated.
+   */
+  private async getItemQuantitySummary(itemId: string, ordered: number) {
+    const batches = await this.prisma.tenant.productionOrder.findMany({
+      where: { customerOrderItemId: itemId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const activeBatches = (batches as any[]).filter((b) => b.status !== 'CANCELLED');
+    const inProduction = activeBatches.reduce((sum, b) => sum + Number(b.unitsPlanned), 0);
+    const batchIds = (batches as any[]).map((b) => b.id);
+    const completed = batchIds.length
+      ? await this.prisma.tenant.finishedGood.count({
+          where: { productionOrderId: { in: batchIds }, status: { in: ['IN_STOCK', 'SHIPPED', 'CONSUMED'] } },
+        })
+      : 0;
+    return {
+      ordered,
+      inProduction,
+      completed,
+      remaining: Math.max(ordered - inProduction, 0),
+      batches: activeBatches.map((b) => ({ id: b.id, unitsPlanned: Number(b.unitsPlanned), status: b.status, scheduledStartAt: b.scheduledStartAt, scheduledEndAt: b.scheduledEndAt })),
+    };
   }
 
   async query(user: RequestUser, query: QueryCustomerOrdersDto) {
@@ -91,7 +136,7 @@ export class CustomerOrdersService {
    * on the page: one cost calculation per *unique* assembly (not per
    * line), one findMany for every referenced ProductionOrder.
    */
-  private async withPriceTotals(user: RequestUser, orders: Array<{ id: string; items: { assemblyId: string; qty: Prisma.Decimal; productionOrderId: string | null }[] }>) {
+  private async withPriceTotals(user: RequestUser, orders: Array<{ id: string; items: { id: string; assemblyId: string; qty: Prisma.Decimal }[] }>) {
     const allItems = orders.flatMap((o) => o.items);
 
     const uniqueAssemblyIds = Array.from(new Set(allItems.map((i) => i.assemblyId)));
@@ -107,13 +152,19 @@ export class CustomerOrdersService {
       }),
     );
 
-    const productionOrderIds = Array.from(new Set(allItems.map((i) => i.productionOrderId).filter((id): id is string => Boolean(id))));
-    const productionOrders = productionOrderIds.length
-      ? await this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } } })
+    // Actual cost is now summed across every batch (ProductionOrder) linked
+    // to a line via customerOrderItemId — a line can have several once
+    // split into batches (План-графік §1), unlike the old 1:1
+    // productionOrderId this replaces.
+    const itemIds = allItems.map((i) => i.id);
+    const productionOrders = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({ where: { customerOrderItemId: { in: itemIds } } })
       : [];
-    const actualCostByProductionOrder = new Map<string, number>();
+    const actualCostByItem = new Map<string, number>();
     for (const po of productionOrders as any[]) {
-      if (po.totalLocalCostEur != null) actualCostByProductionOrder.set(po.id, Number(po.totalLocalCostEur));
+      if (po.totalLocalCostEur != null && po.customerOrderItemId) {
+        actualCostByItem.set(po.customerOrderItemId, (actualCostByItem.get(po.customerOrderItemId) ?? 0) + Number(po.totalLocalCostEur));
+      }
     }
 
     return orders.map((order) => {
@@ -127,12 +178,10 @@ export class CustomerOrdersService {
           estimatedTotal += unitCost * Number(item.qty);
           hasEstimate = true;
         }
-        if (item.productionOrderId) {
-          const actual = actualCostByProductionOrder.get(item.productionOrderId);
-          if (actual != null) {
-            actualTotal += actual;
-            hasActual = true;
-          }
+        const actual = actualCostByItem.get(item.id);
+        if (actual != null) {
+          actualTotal += actual;
+          hasActual = true;
         }
       }
       const { items, ...header } = order as any;
@@ -198,29 +247,38 @@ export class CustomerOrdersService {
   }
 
   /**
-   * Hands one order line off to production — reserves a ProductionOrder
-   * for that line's assembly (via ProductionOrdersService.create, Module 6)
-   * and locks `CustomerOrderItem.productionOrderId` onto it. A line can
-   * only be given once; calling this again for an already-given line is
-   * rejected rather than silently creating a second ProductionOrder.
+   * Hands one order line off to production as a new batch (ProductionOrder,
+   * via ProductionOrdersService.create). Batch-splitting (План-графік §1):
+   * a line can be given repeatedly, each call creating an independent
+   * batch with its own qty/dates, as long as some quantity still remains
+   * (item.qty minus every non-cancelled batch's unitsPlanned so far). Does
+   * NOT touch the deprecated `CustomerOrderItem.productionOrderId` — new
+   * batches link via `ProductionOrder.customerOrderItemId` only.
    */
   async giveItemToProduction(user: RequestUser, orderId: string, itemId: string, dto: GiveItemToProductionDto) {
     const order = await this.findOne(user, orderId);
     const item = (order.items as any[]).find((i) => i.id === itemId);
     if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
-    if (item.productionOrderId) {
-      throw new CodedBadRequestException('CUSTOMER_ORDER_ITEM_ALREADY_IN_PRODUCTION', 'This line has already been given to production.');
+
+    const remaining = item.quantitySummary.remaining;
+    if (remaining <= 0) {
+      throw new CodedBadRequestException('CUSTOMER_ORDER_ITEM_FULLY_IN_PRODUCTION', 'This line\'s full quantity has already been given to production.');
+    }
+    const unitsPlanned = dto.unitsPlanned ?? Math.ceil(remaining);
+    if (unitsPlanned > remaining + 1e-6) {
+      throw new CodedBadRequestException(
+        'CUSTOMER_ORDER_ITEM_BATCH_EXCEEDS_REMAINING',
+        `Batch quantity (${unitsPlanned}) exceeds what remains on this line (${remaining}).`,
+      );
     }
 
     const productionOrder = await this.productionOrdersService.create(user, {
       assemblyId: item.assemblyId,
-      unitsPlanned: dto.unitsPlanned ?? Math.ceil(Number(item.qty)),
+      unitsPlanned,
       comment: `From customer order ${orderId}, line ${itemId}`,
-    });
-
-    await this.prisma.tenant.customerOrderItem.update({
-      where: { id: itemId },
-      data: { productionOrderId: productionOrder.id },
+      scheduledStartAt: dto.scheduledStartAt,
+      scheduledEndAt: dto.scheduledEndAt,
+      customerOrderItemId: itemId,
     });
 
     if (order.status === 'NEW') {
@@ -233,24 +291,24 @@ export class CustomerOrdersService {
       action: 'customer_order_item.given_to_production',
       entityType: 'CustomerOrderItem',
       entityId: itemId,
-      after: { productionOrderId: productionOrder.id },
+      after: { productionOrderId: productionOrder.id, unitsPlanned },
     });
 
-    return { item: { ...item, productionOrderId: productionOrder.id }, productionOrder };
+    return { item, productionOrder };
   }
 
   /**
    * Whole-order variant (Phase 1 §6.2's `createProductionOrdersFromCustomerOrder`)
-   * — just calls `giveItemToProduction` for every line that hasn't been
-   * given yet. Safe to call repeatedly as new lines are added or as staff
-   * decide to stage the rest later — already-given lines are silently
-   * skipped, not re-processed.
+   * — calls `giveItemToProduction` for every line that still has remaining
+   * (not-yet-given) quantity, giving each its full remaining amount as one
+   * batch. Safe to call repeatedly — lines with nothing left to give are
+   * silently skipped, not re-processed.
    */
   async giveAllToProduction(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
     const results = [];
     for (const item of order.items as any[]) {
-      if (item.productionOrderId) continue;
+      if (item.quantitySummary.remaining <= 0) continue;
       results.push(await this.giveItemToProduction(user, orderId, item.id, {}));
     }
     return results;

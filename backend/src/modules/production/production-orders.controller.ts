@@ -5,6 +5,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import {
   CreateProductionOrderDto,
   QueryProductionOrdersDto,
+  SetProductionOrderStagePlanDto,
   SetProductionOrderWorkersDto,
   StartProductionOrderDto,
 } from './dto/production-order.dto';
@@ -75,5 +76,19 @@ export class ProductionOrdersController {
   @ApiOperation({ summary: 'Advance to the next configured production stage; auto-completes on the last one.' })
   async advanceStage(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.productionOrdersService.advanceStage(user, id);
+  }
+
+  @Get(':id/stage-plan')
+  @RequirePermissions('production-orders:read')
+  @ApiOperation({ summary: 'Get this batch\'s per-stage plan (План-графік) — plan only, never the fact/history log.' })
+  async getStagePlan(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productionOrdersService.getStagePlan(user, id);
+  }
+
+  @Put(':id/stage-plan')
+  @RequirePermissions('production-orders:manage')
+  @ApiOperation({ summary: 'Replace this batch\'s per-stage plan. Stage names always come from this company\'s ProductionStage catalogue.' })
+  async setStagePlan(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SetProductionOrderStagePlanDto) {
+    return this.productionOrdersService.setStagePlan(user, id, dto);
   }
 }

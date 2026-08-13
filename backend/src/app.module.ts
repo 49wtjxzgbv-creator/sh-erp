@@ -20,6 +20,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { HrModule } from './modules/hr/hr.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { PlannerModule } from './modules/planner/planner.module';
 import { SearchModule } from './modules/search/search.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -56,6 +57,7 @@ import { LegacyImportModule } from './modules/legacy-import/legacy-import.module
     HrModule,
     ReportsModule,
     DashboardModule,
+    PlannerModule,
     SearchModule,
     AiModule,
     LegacyImportModule,

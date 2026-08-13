@@ -18,6 +18,7 @@ import {
   Bell,
   CreditCard,
   ShieldCheck,
+  CalendarClock,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,7 @@ import { useMobileNav } from '@/components/domain/shell/mobile-nav-context';
  */
 const NAV_ITEMS = [
   { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
+  { href: '/planner', labelKey: 'planner', icon: CalendarClock },
   { href: '/catalog', labelKey: 'catalog', icon: Package },
   { href: '/inventory', labelKey: 'inventory', icon: Warehouse },
   { href: '/bom', labelKey: 'bom', icon: ListTree },

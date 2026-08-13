@@ -25,6 +25,27 @@ export class CustomerOrderItemDto {
   @IsNumber()
   @Min(0.001)
   qty!: number;
+
+  @ApiPropertyOptional({ description: 'Planned start for this line, only if it differs from the order\'s own. Never auto-derived — left null shows as "не заплановано".' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedStartAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedEndAt?: Date;
+
+  @ApiPropertyOptional({ description: 'Deadline for this specific line, only if it differs from the order\'s own deadline.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  itemDeadline?: Date;
 }
 
 export class CreateCustomerOrderDto {
@@ -61,6 +82,37 @@ export class CreateCustomerOrderDto {
   @IsOptional()
   @IsIn(['LOW', 'NORMAL', 'HIGH', 'URGENT'])
   priority?: string;
+
+  // Planning targets for the order as a whole (План-графік §4) — optional,
+  // never auto-derived; a null value shows as "не заплановано" everywhere,
+  // never a guessed date.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedStartAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedCompletionAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedShipmentAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedDeliveryAt?: Date;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -109,6 +161,34 @@ export class CustomerOrderHeaderDto {
   @IsOptional()
   @IsIn(['LOW', 'NORMAL', 'HIGH', 'URGENT'])
   priority?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedStartAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedCompletionAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedShipmentAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedDeliveryAt?: Date;
 
   @ApiPropertyOptional()
   @IsOptional()

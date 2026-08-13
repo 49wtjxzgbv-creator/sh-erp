@@ -88,6 +88,8 @@ export interface ProductionOrder {
   fullCostEur: DecimalString | null;
   createdAt: string;
   completedAt: string | null;
+  /** This batch's parent order line (План-графік §1) — null for production orders not created via "give to production". One CustomerOrderItem can have many batches. */
+  customerOrderItemId: string | null;
   /** Only present on findOne (create/query rows don't include these). */
   workers?: ProductionOrderWorker[];
   pickListItems?: ProductionOrderPickListItem[];
@@ -109,6 +111,8 @@ export interface CreateProductionOrderInput {
   /** Optional target window for the schedule view — ISO date/datetime strings, purely a plan, never frozen. */
   scheduledStartAt?: string;
   scheduledEndAt?: string;
+  /** This batch's parent order line, if created via "give to production" (План-графік §1). */
+  customerOrderItemId?: string;
 }
 
 export interface QueryProductionOrdersInput {
@@ -189,6 +193,44 @@ export function createProductionStage(name: string): Promise<ProductionStage> {
 export function reorderProductionStages(orderedIds: string[]): Promise<ProductionStage[]> {
   return apiClient.put<ProductionStage[]>('production-stages/reorder', { orderedIds });
 }
+/**
+ * Per-batch stage plan (План-графік §2) — plan only, never the fact log
+ * (ProductionOrderStageEvent). `productionStage` is always this company's
+ * real ProductionStage row; a stage's name is never invented client-side.
+ * A stage with plannedStartAt/plannedEndAt both null renders as
+ * "Етап не запланований", never a guessed date.
+ */
+export interface ProductionOrderStagePlan {
+  id: string;
+  companyId: string;
+  productionOrderId: string;
+  productionStageId: string;
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  productionStage: ProductionStage;
+}
+
+export interface ProductionOrderStagePlanEntryInput {
+  productionStageId: string;
+  /** ISO datetime — date AND time, not date-only. */
+  plannedStartAt?: string;
+  plannedEndAt?: string;
+}
+
+export function getProductionOrderStagePlan(productionOrderId: string): Promise<ProductionOrderStagePlan[]> {
+  return apiClient.get<ProductionOrderStagePlan[]>(`production-orders/${productionOrderId}/stage-plan`);
+}
+/** Full replace — each stage's window is independent, never auto-divided evenly across the batch. */
+export function setProductionOrderStagePlan(
+  productionOrderId: string,
+  stages: ProductionOrderStagePlanEntryInput[],
+): Promise<ProductionOrderStagePlan[]> {
+  return apiClient.put<ProductionOrderStagePlan[]>(`production-orders/${productionOrderId}/stage-plan`, { stages });
+}
+
 export function deleteProductionStage(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`production-stages/${id}`);
 }

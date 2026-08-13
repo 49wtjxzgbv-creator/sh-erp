@@ -69,6 +69,40 @@ export class CreateProductionOrderDto {
   @ValidateNested({ each: true })
   @Type(() => ProductionOrderWorkerDto)
   workers?: ProductionOrderWorkerDto[];
+
+  @ApiPropertyOptional({ description: 'This batch\'s parent order line, if created via "give to production" (План-графік §1). One CustomerOrderItem can have many ProductionOrder batches.' })
+  @IsOptional()
+  @IsUUID()
+  customerOrderItemId?: string;
+}
+
+export class ProductionOrderStagePlanEntryDto {
+  @ApiProperty({ description: 'Must be a real ProductionStage of this company — stage names are never invented client-side (План-графік §2).' })
+  @IsUUID()
+  productionStageId!: string;
+
+  @ApiPropertyOptional({ description: 'Date AND time — not date-only.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedStartAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  plannedEndAt?: Date;
+}
+
+/** Full replace, mirrors SetProductionOrderWorkersDto. Each stage's window is independent — never auto-divided evenly across the batch. */
+export class SetProductionOrderStagePlanDto {
+  @ApiProperty({ type: [ProductionOrderStagePlanEntryDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductionOrderStagePlanEntryDto)
+  stages!: ProductionOrderStagePlanEntryDto[];
 }
 
 export class SetProductionOrderWorkersDto {

@@ -25,6 +25,8 @@ import {
   deleteProductionScheduleSlot,
   convertProductionScheduleSlot,
   getProductionSchedule,
+  getProductionOrderStagePlan,
+  setProductionOrderStagePlan,
   type QueryProductionOrdersInput,
   type CreateProductionOrderInput,
   type ProductionOrderWorkerInput,
@@ -34,6 +36,7 @@ import {
   type CreateProductionScheduleSlotInput,
   type UpdateProductionScheduleSlotInput,
   type ProductionScheduleQuery,
+  type ProductionOrderStagePlanEntryInput,
 } from '@/lib/api-client/production';
 
 const ordersKey = (query: QueryProductionOrdersInput) => ['production-orders', query] as const;
@@ -44,6 +47,7 @@ const finishedGoodKey = (id: string) => ['finished-goods', id] as const;
 const checklistKey = ['qc-checklist-items'] as const;
 const qcChecksKey = (finishedGoodId: string) => ['qc-checks', 'finished-good', finishedGoodId] as const;
 const scheduleKey = (query: ProductionScheduleQuery) => ['production-schedule', query] as const;
+const stagePlanKey = (productionOrderId: string) => ['production-order-stage-plan', productionOrderId] as const;
 
 export function useProductionOrders(query: QueryProductionOrdersInput) {
   return useQuery({ queryKey: ordersKey(query), queryFn: () => queryProductionOrders(query) });
@@ -127,6 +131,21 @@ export function useAdvanceProductionOrderStage(id: string) {
 
 export function useProductionStages() {
   return useQuery({ queryKey: stagesKey, queryFn: () => listProductionStages() });
+}
+
+/** Per-batch plan (План-графік §2) — plan only, distinct from stageEvents (fact) on the order itself. */
+export function useProductionOrderStagePlan(productionOrderId: string) {
+  return useQuery({ queryKey: stagePlanKey(productionOrderId), queryFn: () => getProductionOrderStagePlan(productionOrderId) });
+}
+
+export function useSetProductionOrderStagePlan(productionOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stages: ProductionOrderStagePlanEntryInput[]) => setProductionOrderStagePlan(productionOrderId, stages),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: stagePlanKey(productionOrderId) });
+    },
+  });
 }
 
 export function useCreateProductionStage() {

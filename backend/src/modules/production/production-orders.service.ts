@@ -8,6 +8,7 @@ import { StockService } from '../inventory/stock.service';
 import {
   CreateProductionOrderDto,
   QueryProductionOrdersDto,
+  SetProductionOrderStagePlanDto,
   SetProductionOrderWorkersDto,
   StartProductionOrderDto,
 } from './dto/production-order.dto';
@@ -89,12 +90,15 @@ export class ProductionOrdersService {
         comment: dto.comment,
         scheduledStartAt: dto.scheduledStartAt,
         scheduledEndAt: dto.scheduledEndAt,
+        customerOrderItemId: dto.customerOrderItemId,
       } as any,
     });
 
     if (dto.workers && dto.workers.length > 0) {
       await this.writeWorkers(order.id, dto.workers);
     }
+
+    await this.createStagePlanSkeleton(order.id);
 
     await this.auditService.record({
       companyId: user.companyId,
@@ -106,6 +110,74 @@ export class ProductionOrdersService {
     });
 
     return order;
+  }
+
+  /**
+   * Auto-skeleton (План-графік §2, confirmed opt-in default): one
+   * ProductionOrderStagePlan row per this company's active ProductionStage,
+   * dates left null. Never guesses a date/duration — the user fills them in
+   * later via setStagePlan. No-op for companies with no configured stages,
+   * same fallback as start()'s "completes immediately if none configured."
+   */
+  private async createStagePlanSkeleton(productionOrderId: string) {
+    const stages = await this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
+    if (stages.length === 0) return;
+    await this.prisma.tenant.productionOrderStagePlan.createMany({
+      data: stages.map((s) => ({
+        productionOrderId,
+        productionStageId: s.id,
+        sortOrder: s.sortOrder,
+      })) as any,
+    });
+  }
+
+  /** Plan only — stage names always resolved from ProductionStage, never touches ProductionOrderStageEvent (fact). */
+  async getStagePlan(user: RequestUser, id: string) {
+    await this.findOne(user, id);
+    return this.prisma.tenant.productionOrderStagePlan.findMany({
+      where: { productionOrderId: id },
+      orderBy: { sortOrder: 'asc' },
+      include: { productionStage: true },
+    });
+  }
+
+  /** Full replace, mirrors setWorkers. Each stage's window is independent — never auto-divided evenly across the batch (План-графік §2). */
+  async setStagePlan(user: RequestUser, id: string, dto: SetProductionOrderStagePlanDto) {
+    await this.findOne(user, id);
+
+    const stageIds = dto.stages.map((s) => s.productionStageId);
+    if (new Set(stageIds).size !== stageIds.length) {
+      throw new CodedBadRequestException('PRODUCTION_STAGE_PLAN_DUPLICATE_STAGE', 'Each stage can appear at most once in the plan.');
+    }
+    const stages = await this.prisma.tenant.productionStage.findMany({ where: { id: { in: stageIds } } });
+    if (stages.length !== stageIds.length) {
+      throw new CodedNotFoundException('PRODUCTION_STAGE_PLAN_UNKNOWN_STAGE', 'One or more stages do not belong to this company.');
+    }
+    const sortOrderByStage = new Map(stages.map((s) => [s.id, s.sortOrder]));
+
+    await this.prisma.tenant.productionOrderStagePlan.deleteMany({ where: { productionOrderId: id } });
+    if (dto.stages.length > 0) {
+      await this.prisma.tenant.productionOrderStagePlan.createMany({
+        data: dto.stages.map((s) => ({
+          productionOrderId: id,
+          productionStageId: s.productionStageId,
+          plannedStartAt: s.plannedStartAt,
+          plannedEndAt: s.plannedEndAt,
+          sortOrder: sortOrderByStage.get(s.productionStageId)!,
+        })) as any,
+      });
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_order.stage_plan_updated',
+      entityType: 'ProductionOrder',
+      entityId: id,
+      after: { stages: dto.stages },
+    });
+
+    return this.getStagePlan(user, id);
   }
 
   async findOne(user: RequestUser, id: string) {
