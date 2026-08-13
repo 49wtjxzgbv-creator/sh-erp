@@ -24,8 +24,8 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
 export function ComponentNameCell({ line }: { line: CostBreakdownLine }) {
   const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
   const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
-  if (line.componentType === 'PRODUCT') return <>{product ? `${product.article} — ${product.name}` : line.productId}</>;
-  return <>{subAssembly ? `${subAssembly.name} [${subAssembly.article ?? ''}]` : line.subAssemblyId}</>;
+  if (line.componentType === 'PRODUCT') return <>{product ? `${product.name} (${product.article})` : line.productId}</>;
+  return <>{subAssembly ? `${subAssembly.name}${subAssembly.article ? ` (${subAssembly.article})` : ''}` : line.subAssemblyId}</>;
 }
 
 export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {

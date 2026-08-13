@@ -16,7 +16,7 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
-  return <>{assembly ? `${assembly.article ?? ''} ${assembly.name}` : assemblyId}</>;
+  return <>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</>;
 }
 
 /** Same estimated/actual split as the order detail page (app/(app)/sales/[id]/page.tsx) — see that file's EstimatedPriceCell/ActualPriceCell for the full rationale, just rendered as plain <td>s here for the print table. */
@@ -101,7 +101,7 @@ function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: st
     return undefined;
   }
 
-  const name = `${assembly.article ?? ''} ${assembly.name}`.trim();
+  const name = `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}`;
 
   return (
     <div className="mb-4 break-inside-avoid" style={{ marginLeft: depth * 24 }}>
