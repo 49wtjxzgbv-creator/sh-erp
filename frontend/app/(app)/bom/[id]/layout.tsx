@@ -20,11 +20,11 @@ import {
 
 function tabsFor(id: string) {
   return [
-    { href: `/bom/${id}`, labelKey: 'assemblyHeader' },
-    { href: `/bom/${id}/components`, labelKey: 'tabBom' },
-    { href: `/bom/${id}/cost`, labelKey: 'tabCost' },
-    { href: `/bom/${id}/availability`, labelKey: 'tabAvailability' },
-    { href: `/bom/${id}/versions`, labelKey: 'tabVersions' },
+    { href: `/bom/${id}`, labelKey: 'assemblyHeader', tour: undefined },
+    { href: `/bom/${id}/components`, labelKey: 'tabBom', tour: 'bom-components-tab' },
+    { href: `/bom/${id}/cost`, labelKey: 'tabCost', tour: 'bom-cost-tab' },
+    { href: `/bom/${id}/availability`, labelKey: 'tabAvailability', tour: 'bom-availability-tab' },
+    { href: `/bom/${id}/versions`, labelKey: 'tabVersions', tour: undefined },
   ] as const;
 }
 
@@ -85,7 +85,7 @@ export default function AssemblyLayout({ children }: { children: React.ReactNode
         <TabsList>
           {tabs.map((tab) => (
             <TabsTrigger key={tab.href} value={tab.href} asChild>
-              <Link href={tab.href}>{t(tab.labelKey)}</Link>
+              <Link href={tab.href} data-tour={tab.tour}>{t(tab.labelKey)}</Link>
             </TabsTrigger>
           ))}
         </TabsList>

@@ -2,6 +2,10 @@ import { SessionBoundary } from '@/components/domain/shell/session-boundary';
 import { Sidebar } from '@/components/domain/shell/sidebar';
 import { Topbar } from '@/components/domain/shell/topbar';
 import { MobileNavProvider } from '@/components/domain/shell/mobile-nav-context';
+import { TrainingProvider } from '@/components/domain/training/training-provider';
+import { TrainingOverlay } from '@/components/domain/training/training-overlay';
+import { TrainingWelcomeBanner } from '@/components/domain/training/training-welcome-banner';
+import { COURSES } from '@/components/domain/training/courses';
 
 /**
  * Authenticated shell (Phase 2 §3.1). Every route under app/(app)/ renders
@@ -16,22 +20,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionBoundary>
       <MobileNavProvider>
-        {/*
-         * `h-screen overflow-hidden` (not `min-h-screen`) bounds this row to
-         * the viewport so Sidebar and Topbar stay pinned and `<main>` is the
-         * ONLY thing that scrolls — without a bounded height here, `<main>`'s
-         * own `overflow-y-auto` never actually engages (nothing to scroll
-         * internally, since a flex item with no height cap just grows to fit
-         * its content) and the whole page scrolls as one unit instead, which
-         * also silently defeats DataTable's sticky `<thead>`.
-         */}
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Topbar />
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        <TrainingProvider courses={COURSES}>
+          {/*
+           * `h-screen overflow-hidden` (not `min-h-screen`) bounds this row to
+           * the viewport so Sidebar and Topbar stay pinned and `<main>` is the
+           * ONLY thing that scrolls — without a bounded height here, `<main>`'s
+           * own `overflow-y-auto` never actually engages (nothing to scroll
+           * internally, since a flex item with no height cap just grows to fit
+           * its content) and the whole page scrolls as one unit instead, which
+           * also silently defeats DataTable's sticky `<thead>`.
+           */}
+          <div className="flex h-screen overflow-hidden">
+            <Sidebar />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <Topbar />
+              <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+            </div>
           </div>
-        </div>
+          <TrainingOverlay />
+          <TrainingWelcomeBanner />
+        </TrainingProvider>
       </MobileNavProvider>
     </SessionBoundary>
   );

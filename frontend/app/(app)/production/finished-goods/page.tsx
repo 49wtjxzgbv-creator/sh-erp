@@ -88,13 +88,15 @@ export default function FinishedGoodsPage() {
         </SelectContent>
       </Select>
 
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        isLoading={isLoading}
-        onRowClick={(fg) => router.push(`/production/finished-goods/${fg.id}`)}
-        pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
-      />
+      <div data-tour="finished-goods-list">
+        <DataTable
+          columns={columns}
+          data={data?.items ?? []}
+          isLoading={isLoading}
+          onRowClick={(fg) => router.push(`/production/finished-goods/${fg.id}`)}
+          pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
+        />
+      </div>
     </div>
   );
 }

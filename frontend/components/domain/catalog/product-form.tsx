@@ -171,7 +171,7 @@ export function ProductForm({
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="article">{t('article')}</Label>
-            <Input id="article" {...register('article')} />
+            <Input id="article" data-tour="catalog-form-article" {...register('article')} />
             {errors.article && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
           </div>
           <div className="space-y-1.5">
@@ -346,7 +346,7 @@ export function ProductForm({
 
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
       <div className="flex justify-end gap-2">
-        <Button type="submit" loading={submitting}>
+        <Button type="submit" loading={submitting} data-tour="catalog-form-save">
           {tc('save')}
         </Button>
       </div>

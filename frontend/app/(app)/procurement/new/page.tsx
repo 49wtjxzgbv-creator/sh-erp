@@ -224,7 +224,7 @@ export default function NewPurchaseOrderPage() {
       </Card>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button onClick={handleSubmit} loading={createOrder.isPending}>
+      <Button onClick={handleSubmit} loading={createOrder.isPending} data-tour="procurement-form-save">
         {tc('create')}
       </Button>
     </div>

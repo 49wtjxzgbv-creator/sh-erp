@@ -611,7 +611,7 @@ function GanttToolbar({
         )}
       </div>
 
-      <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-border p-0.5" data-tour="planner-scale-buttons">
         {SCALES.map((s) => (
           <button
             key={s}

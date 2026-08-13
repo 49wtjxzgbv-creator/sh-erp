@@ -100,7 +100,7 @@ export default function ProductionStagesPage() {
         </CardContent>
       </Card>
 
-      <Table>
+      <Table data-tour="production-stages-list">
         <TableHeader>
           <TableRow>
             <TableHead>{t('stageName')}</TableHead>

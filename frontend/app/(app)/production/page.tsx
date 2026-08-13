@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 
 const PAGE_SIZE = 50;
 
@@ -89,8 +90,9 @@ export default function ProductionOrdersPage() {
             <SelectItem value="CANCELLED">{t('statusCANCELLED')}</SelectItem>
           </SelectContent>
         </Select>
+        <LearnThisButton courseId="production-orders" label="Навчитися працювати з виробництвом" />
         <Button asChild>
-          <Link href="/production/new">
+          <Link href="/production/new" data-tour="production-new-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('newOrder')}
           </Link>

@@ -49,7 +49,7 @@ export default function BomPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('title')}</h1>
         <Button asChild>
-          <Link href="/bom/new">
+          <Link href="/bom/new" data-tour="bom-new-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('newAssembly')}
           </Link>

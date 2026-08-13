@@ -69,7 +69,7 @@ export default function PurchaseOrdersPage() {
           </SelectContent>
         </Select>
         <Button asChild>
-          <Link href="/procurement/new">
+          <Link href="/procurement/new" data-tour="procurement-new-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('newPurchaseOrder')}
           </Link>

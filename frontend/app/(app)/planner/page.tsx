@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 import { cn } from '@/lib/utils';
 import type { PlannerKpis, PlannerProblem, QueryPlannerBoardInput } from '@/lib/api-client/planner';
 
@@ -195,6 +196,7 @@ export default function PlannerPage() {
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <LearnThisButton courseId="planner" label="Навчитися працювати з План-графіком" />
           <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
             <button
               type="button"
@@ -231,7 +233,7 @@ export default function PlannerPage() {
         </div>
       </div>
 
-      <div className="no-print grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div data-tour="planner-kpi-bar" className="no-print grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {kpiCards.map(({ key, label, warn }) => (
           <button
             key={key}
@@ -291,7 +293,7 @@ export default function PlannerPage() {
         </CardContent>
       </Card>
 
-      <div className="no-print">{board && <ProblemsPanel problems={board.problems} onJump={handleJumpToProblem} />}</div>
+      <div className="no-print" data-tour="planner-problems-panel">{board && <ProblemsPanel problems={board.problems} onJump={handleJumpToProblem} />}</div>
 
       {isLoading || !board ? (
         <LoadingBlock />
@@ -303,7 +305,7 @@ export default function PlannerPage() {
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border border-foreground/40 opacity-60" />{t('planLabel')}</span>
             <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
           </div>
-          <div className="no-print">
+          <div className="no-print" data-tour="planner-board">
             {view === 'gantt' ? (
               <PlannerGanttChart ref={ganttRef} orders={board.orders} stages={stages ?? []} photoByAssembly={photoByAssembly} year={year} onYearChange={setYear} />
             ) : (

@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
+import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 import { cn } from '@/lib/utils';
 
 export default function StockLevelsPage() {
@@ -208,11 +209,12 @@ export default function StockLevelsPage() {
           </Select>
         </div>
         <div className="flex gap-2">
+          <LearnThisButton courseId="warehouse" label="Навчитися працювати зі складом" />
           <Button variant="outline" onClick={() => setMoveOpen(true)}>
             <ArrowLeftRight className="mr-2 h-4 w-4" />
             {t('moveStock')}
           </Button>
-          <Button onClick={() => setMovementOpen(true)}>
+          <Button onClick={() => setMovementOpen(true)} data-tour="inventory-record-movement-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('recordMovement')}
           </Button>
@@ -221,7 +223,9 @@ export default function StockLevelsPage() {
 
       {rowError && <p className="text-sm text-destructive">{rowError}</p>}
 
-      <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
+      <div data-tour="inventory-levels-table">
+        <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
+      </div>
 
       <RecordMovementDialog open={movementOpen} onOpenChange={setMovementOpen} />
       <MoveStockDialog open={moveOpen} onOpenChange={setMoveOpen} />

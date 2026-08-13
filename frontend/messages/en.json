@@ -41,7 +41,8 @@
     "notifications": "Notifications",
     "billing": "Billing",
     "admin": "Administration",
-    "planner": "Schedule"
+    "planner": "Schedule",
+    "training": "Training"
   },
   "auth": {
     "loginTitle": "Sign in",
@@ -1114,5 +1115,28 @@
     "pageLabel": "Page",
     "productionLabel": "PRODUCTION",
     "shipmentsLane": "Shipments"
+  },
+  "training": {
+    "title": "Training",
+    "subtitle": "Walk through the full SH ERP workflow — from product to customer shipment",
+    "startFullCycle": "Start the full cycle",
+    "continueCourse": "Continue",
+    "startCourse": "Start",
+    "reviewLessons": "Individual lessons",
+    "welcomeTitle": "Welcome to SH ERP",
+    "welcomeBody": "Want a short walkthrough of the whole system — from creating a product to shipping it to a customer?",
+    "startTraining": "Start training",
+    "skipTraining": "I already know SH ERP",
+    "learnThis": "Learn how this works",
+    "cleanupButton": "Clear training data",
+    "cleanupConfirmTitle": "Clear training data?",
+    "cleanupConfirmDescription": "Only records created during training (tagged \"[Навчання]\") will be removed. Your company's real data is unaffected.",
+    "cleanupSuccess": "Training data cleared",
+    "cleanupNothing": "No training data to clear",
+    "completionTitle": "🎉 You completed the full SH ERP cycle",
+    "completionBody": "You walked through the full cycle from creating a product to shipping it to a customer.",
+    "backToErp": "Go to SH ERP",
+    "repeatTraining": "Repeat training",
+    "noCoursesStarted": "No courses started yet"
   }
 }

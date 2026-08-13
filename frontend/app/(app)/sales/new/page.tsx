@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { HelpHint } from '@/components/ui/help-hint';
 
 interface EditableItemRow {
   key: string;
@@ -135,7 +136,7 @@ export default function NewCustomerOrderPage() {
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="clientName">{t('clientName')}</Label>
-            <Input id="clientName" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+            <Input id="clientName" data-tour="sales-form-client-name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="orderNumber">{t('orderNumber')}</Label>
@@ -163,12 +164,17 @@ export default function NewCustomerOrderPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" data-tour="sales-form-planned-dates">
             <Label htmlFor="plannedStartAt">{t('plannedStartAt')}</Label>
             <Input id="plannedStartAt" type="datetime-local" value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="plannedCompletionAt">{t('plannedCompletionAt')}</Label>
+            <Label htmlFor="plannedCompletionAt" className="flex items-center gap-1.5">
+              {t('plannedCompletionAt')}
+              <HelpHint title={t('plannedCompletionAt')} note="Можна змінити пізніше.">
+                Коли планується завершити виконання цього замовлення. Цю дату потім бачить План-графік як плановий шар — окремо від фактичного прогресу виробництва.
+              </HelpHint>
+            </Label>
             <Input id="plannedCompletionAt" type="datetime-local" value={plannedCompletionAt} onChange={(e) => setPlannedCompletionAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -270,7 +276,7 @@ export default function NewCustomerOrderPage() {
       </Card>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button onClick={handleSubmit} loading={createOrder.isPending}>
+      <Button onClick={handleSubmit} loading={createOrder.isPending} data-tour="sales-form-save">
         {tc('create')}
       </Button>
     </div>

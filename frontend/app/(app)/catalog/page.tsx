@@ -113,7 +113,7 @@ export default function CatalogPage() {
             </Link>
           </Button>
           <Button asChild>
-            <Link href="/catalog/new">
+            <Link href="/catalog/new" data-tour="catalog-new-button">
               <Plus className="mr-2 h-4 w-4" />
               {t('newProduct')}
             </Link>

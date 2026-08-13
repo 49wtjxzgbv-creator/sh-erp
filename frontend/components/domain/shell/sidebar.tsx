@@ -20,6 +20,7 @@ import {
   CreditCard,
   ShieldCheck,
   CalendarClock,
+  GraduationCap,
   X,
   ChevronsLeft,
   ChevronsRight,
@@ -47,6 +48,7 @@ export const NAV_ITEMS = [
   { href: '/reports', labelKey: 'reports', icon: BarChart3 },
   { href: '/ai', labelKey: 'ai', icon: Sparkles },
   { href: '/notifications', labelKey: 'notifications', icon: Bell },
+  { href: '/training', labelKey: 'training', icon: GraduationCap },
   { href: '/billing', labelKey: 'billing', icon: CreditCard },
   { href: '/admin', labelKey: 'admin', icon: ShieldCheck },
   { href: '/settings', labelKey: 'settings', icon: Settings },
@@ -87,7 +89,7 @@ function NavLink({ href, labelKey, icon: Icon, collapsed }: (typeof NAV_ITEMS)[n
 
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
   return (
-    <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
+    <nav data-tour="sidebar-nav" className="flex-1 space-y-0.5 overflow-y-auto p-2">
       {NAV_ITEMS.map((item) => (
         <NavLink key={item.href} {...item} collapsed={collapsed} />
       ))}

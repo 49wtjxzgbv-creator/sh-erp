@@ -63,7 +63,7 @@ export default function ShipmentsPage() {
           </SelectContent>
         </Select>
         <Button asChild>
-          <Link href="/sales/shipments/new">
+          <Link href="/sales/shipments/new" data-tour="shipments-new-button">
             <Plus className="mr-2 h-4 w-4" />
             {t('newShipment')}
           </Link>
