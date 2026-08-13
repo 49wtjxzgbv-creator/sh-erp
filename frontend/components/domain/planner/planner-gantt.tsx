@@ -14,6 +14,7 @@ import {
   Lock,
   Minus,
   Plus,
+  Truck,
 } from 'lucide-react';
 import { timelineDayMarks, timelineHourMarks, timelineMonthMarks, timelineWeekMarks, isWeekend } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
@@ -97,10 +98,15 @@ function riskOf(problems: PlannerProblem[]): RiskColor {
   return 'none';
 }
 
+// Bold, solid blocks — a professional dispatcher Gantt reads at a glance
+// from filled bars, not thin translucent slivers. Deliberately higher
+// opacity/heavier border than this app's other hand-built timelines
+// (operations-timeline.tsx's dashboard widget), since this chart is the
+// primary daily tool, not a summary card.
 const BAR_COLOR: Record<RiskColor, string> = {
-  none: 'border-secondary-foreground/50 bg-secondary',
-  warning: 'border-warning bg-warning/25',
-  critical: 'border-destructive bg-destructive/25',
+  none: 'border-l-4 border-secondary-foreground/70 bg-secondary shadow-sm',
+  warning: 'border-l-4 border-warning bg-warning/60 shadow-sm',
+  critical: 'border-l-4 border-destructive bg-destructive/60 shadow-sm',
 };
 
 type BatchStatusKey = PlannerBatchNode['status'] | 'OVERDUE';
@@ -118,6 +124,9 @@ const STATUS_COLOR: Record<BatchStatusKey, string> = {
   CANCELLED: 'text-muted-foreground',
   OVERDUE: 'text-destructive',
 };
+
+/** A colored left rail per hierarchy depth on the label cell — the tree structure (Замовлення → Виріб → Партія → Етап) should read from a glance down the left edge, not just from indentation alone. */
+const LEVEL_ACCENT = ['', 'border-l-2 border-l-primary/50', 'border-l-2 border-l-secondary-foreground/40', 'border-l-2 border-l-muted-foreground/25'];
 
 function batchStatusKey(b: PlannerBatchNode, now: Date): BatchStatusKey {
   if (b.status === 'PLANNED' && b.plan.endAt && new Date(b.plan.endAt) < now) return 'OVERDUE';
@@ -154,6 +163,16 @@ function StatusBadge({ statusKey, label }: { statusKey: BatchStatusKey; label: s
       {label}
     </span>
   );
+}
+
+/**
+ * Drawn across the full row width whenever a node has no plan date at all
+ * — never a specific position (that would be inventing a date), just a
+ * dashed placeholder so an unplanned row still visibly belongs to the
+ * timeline grid instead of reading as blank/broken space.
+ */
+function UnplannedTrack({ top, height, faint }: { top: number; height: number; faint?: boolean }) {
+  return <div className={cn('absolute left-2 right-2 rounded border border-dashed', faint ? 'border-border/25' : 'border-border/40')} style={{ top, height }} />;
 }
 
 export const PlannerGanttChart = forwardRef<
@@ -563,29 +582,34 @@ function GanttRowView({
         {order.riskLevel !== 'none' && <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', order.riskLevel === 'critical' ? 'text-destructive' : 'text-warning')} />}
       </span>
     );
-    bars = w && (
+    bars = w ? (
       <div
         title={`${order.clientName}: ${w.start.toLocaleDateString()} → ${w.end.toLocaleDateString()}`}
-        className={cn('absolute top-2 h-4 rounded-r border-l-4', BAR_COLOR[color])}
+        className={cn('absolute top-[7px] h-5 rounded-r', BAR_COLOR[color])}
         style={{ left: px(w.start, viewFrom, pxPerDay), width: Math.max(px(w.end, viewFrom, pxPerDay) - px(w.start, viewFrom, pxPerDay), 6) }}
       />
+    ) : (
+      <UnplannedTrack top={7} height={20} />
     );
   } else if (kind === 'po') {
     const po = order.purchaseOrders.find((p) => `po:${p.id}` === row.key);
     if (po) {
       const w = po.expectedDeliveryDate ? { start: new Date(po.orderDate), end: new Date(po.expectedDeliveryDate) } : null;
       label = (
-        <span className="text-xs">
-          {t('materials')}: {po.supplierName}
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <Truck className="h-3 w-3 shrink-0" />
+          {po.supplierName}
         </span>
       );
       href = `/procurement/${po.id}`;
-      bars = w && (
+      bars = w ? (
         <div
           title={`${po.supplierName}: ${w.start.toLocaleDateString()} → ${w.end.toLocaleDateString()}`}
           className="absolute top-2.5 h-2.5 rounded-r border-l-4 border-muted-foreground/50 bg-muted"
           style={{ left: px(w.start, viewFrom, pxPerDay), width: Math.max(px(w.end, viewFrom, pxPerDay) - px(w.start, viewFrom, pxPerDay), 6) }}
         />
+      ) : (
+        <UnplannedTrack top={11} height={6} faint />
       );
     }
   } else if (kind === 'item' && item) {
@@ -596,12 +620,12 @@ function GanttRowView({
     const photo = photoByAssembly[item.assemblyId];
     label = (
       <Link href={`/sales/${order.id}`} className="flex min-w-0 items-center gap-2 hover:underline">
-        <Avatar src={photo} size="sm" zoomable={false} className="h-8 w-8 shrink-0" />
+        <Avatar src={photo} size="md" zoomable={false} className="h-10 w-10 shrink-0" />
         <span className="min-w-0">
-          <span className="block truncate text-xs font-medium leading-tight">
+          <span className="block truncate text-sm font-semibold leading-tight">
             {item.assemblyName} × {item.qty}
           </span>
-          <span className="block truncate text-[10px] leading-tight text-muted-foreground">
+          <span className="block truncate text-[10px] font-medium leading-tight text-foreground/70">
             {item.article ? `${t('article')}: ${item.article}` : t('noArticle')}
           </span>
           <span className="block truncate text-[10px] leading-tight text-muted-foreground">
@@ -611,12 +635,14 @@ function GanttRowView({
         </span>
       </Link>
     );
-    bars = w && (
+    bars = w ? (
       <div
         title={`${item.assemblyName}: ${w.start.toLocaleDateString()} → ${w.end.toLocaleDateString()}`}
-        className={cn('absolute top-2.5 h-3.5 rounded-r border-l-4', BAR_COLOR[color])}
+        className={cn('absolute top-2.5 h-5 rounded-r', BAR_COLOR[color])}
         style={{ left: px(w.start, viewFrom, pxPerDay), width: Math.max(px(w.end, viewFrom, pxPerDay) - px(w.start, viewFrom, pxPerDay), 6) }}
       />
+    ) : (
+      <UnplannedTrack top={10} height={20} />
     );
   } else if (kind === 'batch' && batch) {
     const planW = batchPlanWindow(batch);
@@ -628,7 +654,7 @@ function GanttRowView({
     const statusLabel = statusKey === 'OVERDUE' ? t('statusOverdue') : tp(`status${batch.status}`);
     label = (
       <span className="flex flex-col gap-0.5">
-        <span className="text-xs font-medium">
+        <span className="text-xs font-semibold">
           {t('batch')} · {batch.unitsPlanned} {t('units')}
         </span>
         <StatusBadge statusKey={statusKey} label={statusLabel} />
@@ -636,18 +662,20 @@ function GanttRowView({
     );
     bars = (
       <>
-        {planW && (
+        {planW ? (
           <div
             title={`${t('planLabel')}: ${planW.start.toLocaleString()} → ${planW.end.toLocaleString()}`}
-            className={cn('absolute top-1 h-3 rounded-r border-l-4 opacity-70', BAR_COLOR[riskOf(batch.problems)])}
-            style={{ left: px(planW.start, viewFrom, pxPerDay), width: Math.max(px(planW.end, viewFrom, pxPerDay) - px(planW.start, viewFrom, pxPerDay), 6) }}
+            className={cn('absolute top-[3px] h-4 rounded-r', BAR_COLOR[riskOf(batch.problems)])}
+            style={{ left: px(planW.start, viewFrom, pxPerDay), width: Math.max(px(planW.end, viewFrom, pxPerDay) - px(planW.start, viewFrom, pxPerDay), 8) }}
           />
+        ) : (
+          <UnplannedTrack top={3} height={16} />
         )}
         {factW && (
           <div
             title={`${t('factLabel')}: ${factW.start.toLocaleString()} → ${batch.fact.endAt ? factW.end.toLocaleString() : '…'}`}
-            className="absolute top-[19px] h-2 rounded-r bg-foreground/80"
-            style={{ left: px(factW.start, viewFrom, pxPerDay), width: Math.max(px(factW.end, viewFrom, pxPerDay) - px(factW.start, viewFrom, pxPerDay), 4) }}
+            className="absolute top-[21px] h-4 rounded-r border-l-4 border-foreground bg-foreground/85 shadow-sm"
+            style={{ left: px(factW.start, viewFrom, pxPerDay), width: Math.max(px(factW.end, viewFrom, pxPerDay) - px(factW.start, viewFrom, pxPerDay), 6) }}
           />
         )}
       </>
@@ -661,12 +689,14 @@ function GanttRowView({
         {!w && ` (${t('notPlanned')})`}
       </span>
     );
-    bars = w && (
+    bars = w ? (
       <div
         title={`${stage?.name}: ${w.start.toLocaleString()} → ${w.end.toLocaleString()}`}
-        className="absolute top-2.5 h-2.5 rounded-sm bg-primary/70"
-        style={{ left: px(w.start, viewFrom, pxPerDay), width: Math.max(px(w.end, viewFrom, pxPerDay) - px(w.start, viewFrom, pxPerDay), 4) }}
+        className="absolute top-2 h-4 rounded-r border-l-4 border-primary bg-primary/80 shadow-sm"
+        style={{ left: px(w.start, viewFrom, pxPerDay), width: Math.max(px(w.end, viewFrom, pxPerDay) - px(w.start, viewFrom, pxPerDay), 6) }}
       />
+    ) : (
+      <UnplannedTrack top={2} height={16} />
     );
   }
 
@@ -676,13 +706,14 @@ function GanttRowView({
       className={cn(
         'relative flex border-b border-border/60 transition-colors',
         rowIndex % 2 === 1 && 'bg-muted/10',
+        kind === 'item' && 'bg-muted/25',
         flashed && 'bg-warning/30',
         kind === 'order' && 'bg-card font-semibold',
       )}
-      style={{ height: kind === 'item' ? ROW_HEIGHT + 12 : ROW_HEIGHT }}
+      style={{ height: kind === 'item' ? ROW_HEIGHT + 12 : kind === 'batch' ? ROW_HEIGHT + 6 : ROW_HEIGHT }}
     >
       <div
-        className={cn('sticky left-0 z-10 flex shrink-0 items-center gap-1 overflow-hidden border-r border-border bg-inherit pr-2 text-xs', kind === 'order' ? 'bg-card' : rowIndex % 2 === 1 ? 'bg-[color:var(--row-alt,transparent)]' : 'bg-card')}
+        className={cn('sticky left-0 z-10 flex shrink-0 items-center gap-1 overflow-hidden border-r border-border pr-2 text-xs', LEVEL_ACCENT[level])}
         style={{ width: LABEL_WIDTH, paddingLeft: 8 + level * 16, backgroundColor: 'hsl(var(--card))' }}
       >
         {hasChildren ? (
