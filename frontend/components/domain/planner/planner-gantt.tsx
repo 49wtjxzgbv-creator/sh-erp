@@ -41,7 +41,7 @@ import type { PlannerBatchNode, PlannerItemNode, PlannerOrderNode, PlannerProble
 
 export type GanttScale = 'day' | 'week' | 'month' | 'quarter';
 
-const BASE_PX_PER_DAY: Record<GanttScale, number> = { day: 96, week: 34, month: 11, quarter: 3.4 };
+const BASE_PX_PER_DAY: Record<GanttScale, number> = { day: 480, week: 34, month: 11, quarter: 3.4 };
 const WINDOW_DAYS: Record<GanttScale, number> = { day: 10, week: 90, month: 420, quarter: 900 };
 const PAN_STEP_DAYS: Record<GanttScale, number> = { day: 3, week: 21, month: 90, quarter: 180 };
 
@@ -317,11 +317,21 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
                   </span>
                 ))}
                 {scale === 'day' &&
-                  hours.map((h, i) => (
-                    <span key={i} className="absolute top-5 text-[9px] text-muted-foreground" style={{ left: px(h, viewFrom, pxPerDay) + 2 }}>
-                      {h.getHours()}:00
-                    </span>
-                  ))}
+                  (() => {
+                    // Hour labels need real horizontal room ("22:00" is ~5 characters) —
+                    // at low zoom the raw 24-per-day set would overlap into an
+                    // unreadable smear, so only every Nth hour gets a label (the tick
+                    // line itself still shows every hour, just unlabeled between).
+                    const pxPerHour = pxPerDay / 24;
+                    const hourStep = Math.max(1, Math.ceil(34 / pxPerHour));
+                    return hours
+                      .filter((h) => h.getHours() % hourStep === 0)
+                      .map((h, i) => (
+                        <span key={i} className="absolute top-5 whitespace-nowrap text-[9px] text-muted-foreground" style={{ left: px(h, viewFrom, pxPerDay) + 2 }}>
+                          {h.getHours()}:00
+                        </span>
+                      ));
+                  })()}
               </div>
             </div>
 
