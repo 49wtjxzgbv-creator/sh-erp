@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus } from 'lucide-react';
 import { useInventorySessions, useStartInventorySession } from '@/lib/hooks/use-inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import {
 export default function InventorySessionsPage() {
   const t = useTranslations('inventory');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const { data: sessions, isLoading } = useInventorySessions();
   const startSession = useStartInventorySession();
@@ -42,7 +43,7 @@ export default function InventorySessionsPage() {
       setComment('');
       router.push(`/inventory/sessions/${session.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -7,7 +7,7 @@ import { useCheckAvailability, useProduceAssembly } from '@/lib/hooks/use-bom';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { AvailabilityResult } from '@/lib/api-client/bom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -47,6 +47,7 @@ export default function AssemblyAvailabilityPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('bom');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: warehouses } = useWarehouses();
   const checkAvailability = useCheckAvailability();
@@ -68,7 +69,7 @@ export default function AssemblyAvailabilityPage() {
       const r = await checkAvailability.mutateAsync({ assemblyId: params.id, qty: qtyNum });
       setResult(r);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -80,7 +81,7 @@ export default function AssemblyAvailabilityPage() {
       setProduceSuccess(true);
       setResult(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

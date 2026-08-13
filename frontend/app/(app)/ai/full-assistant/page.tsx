@@ -6,7 +6,7 @@ import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useAskFullAssistant, useConfirmAiAction, useCancelAiAction } from '@/lib/hooks/use-ai';
 import type { PendingConfirmation } from '@/lib/api-client/ai';
 import { PendingConfirmationCard } from '@/components/domain/ai/pending-confirmation-card';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ interface ChatMessage {
 export default function AiFullAssistantPage() {
   const t = useTranslations('ai');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const askFullAssistant = useAskFullAssistant();
   const confirmAction = useConfirmAiAction();
   const cancelAction = useCancelAiAction();
@@ -107,7 +108,7 @@ export default function AiFullAssistantPage() {
       setPending(result.pendingConfirmation);
       if (voiceReplyEnabled) synth.speak(result.answer);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -119,7 +120,7 @@ export default function AiFullAssistantPage() {
       setMessages((prev) => [...prev, { role: 'system', text: result.message ?? t('actionConfirmed') }]);
       setPending(undefined);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -131,7 +132,7 @@ export default function AiFullAssistantPage() {
       setMessages((prev) => [...prev, { role: 'system', text: t('actionCancelled') }]);
       setPending(undefined);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

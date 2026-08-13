@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ProductionOrdersService } from './production-orders.service';
@@ -25,7 +26,7 @@ export class ProductionScheduleSlotsService {
 
   async create(user: RequestUser, dto: CreateProductionScheduleSlotDto) {
     if (dto.endAt < dto.startAt) {
-      throw new BadRequestException('endAt must not be before startAt.');
+      throw new CodedBadRequestException('SCHEDULE_SLOT_END_BEFORE_START', 'endAt must not be before startAt.');
     }
     const slot = await this.prisma.tenant.productionScheduleSlot.create({
       data: {
@@ -51,19 +52,19 @@ export class ProductionScheduleSlotsService {
 
   async findOne(user: RequestUser, id: string) {
     const slot = await this.prisma.tenant.productionScheduleSlot.findUnique({ where: { id } });
-    if (!slot) throw new NotFoundException('Production schedule slot not found.');
+    if (!slot) throw new CodedNotFoundException('SCHEDULE_SLOT_NOT_FOUND', 'Production schedule slot not found.');
     return slot;
   }
 
   async update(user: RequestUser, id: string, dto: UpdateProductionScheduleSlotDto) {
     const before = await this.findOne(user, id);
     if ((before as any).convertedToProductionOrderId) {
-      throw new ConflictException('This slot was already converted to a real production order — edit that order instead.');
+      throw new CodedConflictException('SCHEDULE_SLOT_ALREADY_CONVERTED_EDIT', 'This slot was already converted to a real production order — edit that order instead.');
     }
     const startAt = dto.startAt ?? before.startAt;
     const endAt = dto.endAt ?? before.endAt;
     if (endAt < startAt) {
-      throw new BadRequestException('endAt must not be before startAt.');
+      throw new CodedBadRequestException('SCHEDULE_SLOT_END_BEFORE_START', 'endAt must not be before startAt.');
     }
     const slot = await this.prisma.tenant.productionScheduleSlot.update({ where: { id }, data: dto as any });
     await this.auditService.record({
@@ -102,13 +103,13 @@ export class ProductionScheduleSlotsService {
   async convert(user: RequestUser, id: string) {
     const slot = await this.findOne(user, id);
     if ((slot as any).convertedToProductionOrderId) {
-      throw new ConflictException('This slot was already converted to a production order.');
+      throw new CodedConflictException('SCHEDULE_SLOT_ALREADY_CONVERTED', 'This slot was already converted to a production order.');
     }
     if (!slot.assemblyId) {
-      throw new BadRequestException('This slot has no assembly assigned yet — set one before converting.');
+      throw new CodedBadRequestException('SCHEDULE_SLOT_NO_ASSEMBLY', 'This slot has no assembly assigned yet — set one before converting.');
     }
     if (slot.plannedUnits == null || Number(slot.plannedUnits) <= 0) {
-      throw new BadRequestException('This slot has no planned unit count yet — set one before converting.');
+      throw new CodedBadRequestException('SCHEDULE_SLOT_NO_PLANNED_UNITS', 'This slot has no planned unit count yet — set one before converting.');
     }
 
     const order = await this.productionOrdersService.create(user, {

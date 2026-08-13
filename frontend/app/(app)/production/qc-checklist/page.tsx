@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useQcChecklistItems, useCreateQcChecklistItem, useDeleteQcChecklistItem } from '@/lib/hooks/use-production';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
 export default function QcChecklistPage() {
   const t = useTranslations('production');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: items, isLoading } = useQcChecklistItems();
   const createItem = useCreateQcChecklistItem();
   const deleteItem = useDeleteQcChecklistItem();
@@ -39,7 +40,7 @@ export default function QcChecklistPage() {
       await createItem.mutateAsync(name.trim());
       setName('');
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : tc('error'));
+      setCreateError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -48,7 +49,7 @@ export default function QcChecklistPage() {
     try {
       await deleteItem.mutateAsync(id);
     } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : tc('error'));
+      setRowError(apiErrorMessage(err, tc('error')));
     } finally {
       setPendingDeleteId(null);
     }

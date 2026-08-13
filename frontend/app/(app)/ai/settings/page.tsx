@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAiSettings, useUpdateAiSettings } from '@/lib/hooks/use-ai';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +23,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 export default function AiSettingsPage() {
   const t = useTranslations('ai');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: settings, isLoading } = useAiSettings();
   const updateSettings = useUpdateAiSettings();
 
@@ -48,7 +49,7 @@ export default function AiSettingsPage() {
       setApiKey('');
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -60,7 +61,7 @@ export default function AiSettingsPage() {
       setApiKey('');
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useCreateRole, useUpdateRole, usePermissionsCatalogue } from '@/lib/hooks/use-roles';
 import type { Role, PermissionDefinition } from '@/lib/api-client/roles';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ export interface RoleFormDialogProps {
 export function RoleFormDialog({ open, onOpenChange, role }: RoleFormDialogProps) {
   const t = useTranslations('admin');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: catalogue } = usePermissionsCatalogue();
   const createRole = useCreateRole();
   const updateRole = useUpdateRole();
@@ -68,7 +69,7 @@ export function RoleFormDialog({ open, onOpenChange, role }: RoleFormDialogProps
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

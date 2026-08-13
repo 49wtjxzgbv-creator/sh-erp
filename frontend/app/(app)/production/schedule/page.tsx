@@ -12,7 +12,7 @@ import {
   useConvertProductionScheduleSlot,
 } from '@/lib/hooks/use-production';
 import type { ScheduleSlotLine } from '@/lib/api-client/production';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { ScheduleTimeline } from '@/components/domain/production/schedule-timeline';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,6 +38,7 @@ function toDateInput(d: Date): string {
 export default function ProductionSchedulePage() {
   const t = useTranslations('production');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const [year, setYear] = useState(new Date().getFullYear());
 
@@ -104,6 +105,7 @@ export default function ProductionSchedulePage() {
 function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => void }) {
   const t = useTranslations('production');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const create = useCreateProductionScheduleSlot();
   const update = useUpdateProductionScheduleSlot(slot?.id ?? '');
   const remove = useDeleteProductionScheduleSlot();
@@ -139,7 +141,7 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
       }
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -150,7 +152,7 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
       await remove.mutateAsync(slot.id);
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -161,7 +163,7 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
       await convert.mutateAsync(slot.id);
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

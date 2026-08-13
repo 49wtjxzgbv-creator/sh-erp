@@ -16,7 +16,7 @@ import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -126,6 +126,7 @@ export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: order, isLoading } = useCustomerOrder(params.id);
   const cancelOrder = useCancelCustomerOrder(params.id);
@@ -148,7 +149,7 @@ export default function CustomerOrderDetailPage() {
     try {
       await cancelOrder.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -157,7 +158,7 @@ export default function CustomerOrderDetailPage() {
     try {
       await completeOrder.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -166,7 +167,7 @@ export default function CustomerOrderDetailPage() {
     try {
       await giveItem.mutateAsync({ itemId });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -175,7 +176,7 @@ export default function CustomerOrderDetailPage() {
     try {
       await giveAll.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

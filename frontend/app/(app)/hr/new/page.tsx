@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateEmployee } from '@/lib/hooks/use-hr';
 import { EmployeeForm } from '@/components/domain/hr/employee-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateEmployeeInput } from '@/lib/api-client/hr';
 
 export default function NewEmployeePage() {
   const t = useTranslations('hr');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createEmployee = useCreateEmployee();
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export default function NewEmployeePage() {
       const employee = await createEmployee.mutateAsync(values);
       router.replace(`/hr/${employee.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

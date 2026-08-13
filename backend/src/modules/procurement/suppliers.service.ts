@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
@@ -44,7 +45,7 @@ export class SuppliersService {
 
   async findOne(user: RequestUser, id: string) {
     const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { portalUser: true } });
-    if (!supplier) throw new NotFoundException('Supplier not found.');
+    if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Supplier not found.');
     const { portalUser, ...rest } = supplier as any;
     return {
       ...rest,
@@ -84,7 +85,7 @@ export class SuppliersService {
   async remove(user: RequestUser, id: string) {
     const before = await this.findOne(user, id);
     if (before.deletedAt) {
-      throw new ConflictException('Supplier is already deleted.');
+      throw new CodedConflictException('SUPPLIER_ALREADY_DELETED', 'Supplier is already deleted.');
     }
     const supplier = await this.prisma.tenant.supplier.update({
       where: { id },
@@ -113,16 +114,16 @@ export class SuppliersService {
    */
   async invitePortal(user: RequestUser, id: string, dto: SupplierPortalInviteDto) {
     const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { portalUser: true } });
-    if (!supplier) throw new NotFoundException('Supplier not found.');
+    if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Supplier not found.');
 
     const email = dto.email ?? supplier.email;
     if (!email) {
-      throw new BadRequestException('This supplier has no email on file — provide one in the request body.');
+      throw new CodedBadRequestException('SUPPLIER_NO_EMAIL', 'This supplier has no email on file — provide one in the request body.');
     }
 
     const existingByEmail = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { email } });
     if (existingByEmail && existingByEmail.supplierId !== id) {
-      throw new ConflictException('This email is already used by a different supplier’s portal account.');
+      throw new CodedConflictException('SUPPLIER_PORTAL_EMAIL_IN_USE', 'This email is already used by a different supplier’s portal account.');
     }
 
     const tempPassword = this.generateTempPassword();
@@ -154,7 +155,7 @@ export class SuppliersService {
 
   async deactivatePortal(user: RequestUser, id: string) {
     const portalUser = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { supplierId: id } });
-    if (!portalUser) throw new NotFoundException('This supplier has no portal account.');
+    if (!portalUser) throw new CodedNotFoundException('SUPPLIER_PORTAL_NOT_FOUND', 'This supplier has no portal account.');
 
     const updated = await this.prisma.tenant.supplierPortalUser.update({
       where: { supplierId: id },

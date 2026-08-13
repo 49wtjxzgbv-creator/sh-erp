@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateSupplier } from '@/lib/hooks/use-procurement';
 import { SupplierForm } from '@/components/domain/procurement/supplier-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
 
 export default function NewSupplierPage() {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createSupplier = useCreateSupplier();
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export default function NewSupplierPage() {
       const supplier = await createSupplier.mutateAsync(values);
       router.replace(`/procurement/suppliers/${supplier.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
@@ -82,17 +83,18 @@ export class FilesService {
    */
   async confirmUpload(user: RequestUser, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
-    if (!fileAsset) throw new NotFoundException('File not found.');
+    if (!fileAsset) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
     let head;
     try {
       head = await this.r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: fileAsset.storageKey }));
     } catch {
-      throw new BadRequestException('Upload not found in storage yet — did the PUT to uploadUrl succeed?');
+      throw new CodedBadRequestException('FILE_UPLOAD_NOT_FOUND_IN_STORAGE', 'Upload not found in storage yet — did the PUT to uploadUrl succeed?');
     }
 
     if (head.ContentLength !== undefined && head.ContentLength !== fileAsset.sizeBytes) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'FILE_SIZE_MISMATCH',
         `Uploaded object size (${head.ContentLength}) does not match the declared size (${fileAsset.sizeBytes}).`,
       );
     }
@@ -248,7 +250,7 @@ export class FilesService {
 
   async getDownloadUrl(user: RequestUser, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
-    if (!fileAsset || fileAsset.deletedAt) throw new NotFoundException('File not found.');
+    if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
     const downloadUrl = await getSignedUrl(
       this.r2,
@@ -317,7 +319,7 @@ export class FilesService {
   /** Soft delete only — matches the schema-wide convention; the R2 object is left in place (a lifecycle rule handles real purging, out of scope for this module). */
   async delete(user: RequestUser, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
-    if (!fileAsset || fileAsset.deletedAt) throw new NotFoundException('File not found.');
+    if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
     await this.prisma.tenant.fileAsset.update({
       where: { id: fileAssetId },

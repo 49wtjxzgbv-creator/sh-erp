@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException } from '../../common/api-exceptions';
 import { StockMovementType } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -62,10 +63,10 @@ export class StockService {
    */
   async move(user: RequestUser, dto: MoveStockDto) {
     if (dto.fromWarehouseId === dto.toWarehouseId) {
-      throw new BadRequestException('fromWarehouseId and toWarehouseId must differ.');
+      throw new CodedBadRequestException('STOCK_MOVE_SAME_WAREHOUSE', 'fromWarehouseId and toWarehouseId must differ.');
     }
     if (dto.qty <= 0) {
-      throw new BadRequestException('qty must be positive.');
+      throw new CodedBadRequestException('STOCK_QTY_MUST_BE_POSITIVE', 'qty must be positive.');
     }
 
     const correlationId = randomUUID();

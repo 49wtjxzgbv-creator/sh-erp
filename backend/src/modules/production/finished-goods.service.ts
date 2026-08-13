@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface QueryFinishedGoodsInput {
@@ -28,7 +29,7 @@ export class FinishedGoodsService {
 
   async findOne(user: RequestUser, id: string) {
     const good = await this.prisma.tenant.finishedGood.findUnique({ where: { id } });
-    if (!good) throw new NotFoundException('Finished good not found.');
+    if (!good) throw new CodedNotFoundException('FINISHED_GOOD_NOT_FOUND', 'Finished good not found.');
     return good;
   }
 

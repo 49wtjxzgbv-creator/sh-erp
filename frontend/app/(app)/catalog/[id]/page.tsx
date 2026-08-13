@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useProduct, useUpdateProduct, useDeleteProduct } from '@/lib/hooks/use-catalog';
 import { ProductForm } from '@/components/domain/catalog/product-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -25,6 +25,7 @@ export default function EditProductPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
 
   const { data: product, isLoading } = useProduct(params.id);
@@ -37,7 +38,7 @@ export default function EditProductPage() {
     try {
       await updateProduct.mutateAsync(values);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

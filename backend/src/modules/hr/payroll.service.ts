@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -39,7 +40,7 @@ export class PayrollService {
   async recordManualEntry(user: RequestUser, dto: RecordPayrollEntryDto) {
     const employee = await this.prisma.tenant.employee.findUnique({ where: { id: dto.employeeId } });
     if (!employee) {
-      throw new BadRequestException('Employee not found.');
+      throw new CodedBadRequestException('EMPLOYEE_NOT_FOUND', 'Employee not found.');
     }
 
     const signedAmount = dto.type === 'BONUS' ? Math.abs(dto.amount) : -Math.abs(dto.amount);

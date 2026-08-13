@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useShipment, useMarkShipmentDelivered, useDeleteShipment } from '@/lib/hooks/use-sales';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { ShipmentStatus } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +33,7 @@ export default function ShipmentDetailPage() {
   const router = useRouter();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: shipment, isLoading } = useShipment(params.id);
   const markDelivered = useMarkShipmentDelivered(params.id);
@@ -50,7 +51,7 @@ export default function ShipmentDetailPage() {
     try {
       await markDelivered.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

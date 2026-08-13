@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2, Star } from 'lucide-react';
 import { useWarehouses, useCreateWarehouse, useDeleteWarehouse } from '@/lib/hooks/use-inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import {
 export default function WarehousesPage() {
   const t = useTranslations('inventory');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: warehouses, isLoading } = useWarehouses();
   const createWarehouse = useCreateWarehouse();
   const deleteWarehouse = useDeleteWarehouse();
@@ -42,7 +43,7 @@ export default function WarehousesPage() {
       setName('');
       setIsDefault(false);
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : tc('error'));
+      setCreateError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -51,7 +52,7 @@ export default function WarehousesPage() {
     try {
       await deleteWarehouse.mutateAsync(id);
     } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : tc('error'));
+      setRowError(apiErrorMessage(err, tc('error')));
     } finally {
       setPendingDeleteId(null);
     }

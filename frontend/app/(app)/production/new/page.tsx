@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateProductionOrder } from '@/lib/hooks/use-production';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { WorkerEditor, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 export default function NewProductionOrderPage() {
   const t = useTranslations('production');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createOrder = useCreateProductionOrder();
 
@@ -46,7 +47,7 @@ export default function NewProductionOrderPage() {
       });
       router.replace(`/production/${order.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

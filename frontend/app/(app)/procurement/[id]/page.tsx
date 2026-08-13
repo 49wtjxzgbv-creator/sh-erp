@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { usePurchaseOrder, useReceivePurchaseOrder } from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput } from '@/lib/api-client/procurement';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +27,7 @@ export default function PurchaseOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: order, isLoading } = usePurchaseOrder(params.id);
   const { data: warehouses } = useWarehouses();
@@ -68,7 +69,7 @@ export default function PurchaseOrderDetailPage() {
       setReceivePrice({});
       setSuccess(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

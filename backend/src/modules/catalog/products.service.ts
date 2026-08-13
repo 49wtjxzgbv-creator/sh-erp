@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
@@ -32,7 +33,7 @@ export class ProductsService {
 
   async findOne(user: RequestUser, id: string) {
     const product = await this.prisma.tenant.product.findUnique({ where: { id } });
-    if (!product) throw new NotFoundException('Product not found.');
+    if (!product) throw new CodedNotFoundException('PRODUCT_NOT_FOUND', 'Product not found.');
     return product;
   }
 
@@ -147,10 +148,11 @@ export class ProductsService {
   private translatePrismaError(err: unknown, article?: string): Error {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2002') {
-        return new ConflictException(`A product with article "${article}" already exists.`);
+        return new CodedConflictException('PRODUCT_ARTICLE_ALREADY_EXISTS', `A product with article "${article}" already exists.`);
       }
       if (err.code === 'P2003' || err.code === 'P2025') {
-        return new NotFoundException(
+        return new CodedNotFoundException(
+          'PRODUCT_REFERENCED_ENTITY_NOT_FOUND',
           'Referenced unit or supplier does not exist for this company (composite FK, decision 4).',
         );
       }

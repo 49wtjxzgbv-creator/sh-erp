@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRecordStockMovement, useWarehouses } from '@/lib/hooks/use-inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { SingleWarehouseMovementType } from '@/lib/api-client/inventory';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -33,6 +33,7 @@ export interface RecordMovementDialogProps {
 export function RecordMovementDialog({ open, onOpenChange }: RecordMovementDialogProps) {
   const t = useTranslations('inventory');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: warehouses } = useWarehouses();
   const recordMovement = useRecordStockMovement();
 
@@ -62,7 +63,7 @@ export function RecordMovementDialog({ open, onOpenChange }: RecordMovementDialo
       reset();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

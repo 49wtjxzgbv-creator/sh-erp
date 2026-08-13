@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateShipment } from '@/lib/hooks/use-sales';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { CustomerOrderPicker } from '@/components/domain/sales/customer-order-picker';
 import { FinishedGoodSelector } from '@/components/domain/sales/finished-good-selector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 export default function NewShipmentPage() {
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createShipment = useCreateShipment();
 
@@ -48,7 +49,7 @@ export default function NewShipmentPage() {
       });
       router.replace(`/sales/shipments/${shipment.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

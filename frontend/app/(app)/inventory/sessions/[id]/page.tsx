@@ -11,7 +11,7 @@ import {
 } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,7 @@ export default function InventorySessionDetailPage() {
   const t = useTranslations('inventory');
   const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: sessions } = useInventorySessions();
   const session = sessions?.find((s) => s.id === params.id);
@@ -60,7 +61,7 @@ export default function InventorySessionDetailPage() {
       await recordCount.mutateAsync({ productId, actualQty: Number(value) });
       setDrafts((d) => ({ ...d, [productId]: '' }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -70,7 +71,7 @@ export default function InventorySessionDetailPage() {
       const result = await completeSession.mutateAsync();
       setCompleteResult(result.discrepanciesReconciled);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

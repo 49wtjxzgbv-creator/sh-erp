@@ -10,7 +10,7 @@ import { updateProduct, bulkDeleteProducts, type Product } from '@/lib/api-clien
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { recordStockMovement } from '@/lib/api-client/inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Avatar } from '@/components/ui/avatar';
 import {
@@ -64,6 +64,7 @@ import { cn } from '@/lib/utils';
 export default function ProductGridPage() {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const qc = useQueryClient();
 
   const { data, isLoading } = useProducts({ limit: 200 });
@@ -160,7 +161,7 @@ export default function ProductGridPage() {
       }
       qc.invalidateQueries({ queryKey: ['products'] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     } finally {
       setSavingCell(null);
     }
@@ -187,7 +188,7 @@ export default function ProductGridPage() {
       const missing = ids.length - deletedCount;
       if (missing > 0) setError(t('gridBulkDeletePartialFailure', { count: missing }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
     setDeleting(false);
     setDeleteConfirmOpen(false);

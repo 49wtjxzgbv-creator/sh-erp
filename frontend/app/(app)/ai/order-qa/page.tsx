@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAskAboutCustomerOrder } from '@/lib/hooks/use-ai';
 import { CustomerOrderPicker } from '@/components/domain/sales/customer-order-picker';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 export default function AiOrderQaPage() {
   const t = useTranslations('ai');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const askAboutOrder = useAskAboutCustomerOrder();
 
   const [orderId, setOrderId] = useState<string | undefined>(undefined);
@@ -35,7 +36,7 @@ export default function AiOrderQaPage() {
       const result = await askAboutOrder.mutateAsync({ customerOrderId: orderId, question: question.trim() });
       setAnswer(result.answer);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

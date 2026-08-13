@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { signupCompany } from '@/lib/api-client/auth';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +27,7 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function RegisterPage() {
   const t = useTranslations('auth');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -42,7 +43,7 @@ export default function RegisterPage() {
       const company = await signupCompany(values);
       router.replace(`/login?next=/dashboard&companySlug=${encodeURIComponent(company.slug)}`);
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : tc('error'));
+      setFormError(apiErrorMessage(err, tc('error')));
     }
   }
 

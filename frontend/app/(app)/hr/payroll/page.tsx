@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useRecordPayrollEntry, usePayrollEntries } from '@/lib/hooks/use-hr';
 import { EmployeePicker } from '@/components/domain/hr/employee-picker';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { ManualPayrollEntryType, PayrollEntryType } from '@/lib/api-client/hr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ const PAGE_SIZE = 50;
 export default function PayrollPage() {
   const t = useTranslations('hr');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const recordEntry = useRecordPayrollEntry();
 
   const [employeeId, setEmployeeId] = useState<string | undefined>(undefined);
@@ -55,7 +56,7 @@ export default function PayrollPage() {
       setComment('');
       setSuccess(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

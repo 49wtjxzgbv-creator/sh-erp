@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingBlock } from '@/components/ui/loading-block';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import {
   useImportProviders,
   useConnections,
@@ -115,6 +115,7 @@ function ConnectionsListView({
   onPairing: (connectionId: string) => void;
 }) {
   const t = useTranslations('legacyImport');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: connections, isLoading } = useConnections();
   const healthCheck = useHealthCheck();
   const revoke = useRevokeConnection();
@@ -151,7 +152,7 @@ function ConnectionsListView({
               try {
                 await healthCheck.mutateAsync(connection.id);
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : t('genericError'));
+                setError(apiErrorMessage(err, t('genericError')));
               }
             }}
             onRevoke={async () => {
@@ -159,7 +160,7 @@ function ConnectionsListView({
               try {
                 await revoke.mutateAsync(connection.id);
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : t('genericError'));
+                setError(apiErrorMessage(err, t('genericError')));
               }
             }}
             onReconnect={async () => {
@@ -168,7 +169,7 @@ function ConnectionsListView({
                 await reconnect.mutateAsync(connection.id);
                 onPairing(connection.id); // reconnect regenerates a pairing code on the same connection — show the pairing screen, not the run screen
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : t('genericError'));
+                setError(apiErrorMessage(err, t('genericError')));
               }
             }}
             healthCheckPending={healthCheck.isPending}
@@ -267,6 +268,7 @@ function HealthDiagnostics({ health }: { health: ConnectorHealth }) {
 function AddSourceView({ onCreated, onBack }: { onCreated: (connectionId: string) => void; onBack: () => void }) {
   const t = useTranslations('legacyImport');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: providers } = useImportProviders();
   const startConnection = useStartConnection();
   const [label, setLabel] = useState('');
@@ -279,7 +281,7 @@ function AddSourceView({ onCreated, onBack }: { onCreated: (connectionId: string
       const created = await startConnection.mutateAsync({ providerType, label: label.trim() || undefined });
       onCreated(created.id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -326,6 +328,7 @@ function AddSourceView({ onCreated, onBack }: { onCreated: (connectionId: string
 function PairingView({ connectionId, onDone, onBack }: { connectionId: string; onDone: () => void; onBack: () => void }) {
   const t = useTranslations('legacyImport');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const connectionQuery = useConnection(connectionId);
   const connection = connectionQuery.data;
 
@@ -391,6 +394,7 @@ function PairingView({ connectionId, onDone, onBack }: { connectionId: string; o
 function RunImportView({ connectionId, onBack }: { connectionId: string; onBack: () => void }) {
   const t = useTranslations('legacyImport');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const [report, setReport] = useState<ImportReport | null>(null);
   const [jobId, setJobId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -405,7 +409,7 @@ function RunImportView({ connectionId, onBack }: { connectionId: string; onBack:
       const result = await validateImport.mutateAsync(connectionId);
       setReport(result);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -415,7 +419,7 @@ function RunImportView({ connectionId, onBack }: { connectionId: string; onBack:
       const job = await startImport.mutateAsync({ connectionId, dryRun: false });
       setJobId(job.id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

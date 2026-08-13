@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { CodedBadRequestException } from '../../common/api-exceptions';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -67,7 +68,7 @@ export class ProductsController {
     @UploadedFile() file: Express.Multer.File,
     @Query('updateQuantities') updateQuantities?: string,
   ) {
-    if (!file) throw new BadRequestException('No file uploaded (expected multipart field "file").');
+    if (!file) throw new CodedBadRequestException('IMPORT_NO_FILE_UPLOADED', 'No file uploaded (expected multipart field "file").');
     return this.importExportService.importProducts(user, file.buffer, updateQuantities === 'true');
   }
 

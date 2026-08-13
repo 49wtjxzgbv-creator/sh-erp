@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { CodedBadRequestException } from '../../../common/api-exceptions';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RequestUser } from '../../../common/decorators/current-user.decorator';
@@ -80,11 +81,11 @@ export class ProductsImportExportService {
     try {
       await workbook.xlsx.load(fileBuffer as any);
     } catch {
-      throw new BadRequestException('Could not read this file as an .xlsx workbook.');
+      throw new CodedBadRequestException('IMPORT_NOT_A_WORKBOOK', 'Could not read this file as an .xlsx workbook.');
     }
     const worksheet = workbook.worksheets[0];
     if (!worksheet || worksheet.rowCount < 2) {
-      throw new BadRequestException('The file is empty (no data rows found).');
+      throw new CodedBadRequestException('IMPORT_FILE_EMPTY', 'The file is empty (no data rows found).');
     }
 
     const headerRow = worksheet.getRow(1);
@@ -94,7 +95,8 @@ export class ProductsImportExportService {
     const headerMap = buildHeaderMap(rawHeaders);
     const mappedFields = new Set(Object.values(headerMap));
     if (!mappedFields.has('article') || !mappedFields.has('name')) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'IMPORT_MISSING_REQUIRED_COLUMNS',
         'Could not find "Article"/"Артикул" and/or "Name"/"Назва" columns in this file (check the column headers).',
       );
     }

@@ -18,6 +18,7 @@ import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine } from '@/lib/api-client/production';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
@@ -87,6 +88,7 @@ export default function ProductionOrderDetailPage() {
   const t = useTranslations('production');
   const tb = useTranslations('bom');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: order, isLoading } = useProductionOrder(params.id);
   const { data: stages } = useProductionStages();
@@ -130,7 +132,7 @@ export default function ProductionOrderDetailPage() {
     try {
       await setWorkers.mutateAsync(workers);
     } catch (err) {
-      setWorkersError(err instanceof ApiError ? err.message : tc('error'));
+      setWorkersError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -139,7 +141,7 @@ export default function ProductionOrderDetailPage() {
     try {
       await cancelOrder.mutateAsync();
     } catch (err) {
-      setCancelError(err instanceof ApiError ? err.message : tc('error'));
+      setCancelError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -149,7 +151,7 @@ export default function ProductionOrderDetailPage() {
     try {
       await startOrder.mutateAsync({ warehouseId });
     } catch (err) {
-      setStartError(err instanceof ApiError ? err.message : tc('error'));
+      setStartError(apiErrorMessage(err, tc('error')));
       const shortages = err instanceof ApiError ? (err.body as { shortages?: ProductionShortageLine[] } | undefined)?.shortages : undefined;
       setStartShortages(shortages ?? []);
     }
@@ -160,7 +162,7 @@ export default function ProductionOrderDetailPage() {
     try {
       await advanceStage.mutateAsync();
     } catch (err) {
-      setAdvanceError(err instanceof ApiError ? err.message : tc('error'));
+      setAdvanceError(apiErrorMessage(err, tc('error')));
     }
   }
 

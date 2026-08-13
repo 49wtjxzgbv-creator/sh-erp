@@ -6,7 +6,7 @@ import { useUsers, useUpdateUserRole, useDeactivateUser } from '@/lib/hooks/use-
 import { useRoles } from '@/lib/hooks/use-roles';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { InviteUserDialog } from '@/components/domain/admin/invite-user-dialog';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 export default function AdminUsersPage() {
   const t = useTranslations('admin');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const currentUserId = useSessionStore((s) => s.userId);
   const { data: users, isLoading } = useUsers();
   const { data: roles } = useRoles();
@@ -31,7 +32,7 @@ export default function AdminUsersPage() {
     try {
       await updateRole.mutateAsync({ userId, roleId });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -40,7 +41,7 @@ export default function AdminUsersPage() {
     try {
       await deactivate.mutateAsync(userId);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     } finally {
       setConfirmingUserId(null);
     }

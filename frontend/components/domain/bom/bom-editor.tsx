@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import type { AssemblyComponentLineInput, ComponentType } from '@/lib/api-client/bom';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
@@ -45,6 +45,7 @@ export interface BomEditorProps {
 export function BomEditor({ assemblyId }: BomEditorProps) {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: serverComponents, isLoading } = useAssemblyComponents(assemblyId);
   const { data: warehouses } = useWarehouses();
   const setComponents = useSetAssemblyComponents(assemblyId);
@@ -112,7 +113,7 @@ export function BomEditor({ assemblyId }: BomEditorProps) {
       await setComponents.mutateAsync(payload);
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEmployee, useUpdateEmployee, useDeactivateEmployee, useReactivateEmployee } from '@/lib/hooks/use-hr';
 import { EmployeeForm } from '@/components/domain/hr/employee-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateEmployeeInput } from '@/lib/api-client/hr';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export default function EmployeeDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('hr');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: employee, isLoading } = useEmployee(params.id);
   const updateEmployee = useUpdateEmployee(params.id);
@@ -37,7 +38,7 @@ export default function EmployeeDetailPage() {
     try {
       await updateEmployee.mutateAsync(values);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -46,7 +47,7 @@ export default function EmployeeDetailPage() {
     try {
       await deactivateEmployee.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -55,7 +56,7 @@ export default function EmployeeDetailPage() {
     try {
       await reactivateEmployee.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

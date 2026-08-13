@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useLowStockDigestPreview, useSendLowStockDigestNow } from '@/lib/hooks/use-notifications';
 import { useCompanySettings } from '@/lib/hooks/use-settings';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 export default function NotificationsPage() {
   const t = useTranslations('notifications');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: settings } = useCompanySettings();
   const { data: preview, isLoading: previewLoading, refetch } = useLowStockDigestPreview();
   const sendNow = useSendLowStockDigestNow();
@@ -40,7 +41,7 @@ export default function NotificationsPage() {
       setSendResult(result);
       refetch();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

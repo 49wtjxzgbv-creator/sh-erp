@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PurchaseOrdersService } from '../procurement/purchase-orders.service';
@@ -59,7 +60,7 @@ export class CustomerOrderShortageService {
 
   async previewShortage(user: RequestUser, orderId: string): Promise<{ orderId: string; groups: SupplierGroup[] }> {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
-    if (!order) throw new NotFoundException('Customer order not found.');
+    if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
     const productPool = new Map<string, number>();
     const assemblyBuyPool = new Map<string, number>();
@@ -132,7 +133,7 @@ export class CustomerOrderShortageService {
    */
   async createPurchaseOrdersFromGroups(user: RequestUser, orderId: string, dto: CreatePurchaseOrdersFromGroupsDto) {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Customer order not found.');
+    if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
     const created = [];
     for (const group of dto.groups) {
@@ -166,7 +167,7 @@ export class CustomerOrderShortageService {
     visited: Set<string>,
   ): Promise<void> {
     if (visited.has(assemblyId)) {
-      throw new ConflictException(`Circular BOM detected while expanding assembly ${assemblyId}.`);
+      throw new CodedConflictException('BOM_CIRCULAR_EXPAND', `Circular BOM detected while expanding assembly ${assemblyId}.`);
     }
     visited.add(assemblyId);
 

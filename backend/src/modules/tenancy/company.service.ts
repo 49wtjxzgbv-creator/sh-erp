@@ -1,4 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedConflictException } from '../../common/api-exceptions';
 import * as argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -62,11 +63,11 @@ export class CompanyService {
   async createCompany(dto: CreateCompanyDto) {
     const existingSlug = await this.prisma.company.findUnique({ where: { slug: dto.slug } });
     if (existingSlug) {
-      throw new ConflictException('This slug is already taken.');
+      throw new CodedConflictException('COMPANY_SLUG_TAKEN', 'This slug is already taken.');
     }
     const existingUser = await this.prisma.user.findUnique({ where: { email: dto.ownerEmail } });
     if (existingUser) {
-      throw new ConflictException('A user with this email already exists.');
+      throw new CodedConflictException('COMPANY_OWNER_EMAIL_EXISTS', 'A user with this email already exists.');
     }
 
     const passwordHash = await argon2.hash(dto.ownerPassword);

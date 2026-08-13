@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -59,7 +60,7 @@ export class CustomerOrdersService {
 
   async findOne(user: RequestUser, id: string) {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id }, include: { items: true } });
-    if (!order) throw new NotFoundException('Customer order not found.');
+    if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
     return order;
   }
 
@@ -158,7 +159,7 @@ export class CustomerOrdersService {
   async cancel(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
-      throw new BadRequestException(`Cannot cancel a ${order.status} order.`);
+      throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_CANCEL_TERMINAL', `Cannot cancel a ${order.status} order.`);
     }
     const updated = await this.prisma.tenant.customerOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
     await this.auditService.record({
@@ -181,7 +182,7 @@ export class CustomerOrdersService {
   async complete(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
-      throw new BadRequestException(`Cannot complete a ${order.status} order.`);
+      throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_COMPLETE_TERMINAL', `Cannot complete a ${order.status} order.`);
     }
     const updated = await this.prisma.tenant.customerOrder.update({ where: { id }, data: { status: 'COMPLETED' } });
     await this.auditService.record({
@@ -206,9 +207,9 @@ export class CustomerOrdersService {
   async giveItemToProduction(user: RequestUser, orderId: string, itemId: string, dto: GiveItemToProductionDto) {
     const order = await this.findOne(user, orderId);
     const item = (order.items as any[]).find((i) => i.id === itemId);
-    if (!item) throw new NotFoundException('This item does not belong to this customer order.');
+    if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
     if (item.productionOrderId) {
-      throw new BadRequestException('This line has already been given to production.');
+      throw new CodedBadRequestException('CUSTOMER_ORDER_ITEM_ALREADY_IN_PRODUCTION', 'This line has already been given to production.');
     }
 
     const productionOrder = await this.productionOrdersService.create(user, {

@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateAssembly } from '@/lib/hooks/use-bom';
 import { AssemblyForm } from '@/components/domain/bom/assembly-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { CreateAssemblyInput } from '@/lib/api-client/bom';
 
 export default function NewAssemblyPage() {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createAssembly = useCreateAssembly();
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export default function NewAssemblyPage() {
       }
       router.replace(`/bom/${assembly.id}/components`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

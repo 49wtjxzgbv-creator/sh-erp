@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useSupplier, useUpdateSupplier, useDeleteSupplier, useInvitePortal, useDeactivatePortal } from '@/lib/hooks/use-procurement';
 import { SupplierForm } from '@/components/domain/procurement/supplier-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import {
 function SupplierPortalCard({ supplierId }: { supplierId: string }) {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: supplier } = useSupplier(supplierId);
   const invite = useInvitePortal(supplierId);
   const deactivate = useDeactivatePortal(supplierId);
@@ -45,7 +46,7 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
       const res = await invite.mutateAsync({});
       setTempPassword(res.tempPassword);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -54,7 +55,7 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
     try {
       await deactivate.mutateAsync();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -118,6 +119,7 @@ export default function SupplierDetailPage() {
   const router = useRouter();
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: supplier, isLoading } = useSupplier(params.id);
   const updateSupplier = useUpdateSupplier(params.id);
@@ -129,7 +131,7 @@ export default function SupplierDetailPage() {
     try {
       await updateSupplier.mutateAsync(values);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

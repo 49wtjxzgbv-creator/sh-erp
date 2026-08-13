@@ -10,7 +10,7 @@ import {
   useQcChecksForFinishedGood,
   useRecordQcCheck,
 } from '@/lib/hooks/use-production';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { QcResult, QcCheckResultLine, FinishedGoodStatus } from '@/lib/api-client/production';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,7 @@ export default function FinishedGoodDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('production');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: fg, isLoading } = useFinishedGood(params.id);
   const { data: checklistItems } = useQcChecklistItems();
@@ -78,7 +79,7 @@ export default function FinishedGoodDetailPage() {
       setSuccess(true);
       setComment('');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRecognizeInvoice } from '@/lib/hooks/use-ai';
 import type { InvoiceRecognitionLine } from '@/lib/api-client/ai';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 export default function AiInvoicePage() {
   const t = useTranslations('ai');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const recognize = useRecognizeInvoice();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,7 +50,7 @@ export default function AiInvoicePage() {
       const result = await recognize.mutateAsync({ base64Image: preview.base64, mimeType: preview.mimeType });
       setLines(result);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

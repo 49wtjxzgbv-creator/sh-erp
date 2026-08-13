@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCreatePurchaseOrder } from '@/lib/hooks/use-procurement';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreatePurchaseOrderItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
@@ -34,6 +34,7 @@ function newRowKey() {
 export default function NewPurchaseOrderPage() {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createOrder = useCreatePurchaseOrder();
 
@@ -106,7 +107,7 @@ export default function NewPurchaseOrderPage() {
       });
       router.replace(`/procurement/${order.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -62,7 +63,7 @@ export class PurchaseOrdersService {
 
   async findOne(user: RequestUser, id: string) {
     const order = await this.prisma.tenant.purchaseOrder.findUnique({ where: { id }, include: { items: true } });
-    if (!order) throw new NotFoundException('Purchase order not found.');
+    if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
     return order;
   }
 
@@ -92,7 +93,7 @@ export class PurchaseOrdersService {
   async receive(user: RequestUser, id: string, dto: ReceivePurchaseOrderDto) {
     const order = await this.findOne(user, id);
     if (order.status === 'DELIVERED') {
-      throw new BadRequestException('This purchase order is already fully delivered.');
+      throw new CodedBadRequestException('PURCHASE_ORDER_ALREADY_DELIVERED', 'This purchase order is already fully delivered.');
     }
 
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
@@ -104,7 +105,7 @@ export class PurchaseOrdersService {
     for (const line of dto.lines) {
       const item = itemsById.get(line.purchaseOrderItemId);
       if (!item) {
-        throw new NotFoundException(`Purchase order item ${line.purchaseOrderItemId} does not belong to this order.`);
+        throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', `Purchase order item ${line.purchaseOrderItemId} does not belong to this order.`);
       }
 
       await this.prisma.tenant.purchaseOrderItem.update({
@@ -154,7 +155,8 @@ export class PurchaseOrdersService {
   private async resolveDefaultWarehouseId(): Promise<string> {
     const warehouse = await this.prisma.tenant.warehouse.findFirst({ where: { isDefault: true, deletedAt: null } });
     if (!warehouse) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'PROCUREMENT_NO_DEFAULT_WAREHOUSE',
         'No default warehouse configured and none specified — cannot determine where to receive stock into.',
       );
     }

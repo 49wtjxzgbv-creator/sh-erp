@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateProduct } from '@/lib/hooks/use-catalog';
 import { ProductForm } from '@/components/domain/catalog/product-form';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
 
 export default function NewProductPage() {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createProduct = useCreateProduct();
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export default function NewProductPage() {
       }
       router.replace(`/catalog/${product.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

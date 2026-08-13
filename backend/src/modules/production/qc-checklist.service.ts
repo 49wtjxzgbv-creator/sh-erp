@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateQcChecklistItemDto } from './dto/qc-checklist-item.dto';
@@ -35,7 +36,7 @@ export class QcChecklistService {
   /** Hard delete — QcCheckResult snapshots the item's name as text at check time, so it never breaks. */
   async remove(user: RequestUser, id: string) {
     const item = await this.prisma.tenant.qcChecklistItem.findUnique({ where: { id } });
-    if (!item) throw new NotFoundException('QC checklist item not found.');
+    if (!item) throw new CodedNotFoundException('QC_CHECKLIST_ITEM_NOT_FOUND', 'QC checklist item not found.');
     await this.prisma.tenant.qcChecklistItem.delete({ where: { id } });
     await this.auditService.record({
       companyId: user.companyId,

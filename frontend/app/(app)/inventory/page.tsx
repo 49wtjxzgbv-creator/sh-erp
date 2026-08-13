@@ -9,7 +9,7 @@ import { useStockLevels, useWarehouses } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { updateProduct } from '@/lib/api-client/catalog';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { WarehouseStock } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ export default function StockLevelsPage() {
   const t = useTranslations('inventory');
   const tCatalog = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const qc = useQueryClient();
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
@@ -75,7 +76,7 @@ export default function StockLevelsPage() {
       await updateProduct(productId, { cell: value });
       qc.invalidateQueries({ queryKey: ['products'] });
     } catch (err) {
-      setCellError(err instanceof ApiError ? err.message : tc('error'));
+      setCellError(apiErrorMessage(err, tc('error')));
     } finally {
       setSavingCell(null);
     }

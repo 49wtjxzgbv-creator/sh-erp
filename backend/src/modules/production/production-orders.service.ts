@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
@@ -61,14 +62,15 @@ export class ProductionOrdersService {
    */
   async create(user: RequestUser, dto: CreateProductionOrderDto) {
     const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
-    if (!assembly) throw new NotFoundException('Assembly not found.');
+    if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
 
     const latestVersion = await this.prisma.tenant.assemblyVersion.findFirst({
       where: { assemblyId: dto.assemblyId },
       orderBy: { versionNumber: 'desc' },
     });
     if (!latestVersion) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'PRODUCTION_NO_BOM_SAVED',
         'This assembly has no saved BOM yet — save its component list (PUT /assemblies/:id/components) before creating a production order.',
       );
     }
@@ -111,7 +113,7 @@ export class ProductionOrdersService {
       where: { id },
       include: { workers: true, pickListItems: true, stageEvents: true, finishedGoods: true },
     });
-    if (!order) throw new NotFoundException('Production order not found.');
+    if (!order) throw new CodedNotFoundException('PRODUCTION_ORDER_NOT_FOUND', 'Production order not found.');
     return order;
   }
 
@@ -132,7 +134,7 @@ export class ProductionOrdersService {
   async setWorkers(user: RequestUser, id: string, dto: SetProductionOrderWorkersDto) {
     const order = await this.findOne(user, id);
     if (order.status !== 'PLANNED') {
-      throw new BadRequestException('Workers can only be (re)assigned while the order is still PLANNED.');
+      throw new CodedBadRequestException('PRODUCTION_WORKERS_ONLY_WHILE_PLANNED', 'Workers can only be (re)assigned while the order is still PLANNED.');
     }
     if (dto.workers.length > 0) this.assertPercentagesNormalizable(dto.workers);
 
@@ -147,7 +149,7 @@ export class ProductionOrdersService {
   async cancel(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status !== 'PLANNED') {
-      throw new BadRequestException('Only a PLANNED production order can be cancelled.');
+      throw new CodedBadRequestException('PRODUCTION_CANCEL_ONLY_PLANNED', 'Only a PLANNED production order can be cancelled.');
     }
     const cancelled = await this.prisma.tenant.productionOrder.update({
       where: { id },
@@ -172,20 +174,23 @@ export class ProductionOrdersService {
   async start(user: RequestUser, id: string, dto: StartProductionOrderDto) {
     const order = await this.findOne(user, id);
     if (order.status !== 'PLANNED') {
-      throw new BadRequestException('Only a PLANNED production order can be started.');
+      throw new CodedBadRequestException('PRODUCTION_START_ONLY_PLANNED', 'Only a PLANNED production order can be started.');
     }
     if (!order.assemblyVersionId) {
-      throw new ConflictException('This order has no locked BOM version — cannot start (pre-versioning legacy data, Phase 1 §6.4).');
+      throw new CodedConflictException(
+        'PRODUCTION_NO_LOCKED_BOM_VERSION',
+        'This order has no locked BOM version — cannot start (pre-versioning legacy data, Phase 1 §6.4).',
+      );
     }
 
     const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: order.assemblyId } });
-    if (!assembly) throw new NotFoundException('Assembly not found.');
+    if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
 
     const version = await this.prisma.tenant.assemblyVersion.findUnique({
       where: { id: order.assemblyVersionId },
       include: { components: true },
     });
-    if (!version) throw new NotFoundException('Locked assembly version not found.');
+    if (!version) throw new CodedNotFoundException('PRODUCTION_LOCKED_VERSION_NOT_FOUND', 'Locked assembly version not found.');
 
     const unitsPlanned = Number(order.unitsPlanned);
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
@@ -218,10 +223,11 @@ export class ProductionOrdersService {
     }
 
     if (shortages.length > 0) {
-      throw new BadRequestException({
-        message: 'Insufficient stock/finished goods to start this production order.',
-        shortages,
-      });
+      throw new CodedBadRequestException(
+        'PRODUCTION_INSUFFICIENT_STOCK',
+        'Insufficient stock/finished goods to start this production order.',
+        { shortages },
+      );
     }
 
     // ---- Pass 2: consume ----
@@ -288,7 +294,10 @@ export class ProductionOrdersService {
       // pass 1 and pass 2 within the same transaction only if this method
       // itself raced with itself, which it cannot inside one transaction.
       if (consumed.length < takeCount) {
-        throw new ConflictException(`Not enough IN_STOCK finished goods for sub-assembly ${subAssemblyId}.`);
+        throw new CodedConflictException(
+          'PRODUCTION_SUBASSEMBLY_STOCK_RACE',
+          `Not enough IN_STOCK finished goods for sub-assembly ${subAssemblyId}.`,
+        );
       }
 
       const subAssembly = await this.prisma.tenant.assembly.findUnique({ where: { id: subAssemblyId } });
@@ -406,12 +415,15 @@ export class ProductionOrdersService {
   async advanceStage(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status !== 'IN_PROGRESS' || order.currentStageIndex === null) {
-      throw new BadRequestException('Only an IN_PROGRESS order with an active stage can be advanced.');
+      throw new CodedBadRequestException('PRODUCTION_ADVANCE_ONLY_IN_PROGRESS', 'Only an IN_PROGRESS order with an active stage can be advanced.');
     }
 
     const stages = await this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
     if (stages.length === 0) {
-      throw new ConflictException('No production stages are configured — this order should already be COMPLETED.');
+      throw new CodedConflictException(
+        'PRODUCTION_NO_STAGES_CONFIGURED',
+        'No production stages are configured — this order should already be COMPLETED.',
+      );
     }
 
     await this.prisma.tenant.productionOrderStageEvent.create({
@@ -459,22 +471,23 @@ export class ProductionOrdersService {
     const seen = new Set<string>();
     for (const w of workers) {
       if (seen.has(w.employeeId)) {
-        throw new ConflictException(`Employee ${w.employeeId} is listed more than once.`);
+        throw new CodedConflictException('PRODUCTION_WORKER_DUPLICATE', `Employee ${w.employeeId} is listed more than once.`);
       }
       seen.add(w.employeeId);
       if (w.percent < 0) {
-        throw new BadRequestException('percent must be non-negative.');
+        throw new CodedBadRequestException('PRODUCTION_WORKER_PERCENT_NEGATIVE', 'percent must be non-negative.');
       }
     }
     if (workers.every((w) => w.percent === 0)) {
-      throw new BadRequestException('At least one worker must have a nonzero percent.');
+      throw new CodedBadRequestException('PRODUCTION_WORKER_PERCENT_ALL_ZERO', 'At least one worker must have a nonzero percent.');
     }
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {
     const warehouse = await this.prisma.tenant.warehouse.findFirst({ where: { isDefault: true, deletedAt: null } });
     if (!warehouse) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'PRODUCTION_NO_DEFAULT_WAREHOUSE',
         'No default warehouse configured and none specified — cannot determine where to consume components from.',
       );
     }

@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,7 +66,7 @@ export class InventorySessionsService {
       where: { inventorySessionId: sessionId, productId: dto.productId },
     });
     if (!item) {
-      throw new NotFoundException('This product is not part of this inventory session.');
+      throw new CodedNotFoundException('INVENTORY_SESSION_PRODUCT_NOT_FOUND', 'This product is not part of this inventory session.');
     }
     return this.prisma.tenant.inventoryItem.update({
       where: { id: item.id },
@@ -95,7 +96,7 @@ export class InventorySessionsService {
       where: { isDefault: true, deletedAt: null },
     });
     if (!defaultWarehouse) {
-      throw new BadRequestException('No default warehouse configured — cannot post reconciliation adjustments.');
+      throw new CodedBadRequestException('INVENTORY_NO_DEFAULT_WAREHOUSE', 'No default warehouse configured — cannot post reconciliation adjustments.');
     }
 
     const items = await this.prisma.tenant.inventoryItem.findMany({
@@ -136,14 +137,14 @@ export class InventorySessionsService {
 
   private async getSessionOrThrow(sessionId: string) {
     const session = await this.prisma.tenant.inventorySession.findUnique({ where: { id: sessionId } });
-    if (!session) throw new NotFoundException('Inventory session not found.');
+    if (!session) throw new CodedNotFoundException('INVENTORY_SESSION_NOT_FOUND', 'Inventory session not found.');
     return session;
   }
 
   private async getOpenSession(sessionId: string) {
     const session = await this.getSessionOrThrow(sessionId);
     if (session.status !== 'IN_PROGRESS') {
-      throw new BadRequestException('This inventory session is already completed.');
+      throw new CodedBadRequestException('INVENTORY_SESSION_ALREADY_COMPLETED', 'This inventory session is already completed.');
     }
     return session;
   }

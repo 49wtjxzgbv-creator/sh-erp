@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Trash2, Plus } from 'lucide-react';
 import { useCompanyUnits, useCreateCompanyUnit, useDeleteCompanyUnit } from '@/lib/hooks/use-catalog';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 export default function CompanyUnitsPage() {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: units, isLoading } = useCompanyUnits();
   const createUnit = useCreateCompanyUnit();
   const deleteUnit = useDeleteCompanyUnit();
@@ -29,7 +30,7 @@ export default function CompanyUnitsPage() {
       await createUnit.mutateAsync({ name: name.trim() });
       setName('');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -38,7 +39,7 @@ export default function CompanyUnitsPage() {
     try {
       await deleteUnit.mutateAsync(id);
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : tc('error'));
+      setDeleteError(apiErrorMessage(err, tc('error')));
     }
   }
 

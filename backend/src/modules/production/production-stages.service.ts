@@ -1,5 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateProductionStageDto, ReorderProductionStagesDto } from './dto/production-stage.dto';
@@ -45,7 +46,7 @@ export class ProductionStagesService {
     const existing = await this.list(user);
     const existingIds = new Set(existing.map((s) => s.id));
     if (dto.orderedIds.length !== existing.length || !dto.orderedIds.every((id) => existingIds.has(id))) {
-      throw new ConflictException('orderedIds must contain exactly every existing stage id, once each.');
+      throw new CodedConflictException('PRODUCTION_STAGE_REORDER_MISMATCH', 'orderedIds must contain exactly every existing stage id, once each.');
     }
 
     for (let i = 0; i < dto.orderedIds.length; i++) {
@@ -76,7 +77,7 @@ export class ProductionStagesService {
    */
   async remove(user: RequestUser, id: string) {
     const stage = await this.prisma.tenant.productionStage.findUnique({ where: { id } });
-    if (!stage) throw new NotFoundException('Production stage not found.');
+    if (!stage) throw new CodedNotFoundException('PRODUCTION_STAGE_NOT_FOUND', 'Production stage not found.');
 
     await this.prisma.tenant.productionStage.delete({ where: { id } });
 

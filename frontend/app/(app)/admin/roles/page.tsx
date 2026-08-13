@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useRoles, useDeleteRole } from '@/lib/hooks/use-roles';
 import type { Role } from '@/lib/api-client/roles';
 import { RoleFormDialog } from '@/components/domain/admin/role-form-dialog';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 export default function AdminRolesPage() {
   const t = useTranslations('admin');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: roles, isLoading } = useRoles();
   const deleteRole = useDeleteRole();
 
@@ -37,7 +38,7 @@ export default function AdminRolesPage() {
     try {
       await deleteRole.mutateAsync(id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     } finally {
       setConfirmingId(null);
     }

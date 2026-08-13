@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { usePlans, useSubscription, useUpdateSubscription } from '@/lib/hooks/use-billing';
 import type { PlanKey } from '@/lib/api-client/billing';
 import { toNumber } from '@/lib/api-client/decimal';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 export default function BillingPage() {
   const t = useTranslations('billing');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: plans, isLoading: plansLoading } = usePlans();
   const { data: subscription, isLoading: subscriptionLoading } = useSubscription();
   const updateSubscription = useUpdateSubscription();
@@ -35,7 +36,7 @@ export default function BillingPage() {
     try {
       await updateSubscription.mutateAsync(planKey);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     } finally {
       setSwitchingTo(null);
     }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAskHelp } from '@/lib/hooks/use-ai';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 export default function AiHelpPage() {
   const t = useTranslations('ai');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const askHelp = useAskHelp();
 
   const [question, setQuestion] = useState('');
@@ -33,7 +34,7 @@ export default function AiHelpPage() {
       const result = await askHelp.mutateAsync(question.trim());
       setAnswer(result.answer);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,11 +33,12 @@ export class ShipmentsService {
       where: { id: { in: dto.finishedGoodIds } },
     });
     if (finishedGoods.length !== dto.finishedGoodIds.length) {
-      throw new NotFoundException('One or more finished goods were not found.');
+      throw new CodedNotFoundException('SHIPMENT_FINISHED_GOODS_NOT_FOUND', 'One or more finished goods were not found.');
     }
     const notInStock = finishedGoods.filter((g) => g.status !== 'IN_STOCK');
     if (notInStock.length > 0) {
-      throw new ConflictException(
+      throw new CodedConflictException(
+        'SHIPMENT_GOODS_NOT_IN_STOCK',
         `Cannot ship finished goods that are not IN_STOCK: ${notInStock.map((g) => g.serialNumber).join(', ')}.`,
       );
     }
@@ -78,7 +80,7 @@ export class ShipmentsService {
 
   async findOne(user: RequestUser, id: string) {
     const shipment = await this.prisma.tenant.shipment.findUnique({ where: { id }, include: { items: true } });
-    if (!shipment) throw new NotFoundException('Shipment not found.');
+    if (!shipment) throw new CodedNotFoundException('SHIPMENT_NOT_FOUND', 'Shipment not found.');
     return shipment;
   }
 
@@ -99,7 +101,7 @@ export class ShipmentsService {
   async markDelivered(user: RequestUser, id: string) {
     const shipment = await this.findOne(user, id);
     if (shipment.status === 'DELIVERED') {
-      throw new BadRequestException('This shipment is already marked delivered.');
+      throw new CodedBadRequestException('SHIPMENT_ALREADY_DELIVERED', 'This shipment is already marked delivered.');
     }
     const updated = await this.prisma.tenant.shipment.update({
       where: { id },
@@ -120,7 +122,7 @@ export class ShipmentsService {
   async remove(user: RequestUser, id: string) {
     const shipment = await this.findOne(user, id);
     if (shipment.status === 'DELIVERED') {
-      throw new ConflictException('Cannot delete a shipment that has already been delivered.');
+      throw new CodedConflictException('SHIPMENT_DELETE_ALREADY_DELIVERED', 'Cannot delete a shipment that has already been delivered.');
     }
 
     const finishedGoodIds = (shipment.items as any[]).map((i) => i.finishedGoodId);

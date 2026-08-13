@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -35,7 +36,7 @@ export class EmployeesService {
 
   async findOne(user: RequestUser, id: string) {
     const employee = await this.prisma.tenant.employee.findUnique({ where: { id } });
-    if (!employee) throw new NotFoundException('Employee not found.');
+    if (!employee) throw new CodedNotFoundException('EMPLOYEE_NOT_FOUND', 'Employee not found.');
     return employee;
   }
 

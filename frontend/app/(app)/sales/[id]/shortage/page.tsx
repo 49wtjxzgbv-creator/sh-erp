@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useShortagePreview, useCreatePurchaseOrdersFromShortage } from '@/lib/hooks/use-sales';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { PurchaseOrderGroupInput, ShortageGroupLineInput } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,7 @@ export default function ShortagePreviewPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
 
   const { data: preview, isLoading } = useShortagePreview(params.id);
   const createPOs = useCreatePurchaseOrdersFromShortage(params.id);
@@ -95,7 +96,7 @@ export default function ShortagePreviewPage() {
       const created = await createPOs.mutateAsync(payload);
       setCreatedCount(created.length);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

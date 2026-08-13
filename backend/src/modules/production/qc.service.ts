@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RecordQcCheckDto } from './dto/qc-check.dto';
@@ -20,7 +21,7 @@ export class QcService {
 
   async recordCheck(user: RequestUser, dto: RecordQcCheckDto) {
     const finishedGood = await this.prisma.tenant.finishedGood.findUnique({ where: { id: dto.finishedGoodId } });
-    if (!finishedGood) throw new NotFoundException('Finished good not found.');
+    if (!finishedGood) throw new CodedNotFoundException('FINISHED_GOOD_NOT_FOUND', 'Finished good not found.');
 
     const check = await this.prisma.tenant.qcCheck.create({
       data: {

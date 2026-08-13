@@ -13,7 +13,7 @@ import {
   useUpdateCompanyBranding,
 } from '@/lib/hooks/use-settings';
 import { useChangeOwnPassword } from '@/lib/hooks/use-users';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -63,6 +63,7 @@ function LegacyImportCard({ t }: { t: ReturnType<typeof useTranslations> }) {
  * beyond being logged in.
  */
 function ChangePasswordCard({ t, tc }: { t: ReturnType<typeof useTranslations>; tc: ReturnType<typeof useTranslations> }) {
+  const apiErrorMessage = useApiErrorMessage();
   const changePassword = useChangeOwnPassword();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -79,7 +80,7 @@ function ChangePasswordCard({ t, tc }: { t: ReturnType<typeof useTranslations>; 
       setNewPassword('');
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -125,6 +126,7 @@ function ChangePasswordCard({ t, tc }: { t: ReturnType<typeof useTranslations>; 
 }
 
 function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>; tc: ReturnType<typeof useTranslations> }) {
+  const apiErrorMessage = useApiErrorMessage();
   const { data: settings, isLoading } = useCompanySettings();
   const updateSettings = useUpdateCompanySettings();
 
@@ -159,7 +161,7 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
       });
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -226,6 +228,7 @@ function BrandingCard({
   tc: ReturnType<typeof useTranslations>;
   companyId: string;
 }) {
+  const apiErrorMessage = useApiErrorMessage();
   const { data: branding, isLoading } = useCompanyBranding();
   const updateBranding = useUpdateCompanyBranding();
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +238,7 @@ function BrandingCard({
     try {
       await updateBranding.mutateAsync({ [field]: fileAssetId ?? undefined });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

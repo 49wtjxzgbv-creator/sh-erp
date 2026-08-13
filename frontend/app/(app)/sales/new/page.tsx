@@ -7,7 +7,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useCreateCustomerOrder } from '@/lib/hooks/use-sales';
 import { useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { formatEur } from '@/lib/utils';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CustomerOrderItemInput, CustomerOrderPriority } from '@/lib/api-client/sales';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +33,7 @@ function newRowKey() {
 export default function NewCustomerOrderPage() {
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createOrder = useCreateCustomerOrder();
 
@@ -103,7 +104,7 @@ export default function NewCustomerOrderPage() {
       });
       router.replace(`/sales/${order.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

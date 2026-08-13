@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -59,7 +60,7 @@ export class WarehousesService {
 
   async findOne(user: RequestUser, id: string) {
     const warehouse = await this.prisma.tenant.warehouse.findUnique({ where: { id } });
-    if (!warehouse) throw new NotFoundException('Warehouse not found.');
+    if (!warehouse) throw new CodedNotFoundException('WAREHOUSE_NOT_FOUND', 'Warehouse not found.');
     return warehouse;
   }
 
@@ -92,7 +93,8 @@ export class WarehousesService {
       where: { warehouseId: id, qty: { not: 0 } },
     });
     if (stockCount > 0) {
-      throw new ConflictException(
+      throw new CodedConflictException(
+        'WAREHOUSE_HAS_STOCK',
         `Cannot delete: this warehouse still holds nonzero stock for ${stockCount} product(s).`,
       );
     }

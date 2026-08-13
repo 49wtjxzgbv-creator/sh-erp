@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ComponentType, Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
@@ -85,7 +86,7 @@ export class AssembliesService {
       where: { id },
       include: { components: true },
     });
-    if (!assembly) throw new NotFoundException('Assembly not found.');
+    if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
     return assembly;
   }
 
@@ -232,7 +233,7 @@ export class AssembliesService {
       where: { id: versionId, assemblyId },
       include: { components: true },
     });
-    if (!version) throw new NotFoundException('Assembly version not found.');
+    if (!version) throw new CodedNotFoundException('BOM_VERSION_NOT_FOUND', 'Assembly version not found.');
     return version;
   }
 
@@ -240,17 +241,17 @@ export class AssembliesService {
     for (const line of lines) {
       if (line.componentType === 'PRODUCT') {
         if (!line.productId) {
-          throw new BadRequestException('productId is required when componentType is PRODUCT.');
+          throw new CodedBadRequestException('BOM_PRODUCT_ID_REQUIRED', 'productId is required when componentType is PRODUCT.');
         }
         if (line.subAssemblyId) {
-          throw new BadRequestException('subAssemblyId must be omitted when componentType is PRODUCT.');
+          throw new CodedBadRequestException('BOM_SUBASSEMBLY_ID_MUST_BE_OMITTED', 'subAssemblyId must be omitted when componentType is PRODUCT.');
         }
       } else if (line.componentType === 'ASSEMBLY') {
         if (!line.subAssemblyId) {
-          throw new BadRequestException('subAssemblyId is required when componentType is ASSEMBLY.');
+          throw new CodedBadRequestException('BOM_SUBASSEMBLY_ID_REQUIRED', 'subAssemblyId is required when componentType is ASSEMBLY.');
         }
         if (line.productId) {
-          throw new BadRequestException('productId must be omitted when componentType is ASSEMBLY.');
+          throw new CodedBadRequestException('BOM_PRODUCT_ID_MUST_BE_OMITTED', 'productId must be omitted when componentType is ASSEMBLY.');
         }
       }
     }
@@ -272,11 +273,12 @@ export class AssembliesService {
 
     for (const subId of subAssemblyIds) {
       if (subId === assemblyId) {
-        throw new ConflictException('An assembly cannot contain itself as a component.');
+        throw new CodedConflictException('BOM_SELF_REFERENCE', 'An assembly cannot contain itself as a component.');
       }
       const reachable = await this.collectReachableAssemblyIds(subId, new Set([subId]));
       if (reachable.has(assemblyId)) {
-        throw new ConflictException(
+        throw new CodedConflictException(
+          'BOM_CIRCULAR_REFERENCE',
           `Adding "${subId}" as a component would create a circular BOM: it already contains this assembly, directly or indirectly.`,
         );
       }
@@ -326,7 +328,8 @@ export class AssembliesService {
     visited: Set<string>,
   ): Promise<AssemblyCostResult> {
     if (visited.has(assemblyId)) {
-      throw new ConflictException(
+      throw new CodedConflictException(
+        'BOM_CIRCULAR_COST_CALC',
         `Circular BOM detected while calculating cost (assembly ${assemblyId} references itself, directly or indirectly). ` +
           'This should be unreachable for BOMs saved after cycle detection was added — see setComponents.',
       );
@@ -338,7 +341,7 @@ export class AssembliesService {
       include: { components: true },
     });
     if (!assembly) {
-      throw new NotFoundException(`Assembly ${assemblyId} not found.`);
+      throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
     }
 
     // `sellPriceEur` is the ONE price every calculation in this app is
@@ -367,7 +370,7 @@ export class AssembliesService {
 
       if (line.componentType === 'PRODUCT' && line.productId) {
         const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
-        if (!product) throw new NotFoundException(`Component product ${line.productId} not found.`);
+        if (!product) throw new CodedNotFoundException('BOM_COMPONENT_PRODUCT_NOT_FOUND', `Component product ${line.productId} not found.`);
         const unitCost = Number(product.sellPriceEur ?? 0);
         costPerUnit += unitCost * qtyPerUnit;
         breakdown.push({
@@ -436,7 +439,7 @@ export class AssembliesService {
     visited: Set<string>,
   ): Promise<void> {
     if (visited.has(assemblyId)) {
-      throw new ConflictException(`Circular BOM detected while expanding assembly ${assemblyId}.`);
+      throw new CodedConflictException('BOM_CIRCULAR_EXPAND', `Circular BOM detected while expanding assembly ${assemblyId}.`);
     }
     visited.add(assemblyId);
 
@@ -467,8 +470,7 @@ export class AssembliesService {
 
     const availability = await this.checkAvailability(user, assemblyId, dto.qty);
     if (!availability.sufficient) {
-      throw new BadRequestException({
-        message: 'Insufficient stock to produce this quantity.',
+      throw new CodedBadRequestException('BOM_INSUFFICIENT_STOCK_TO_PRODUCE', 'Insufficient stock to produce this quantity.', {
         shortages: availability.shortages,
       });
     }
@@ -517,7 +519,8 @@ export class AssembliesService {
       where: { isDefault: true, deletedAt: null },
     });
     if (!warehouse) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'PRODUCTION_NO_DEFAULT_WAREHOUSE',
         'No default warehouse configured and none specified — cannot determine where to consume components from.',
       );
     }

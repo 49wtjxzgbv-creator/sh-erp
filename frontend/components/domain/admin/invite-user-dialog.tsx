@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useInviteUser } from '@/lib/hooks/use-users';
 import { useRoles } from '@/lib/hooks/use-roles';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ export interface InviteUserDialogProps {
 export function InviteUserDialog({ open, onOpenChange }: InviteUserDialogProps) {
   const t = useTranslations('admin');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const { data: roles } = useRoles();
   const inviteUser = useInviteUser();
 
@@ -49,7 +50,7 @@ export function InviteUserDialog({ open, onOpenChange }: InviteUserDialogProps) 
       const res = await inviteUser.mutateAsync({ email, fullName, roleId });
       setResult({ email: res.email, tempPassword: res.tempPassword });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 

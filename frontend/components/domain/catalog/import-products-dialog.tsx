@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useImportProducts } from '@/lib/hooks/use-catalog';
 import type { ImportProductsResult } from '@/lib/api-client/catalog';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
@@ -24,6 +24,7 @@ export interface ImportProductsDialogProps {
 export function ImportProductsDialog({ open, onOpenChange }: ImportProductsDialogProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
   const importMutation = useImportProducts();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,7 +48,7 @@ export function ImportProductsDialog({ open, onOpenChange }: ImportProductsDialo
       const res = await importMutation.mutateAsync({ file, updateQuantities });
       setResult(res);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : tc('error'));
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
