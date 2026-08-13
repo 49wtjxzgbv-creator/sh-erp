@@ -2,12 +2,13 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAssembly } from '@/lib/hooks/use-bom';
+import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
-import type { CustomerOrder } from '@/lib/api-client/sales';
+import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
 
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
@@ -15,17 +16,55 @@ function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   return <>{assembly ? `${assembly.article ?? ''} ${assembly.name}` : assemblyId}</>;
 }
 
-/**
- * Prints the customer order document ("Друкувати замовлення" in legacy).
- * `CustomerOrderItem` has no unit-cost/line-total field in this backend at
- * all (confirmed against `lib/api-client/sales.ts` — only `assemblyId`/
- * `qty`/`productionOrderId`), unlike the legacy sheet which showed cost
- * columns for admins. Reproducing pricing here would need a new backend
- * field (e.g. freezing a unit price on `CustomerOrderItem` at order-creation
- * time, which doesn't exist), out of scope for this pass — this prints
- * client/order header + line items (assembly + qty), disclosed as a
- * deliberate scope boundary rather than a silent omission.
- */
+/** Same estimated/actual split as the order detail page (app/(app)/sales/[id]/page.tsx) — see that file's EstimatedPriceCell/ActualPriceCell for the full rationale, just rendered as plain <td>s here for the print table. */
+function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
+  const t = useTranslations('sales');
+  const { data: cost } = useAssemblyCost(assemblyId);
+  return <td>{cost ? (cost.costPerUnit * qty).toFixed(2) : t('pricePending')}</td>;
+}
+
+function ActualPriceCell({ productionOrderId }: { productionOrderId: string | null }) {
+  const t = useTranslations('sales');
+  const { data: po } = useProductionOrder(productionOrderId ?? undefined);
+  if (!productionOrderId || !po || po.totalLocalCostEur == null) return <td>{t('pricePending')}</td>;
+  return <td>{Number(po.totalLocalCostEur).toFixed(2)}</td>;
+}
+
+function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
+  const t = useTranslations('sales');
+  const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
+  const poResults = useProductionOrdersByIds(items.map((i) => i.productionOrderId ?? undefined));
+
+  let estimatedTotal = 0;
+  let hasEstimate = false;
+  items.forEach((item, i) => {
+    const cost = costResults[i]?.data;
+    if (cost) {
+      estimatedTotal += cost.costPerUnit * Number(item.qty);
+      hasEstimate = true;
+    }
+  });
+
+  let actualTotal = 0;
+  let hasActual = false;
+  items.forEach((item, i) => {
+    const po = poResults[i]?.data;
+    if (po?.totalLocalCostEur != null) {
+      actualTotal += Number(po.totalLocalCostEur);
+      hasActual = true;
+    }
+  });
+
+  return (
+    <p className="mt-2 text-sm">
+      {t('estimatedTotal')}: {hasEstimate ? estimatedTotal.toFixed(2) : t('pricePending')}
+      {' · '}
+      {t('actualTotal')}: {hasActual ? actualTotal.toFixed(2) : t('pricePending')}
+    </p>
+  );
+}
+
+/** Prints the customer order document ("Друкувати замовлення" in legacy). */
 export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const t = useTranslations('sales');
   const tp = useTranslations('print');
@@ -36,6 +75,8 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const columns: PrintColumnOption[] = [
     { id: 'assembly', label: t('assembly') },
     { id: 'qty', label: t('qty') },
+    { id: 'estimatedPrice', label: t('estimatedPrice') },
+    { id: 'actualPrice', label: t('actualPrice') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -69,6 +110,8 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
               {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
               {printOptions.isColumnVisible('assembly') && <th>{t('assembly')}</th>}
               {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
+              {printOptions.isColumnVisible('estimatedPrice') && <th>{t('estimatedPrice')}</th>}
+              {printOptions.isColumnVisible('actualPrice') && <th>{t('actualPrice')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -82,10 +125,15 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
                 )}
                 {printOptions.isColumnVisible('assembly') && <td><AssemblyNameCell assemblyId={item.assemblyId} /></td>}
                 {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
+                {printOptions.isColumnVisible('estimatedPrice') && <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />}
+                {printOptions.isColumnVisible('actualPrice') && <ActualPriceCell productionOrderId={item.productionOrderId} />}
               </tr>
             ))}
           </tbody>
         </table>
+        {(printOptions.isColumnVisible('estimatedPrice') || printOptions.isColumnVisible('actualPrice')) && order.items && order.items.length > 0 && (
+          <PrintPriceTotals items={order.items} />
+        )}
       </PrintArea>
     </>
   );
