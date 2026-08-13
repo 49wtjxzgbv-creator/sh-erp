@@ -1,12 +1,19 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users } from 'lucide-react';
+import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
-import { useDashboardSummary } from '@/lib/hooks/use-dashboard';
+import { useDashboardSummary, useOperationsTimeline } from '@/lib/hooks/use-dashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
+import { PrintArea, PrintDocumentHeader, PrintButton } from '@/components/domain/print/print-area';
+import { OperationsTimelineSection, OperationsTimelineLegend } from '@/components/domain/dashboard/operations-timeline';
+import type { TimelineStage } from '@/lib/api-client/dashboard';
 
 /**
  * Real landing page, backed by GET /dashboard/summary (backend/src/modules/
@@ -15,12 +22,32 @@ import { cn } from '@/lib/utils';
  * production/sales/procurement all have real data to pull from. Every card
  * links straight to the module it summarizes, so a glance-then-click flow
  * works for every role, not just admins.
+ *
+ * Below the KPI cards: the unified operations timeline (GET /dashboard/
+ * operations-timeline) — purchase orders, production, and shipments drawn
+ * on one shared Gantt so the whole pipeline's state is visible at a
+ * glance, printable via the same PrintArea convention every other document
+ * in this app uses (components/domain/dashboard/operations-timeline.tsx
+ * has the chart itself).
  */
 export default function DashboardPage() {
   const t = useTranslations('dashboard');
   const tn = useTranslations('nav');
+  const tp = useTranslations('print');
+  const router = useRouter();
   const companySlug = useSessionStore((s) => s.companySlug);
   const { data, isLoading, isError } = useDashboardSummary();
+
+  const [year, setYear] = useState(new Date().getFullYear());
+  const from = useMemo(() => new Date(year, 0, 1), [year]);
+  const to = useMemo(() => new Date(year, 11, 31, 23, 59, 59), [year]);
+  const { data: timeline, isLoading: timelineLoading } = useOperationsTimeline({ from: from.toISOString(), to: to.toISOString() });
+
+  const stageLabels: Record<TimelineStage, string> = {
+    planned: t('stagePlanned'),
+    in_progress: t('stageInProgress'),
+    completed: t('stageCompleted'),
+  };
 
   const cards: {
     key: string;
@@ -89,6 +116,94 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      <Card className="no-print">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <CardTitle className="w-16 text-center text-base">{year}</CardTitle>
+            <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <span className="ml-2 text-base font-semibold">{t('timelineTitle')}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <OperationsTimelineLegend labels={stageLabels} />
+            <PrintButton label={tp('printAction')} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {timelineLoading || !timeline ? (
+            <LoadingBlock />
+          ) : (
+            <>
+              <OperationsTimelineSection
+                title={t('timelinePurchaseOrders')}
+                lines={timeline.purchaseOrders}
+                from={from}
+                to={to}
+                emptyLabel={t('timelineEmpty')}
+                showMonthHeader
+                onItemClick={(id) => router.push(`/procurement/${id}`)}
+              />
+              <OperationsTimelineSection
+                title={t('timelineProduction')}
+                lines={timeline.productionOrders}
+                from={from}
+                to={to}
+                emptyLabel={t('timelineEmpty')}
+                onItemClick={(id) => router.push(`/production/${id}`)}
+              />
+              <OperationsTimelineSection
+                title={t('timelineShipments')}
+                lines={timeline.shipments}
+                from={from}
+                to={to}
+                emptyLabel={t('timelineEmpty')}
+                onItemClick={(id) => router.push(`/sales/shipments/${id}`)}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {timeline && (
+        <PrintArea>
+          <PrintDocumentHeader title={t('timelinePrintTitle')} subtitle={String(year)} />
+          <div className="mb-4">
+            <OperationsTimelineLegend labels={stageLabels} />
+          </div>
+          <div className="space-y-6">
+            <OperationsTimelineSection
+              title={t('timelinePurchaseOrders')}
+              lines={timeline.purchaseOrders}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              showMonthHeader
+              onItemClick={() => {}}
+            />
+            <OperationsTimelineSection
+              title={t('timelineProduction')}
+              lines={timeline.productionOrders}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              onItemClick={() => {}}
+            />
+            <OperationsTimelineSection
+              title={t('timelineShipments')}
+              lines={timeline.shipments}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              onItemClick={() => {}}
+            />
+          </div>
+        </PrintArea>
+      )}
     </div>
   );
 }

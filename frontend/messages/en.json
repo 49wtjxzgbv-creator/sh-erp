@@ -70,7 +70,16 @@
     "pendingCustomerOrders": "Customer orders in progress",
     "openPurchaseOrders": "Open supplier orders",
     "activeEmployees": "Active employees",
-    "loadFailed": "Failed to load overview."
+    "loadFailed": "Failed to load overview.",
+    "timelineTitle": "Production and delivery schedule",
+    "timelinePrintTitle": "Production and delivery schedule",
+    "timelinePurchaseOrders": "Purchase orders",
+    "timelineProduction": "Production",
+    "timelineShipments": "Shipments to customers",
+    "timelineEmpty": "No data for this year",
+    "stagePlanned": "Planned",
+    "stageInProgress": "In progress",
+    "stageCompleted": "Completed"
   },
   "search": {
     "placeholder": "Search products, BOMs, orders, suppliers...",

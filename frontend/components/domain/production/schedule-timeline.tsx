@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { timelinePercent as percent, timelineMonthMarks as monthMarks } from '@/lib/timeline-utils';
 import type { ScheduledOrderLine, ScheduleSlotLine } from '@/lib/api-client/production';
 
 /**
@@ -45,13 +46,6 @@ const STATUS_COLOR: Record<string, string> = {
   COMPLETED: 'bg-success/20 border-success text-success-foreground',
 };
 
-function percent(date: Date, from: Date, to: Date): number {
-  const total = to.getTime() - from.getTime();
-  if (total <= 0) return 0;
-  const clamped = Math.min(Math.max(date.getTime(), from.getTime()), to.getTime());
-  return ((clamped - from.getTime()) / total) * 100;
-}
-
 function buildLanes(orders: ScheduledOrderLine[], slots: ScheduleSlotLine[]): Lane[] {
   const laneMap = new Map<string, Lane>();
 
@@ -86,18 +80,6 @@ function buildLanes(orders: ScheduledOrderLine[], slots: ScheduleSlotLine[]): La
   }
 
   return Array.from(laneMap.values()).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
-}
-
-function monthMarks(from: Date, to: Date): { label: string; start: Date }[] {
-  const marks: { label: string; start: Date }[] = [];
-  let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
-  let guard = 0;
-  while (cursor <= to && guard < 36) {
-    marks.push({ label: cursor.toLocaleDateString('uk-UA', { month: 'short' }), start: new Date(cursor) });
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    guard += 1;
-  }
-  return marks;
 }
 
 export function ScheduleTimeline({ orders, slots, from, to, onOrderClick, onSlotClick }: ScheduleTimelineProps) {

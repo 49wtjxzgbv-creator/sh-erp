@@ -70,7 +70,16 @@
     "pendingCustomerOrders": "Замовлень клієнтів у роботі",
     "openPurchaseOrders": "Відкритих замовлень постачальникам",
     "activeEmployees": "Активних співробітників",
-    "loadFailed": "Не вдалося завантажити огляд."
+    "loadFailed": "Не вдалося завантажити огляд.",
+    "timelineTitle": "Графік виробництва та поставок",
+    "timelinePrintTitle": "Графік виробництва та поставок",
+    "timelinePurchaseOrders": "Замовлення постачальникам",
+    "timelineProduction": "Виробництво",
+    "timelineShipments": "Відвантаження клієнтам",
+    "timelineEmpty": "Немає даних за цей рік",
+    "stagePlanned": "Заплановано",
+    "stageInProgress": "Реалізується",
+    "stageCompleted": "Реалізовано"
   },
   "search": {
     "placeholder": "Пошук товарів, специфікацій, замовлень, постачальників...",
