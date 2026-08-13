@@ -28,7 +28,11 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      // z-[100]: deliberately above the shared Dialog's z-50 (components/ui/dialog.tsx)
+      // — this can be opened by clicking a photo inside an already-open Dialog
+      // (e.g. a document/photo picker), and must never end up stacked
+      // underneath that dialog's own overlay.
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -36,10 +40,14 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white transition-colors hover:bg-black/70"
+        // Generous hit target (p-3, deliberately larger than a typical icon
+        // button) — this is the one control on the whole screen with
+        // nothing else to accidentally hit, so it should be impossible to
+        // miss or misclick.
+        className="absolute right-4 top-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
         aria-label="Close"
       >
-        <X className="h-6 w-6" />
+        <X className="h-7 w-7" />
       </button>
       {/* eslint-disable-next-line @next/next/no-img-element -- same cross-origin presigned-URL reasoning as Avatar */}
       <img
