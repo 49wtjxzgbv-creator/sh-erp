@@ -54,6 +54,22 @@ export default function CustomerOrdersPage() {
         header: t('deadline'),
         cell: ({ getValue }) => (getValue() ? new Date(getValue() as string).toLocaleDateString() : '—'),
       },
+      {
+        accessorKey: 'estimatedTotal',
+        header: t('estimatedTotal'),
+        cell: ({ getValue }) => {
+          const v = getValue() as number | null | undefined;
+          return v != null ? v.toFixed(2) : t('pricePending');
+        },
+      },
+      {
+        accessorKey: 'actualTotal',
+        header: t('actualTotal'),
+        cell: ({ getValue }) => {
+          const v = getValue() as number | null | undefined;
+          return v != null ? v.toFixed(2) : t('pricePending');
+        },
+      },
     ],
     [t],
   );

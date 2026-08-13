@@ -45,6 +45,15 @@ export interface CustomerOrder {
   createdAt: string;
   /** Present on create/findOne responses; not on query() list rows. */
   items?: CustomerOrderItem[];
+  /**
+   * Present only on query() list rows (server-aggregated there since a
+   * page of orders spans many different assemblies — see
+   * CustomerOrdersService#withPriceTotals). The detail page computes the
+   * same estimated/actual split itself, per line, from `items` instead.
+   * null (not 0) means "no line has a determined price yet", not "free".
+   */
+  estimatedTotal?: number | null;
+  actualTotal?: number | null;
 }
 
 export interface CustomerOrderItemInput {

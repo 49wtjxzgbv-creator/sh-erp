@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
@@ -24,6 +25,7 @@ export class CustomerOrdersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly productionOrdersService: ProductionOrdersService,
+    private readonly assembliesService: AssembliesService,
   ) {}
 
   async create(user: RequestUser, dto: CreateCustomerOrderDto) {
@@ -68,11 +70,73 @@ export class CustomerOrdersService {
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
-    const [items, total] = await Promise.all([
-      this.prisma.tenant.customerOrder.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip }),
+    const [orders, total] = await Promise.all([
+      this.prisma.tenant.customerOrder.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include: { items: true } }),
       this.prisma.tenant.customerOrder.count({ where }),
     ]);
-    return { items, total, limit: take, offset: skip };
+    return { items: await this.withPriceTotals(user, orders as any[]), total, limit: take, offset: skip };
+  }
+
+  /**
+   * Adds `estimatedTotal`/`actualTotal` to each order header for the list
+   * view — same estimated-vs-actual split the detail page computes per
+   * line (estimated = current BOM cost × qty, never frozen; actual = the
+   * linked ProductionOrder's totalLocalCostEur once it has actually
+   * started, null until then), just pre-aggregated server-side here
+   * because a page of orders means a page of *different* assemblies, and
+   * doing that fan-out from the browser (one request per line per order)
+   * doesn't scale the way it does for a single order's handful of lines.
+   * Batched to 2 round trips total regardless of how many orders/lines are
+   * on the page: one cost calculation per *unique* assembly (not per
+   * line), one findMany for every referenced ProductionOrder.
+   */
+  private async withPriceTotals(user: RequestUser, orders: Array<{ id: string; items: { assemblyId: string; qty: Prisma.Decimal; productionOrderId: string | null }[] }>) {
+    const allItems = orders.flatMap((o) => o.items);
+
+    const uniqueAssemblyIds = Array.from(new Set(allItems.map((i) => i.assemblyId)));
+    const costByAssembly = new Map<string, number>();
+    await Promise.all(
+      uniqueAssemblyIds.map(async (assemblyId) => {
+        try {
+          const cost = await this.assembliesService.calculateCost(user, assemblyId);
+          costByAssembly.set(assemblyId, cost.costPerUnit);
+        } catch {
+          // e.g. assembly has no saved BOM version yet — left out of the map, treated as "no estimate" below
+        }
+      }),
+    );
+
+    const productionOrderIds = Array.from(new Set(allItems.map((i) => i.productionOrderId).filter((id): id is string => Boolean(id))));
+    const productionOrders = productionOrderIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } } })
+      : [];
+    const actualCostByProductionOrder = new Map<string, number>();
+    for (const po of productionOrders as any[]) {
+      if (po.totalLocalCostEur != null) actualCostByProductionOrder.set(po.id, Number(po.totalLocalCostEur));
+    }
+
+    return orders.map((order) => {
+      let estimatedTotal = 0;
+      let hasEstimate = false;
+      let actualTotal = 0;
+      let hasActual = false;
+      for (const item of order.items) {
+        const unitCost = costByAssembly.get(item.assemblyId);
+        if (unitCost != null) {
+          estimatedTotal += unitCost * Number(item.qty);
+          hasEstimate = true;
+        }
+        if (item.productionOrderId) {
+          const actual = actualCostByProductionOrder.get(item.productionOrderId);
+          if (actual != null) {
+            actualTotal += actual;
+            hasActual = true;
+          }
+        }
+      }
+      const { items, ...header } = order as any;
+      return { ...header, estimatedTotal: hasEstimate ? estimatedTotal : null, actualTotal: hasActual ? actualTotal : null };
+    });
   }
 
   /** Header-only — item lines are immutable once created (see the DTO's own comment). */

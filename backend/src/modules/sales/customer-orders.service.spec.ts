@@ -6,6 +6,7 @@ describe('CustomerOrdersService', () => {
   let prisma: any;
   let audit: any;
   let productionOrdersService: any;
+  let assembliesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -22,11 +23,13 @@ describe('CustomerOrdersService', () => {
       tenant: {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn() },
         customerOrderItem: { update: jest.fn() },
+        productionOrder: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
     productionOrdersService = { create: jest.fn() };
-    service = new CustomerOrdersService(prisma, audit, productionOrdersService);
+    assembliesService = { calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }) };
+    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService);
   });
 
   describe('create', () => {
@@ -90,6 +93,49 @@ describe('CustomerOrdersService', () => {
       await service.giveItemToProduction(user, 'co1', 'item1', {});
 
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('query — estimated/actual price totals', () => {
+    it('sums estimated cost per unique assembly (not per line) and actual cost from started production orders only', async () => {
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([
+        {
+          id: 'co1',
+          items: [
+            { assemblyId: 'a1', qty: 3, productionOrderId: null },
+            { assemblyId: 'a1', qty: 2, productionOrderId: 'po-started' }, // same assembly as line 1 — calculateCost should only be called once for a1
+            { assemblyId: 'a2', qty: 1, productionOrderId: 'po-not-started' },
+          ],
+        },
+      ]);
+      prisma.tenant.customerOrder.count.mockResolvedValue(1);
+      assembliesService.calculateCost.mockImplementation(async (_u: unknown, assemblyId: string) =>
+        assemblyId === 'a1' ? { costPerUnit: 10, breakdown: [] } : { costPerUnit: 5, breakdown: [] },
+      );
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([
+        { id: 'po-started', totalLocalCostEur: 25 },
+        { id: 'po-not-started', totalLocalCostEur: null },
+      ]);
+
+      const { items } = await service.query(user, {});
+
+      expect(assembliesService.calculateCost).toHaveBeenCalledTimes(2); // a1, a2 — deduped across the two a1 lines
+      // estimated: (3+2)*10 [a1] + 1*5 [a2] = 55
+      expect(items[0].estimatedTotal).toBe(55);
+      // actual: only po-started has a frozen cost (25); po-not-started (PLANNED, totalLocalCostEur null) contributes nothing
+      expect(items[0].actualTotal).toBe(25);
+      expect(items[0].items).toBeUndefined(); // raw item rows aren't part of the list payload, only the aggregated totals
+    });
+
+    it('reports null totals (not 0) when no line has a determined price yet', async () => {
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([{ id: 'co1', items: [{ assemblyId: 'a1', qty: 1, productionOrderId: null }] }]);
+      prisma.tenant.customerOrder.count.mockResolvedValue(1);
+      assembliesService.calculateCost.mockRejectedValue(new Error('no saved BOM version'));
+
+      const { items } = await service.query(user, {});
+
+      expect(items[0].estimatedTotal).toBeNull();
+      expect(items[0].actualTotal).toBeNull();
     });
   });
 
