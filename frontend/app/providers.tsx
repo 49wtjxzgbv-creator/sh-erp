@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from '@/lib/hooks/use-toast';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 
@@ -83,8 +84,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        {children}
-        <Toaster />
+        <TooltipProvider delayDuration={200}>
+          {children}
+          <Toaster />
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

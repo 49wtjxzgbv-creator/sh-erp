@@ -3,36 +3,51 @@
 @tailwind utilities;
 
 /*
- * Light + dark theme, purple accent (Phase 2 §3.5, extended 2026-08-05 for
- * the public Landing Page's light/dark requirement). `:root` is the LIGHT
- * theme's values; `.dark` (toggled on <html> by components/theme/theme-provider.tsx)
- * overrides them with the original dark palette this app shipped with — the
- * dark values themselves are unchanged from before this pass, just moved
- * under an explicit selector instead of being the unconditional default. A
- * company's own branding (logo/accent) is layered on top of whichever theme
- * is active at the tenant-shell layout level
- * (components/domain/shell/BrandingProvider.tsx) by overriding --primary on
- * a scoped wrapper, not by editing this file.
+ * Design system v2 (2026-08-14 full UI/UX redesign) — light + dark as two
+ * independently-tuned surface systems, not one inverted into the other.
+ * Purple accent hue (262) is unchanged — an intentional brand choice
+ * documented in Phase 2 §3.5 — this pass only deepens the neutrals/surfaces
+ * around it. `:root` is LIGHT, `.dark` (toggled on <html> by
+ * components/theme/theme-provider.tsx) is DARK.
+ *
+ * Both themes now express elevation through a graduated surface ladder
+ * (background → surface → card → popover/modal) instead of a single flat
+ * background + white cards: in light mode `--background` is a hair off pure
+ * white so `--card` (true white) visibly "lifts" above the page; in dark
+ * mode each step is a small, deliberate lightness increase (background is
+ * the deepest layer, popover/modal the most elevated) — never a plain
+ * black-background + white-text inversion. `--surface` is new: the
+ * in-between tone for chrome like the sidebar that sits on the page but
+ * below content cards.
+ *
+ * A company's own branding (logo/accent) is layered on top of whichever
+ * theme is active at the tenant-shell layout level
+ * (components/domain/shell/BrandingProvider.tsx — not yet built, see
+ * frontend/README.md) by overriding --primary on a scoped wrapper, not by
+ * editing this file.
  */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 8%;
+    --background: 240 20% 99%;
+    --foreground: 240 10% 9%;
+
+    --surface: 240 14% 96%;
+    --surface-foreground: 240 10% 9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 8%;
+    --card-foreground: 240 10% 9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 8%;
+    --popover-foreground: 240 10% 9%;
 
     --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 10% 12%;
+    --secondary: 240 10% 95%;
+    --secondary-foreground: 240 10% 14%;
 
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 40%;
+    --muted: 240 10% 95%;
+    --muted-foreground: 240 5% 42%;
 
     --accent: 262 90% 96%;
     --accent-foreground: 262 60% 30%;
@@ -46,47 +61,50 @@
     --warning: 38 92% 42%;
     --warning-foreground: 0 0% 10%;
 
-    --border: 240 6% 90%;
-    --input: 240 6% 88%;
+    --border: 240 8% 91%;
+    --input: 240 8% 89%;
     --ring: 262 83% 58%;
 
     --radius: 0.625rem;
   }
 
   .dark {
-    --background: 240 10% 6%;
-    --foreground: 0 0% 96%;
+    --background: 240 14% 5%;
+    --foreground: 0 0% 95%;
 
-    --card: 240 8% 9%;
-    --card-foreground: 0 0% 96%;
+    --surface: 240 12% 8%;
+    --surface-foreground: 0 0% 95%;
 
-    --popover: 240 8% 9%;
-    --popover-foreground: 0 0% 96%;
+    --card: 240 11% 10%;
+    --card-foreground: 0 0% 95%;
 
-    --primary: 262 83% 66%;
+    --popover: 240 10% 13%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 262 83% 67%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 6% 16%;
-    --secondary-foreground: 0 0% 96%;
+    --secondary: 240 9% 15%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 240 6% 14%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 240 9% 14%;
+    --muted-foreground: 240 6% 68%;
 
-    --accent: 262 60% 20%;
+    --accent: 262 50% 23%;
     --accent-foreground: 0 0% 96%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 62% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 142 55% 47%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 38 80% 55%;
     --warning-foreground: 0 0% 10%;
 
-    --border: 240 6% 18%;
-    --input: 240 6% 18%;
-    --ring: 262 83% 66%;
+    --border: 240 9% 17%;
+    --input: 240 9% 18%;
+    --ring: 262 83% 67%;
   }
 }
 

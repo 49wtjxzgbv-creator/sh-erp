@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { Providers } from './providers';
 import { THEME_INIT_SCRIPT } from '@/components/theme/theme-provider';
 import './globals.css';
+
+/** Self-hosted by Next.js (no external request at runtime). Subsets cover every locale this app ships (uk/en/pl/de — see messages/*.json): cyrillic(-ext) for Ukrainian, latin-ext for Polish diacritics. */
+const inter = Inter({
+  subsets: ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext'],
+  variable: '--font-inter',
+  display: 'swap',
+});
 
 /**
  * Real production domain isn't purchased yet (Phase 0 decision: placeholder
@@ -64,8 +72,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f0f13' },
+    { media: '(prefers-color-scheme: light)', color: '#fcfcfe' },
+    { media: '(prefers-color-scheme: dark)', color: '#0c0c0f' },
   ],
 };
 
@@ -86,7 +94,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // first real selection); a documented class of bug for portal-based UI
   // libraries (Radix, shadcn/ui) under browser translation.
   return (
-    <html lang={locale} translate="no" suppressHydrationWarning>
+    <html lang={locale} translate="no" suppressHydrationWarning className={inter.variable}>
       <head>
         {/* Sets the .dark class before hydration — avoids a flash of the wrong theme. See components/theme/theme-provider.tsx's own comment for why this can't just be a useEffect. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
