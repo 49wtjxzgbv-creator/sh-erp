@@ -126,7 +126,7 @@ const STATUS_COLOR: Record<BatchStatusKey, string> = {
 };
 
 /** A colored left rail per hierarchy depth on the label cell — the tree structure (Замовлення → Виріб → Партія → Етап) should read from a glance down the left edge, not just from indentation alone. */
-const LEVEL_ACCENT = ['', 'border-l-2 border-l-primary/50', 'border-l-2 border-l-secondary-foreground/40', 'border-l-2 border-l-muted-foreground/25'];
+const LEVEL_ACCENT = ['', 'border-l-4 border-l-primary/70', 'border-l-4 border-l-secondary-foreground/50', 'border-l-4 border-l-muted-foreground/35'];
 
 function batchStatusKey(b: PlannerBatchNode, now: Date): BatchStatusKey {
   if (b.status === 'PLANNED' && b.plan.endAt && new Date(b.plan.endAt) < now) return 'OVERDUE';
@@ -172,7 +172,7 @@ function StatusBadge({ statusKey, label }: { statusKey: BatchStatusKey; label: s
  * timeline grid instead of reading as blank/broken space.
  */
 function UnplannedTrack({ top, height, faint }: { top: number; height: number; faint?: boolean }) {
-  return <div className={cn('absolute left-2 right-2 rounded border border-dashed', faint ? 'border-border/25' : 'border-border/40')} style={{ top, height }} />;
+  return <div className={cn('absolute left-2 right-2 rounded border-2 border-dashed', faint ? 'border-muted-foreground/25' : 'border-muted-foreground/40')} style={{ top, height }} />;
 }
 
 export const PlannerGanttChart = forwardRef<
@@ -386,10 +386,10 @@ export const PlannerGanttChart = forwardRef<
                   ) : null,
                 )}
               {days.map((d, i) => (
-                <div key={`dl-${i}`} className="absolute inset-y-0 w-px bg-border/30" style={{ left: px(d, viewFrom, pxPerDay) }} />
+                <div key={`dl-${i}`} className="absolute inset-y-0 w-px bg-border/70" style={{ left: px(d, viewFrom, pxPerDay) }} />
               ))}
               {yearWeeks.map((w, i) => (
-                <div key={`yw-${i}`} className="absolute inset-y-0 w-px bg-border/30" style={{ left: px(w, viewFrom, pxPerDay) }} />
+                <div key={`yw-${i}`} className="absolute inset-y-0 w-px bg-border/70" style={{ left: px(w, viewFrom, pxPerDay) }} />
               ))}
               {months.map((m, i) => (
                 <div key={`ml-${i}`} className="absolute inset-y-0 w-px bg-border" style={{ left: px(m.start, viewFrom, pxPerDay) }} />
@@ -705,8 +705,8 @@ function GanttRowView({
       ref={registerRef}
       className={cn(
         'relative flex border-b border-border/60 transition-colors',
-        rowIndex % 2 === 1 && 'bg-muted/10',
-        kind === 'item' && 'bg-muted/25',
+        rowIndex % 2 === 1 && 'bg-muted/20',
+        kind === 'item' && 'bg-muted/40',
         flashed && 'bg-warning/30',
         kind === 'order' && 'bg-card font-semibold',
       )}
