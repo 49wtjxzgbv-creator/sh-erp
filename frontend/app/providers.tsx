@@ -5,7 +5,23 @@ import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { toast } from '@/lib/hooks/use-toast';
-import { ApiError } from '@/lib/api-client/types';
+import { useApiErrorMessage } from '@/lib/api-error-message';
+
+/**
+ * `MutationCache.onError` fires outside React rendering (a plain callback,
+ * not a component), so it can't call `useApiErrorMessage()` — a hook —
+ * directly. Deferring the actual translation to render time instead: this
+ * tiny component is what gets stored as the toast's `description` (a
+ * `React.ReactNode`, per use-toast.ts), and only resolves the code when
+ * `<Toaster />` actually renders it — which happens inside
+ * `NextIntlClientProvider` (app/layout.tsx), so the hook has a valid
+ * context there. Same translation path as every other error display in the
+ * app, just fired from a non-component callsite.
+ */
+function ApiErrorToastDescription({ error, fallback }: { error: unknown; fallback: string }) {
+  const apiErrorMessage = useApiErrorMessage();
+  return <>{apiErrorMessage(error, fallback)}</>;
+}
 
 /**
  * Extra per-mutation options every useMutation() in this app can pass via
@@ -55,8 +71,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         mutationCache: new MutationCache({
           onError: (error, _vars, _ctx, mutation) => {
             if (mutation.meta?.suppressErrorToast) return;
-            const message = error instanceof ApiError ? error.message : 'Щось пішло не так. Спробуйте ще раз.';
-            toast.error(message);
+            toast.error(<ApiErrorToastDescription error={error} fallback="Щось пішло не так. Спробуйте ще раз." />);
           },
           onSuccess: (_data, _vars, _ctx, mutation) => {
             if (mutation.meta?.successMessage) toast.success(mutation.meta.successMessage);
