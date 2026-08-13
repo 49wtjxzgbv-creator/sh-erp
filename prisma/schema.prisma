@@ -169,6 +169,7 @@ model Company {
   productionOrderPickListItems ProductionOrderPickListItem[]
   productionOrderStageEvents ProductionOrderStageEvent[]
   productionOrderWorkers ProductionOrderWorker[]
+  productionScheduleSlots ProductionScheduleSlot[]
 
   @@map("companies")
 }
@@ -773,6 +774,7 @@ model Assembly {
   productionOrders       ProductionOrder[]
   finishedGoods          FinishedGood[]
   customerOrderItems     CustomerOrderItem[]
+  scheduleSlots          ProductionScheduleSlot[]
 
   @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem
@@ -894,6 +896,14 @@ model ProductionOrder {
 
   currentStageIndex   Int?
 
+  // Optional target window for the production schedule view — nullable,
+  // since most existing orders were never given one; the schedule query
+  // falls back to createdAt/completedAt for those. Deliberately separate
+  // from totalLocalCostEur etc.'s "frozen at start()" semantics: these are
+  // a plan, not a fact, and stay editable regardless of order status.
+  scheduledStartAt    DateTime? @db.Timestamptz(3)
+  scheduledEndAt      DateTime? @db.Timestamptz(3)
+
   totalLocalCostEur   Decimal? @db.Decimal(14, 2)
   totalGermanCostEur  Decimal? @db.Decimal(14, 2)
   laborCostEur        Decimal? @db.Decimal(14, 2)
@@ -916,6 +926,7 @@ model ProductionOrder {
   finishedGoods       FinishedGood[]
   payrollEntries      PayrollEntry[]
   customerOrderItem   CustomerOrderItem?
+  scheduleSlot        ProductionScheduleSlot?
 
   @@index([companyId, status])
   @@unique([companyId, id]) // composite-FK target for pick-list/stage-event/worker children and FinishedGood.productionOrder
@@ -928,6 +939,40 @@ enum ProductionOrderStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+// Forward-planning: reserves a slot on the production schedule BEFORE a
+// real ProductionOrder (or even the customer order behind it) exists yet
+// — e.g. "week of March 10, ~50 units, likely Client X" blocked out ahead
+// of time. `assemblyId` is optional (a slot can predate knowing exactly
+// which assembly). `convertedToProductionOrderId` is set once staff turn
+// the plan into a real order (ProductionScheduleSlotsService#convert,
+// which just calls the existing ProductionOrdersService.create()) — the
+// slot itself is never deleted on conversion, so the schedule view can
+// still show "this is where the plan became a real order" if useful,
+// though the frontend's default view drops converted slots from the
+// "unconfirmed" list.
+model ProductionScheduleSlot {
+  id                            String    @id @default(uuid()) @db.Uuid
+  companyId                     String    @db.Uuid
+  assemblyId                    String?   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  title                         String
+  plannedUnits                  Decimal?  @db.Decimal(14, 3)
+  startAt                       DateTime  @db.Timestamptz(3)
+  endAt                         DateTime  @db.Timestamptz(3)
+  comment                       String?
+  convertedToProductionOrderId  String?   @unique @db.Uuid
+  createdById                   String    @db.Uuid
+
+  createdAt                     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt                     DateTime  @updatedAt @db.Timestamptz(3)
+
+  company                       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly                      Assembly?        @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
+  convertedToProductionOrder    ProductionOrder? @relation(fields: [convertedToProductionOrderId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, startAt])
+  @@map("production_schedule_slots")
 }
 
 // Expansion of the old PickListJson blob (Phase 1 §2/§10.4).

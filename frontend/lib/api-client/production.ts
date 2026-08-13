@@ -76,6 +76,9 @@ export interface ProductionOrder {
   createdById: string;
   comment: string | null;
   currentStageIndex: number | null;
+  /** Optional target window for the schedule view — a plan, never frozen like the cost fields below. */
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
   totalLocalCostEur: DecimalString | null;
   totalGermanCostEur: DecimalString | null;
   laborCostEur: DecimalString | null;
@@ -103,6 +106,9 @@ export interface CreateProductionOrderInput {
   unitsPlanned: number;
   comment?: string;
   workers?: ProductionOrderWorkerInput[];
+  /** Optional target window for the schedule view — ISO date/datetime strings, purely a plan, never frozen. */
+  scheduledStartAt?: string;
+  scheduledEndAt?: string;
 }
 
 export interface QueryProductionOrdersInput {
@@ -244,4 +250,77 @@ export function recordQcCheck(dto: RecordQcCheckInput): Promise<QcCheck> {
 }
 export function getQcChecksForFinishedGood(finishedGoodId: string): Promise<QcCheck[]> {
   return apiClient.get<QcCheck[]>(`qc-checks/finished-good/${finishedGoodId}`);
+}
+
+// ---- Production schedule (year view: real orders + forward-planning slots) ----
+
+export interface ProductionScheduleSlot {
+  id: string;
+  companyId: string;
+  assemblyId: string | null;
+  title: string;
+  plannedUnits: DecimalString | null;
+  startAt: string;
+  endAt: string;
+  comment: string | null;
+  convertedToProductionOrderId: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProductionScheduleSlotInput {
+  assemblyId?: string;
+  title: string;
+  plannedUnits?: number;
+  startAt: string;
+  endAt: string;
+  comment?: string;
+}
+
+export type UpdateProductionScheduleSlotInput = Partial<CreateProductionScheduleSlotInput>;
+
+export function createProductionScheduleSlot(dto: CreateProductionScheduleSlotInput): Promise<ProductionScheduleSlot> {
+  return apiClient.post<ProductionScheduleSlot>('production-schedule-slots', dto);
+}
+export function updateProductionScheduleSlot(id: string, dto: UpdateProductionScheduleSlotInput): Promise<ProductionScheduleSlot> {
+  return apiClient.patch<ProductionScheduleSlot>(`production-schedule-slots/${id}`, dto);
+}
+export function deleteProductionScheduleSlot(id: string): Promise<{ id: string; deleted: true }> {
+  return apiClient.delete<{ id: string; deleted: true }>(`production-schedule-slots/${id}`);
+}
+/** Creates a real ProductionOrder from this slot (via the normal create() path) — requires assemblyId/plannedUnits to already be set. */
+export function convertProductionScheduleSlot(id: string): Promise<{ slot: ProductionScheduleSlot; productionOrder: ProductionOrder }> {
+  return apiClient.post<{ slot: ProductionScheduleSlot; productionOrder: ProductionOrder }>(`production-schedule-slots/${id}/convert`, {});
+}
+
+export interface ScheduledOrderLine {
+  id: string;
+  assemblyName: string;
+  status: ProductionOrderStatus;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  unitsPlanned: number;
+}
+
+export interface ScheduleSlotLine {
+  id: string;
+  assemblyId: string | null;
+  assemblyName: string | null;
+  title: string;
+  startAt: string;
+  endAt: string;
+  plannedUnits: number | null;
+}
+
+export interface ProductionScheduleQuery {
+  /** ISO date. Defaults to Jan 1 of the current year. */
+  from?: string;
+  /** ISO date. Defaults to Dec 31 of the current year. */
+  to?: string;
+}
+
+/** Unified year-schedule view: real orders (visualized) + not-yet-converted planning slots. */
+export function getProductionSchedule(query: ProductionScheduleQuery = {}): Promise<{ orders: ScheduledOrderLine[]; slots: ScheduleSlotLine[] }> {
+  return apiClient.get<{ orders: ScheduledOrderLine[]; slots: ScheduleSlotLine[] }>('production-schedule', { query: query as Record<string, string> });
 }

@@ -20,12 +20,20 @@ import {
   deleteQcChecklistItem,
   recordQcCheck,
   getQcChecksForFinishedGood,
+  createProductionScheduleSlot,
+  updateProductionScheduleSlot,
+  deleteProductionScheduleSlot,
+  convertProductionScheduleSlot,
+  getProductionSchedule,
   type QueryProductionOrdersInput,
   type CreateProductionOrderInput,
   type ProductionOrderWorkerInput,
   type StartProductionOrderInput,
   type QueryFinishedGoodsInput,
   type RecordQcCheckInput,
+  type CreateProductionScheduleSlotInput,
+  type UpdateProductionScheduleSlotInput,
+  type ProductionScheduleQuery,
 } from '@/lib/api-client/production';
 
 const ordersKey = (query: QueryProductionOrdersInput) => ['production-orders', query] as const;
@@ -35,6 +43,7 @@ const finishedGoodsKey = (query: QueryFinishedGoodsInput) => ['finished-goods', 
 const finishedGoodKey = (id: string) => ['finished-goods', id] as const;
 const checklistKey = ['qc-checklist-items'] as const;
 const qcChecksKey = (finishedGoodId: string) => ['qc-checks', 'finished-good', finishedGoodId] as const;
+const scheduleKey = (query: ProductionScheduleQuery) => ['production-schedule', query] as const;
 
 export function useProductionOrders(query: QueryProductionOrdersInput) {
   return useQuery({ queryKey: ordersKey(query), queryFn: () => queryProductionOrders(query) });
@@ -192,6 +201,45 @@ export function useRecordQcCheck() {
       qc.invalidateQueries({ queryKey: ['finished-goods'] });
       qc.invalidateQueries({ queryKey: finishedGoodKey(result.finishedGoodId) });
       qc.invalidateQueries({ queryKey: qcChecksKey(result.finishedGoodId) });
+    },
+  });
+}
+
+export function useProductionSchedule(query: ProductionScheduleQuery) {
+  return useQuery({ queryKey: scheduleKey(query), queryFn: () => getProductionSchedule(query) });
+}
+
+export function useCreateProductionScheduleSlot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateProductionScheduleSlotInput) => createProductionScheduleSlot(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['production-schedule'] }),
+  });
+}
+
+export function useUpdateProductionScheduleSlot(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdateProductionScheduleSlotInput) => updateProductionScheduleSlot(id, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['production-schedule'] }),
+  });
+}
+
+export function useDeleteProductionScheduleSlot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProductionScheduleSlot(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['production-schedule'] }),
+  });
+}
+
+export function useConvertProductionScheduleSlot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => convertProductionScheduleSlot(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['production-schedule'] });
+      qc.invalidateQueries({ queryKey: ['production-orders'] });
     },
   });
 }

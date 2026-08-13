@@ -4,6 +4,10 @@ import { FinishedGoodsController } from './finished-goods.controller';
 import { FinishedGoodsService } from './finished-goods.service';
 import { ProductionOrdersController } from './production-orders.controller';
 import { ProductionOrdersService } from './production-orders.service';
+import { ProductionScheduleController } from './production-schedule.controller';
+import { ProductionScheduleService } from './production-schedule.service';
+import { ProductionScheduleSlotsController } from './production-schedule-slots.controller';
+import { ProductionScheduleSlotsService } from './production-schedule-slots.service';
 import { ProductionStagesController } from './production-stages.controller';
 import { ProductionStagesService } from './production-stages.service';
 import { QcChecklistController } from './qc-checklist.controller';
@@ -19,6 +23,8 @@ import { QcService } from './qc.service';
     FinishedGoodsController,
     QcController,
     ProductionOrdersController,
+    ProductionScheduleSlotsController,
+    ProductionScheduleController,
   ],
   providers: [
     ProductionStagesService,
@@ -26,6 +32,8 @@ import { QcService } from './qc.service';
     FinishedGoodsService,
     QcService,
     ProductionOrdersService,
+    ProductionScheduleSlotsService,
+    ProductionScheduleService,
   ],
   exports: [ProductionStagesService, QcChecklistService, FinishedGoodsService, QcService, ProductionOrdersService],
 })

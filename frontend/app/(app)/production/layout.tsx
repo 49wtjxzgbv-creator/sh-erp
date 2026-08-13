@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 
 const TABS = [
   { href: '/production', labelKey: 'orders' },
+  { href: '/production/schedule', labelKey: 'schedule' },
   { href: '/production/stages', labelKey: 'stages' },
   { href: '/production/finished-goods', labelKey: 'finishedGoods' },
   { href: '/production/qc-checklist', labelKey: 'qcChecklist' },
@@ -23,7 +24,9 @@ export default function ProductionLayout({ children }: { children: React.ReactNo
         {TABS.map((tab) => {
           const active =
             tab.href === '/production'
-              ? pathname === '/production' || pathname.startsWith('/production/new') || /^\/production\/[^/]+$/.test(pathname)
+              ? pathname === '/production' ||
+                pathname.startsWith('/production/new') ||
+                (/^\/production\/[^/]+$/.test(pathname) && !TABS.some((t) => t.href !== '/production' && pathname.startsWith(t.href)))
               : pathname.startsWith(tab.href);
           return (
             <Link

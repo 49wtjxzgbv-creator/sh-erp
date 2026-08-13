@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsDate,
   IsInt,
   IsNumber,
   IsOptional,
@@ -43,6 +44,24 @@ export class CreateProductionOrderDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  // Same DateTime DTO pattern as CustomerOrder.deadline/hireDate elsewhere
+  // in this codebase — @IsDateString() alone would accept a bare
+  // "YYYY-MM-DD" from a date <input> but leave it a string, which Prisma's
+  // DateTime column rejects; @Type(() => Date) converts it first.
+  @ApiPropertyOptional({ description: 'Optional target window for the production schedule view — purely a plan, never frozen/enforced like the cost fields.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  scheduledStartAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  scheduledEndAt?: Date;
 
   @ApiPropertyOptional({ type: [ProductionOrderWorkerDto] })
   @IsOptional()

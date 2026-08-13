@@ -85,6 +85,8 @@ export class ProductionOrdersService {
         status: 'PLANNED',
         createdById: user.userId,
         comment: dto.comment,
+        scheduledStartAt: dto.scheduledStartAt,
+        scheduledEndAt: dto.scheduledEndAt,
       } as any,
     });
 
