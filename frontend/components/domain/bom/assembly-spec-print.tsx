@@ -36,11 +36,39 @@ export function ComponentArticleCell({ line }: { line: CostBreakdownLine }) {
   return <>{subAssembly?.article ?? ''}</>;
 }
 
+/**
+ * The four "own" per-unit cost fields on Assembly (labor/packaging/
+ * delivery/other) are already folded into `AssemblyCostResult.costPerUnit`
+ * by the backend (assemblies.service.ts#calcAssemblyCostRecursive: `let
+ * costPerUnit = ownCost; ...`), but `breakdown` only ever lists
+ * PRODUCT/ASSEMBLY component lines — never a line for these four fields.
+ * Print it as an itemized breakdown or the visible rows silently don't sum
+ * to the printed total, and any labor/packaging/etc a shop actually set on
+ * the assembly is invisible on the printed document even though it's being
+ * charged for. Returned as {label, value} pairs (zero-valued fields
+ * omitted) so both this file and customer-order-print.tsx's composition
+ * section can render them as ordinary extra rows.
+ */
+export function useOwnCostLines(assembly: { laborCostPerUnit: string; packagingCostPerUnit: string; deliveryCostPerUnit: string; otherCostPerUnit: string } | undefined) {
+  const t = useTranslations('bom');
+  return useMemo(() => {
+    if (!assembly) return [];
+    const entries = [
+      { key: 'labor', label: t('laborCostPerUnit'), value: Number(assembly.laborCostPerUnit) },
+      { key: 'packaging', label: t('packagingCostPerUnit'), value: Number(assembly.packagingCostPerUnit) },
+      { key: 'delivery', label: t('deliveryCostPerUnit'), value: Number(assembly.deliveryCostPerUnit) },
+      { key: 'other', label: t('otherCostPerUnit'), value: Number(assembly.otherCostPerUnit) },
+    ];
+    return entries.filter((e) => e.value !== 0);
+  }, [assembly, t]);
+}
+
 export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
   const t = useTranslations('bom');
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
   const { data: cost } = useAssemblyCost(assemblyId);
+  const ownCostLines = useOwnCostLines(assembly);
 
   const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
   const assemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
@@ -106,6 +134,17 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
                 {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost)}</td>}
+              </tr>
+            ))}
+            {ownCostLines.map((line, i) => (
+              <tr key={`own-${line.key}`}>
+                <td>{cost.breakdown.length + i + 1}</td>
+                {printOptions.includePhotos && <td />}
+                {printOptions.isColumnVisible('component') && <td />}
+                {printOptions.isColumnVisible('component') && <td>{line.label}</td>}
+                {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && <td>—</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.value)}</td>}
               </tr>
             ))}
           </tbody>

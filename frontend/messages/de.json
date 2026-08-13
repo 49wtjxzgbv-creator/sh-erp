@@ -237,6 +237,7 @@
     "qty": "Quantity",
     "componentTypeProduct": "Product",
     "componentTypeAssembly": "Sub-assembly",
+    "componentTypeOwn": "Assembly's own cost",
     "addLine": "Add line",
     "saveBom": "Save BOM",
     "bomSaved": "BOM saved, new version created",

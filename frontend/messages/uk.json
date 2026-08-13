@@ -237,6 +237,7 @@
     "qty": "Кількість",
     "componentTypeProduct": "Товар",
     "componentTypeAssembly": "Вузол (специфікація)",
+    "componentTypeOwn": "Власні витрати виробу",
     "addLine": "Додати рядок",
     "saveBom": "Зберегти BOM",
     "bomSaved": "BOM збережено, створено нову версію",

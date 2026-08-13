@@ -8,7 +8,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
-import { ComponentNameCell, ComponentArticleCell } from '@/components/domain/bom/assembly-spec-print';
+import { ComponentNameCell, ComponentArticleCell, useOwnCostLines } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
 import type { CostBreakdownLine } from '@/lib/api-client/bom';
@@ -92,6 +92,7 @@ function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { ass
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
   const { data: cost } = useAssemblyCost(assemblyId);
+  const ownCostLines = useOwnCostLines(assembly);
 
   const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
   const subAssemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
@@ -137,8 +138,23 @@ function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { ass
               {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
             </tr>
           ))}
+          {ownCostLines.map((line) => (
+            <tr key={`own-${line.key}`}>
+              <td />
+              <td />
+              <td>{line.label}</td>
+              <td>{t('componentTypeOwn')}</td>
+              <td>{qty}</td>
+              {showPrice && <td>{formatEur(line.value * qty)}</td>}
+            </tr>
+          ))}
         </tbody>
       </table>
+      {showPrice && (
+        <p className="mt-1 text-sm">
+          {t('cost')}: {formatEur(cost.costPerUnit * qty)}
+        </p>
+      )}
       {cost.breakdown
         .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
         .map((l, i) => (
