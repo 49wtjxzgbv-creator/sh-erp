@@ -50,6 +50,7 @@ export interface PlannerItemNode {
   id: string;
   assemblyId: string;
   assemblyName: string;
+  article: string | null;
   qty: number;
   plan: { startAt: string | null; endAt: string | null; deadline: string | null };
   quantitySummary: PlannerItemQuantitySummary;

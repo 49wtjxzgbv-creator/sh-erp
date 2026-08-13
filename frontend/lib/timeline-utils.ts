@@ -40,3 +40,34 @@ export function timelineWeekMarks(from: Date, to: Date): Date[] {
   }
   return marks;
 }
+
+/** One mark per calendar day (midnight) within [from, to] — the finest gridline, used by the Planner Gantt's Day/Week scales and for weekend shading. Capped at 3660 iterations (~10 years). */
+export function timelineDayMarks(from: Date, to: Date): Date[] {
+  const marks: Date[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  let guard = 0;
+  while (cursor <= to && guard < 3660) {
+    marks.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+    guard += 1;
+  }
+  return marks;
+}
+
+/** One mark per hour boundary within [from, to] — the Planner Gantt's Day scale. Capped at 24*14 (two weeks) since an hour-level view is only ever shown over a short window. */
+export function timelineHourMarks(from: Date, to: Date): Date[] {
+  const marks: Date[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate(), from.getHours());
+  let guard = 0;
+  while (cursor <= to && guard < 24 * 14) {
+    marks.push(new Date(cursor));
+    cursor.setHours(cursor.getHours() + 1);
+    guard += 1;
+  }
+  return marks;
+}
+
+export function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}

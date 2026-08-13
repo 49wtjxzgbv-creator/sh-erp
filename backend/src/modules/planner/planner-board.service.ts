@@ -52,6 +52,7 @@ export class PlannerBoardService {
     const assemblyIds = Array.from(new Set([...(orders as any[]).flatMap((o) => o.items.map((i: any) => i.assemblyId)), ...(batches as any[]).map((b) => b.assemblyId)]));
     const assemblies = assemblyIds.length ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } } }) : [];
     const assemblyNameById = new Map((assemblies as any[]).map((a) => [a.id, a.name]));
+    const assemblyArticleById = new Map((assemblies as any[]).map((a) => [a.id, a.article as string | null]));
     const employeeNameById = new Map((employees as any[]).map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
 
     // Stock levels for the material-shortage forecast (Rule 1) — same two
@@ -169,6 +170,7 @@ export class PlannerBoardService {
               id: item.id,
               assemblyId: item.assemblyId,
               assemblyName,
+              article: assemblyArticleById.get(item.assemblyId) ?? null,
               qty: ordered,
               plan: { startAt: item.plannedStartAt, endAt: item.plannedEndAt, deadline: item.itemDeadline },
               quantitySummary: { ordered, inProduction, completed, remaining: Math.max(ordered - inProduction, 0) },

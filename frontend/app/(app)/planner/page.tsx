@@ -1,55 +1,33 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, ChevronRight, AlertCircle, AlertTriangle, Info, Search } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Search, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
-import { PlannerGanttChart } from '@/components/domain/planner/planner-gantt';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/planner/planner-gantt';
+import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
+import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type {
-  PlannerBatchNode,
-  PlannerItemNode,
-  PlannerKpis,
-  PlannerOrderNode,
-  PlannerProblem,
-  QueryPlannerBoardInput,
-} from '@/lib/api-client/planner';
+import type { PlannerKpis, PlannerProblem, QueryPlannerBoardInput } from '@/lib/api-client/planner';
 
 /**
- * План-графік — the production dispatcher center, not a decorative
- * calendar (see the confirmed plan: /Users/illa/.claude/plans/
- * synthetic-knitting-kahn.md). Two views over the same real hierarchy —
- * CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan:
- * PlannerGanttChart (components/domain/planner/planner-gantt.tsx) is the
- * actual percent-positioned timeline diagram (same technique as the
- * Dashboard's operations-timeline.tsx), and the expandable cards below it
- * carry the full text detail (quantity summary, all four order-level
- * planned dates, purchase-order suppliers) that doesn't fit in a Gantt
- * row's label. Every plan/fact date, quantity, and problem shown in either
- * view comes straight from planner-board.service.ts's real-entity
- * computation — nothing invented. Drag-and-drop editing directly on the
- * chart is explicitly Phase B, deferred per the confirmed plan.
+ * План-графік — the production dispatcher center. A professional
+ * hierarchical Gantt (components/domain/planner/planner-gantt.tsx) is the
+ * primary view; this page owns the KPI bar, filters, problem dispatcher,
+ * and print scaffolding around it. Photos are batch-fetched once here
+ * (useFilesForEntities with every item's assemblyId in one call — same
+ * "one request for the whole page" convention as sales/[id]'s
+ * OrderPriceTotals) and handed down as a plain map, so the Gantt itself
+ * never triggers its own per-row photo request.
  */
-
-const RISK_VARIANT: Record<PlannerOrderNode['riskLevel'], 'secondary' | 'warning' | 'destructive'> = {
-  none: 'secondary',
-  warning: 'warning',
-  critical: 'destructive',
-};
-
-const BATCH_STATUS_VARIANT: Record<PlannerBatchNode['status'], 'secondary' | 'warning' | 'success' | 'destructive'> = {
-  PLANNED: 'secondary',
-  IN_PROGRESS: 'warning',
-  COMPLETED: 'success',
-  CANCELLED: 'destructive',
-};
 
 const SEVERITY_ICON: Record<PlannerProblem['severity'], typeof AlertCircle> = {
   critical: AlertCircle,
@@ -62,25 +40,6 @@ const SEVERITY_COLOR: Record<PlannerProblem['severity'], string> = {
   warning: 'text-warning',
   info: 'text-muted-foreground',
 };
-
-function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : '';
-}
-
-function PlanFactDates({ plan, fact, notPlannedLabel, planLabel, factLabel }: { plan: { startAt: string | null; endAt: string | null }; fact?: { startAt: string | null; endAt: string | null }; notPlannedLabel: string; planLabel: string; factLabel: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 text-xs">
-      <span className="text-muted-foreground">
-        {planLabel}: {plan.startAt || plan.endAt ? `${fmtDate(plan.startAt)} → ${fmtDate(plan.endAt)}` : notPlannedLabel}
-      </span>
-      {fact && (fact.startAt || fact.endAt) && (
-        <span className="font-medium">
-          {factLabel}: {fmtDate(fact.startAt)} → {fact.endAt ? fmtDate(fact.endAt) : '…'}
-        </span>
-      )}
-    </div>
-  );
-}
 
 function entityHref(problem: PlannerProblem): string {
   switch (problem.entityType) {
@@ -100,7 +59,8 @@ function entityHref(problem: PlannerProblem): string {
   }
 }
 
-function ProblemsPanel({ problems }: { problems: PlannerProblem[] }) {
+/** Primary click scrolls/highlights the row inside the Gantt (never navigates away); the small external-link icon is the explicit "go to the real entity" action — matches §11/§12 of the confirmed spec: jump-in-place is the default, navigation is a deliberate second action. */
+function ProblemsPanel({ problems, onJump }: { problems: PlannerProblem[]; onJump: (p: PlannerProblem) => void }) {
   const t = useTranslations('planner');
   const sorted = useMemo(() => {
     const rank: Record<PlannerProblem['severity'], number> = { critical: 0, warning: 1, info: 2 };
@@ -116,14 +76,17 @@ function ProblemsPanel({ problems }: { problems: PlannerProblem[] }) {
         {sorted.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('problemsEmpty')}</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {sorted.map((p, i) => {
               const Icon = SEVERITY_ICON[p.severity];
               return (
-                <li key={`${p.code}-${p.entityId}-${i}`}>
-                  <Link href={entityHref(p)} className="flex items-start gap-2 rounded-md p-1.5 text-sm hover:bg-secondary">
+                <li key={`${p.code}-${p.entityId}-${i}`} className="flex items-start gap-2 rounded-md p-1.5 text-sm hover:bg-secondary">
+                  <button type="button" onClick={() => onJump(p)} className="flex flex-1 items-start gap-2 text-left">
                     <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', SEVERITY_COLOR[p.severity])} />
                     <span>{p.message}</span>
+                  </button>
+                  <Link href={entityHref(p)} className="shrink-0 text-muted-foreground hover:text-primary" title={t('openEntity')}>
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </Link>
                 </li>
               );
@@ -135,157 +98,6 @@ function ProblemsPanel({ problems }: { problems: PlannerProblem[] }) {
   );
 }
 
-function StageRow({ stage, notPlannedLabel }: { stage: PlannerBatchNode['stages'][number]; notPlannedLabel: string }) {
-  return (
-    <div className="flex items-center justify-between rounded border border-border/60 px-2 py-1 text-xs">
-      <span className="font-medium">{stage.name}</span>
-      <span className={cn(!stage.plan && 'text-muted-foreground italic')}>
-        {stage.plan ? `${fmtDate(stage.plan.startAt)} → ${fmtDate(stage.plan.endAt)}` : notPlannedLabel}
-      </span>
-    </div>
-  );
-}
-
-function BatchRow({ batch }: { batch: PlannerBatchNode }) {
-  const t = useTranslations('planner');
-  const tp = useTranslations('production');
-  return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/20 p-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href={`/production/${batch.id}`} className="text-sm font-medium text-primary hover:underline">
-          {t('batch')} · {batch.unitsPlanned} {t('units')}
-        </Link>
-        <Badge variant={BATCH_STATUS_VARIANT[batch.status]}>{tp(`status${batch.status}`)}</Badge>
-      </div>
-      <PlanFactDates plan={batch.plan} fact={batch.fact} notPlannedLabel={t('notPlanned')} planLabel={t('planLabel')} factLabel={t('factLabel')} />
-      {batch.stages.length > 0 && (
-        <div className="space-y-1">
-          {batch.stages.map((stage) => (
-            <StageRow key={stage.id} stage={stage} notPlannedLabel={t('notPlanned')} />
-          ))}
-        </div>
-      )}
-      {batch.problems.length > 0 && (
-        <ul className="space-y-1">
-          {batch.problems.map((p, i) => {
-            const Icon = SEVERITY_ICON[p.severity];
-            return (
-              <li key={i} className={cn('flex items-start gap-1.5 text-xs', SEVERITY_COLOR[p.severity])}>
-                <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{p.message}</span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function ItemRow({ item }: { item: PlannerItemNode }) {
-  const t = useTranslations('planner');
-  const ts = useTranslations('sales');
-  const [open, setOpen] = useState(false);
-  const s = item.quantitySummary;
-
-  return (
-    <div className="rounded-md border border-border">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-secondary/50">
-        <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-          <span className="text-sm font-medium">{item.assemblyName} × {item.qty}</span>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>{t('ordered')}: {s.ordered}</span>
-          <span>{t('inProduction')}: {s.inProduction}</span>
-          <span>{t('completed')}: {s.completed}</span>
-          <span className="font-medium text-foreground">{t('remaining')}: {s.remaining}</span>
-          {item.problems.length > 0 && <AlertTriangle className="h-4 w-4 text-warning" />}
-        </div>
-      </button>
-      {open && (
-        <div className="space-y-2 border-t border-border p-3">
-          <PlanFactDates plan={{ startAt: item.plan.startAt, endAt: item.plan.endAt }} notPlannedLabel={t('notPlanned')} planLabel={t('planLabel')} factLabel={t('factLabel')} />
-          {item.plan.deadline && <p className="text-xs text-muted-foreground">{ts('deadline')}: {fmtDate(item.plan.deadline)}</p>}
-          {item.batches.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t('notPlanned')}</p>
-          ) : (
-            <div className="space-y-2">
-              {item.batches.map((b) => (
-                <BatchRow key={b.id} batch={b} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OrderCard({ order }: { order: PlannerOrderNode }) {
-  const t = useTranslations('planner');
-  const ts = useTranslations('sales');
-  const [open, setOpen] = useState(order.riskLevel !== 'none');
-
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 text-left">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          <Link href={`/sales/${order.id}`} className="text-base font-semibold text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-            {order.orderNumber ? `№${order.orderNumber} — ` : ''}{order.clientName}
-          </Link>
-          <Badge variant="outline">{ts(`orderStatus${order.status}`)}</Badge>
-        </button>
-        <Badge variant={RISK_VARIANT[order.riskLevel]}>{t(`risk${order.riskLevel === 'none' ? 'None' : order.riskLevel === 'warning' ? 'Warning' : 'Critical'}`)}</Badge>
-      </CardHeader>
-      {open && (
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div>
-              <p className="text-xs text-muted-foreground">{ts('plannedStartAt')}</p>
-              <p className="text-sm">{order.plan.startAt ? fmtDate(order.plan.startAt) : t('notPlanned')}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{ts('plannedCompletionAt')}</p>
-              <p className="text-sm">{order.plan.completionAt ? fmtDate(order.plan.completionAt) : t('notPlanned')}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{ts('plannedShipmentAt')}</p>
-              <p className="text-sm">{order.plan.shipmentAt ? fmtDate(order.plan.shipmentAt) : t('notPlanned')}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{ts('deadline')}</p>
-              <p className="text-sm">{order.deadline ? fmtDate(order.deadline) : t('notPlanned')}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {order.items.map((item) => (
-              <ItemRow key={item.id} item={item} />
-            ))}
-          </div>
-
-          {order.purchaseOrders.length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-medium text-muted-foreground">{t('materials')}</p>
-              <div className="flex flex-wrap gap-2">
-                {order.purchaseOrders.map((po) => (
-                  <Link key={po.id} href={`/procurement/${po.id}`}>
-                    <Badge variant={po.status === 'DELIVERED' ? 'success' : 'outline'}>
-                      {po.supplierName} — {po.expectedDeliveryDate ? fmtDate(po.expectedDeliveryDate) : t('notPlanned')}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
 export default function PlannerPage() {
   const t = useTranslations('planner');
   const ts = useTranslations('sales');
@@ -293,15 +105,38 @@ export default function PlannerPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string | undefined>(undefined);
   const [problemOnly, setProblemOnly] = useState(false);
+  const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [pageSize, setPageSize] = useState<'A4' | 'A3'>('A4');
 
   const query: QueryPlannerBoardInput = {
     search: search || undefined,
     status,
     problem: problemOnly ? 'true' : undefined,
+    supplierId,
+    from: dateFrom ? new Date(dateFrom).toISOString() : undefined,
+    to: dateTo ? new Date(dateTo).toISOString() : undefined,
   };
 
   const { data: board, isLoading } = usePlannerBoard(query);
   const { data: kpis } = usePlannerKpis(query);
+  const { data: suppliers } = useSuppliers({ limit: 200 });
+
+  const allAssemblyIds = useMemo(() => Array.from(new Set((board?.orders ?? []).flatMap((o) => o.items.map((i) => i.assemblyId)))), [board]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', allAssemblyIds, 'ASSEMBLY_PHOTO');
+  const photoByAssembly = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    for (const [assemblyId, files] of Object.entries(photosByAssembly ?? {})) {
+      map[assemblyId] = files[0]?.downloadUrl;
+    }
+    return map;
+  }, [photosByAssembly]);
+
+  const ganttRef = useRef<PlannerGanttHandle>(null);
+  function handleJumpToProblem(p: PlannerProblem) {
+    ganttRef.current?.revealEntity(p.entityType, p.entityId, p.orderId);
+  }
 
   const kpiCards: { key: keyof PlannerKpis; label: string; warn?: boolean }[] = kpis
     ? [
@@ -317,14 +152,34 @@ export default function PlannerPage() {
       ]
     : [];
 
+  const printFrom = board ? new Date(board.from) : new Date();
+  const printTo = board ? new Date(board.to) : new Date();
+  const periodLabel = `${printFrom.toLocaleDateString()} — ${printTo.toLocaleDateString()}`;
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">{t('title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
+      <style>{`@page { size: ${pageSize} landscape; margin: 10mm; }`}</style>
+
+      <div className="flex flex-wrap items-start justify-between gap-3 no-print">
+        <div>
+          <h1 className="text-xl font-semibold">{t('title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={pageSize} onValueChange={(v) => setPageSize(v as 'A4' | 'A3')}>
+            <SelectTrigger className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="A4">A4</SelectItem>
+              <SelectItem value="A3">A3</SelectItem>
+            </SelectContent>
+          </Select>
+          <PrintButton label={t('printButton')} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="no-print grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {kpiCards.map(({ key, label, warn }) => (
           <button
             key={key}
@@ -342,14 +197,14 @@ export default function PlannerPage() {
         ))}
       </div>
 
-      <Card>
+      <Card className="no-print">
         <CardContent className="flex flex-wrap items-center gap-3 py-4">
-          <div className="relative w-64">
+          <div className="relative w-56">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input className="pl-8" placeholder={t('filterSearch')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <Select value={status ?? '__all__'} onValueChange={(v) => setStatus(v === '__all__' ? undefined : v)}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-44">
               <SelectValue placeholder={t('filterAllStatuses')} />
             </SelectTrigger>
             <SelectContent>
@@ -360,30 +215,56 @@ export default function PlannerPage() {
               <SelectItem value="CANCELLED">{ts('orderStatusCANCELLED')}</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={supplierId ?? '__all__'} onValueChange={(v) => setSupplierId(v === '__all__' ? undefined : v)}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder={t('filterSupplier')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('filterSupplier')}</SelectItem>
+              {(suppliers?.items ?? []).map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-1.5">
+            <Input type="date" className="w-36" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title={t('filterFrom')} />
+            <span className="text-muted-foreground">—</span>
+            <Input type="date" className="w-36" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title={t('filterTo')} />
+          </div>
           <Button variant={problemOnly ? 'default' : 'outline'} size="sm" onClick={() => setProblemOnly((v) => !v)}>
             {t('filterOnlyProblems')}
           </Button>
         </CardContent>
       </Card>
 
-      {board && <ProblemsPanel problems={board.problems} />}
+      <div className="no-print">{board && <ProblemsPanel problems={board.problems} onJump={handleJumpToProblem} />}</div>
 
       {isLoading || !board ? (
         <LoadingBlock />
       ) : board.orders.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">{t('noOrders')}</p>
+        <p className="py-8 text-center text-sm text-muted-foreground no-print">{t('noOrders')}</p>
       ) : (
         <>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <div className="no-print flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border border-foreground/40 opacity-60" />{t('planLabel')}</span>
             <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
           </div>
-          <PlannerGanttChart orders={board.orders} from={new Date(board.from)} to={new Date(board.to)} />
-          <div className="space-y-3">
-            {board.orders.map((order) => (
-              <OrderCard key={order.id} order={order} />
-            ))}
+          <div className="no-print">
+            <PlannerGanttChart ref={ganttRef} orders={board.orders} photoByAssembly={photoByAssembly} />
           </div>
+
+          <PrintArea>
+            <PrintDocumentHeader title={t('printTitle')} subtitle={t('printSubtitle')} />
+            <p className="mb-3 text-xs">
+              {t('printPeriod')}: {periodLabel}
+            </p>
+            <PlannerGanttPrintTable orders={board.orders} photoByAssembly={photoByAssembly} from={printFrom} to={printTo} />
+            <div className="mt-4 text-[9px]">
+              <strong>{t('legendTitle')}:</strong> {t('legendPlan')} · {t('legendFact')} · {t('legendMilestone')} · {t('legendWarning')} · {t('legendCritical')}
+            </div>
+          </PrintArea>
         </>
       )}
     </div>

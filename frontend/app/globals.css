@@ -171,4 +171,43 @@
   .no-print {
     display: none !important;
   }
+
+  /* План-графік print table (planner-gantt-print.tsx) — a real <table> so
+   * the <thead> genuinely repeats on every printed page (sticky divs don't
+   * paginate at all; this does, in every major browser's print engine) and
+   * rows don't get orphaned mid-content across a page break. */
+  .planner-print-table {
+    table-layout: fixed;
+  }
+  .planner-print-table thead {
+    display: table-header-group;
+  }
+  .planner-print-table tr {
+    page-break-inside: avoid;
+  }
+  .planner-print-table td,
+  .planner-print-table th {
+    font-size: 9px;
+    vertical-align: top;
+  }
+  .planner-print-order td {
+    background: #eee;
+    font-size: 11px;
+  }
+  .planner-print-photo {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border: 1px solid #999;
+    border-radius: 2px;
+  }
+  .planner-print-photo-empty {
+    align-items: center;
+    justify-content: center;
+    font-size: 6px;
+    text-align: center;
+    color: #666;
+  }
 }
