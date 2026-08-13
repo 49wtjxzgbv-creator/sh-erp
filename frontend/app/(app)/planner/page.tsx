@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, AlertCircle, AlertTriangle, Info, Search } from 'lucide-react';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
+import { PlannerGanttChart } from '@/components/domain/planner/planner-gantt';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,13 +25,17 @@ import type {
 /**
  * План-графік — the production dispatcher center, not a decorative
  * calendar (see the confirmed plan: /Users/illa/.claude/plans/
- * synthetic-knitting-kahn.md). Renders the real hierarchy — CustomerOrder
- * → CustomerOrderItem → ProductionOrder batch → stage plan — as an
- * expandable dispatcher table rather than a bespoke percent-positioned
- * Gantt canvas: every plan/fact date, quantity, and problem shown here
- * comes straight from planner-board.service.ts's real-entity computation,
- * nothing invented. A full drag-and-drop Gantt visualization is explicitly
- * Phase B, deferred per the confirmed plan.
+ * synthetic-knitting-kahn.md). Two views over the same real hierarchy —
+ * CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan:
+ * PlannerGanttChart (components/domain/planner/planner-gantt.tsx) is the
+ * actual percent-positioned timeline diagram (same technique as the
+ * Dashboard's operations-timeline.tsx), and the expandable cards below it
+ * carry the full text detail (quantity summary, all four order-level
+ * planned dates, purchase-order suppliers) that doesn't fit in a Gantt
+ * row's label. Every plan/fact date, quantity, and problem shown in either
+ * view comes straight from planner-board.service.ts's real-entity
+ * computation — nothing invented. Drag-and-drop editing directly on the
+ * chart is explicitly Phase B, deferred per the confirmed plan.
  */
 
 const RISK_VARIANT: Record<PlannerOrderNode['riskLevel'], 'secondary' | 'warning' | 'destructive'> = {
@@ -368,11 +373,18 @@ export default function PlannerPage() {
       ) : board.orders.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">{t('noOrders')}</p>
       ) : (
-        <div className="space-y-3">
-          {board.orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
-          ))}
-        </div>
+        <>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border border-foreground/40 opacity-60" />{t('planLabel')}</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
+          </div>
+          <PlannerGanttChart orders={board.orders} from={new Date(board.from)} to={new Date(board.to)} />
+          <div className="space-y-3">
+            {board.orders.map((order) => (
+              <OrderCard key={order.id} order={order} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
