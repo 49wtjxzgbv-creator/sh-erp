@@ -68,65 +68,72 @@ function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
 }
 
 /**
- * One row of the exploded composition tree — a product leaf, or a
- * sub-assembly whose own components recurse via <BomTreeRows> right below
- * it, indented one level deeper. `qtyMultiplier` is already the fully
- * accumulated quantity needed for the *whole order* down this branch (order
- * qty × every ancestor's qtyPerUnit), not just this line's own qtyPerUnit —
- * that's the actual question being answered ("скільки потрібно"), not a
- * per-parent-unit ratio.
+ * One "X consists of: [table]" block per assembly node in the exploded
+ * composition tree, followed by one such block per sub-assembly it uses —
+ * in that order (parent's own component table first, then each child's own
+ * block), so the printed document reads top-down exactly as asked: "виріб
+ * X складається з товарів/підвиробу Y", then right below, "підвиріб Y
+ * складається з товарів...", and so on down to raw products. `qty` is
+ * already the fully accumulated quantity needed for the *whole order* down
+ * this branch (order qty × every ancestor's qtyPerUnit), not a
+ * per-parent-unit ratio — that's the actual question being answered
+ * ("скільки потрібно"). BOM cycles are rejected at save time
+ * (setAssemblyComponents), so the recursion always terminates at product
+ * leaves — no depth guard needed here.
  */
-function BomTreeLine({ line, qtyMultiplier, depth }: { line: CostBreakdownLine; qtyMultiplier: number; depth: number }) {
+function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: string; qty: number; depth: number }) {
   const t = useTranslations('bom');
-  const totalQty = line.qtyPerUnit * qtyMultiplier;
-  return (
-    <>
-      <tr>
-        <td style={{ paddingLeft: `${depth * 16}px` }}><ComponentNameCell line={line} /></td>
-        <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
-        <td>{totalQty}</td>
-      </tr>
-      {line.componentType === 'ASSEMBLY' && line.subAssemblyId && (
-        <BomTreeRows assemblyId={line.subAssemblyId} qtyMultiplier={totalQty} depth={depth + 1} />
-      )}
-    </>
-  );
-}
-
-/** BOM cycles are rejected at save time (setAssemblyComponents), so this recursion always terminates at product leaves — no depth guard needed here. */
-function BomTreeRows({ assemblyId, qtyMultiplier, depth }: { assemblyId: string; qtyMultiplier: number; depth: number }) {
+  const tp = useTranslations('print');
+  const { data: assembly } = useAssembly(assemblyId);
   const { data: cost } = useAssemblyCost(assemblyId);
-  if (!cost) return null;
-  return (
-    <>
-      {cost.breakdown.map((line, i) => (
-        <BomTreeLine key={i} line={line} qtyMultiplier={qtyMultiplier} depth={depth} />
-      ))}
-    </>
-  );
-}
 
-/** Full exploded composition for one order line — the assembly itself, then every product/sub-assembly it needs, recursively, so the printed document shows what the order actually consists of down to raw products (not just the ordered assemblies). */
-function OrderItemComposition({ item }: { item: CustomerOrderItem }) {
-  const t = useTranslations('bom');
-  const { data: assembly } = useAssembly(item.assemblyId);
+  const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
+  const subAssemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', subAssemblyIds, 'ASSEMBLY_PHOTO');
+  const { data: photosOfThis } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
+
+  if (!assembly || !cost) return null;
+
+  function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
+    if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
+    if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
+    return undefined;
+  }
+
+  const name = `${assembly.article ?? ''} ${assembly.name}`.trim();
+
   return (
-    <div className="mb-4">
-      <p className="mb-1 font-semibold">
-        {assembly ? `${assembly.article ?? ''} ${assembly.name}` : item.assemblyId} — {item.qty} {t('qty').toLowerCase()}
-      </p>
+    <div className="mb-4 break-inside-avoid" style={{ marginLeft: depth * 24 }}>
+      <div className="mb-1 flex items-center gap-2">
+        <Avatar src={photosOfThis?.[assemblyId]?.[0]?.downloadUrl} size="lg" />
+        <p className="font-semibold">{depth === 0 ? tp('consistsOfTop', { name, qty }) : tp('consistsOfSub', { name, qty })}</p>
+      </div>
       <table>
         <thead>
           <tr>
+            <th>{tp('photoColumn')}</th>
             <th>{t('component')}</th>
             <th>{t('componentType')}</th>
             <th>{t('qty')}</th>
           </tr>
         </thead>
         <tbody>
-          <BomTreeRows assemblyId={item.assemblyId} qtyMultiplier={Number(item.qty)} depth={0} />
+          {cost.breakdown.map((line, i) => (
+            <tr key={i}>
+              <td><Avatar src={lineDownloadUrl(line)} size="lg" /></td>
+              <td><ComponentNameCell line={line} /></td>
+              <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
+              <td>{line.qtyPerUnit * qty}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
+      {cost.breakdown
+        .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
+        .map((l, i) => (
+          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} />
+        ))}
     </div>
   );
 }
@@ -206,7 +213,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           <div className="mt-6">
             <h2 className="mb-2 text-base font-semibold">{tp('compositionSectionTitle')}</h2>
             {order.items.map((item) => (
-              <OrderItemComposition key={item.id} item={item} />
+              <AssemblyCompositionSection key={item.id} assemblyId={item.assemblyId} qty={Number(item.qty)} depth={0} />
             ))}
           </div>
         )}

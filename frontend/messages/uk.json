@@ -673,6 +673,8 @@
     "printOrder": "Друкувати замовлення",
     "customerOrderTitle": "Замовлення клієнта",
     "compositionSectionTitle": "Повний склад замовлення",
+    "consistsOfTop": "Виріб «{name}» (кількість {qty}) складається з:",
+    "consistsOfSub": "Підвиріб «{name}» (кількість {qty}) складається з:",
     "printPurchaseRequest": "Друк заявок постачальникам",
     "supplierRequestsTitle": "Заявки постачальникам",
     "requestTo": "Заявка постачальнику",

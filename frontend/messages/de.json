@@ -673,6 +673,8 @@
     "printOrder": "Print order",
     "customerOrderTitle": "Customer order",
     "compositionSectionTitle": "Full order composition",
+    "consistsOfTop": "Product \u00ab{name}\u00bb (qty {qty}) consists of:",
+    "consistsOfSub": "Sub-assembly \u00ab{name}\u00bb (qty {qty}) consists of:",
     "printPurchaseRequest": "Print supplier requests",
     "supplierRequestsTitle": "Supplier purchase requests",
     "requestTo": "Request to",
