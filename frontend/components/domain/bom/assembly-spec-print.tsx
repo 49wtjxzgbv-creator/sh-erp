@@ -21,7 +21,7 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
  * `useAssembly` hooks every other page already uses — no new backend
  * endpoint, just paid for here instead of deferred to a raw-id table cell.
  */
-function ComponentNameCell({ line }: { line: CostBreakdownLine }) {
+export function ComponentNameCell({ line }: { line: CostBreakdownLine }) {
   const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
   const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
   if (line.componentType === 'PRODUCT') return <>{product ? `${product.article} — ${product.name}` : line.productId}</>;

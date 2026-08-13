@@ -8,8 +8,10 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { ComponentNameCell } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
+import type { CostBreakdownLine } from '@/lib/api-client/bom';
 
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
@@ -65,6 +67,70 @@ function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
   );
 }
 
+/**
+ * One row of the exploded composition tree — a product leaf, or a
+ * sub-assembly whose own components recurse via <BomTreeRows> right below
+ * it, indented one level deeper. `qtyMultiplier` is already the fully
+ * accumulated quantity needed for the *whole order* down this branch (order
+ * qty × every ancestor's qtyPerUnit), not just this line's own qtyPerUnit —
+ * that's the actual question being answered ("скільки потрібно"), not a
+ * per-parent-unit ratio.
+ */
+function BomTreeLine({ line, qtyMultiplier, depth }: { line: CostBreakdownLine; qtyMultiplier: number; depth: number }) {
+  const t = useTranslations('bom');
+  const totalQty = line.qtyPerUnit * qtyMultiplier;
+  return (
+    <>
+      <tr>
+        <td style={{ paddingLeft: `${depth * 16}px` }}><ComponentNameCell line={line} /></td>
+        <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
+        <td>{totalQty}</td>
+      </tr>
+      {line.componentType === 'ASSEMBLY' && line.subAssemblyId && (
+        <BomTreeRows assemblyId={line.subAssemblyId} qtyMultiplier={totalQty} depth={depth + 1} />
+      )}
+    </>
+  );
+}
+
+/** BOM cycles are rejected at save time (setAssemblyComponents), so this recursion always terminates at product leaves — no depth guard needed here. */
+function BomTreeRows({ assemblyId, qtyMultiplier, depth }: { assemblyId: string; qtyMultiplier: number; depth: number }) {
+  const { data: cost } = useAssemblyCost(assemblyId);
+  if (!cost) return null;
+  return (
+    <>
+      {cost.breakdown.map((line, i) => (
+        <BomTreeLine key={i} line={line} qtyMultiplier={qtyMultiplier} depth={depth} />
+      ))}
+    </>
+  );
+}
+
+/** Full exploded composition for one order line — the assembly itself, then every product/sub-assembly it needs, recursively, so the printed document shows what the order actually consists of down to raw products (not just the ordered assemblies). */
+function OrderItemComposition({ item }: { item: CustomerOrderItem }) {
+  const t = useTranslations('bom');
+  const { data: assembly } = useAssembly(item.assemblyId);
+  return (
+    <div className="mb-4">
+      <p className="mb-1 font-semibold">
+        {assembly ? `${assembly.article ?? ''} ${assembly.name}` : item.assemblyId} — {item.qty} {t('qty').toLowerCase()}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>{t('component')}</th>
+            <th>{t('componentType')}</th>
+            <th>{t('qty')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <BomTreeRows assemblyId={item.assemblyId} qtyMultiplier={Number(item.qty)} depth={0} />
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Prints the customer order document ("Друкувати замовлення" in legacy). */
 export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const t = useTranslations('sales');
@@ -78,6 +144,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
     { id: 'qty', label: t('qty') },
     { id: 'estimatedPrice', label: t('estimatedPrice') },
     { id: 'actualPrice', label: t('actualPrice') },
+    { id: 'composition', label: t('fullComposition') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -134,6 +201,14 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
         </table>
         {(printOptions.isColumnVisible('estimatedPrice') || printOptions.isColumnVisible('actualPrice')) && order.items && order.items.length > 0 && (
           <PrintPriceTotals items={order.items} />
+        )}
+        {printOptions.isColumnVisible('composition') && order.items && order.items.length > 0 && (
+          <div className="mt-6">
+            <h2 className="mb-2 text-base font-semibold">{tp('compositionSectionTitle')}</h2>
+            {order.items.map((item) => (
+              <OrderItemComposition key={item.id} item={item} />
+            ))}
+          </div>
         )}
       </PrintArea>
     </>
