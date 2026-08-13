@@ -222,7 +222,8 @@
     "statusCompleted": "Завершено",
     "filterByProduct": "Фільтр за товаром",
     "filterByWarehouse": "Фільтр за складом",
-    "allWarehouses": "Усі склади"
+    "allWarehouses": "Усі склади",
+    "qtyEditComment": "Ручне редагування кількості зі списку залишків"
   },
   "bom": {
     "title": "Специфікації (BOM)",

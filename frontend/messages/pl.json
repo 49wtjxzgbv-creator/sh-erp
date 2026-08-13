@@ -222,7 +222,8 @@
     "statusCompleted": "Completed",
     "filterByProduct": "Filter by product",
     "filterByWarehouse": "Filter by warehouse",
-    "allWarehouses": "All warehouses"
+    "allWarehouses": "All warehouses",
+    "qtyEditComment": "Manual quantity edit from the stock list"
   },
   "bom": {
     "title": "Bill of Materials",

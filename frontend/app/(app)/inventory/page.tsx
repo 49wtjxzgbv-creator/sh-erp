@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
 import { ArrowLeftRight, Plus } from 'lucide-react';
-import { useStockLevels, useWarehouses } from '@/lib/hooks/use-inventory';
+import { useStockLevels, useWarehouses, useRecordStockMovement } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { updateProduct } from '@/lib/api-client/catalog';
@@ -31,10 +31,12 @@ export default function StockLevelsPage() {
   const [movementOpen, setMovementOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [savingCell, setSavingCell] = useState<string | null>(null);
-  const [cellError, setCellError] = useState<string | null>(null);
+  const [savingQty, setSavingQty] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
 
   const { data: warehouses } = useWarehouses();
   const { data: levels, isLoading } = useStockLevels({ warehouseId });
+  const recordMovement = useRecordStockMovement();
 
   const warehouseName = useMemo(() => {
     const map = new Map<string, string>();
@@ -70,15 +72,48 @@ export default function StockLevelsPage() {
   // `products/batch` cache) is what makes the edit show up everywhere else
   // that reads it (Catalog grid, product detail page), not just here.
   async function saveCell(productId: string, value: string) {
-    setCellError(null);
+    setRowError(null);
     setSavingCell(productId);
     try {
       await updateProduct(productId, { cell: value });
       qc.invalidateQueries({ queryKey: ['products'] });
     } catch (err) {
-      setCellError(apiErrorMessage(err, tc('error')));
+      setRowError(apiErrorMessage(err, tc('error')));
     } finally {
       setSavingCell(null);
+    }
+  }
+
+  // Quantity is never a directly-writable field (schema.prisma) — every
+  // change goes through StockService.applyMovement as an audited
+  // StockMovement, ADJUST being the type meant for exactly this manual
+  // correction. This computes the delta from the target quantity the user
+  // typed and reuses the same POST /stock/movements the "Рух товару" dialog
+  // already calls, just without making the user pick product+warehouse
+  // (the row already is one) or compute the delta themselves.
+  async function saveQty(stock: WarehouseStock, rawValue: string) {
+    setRowError(null);
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setRowError(tc('error'));
+      return;
+    }
+    const current = Number(stock.qty);
+    const delta = parsed - current;
+    if (delta === 0) return;
+    setSavingQty(stock.id);
+    try {
+      await recordMovement.mutateAsync({
+        productId: stock.productId,
+        warehouseId: stock.warehouseId,
+        type: 'ADJUST',
+        qtyDelta: delta,
+        comment: t('qtyEditComment'),
+      });
+    } catch (err) {
+      setRowError(apiErrorMessage(err, tc('error')));
+    } finally {
+      setSavingQty(null);
     }
   }
 
@@ -125,9 +160,27 @@ export default function StockLevelsPage() {
         header: t('warehouse'),
         cell: ({ getValue }) => warehouseName.get(getValue() as string) ?? (getValue() as string),
       },
-      { accessorKey: 'qty', header: t('qty') },
+      {
+        accessorKey: 'qty',
+        header: () => <span className="block text-right">{t('qty')}</span>,
+        cell: ({ row }) => (
+          <Input
+            type="number"
+            step="any"
+            min={0}
+            defaultValue={row.original.qty}
+            disabled={savingQty === row.original.id}
+            className={cn('h-8 w-24 text-right tabular-nums', savingQty === row.original.id && 'opacity-50')}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              if (e.target.value === row.original.qty) return;
+              saveQty(row.original, e.target.value);
+            }}
+          />
+        ),
+      },
     ],
-    [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell],
+    [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell, savingQty],
   );
 
   return (
@@ -166,7 +219,7 @@ export default function StockLevelsPage() {
         </div>
       </div>
 
-      {cellError && <p className="text-sm text-destructive">{cellError}</p>}
+      {rowError && <p className="text-sm text-destructive">{rowError}</p>}
 
       <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
 
