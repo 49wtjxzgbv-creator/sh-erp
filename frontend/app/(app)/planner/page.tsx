@@ -158,7 +158,20 @@ export default function PlannerPage() {
 
   const printFrom = printMode === 'year' ? new Date(year, 0, 1) : board ? new Date(board.from) : new Date();
   const printTo = printMode === 'year' ? new Date(year, 11, 31, 23, 59, 59) : board ? new Date(board.to) : new Date();
-  const periodLabel = `${printFrom.toLocaleDateString()} — ${printTo.toLocaleDateString()}`;
+  // In 'year' mode printFrom/printTo are built directly in the browser's own
+  // local time (new Date(year, 0, 1)) — formatting those locally is already
+  // correct. In 'current' mode they come from board.from/board.to, whole-
+  // calendar-day boundaries computed server-side and serialized as a UTC
+  // instant; formatting THOSE in the viewer's local timezone (anything ahead
+  // of UTC, e.g. Ukraine) can silently roll the displayed date into the next
+  // day, so that path is pinned to UTC to read back the calendar day the
+  // server actually meant. printFrom/printTo themselves stay real Date
+  // instants for the print table's position math either way — only this
+  // label's formatting differs.
+  const periodLabel =
+    printMode === 'year'
+      ? `${printFrom.toLocaleDateString('uk-UA')} — ${printTo.toLocaleDateString('uk-UA')}`
+      : `${printFrom.toLocaleDateString('uk-UA', { timeZone: 'UTC' })} — ${printTo.toLocaleDateString('uk-UA', { timeZone: 'UTC' })}`;
 
   /** Sets the print range before invoking window.print() — needs one tick for React to re-render the print table with the new from/to first. */
   function handlePrint(mode: 'current' | 'year') {

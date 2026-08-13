@@ -210,4 +210,27 @@
     text-align: center;
     color: #666;
   }
+  .planner-print-muted {
+    color: #555;
+  }
+  /* Month gridline, drawn per-row (a table has no reliable way to paint one
+   * continuous background across many <tr>s that also survives a page
+   * break) — repeating it per row gives the same continuous-grid look as
+   * the interactive Gantt. */
+  .planner-print-gridline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #ccc;
+  }
+  .planner-print-bar-label {
+    position: absolute;
+    left: 100%;
+    top: -1px;
+    margin-left: 2px;
+    font-size: 7px;
+    white-space: nowrap;
+    color: #333;
+  }
 }
