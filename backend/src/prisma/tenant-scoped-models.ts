@@ -52,4 +52,5 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'ImportConnection',
   'SupplierPortalUser',
   'ProductionScheduleSlot',
+  'ProductionOrderStagePlan',
 ]);
