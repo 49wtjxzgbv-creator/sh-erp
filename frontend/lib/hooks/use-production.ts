@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   queryProductionOrders,
   getProductionOrder,
@@ -45,6 +45,17 @@ export function useProductionOrder(id: string | undefined) {
     queryKey: orderKey(id ?? ''),
     queryFn: () => getProductionOrder(id as string),
     enabled: Boolean(id),
+  });
+}
+
+/** Same cache entries as `useProductionOrder` (shares `orderKey`), batched via `useQueries` — e.g. resolving each customer-order line's linked production order to read its frozen `totalLocalCostEur` for an "actual price" readout. */
+export function useProductionOrdersByIds(ids: (string | undefined)[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: orderKey(id ?? ''),
+      queryFn: () => getProductionOrder(id as string),
+      enabled: Boolean(id),
+    })),
   });
 }
 

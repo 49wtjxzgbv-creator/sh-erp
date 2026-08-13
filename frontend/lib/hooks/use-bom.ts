@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   queryAssemblies,
   getAssembly,
@@ -109,6 +109,25 @@ export function useAssemblyCost(assemblyId: string | undefined) {
     queryKey: costKey(assemblyId ?? ''),
     queryFn: () => calculateAssemblyCost(assemblyId as string),
     enabled: Boolean(assemblyId),
+  });
+}
+
+/**
+ * Same endpoint/cache entries as `useAssemblyCost` (shares `costKey`, so a
+ * page using both never double-fetches an assembly this hook already has),
+ * just batched via `useQueries` for a small dynamic list — e.g. pricing
+ * every line of a sales order being built. No dedicated backend batch
+ * endpoint: `assemblies/:id/cost` is already a cheap, on-demand pure
+ * computation (not backed by heavy I/O), and order lines are always a
+ * handful, not hundreds, so N small requests is proportionate here.
+ */
+export function useAssemblyCosts(assemblyIds: (string | undefined)[]) {
+  return useQueries({
+    queries: assemblyIds.map((id) => ({
+      queryKey: costKey(id ?? ''),
+      queryFn: () => calculateAssemblyCost(id as string),
+      enabled: Boolean(id),
+    })),
   });
 }
 

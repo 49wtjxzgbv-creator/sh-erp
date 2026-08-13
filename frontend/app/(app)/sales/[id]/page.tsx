@@ -12,10 +12,11 @@ import {
   useGiveItemToProduction,
   useGiveAllToProduction,
 } from '@/lib/hooks/use-sales';
-import { useAssembly } from '@/lib/hooks/use-bom';
+import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ApiError } from '@/lib/api-client/types';
-import type { CustomerOrderStatus } from '@/lib/api-client/sales';
+import type { CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,72 @@ function AssemblyCell({ assemblyId }: { assemblyId: string }) {
       <span className="max-w-[320px] truncate" title={assembly?.name ?? assemblyId}>
         {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
       </span>
+    </div>
+  );
+}
+
+/** Live BOM cost × qty — recomputed fresh every load, same "never frozen" estimate the creation form (sales/new) already shows, since nothing about this line is frozen until its production order actually starts. */
+function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
+  const t = useTranslations('sales');
+  const { data: cost } = useAssemblyCost(assemblyId);
+  return <TableCell className="text-muted-foreground">{cost ? (cost.costPerUnit * qty).toFixed(2) : t('pricePending')}</TableCell>;
+}
+
+/**
+ * The linked ProductionOrder's `totalLocalCostEur` — frozen the moment
+ * production actually started (real components consumed then, sellPriceEur
+ * at that moment), which is the only "what did this really cost" signal
+ * this app has today. Stays "ще не визначено" until the line has been
+ * given to production AND that order has been started — advancing through
+ * production stages afterward doesn't change it (see
+ * production-orders.service.ts: cost is frozen once at start(), never
+ * recomputed at stage-advance or completion).
+ */
+function ActualPriceCell({ productionOrderId }: { productionOrderId: string | null }) {
+  const t = useTranslations('sales');
+  const { data: po } = useProductionOrder(productionOrderId ?? undefined);
+  if (!productionOrderId || !po || po.totalLocalCostEur == null) {
+    return <TableCell className="text-muted-foreground">{t('pricePending')}</TableCell>;
+  }
+  return <TableCell>{Number(po.totalLocalCostEur).toFixed(2)}</TableCell>;
+}
+
+/** Order-level estimated/actual totals, batched — see EstimatedPriceCell/ActualPriceCell for what each is. */
+function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
+  const t = useTranslations('sales');
+  const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
+  const poResults = useProductionOrdersByIds(items.map((i) => i.productionOrderId ?? undefined));
+
+  let estimatedTotal = 0;
+  let hasEstimate = false;
+  items.forEach((item, i) => {
+    const cost = costResults[i]?.data;
+    if (cost) {
+      estimatedTotal += cost.costPerUnit * Number(item.qty);
+      hasEstimate = true;
+    }
+  });
+
+  let actualTotal = 0;
+  let hasActual = false;
+  items.forEach((item, i) => {
+    const po = poResults[i]?.data;
+    if (po?.totalLocalCostEur != null) {
+      actualTotal += Number(po.totalLocalCostEur);
+      hasActual = true;
+    }
+  });
+
+  return (
+    <div className="flex gap-6">
+      <div>
+        <p className="text-xs text-muted-foreground">{t('estimatedTotal')}</p>
+        <p className="text-sm font-medium">{hasEstimate ? estimatedTotal.toFixed(2) : t('pricePending')}</p>
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground">{t('actualTotal')}</p>
+        <p className="text-sm font-medium">{hasActual ? actualTotal.toFixed(2) : t('pricePending')}</p>
+      </div>
     </div>
   );
 }
@@ -201,11 +268,14 @@ export default function CustomerOrderDetailPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">{t('items')}</CardTitle>
-          {hasUngivenLines && (
-            <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
-              {t('giveAllToProduction')}
-            </Button>
-          )}
+          <div className="flex items-center gap-6">
+            {order.items && order.items.length > 0 && <OrderPriceTotals items={order.items} />}
+            {hasUngivenLines && (
+              <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
+                {t('giveAllToProduction')}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -213,6 +283,8 @@ export default function CustomerOrderDetailPage() {
               <TableRow>
                 <TableHead>{t('assembly')}</TableHead>
                 <TableHead>{t('qty')}</TableHead>
+                <TableHead>{t('estimatedPrice')}</TableHead>
+                <TableHead>{t('actualPrice')}</TableHead>
                 <TableHead>{t('productionStatus')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -221,6 +293,8 @@ export default function CustomerOrderDetailPage() {
                 <TableRow key={item.id}>
                   <TableCell><AssemblyCell assemblyId={item.assemblyId} /></TableCell>
                   <TableCell>{item.qty}</TableCell>
+                  <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />
+                  <ActualPriceCell productionOrderId={item.productionOrderId} />
                   <TableCell>
                     {item.productionOrderId ? (
                       <Link href={`/production/${item.productionOrderId}`} className="text-primary hover:underline">

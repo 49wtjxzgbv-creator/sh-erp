@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCreateCustomerOrder } from '@/lib/hooks/use-sales';
+import { useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { ApiError } from '@/lib/api-client/types';
 import type { CustomerOrderItemInput, CustomerOrderPriority } from '@/lib/api-client/sales';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
@@ -42,6 +43,22 @@ export default function NewCustomerOrderPage() {
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // "Оцінена ціна" — a live estimate from each assembly's current BOM cost
+  // (sellPriceEur-based, the one price basis every calculation in this app
+  // is pinned to), not a stored value: nothing about a not-yet-created
+  // order is frozen yet. `assemblies/:id/cost` is cheap/on-demand, and an
+  // order rarely has more than a handful of lines, so one small request
+  // per row (via useAssemblyCosts) is proportionate — see that hook.
+  const costResults = useAssemblyCosts(rows.map((r) => r.assemblyId));
+  const rowEstimates = rows.map((row, i) => {
+    const qty = Number(row.qty);
+    const cost = costResults[i]?.data;
+    return row.assemblyId && cost && qty > 0 ? cost.costPerUnit * qty : null;
+  });
+  const estimatedTotal = rowEstimates.some((v) => v != null)
+    ? rowEstimates.reduce((sum: number, v) => sum + (v ?? 0), 0)
+    : null;
 
   function addRow() {
     setRows((r) => [...r, { key: newRowKey(), qty: '' }]);
@@ -144,18 +161,19 @@ export default function NewCustomerOrderPage() {
               <TableRow>
                 <TableHead>{t('assembly')}</TableHead>
                 <TableHead className="w-32">{t('qty')}</TableHead>
+                <TableHead className="w-32">{t('estimatedPrice')}</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row) => (
+                rows.map((row, i) => (
                   <TableRow key={row.key}>
                     <TableCell>
                       <AssemblyPicker value={row.assemblyId} onChange={(id) => updateRow(row.key, { assemblyId: id })} />
@@ -169,6 +187,9 @@ export default function NewCustomerOrderPage() {
                         onChange={(e) => updateRow(row.key, { qty: e.target.value })}
                       />
                     </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {rowEstimates[i] != null ? rowEstimates[i]!.toFixed(2) : '—'}
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeRow(row.key)}>
                         <Trash2 className="h-4 w-4" />
@@ -176,6 +197,12 @@ export default function NewCustomerOrderPage() {
                     </TableCell>
                   </TableRow>
                 ))
+              )}
+              {estimatedTotal != null && (
+                <TableRow className="border-t-2 border-border font-medium">
+                  <TableCell colSpan={2}>{t('estimatedTotal')}</TableCell>
+                  <TableCell colSpan={2}>{estimatedTotal.toFixed(2)}</TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
