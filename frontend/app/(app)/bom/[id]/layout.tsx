@@ -5,8 +5,8 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useAssembly, useDeleteAssembly } from '@/lib/hooks/use-bom';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogTrigger,
@@ -73,25 +73,23 @@ export default function AssemblyLayout({ children }: { children: React.ReactNode
         </Dialog>
       </div>
 
-      <div className="flex gap-1 border-b border-border">
-        {tabs.map((tab) => {
-          const active = pathname === tab.href;
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                'border-b-2 px-3 py-2 text-sm transition-colors',
-                active
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t(tab.labelKey)}
-            </Link>
-          );
-        })}
-      </div>
+      {/*
+       * Each "tab" is a real route (Next layout swaps `children`), not a
+       * content panel Tabs itself owns — so TabsContent is deliberately
+       * unused here. Tabs/TabsList/TabsTrigger are reused purely for the
+       * shared underline styling + roving-tabindex keyboard nav; `value` is
+       * just the current pathname, `onValueChange` is a no-op since Link
+       * inside TabsTrigger (asChild) is what actually navigates.
+       */}
+      <Tabs value={tabs.find((tab) => tab.href === pathname)?.href ?? tabs[0].href}>
+        <TabsList>
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.href} value={tab.href} asChild>
+              <Link href={tab.href}>{t(tab.labelKey)}</Link>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {children}
     </div>

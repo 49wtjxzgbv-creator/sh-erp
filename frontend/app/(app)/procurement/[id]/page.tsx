@@ -117,11 +117,11 @@ export default function PurchaseOrderDetailPage() {
               <TableRow>
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
-                <TableHead>{t('qtyOrdered')}</TableHead>
-                <TableHead>{t('qtyReceived')}</TableHead>
-                <TableHead>{t('expectedPrice')}</TableHead>
-                <TableHead>{t('actualPrice')}</TableHead>
-                <TableHead>{t('supplierConfirmedPrice')}</TableHead>
+                <TableHead numeric>{t('qtyOrdered')}</TableHead>
+                <TableHead numeric>{t('qtyReceived')}</TableHead>
+                <TableHead numeric>{t('expectedPrice')}</TableHead>
+                <TableHead numeric>{t('actualPrice')}</TableHead>
+                <TableHead numeric>{t('supplierConfirmedPrice')}</TableHead>
                 {!isDelivered && <TableHead className="w-28">{t('receiveNow')}</TableHead>}
                 {!isDelivered && <TableHead className="w-28">{t('actualPrice')}</TableHead>}
               </TableRow>
@@ -131,11 +131,11 @@ export default function PurchaseOrderDetailPage() {
                 <TableRow key={item.id}>
                   <TableCell>{item.articleSnapshot}</TableCell>
                   <TableCell className="max-w-[220px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
-                  <TableCell>{item.qtyOrdered}</TableCell>
-                  <TableCell>{item.qtyReceived}</TableCell>
-                  <TableCell>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
-                  <TableCell>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
-                  <TableCell>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
+                  <TableCell numeric>{item.qtyOrdered}</TableCell>
+                  <TableCell numeric>{item.qtyReceived}</TableCell>
+                  <TableCell numeric>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
+                  <TableCell numeric>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
+                  <TableCell numeric>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
                   {!isDelivered && (
                     <TableCell>
                       <Input

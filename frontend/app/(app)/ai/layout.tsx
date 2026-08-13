@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const TABS = [
   { href: '/ai', labelKey: 'help' },
@@ -16,29 +16,21 @@ const TABS = [
 export default function AiLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations('ai');
   const pathname = usePathname();
+  const activeHref =
+    TABS.find((tab) => (tab.href === '/ai' ? pathname === '/ai' : pathname.startsWith(tab.href)))?.href ?? TABS[0].href;
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{t('title')}</h1>
-      <div className="flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((tab) => {
-          const active = tab.href === '/ai' ? pathname === '/ai' : pathname.startsWith(tab.href);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                'whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
-                active
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t(tab.labelKey)}
-            </Link>
-          );
-        })}
-      </div>
+      <Tabs value={activeHref}>
+        <TabsList className="overflow-x-auto">
+          {TABS.map((tab) => (
+            <TabsTrigger key={tab.href} value={tab.href} className="whitespace-nowrap" asChild>
+              <Link href={tab.href}>{t(tab.labelKey)}</Link>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       {children}
     </div>
   );
