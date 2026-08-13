@@ -16,7 +16,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionBoundary>
       <MobileNavProvider>
-        <div className="flex min-h-screen">
+        {/*
+         * `h-screen overflow-hidden` (not `min-h-screen`) bounds this row to
+         * the viewport so Sidebar and Topbar stay pinned and `<main>` is the
+         * ONLY thing that scrolls — without a bounded height here, `<main>`'s
+         * own `overflow-y-auto` never actually engages (nothing to scroll
+         * internally, since a flex item with no height cap just grows to fit
+         * its content) and the whole page scrolls as one unit instead, which
+         * also silently defeats DataTable's sticky `<thead>`.
+         */}
+        <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar />
