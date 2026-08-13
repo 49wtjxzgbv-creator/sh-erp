@@ -36,7 +36,7 @@ export class PlannerBoardService {
     if (query.itemId) itemIds = itemIds.filter((id) => id === query.itemId);
     const orderIds = (orders as any[]).map((o) => o.id);
 
-    const [batches, purchaseOrders, employees] = await Promise.all([
+    const [batches, purchaseOrders, employees, shipments] = await Promise.all([
       itemIds.length
         ? this.prisma.tenant.productionOrder.findMany({
             where: { customerOrderItemId: { in: itemIds } },
@@ -47,6 +47,10 @@ export class PlannerBoardService {
         ? this.prisma.tenant.purchaseOrder.findMany({ where: { sourceCustomerOrderId: { in: orderIds } }, include: { supplier: true } })
         : [],
       this.prisma.tenant.employee.findMany(),
+      // Real fact shipment dates for the "Відвантаження" lane — a Shipment
+      // row only ever exists once actually shipped (no "planned" status in
+      // this schema), so its presence here is itself the fact signal.
+      orderIds.length ? this.prisma.tenant.shipment.findMany({ where: { customerOrderId: { in: orderIds } } }) : [],
     ]);
 
     const assemblyIds = Array.from(new Set([...(orders as any[]).flatMap((o) => o.items.map((i: any) => i.assemblyId)), ...(batches as any[]).map((b) => b.assemblyId)]));
@@ -136,6 +140,20 @@ export class PlannerBoardService {
 
               const factStart = (b.stageEvents as any[]).length ? (b.stageEvents as any[]).map((e) => e.createdAt).sort((a, c) => a.getTime() - c.getTime())[0] : null;
 
+              // Per-stage fact window, for the swimlane board's work-cards —
+              // ProductionOrderStageEvent logs "stage N was left (completed)
+              // at time T" (advanceStage(), production-orders.service.ts), so
+              // stage i's own fact-end is the event for index i, and its
+              // fact-start is the PRECEDING stage's completion (stage i-1's
+              // event). The very first stage's fact-start is genuinely
+              // unrecorded data (start() has no separate "production
+              // physically began" timestamp) — left null rather than guessed.
+              // Index here matches stageIndex only because stagePlans is
+              // always the company's full stage list in sortOrder (auto-
+              // skeleton) — see the model comment for the known limitation if
+              // a stage plan row is later deleted.
+              const stageEventAtIndex = new Map<number, Date>((b.stageEvents as any[]).map((e) => [e.stageIndex, e.createdAt]));
+
               return {
                 id: b.id,
                 unitsPlanned: Number(b.unitsPlanned),
@@ -143,11 +161,15 @@ export class PlannerBoardService {
                 currentStageIndex: b.currentStageIndex,
                 plan: { startAt: b.scheduledStartAt, endAt: b.scheduledEndAt },
                 fact: { startAt: factStart, endAt: b.completedAt },
-                stages: (b.stagePlans as any[]).map((sp) => ({
+                stages: (b.stagePlans as any[]).map((sp, idx) => ({
                   id: sp.productionStageId,
                   name: sp.productionStage.name,
                   sortOrder: sp.sortOrder,
                   plan: sp.plannedStartAt || sp.plannedEndAt ? { startAt: sp.plannedStartAt, endAt: sp.plannedEndAt } : null,
+                  fact: {
+                    startAt: idx > 0 ? (stageEventAtIndex.get(idx - 1) ?? null) : null,
+                    endAt: stageEventAtIndex.get(idx) ?? null,
+                  },
                 })),
                 workers: batchCtx.workers,
                 problems: batchProblems,
@@ -199,6 +221,9 @@ export class PlannerBoardService {
           plan: { startAt: order.plannedStartAt, completionAt: order.plannedCompletionAt, shipmentAt: order.plannedShipmentAt, deliveryAt: order.plannedDeliveryAt },
           items: itemNodes,
           purchaseOrders: orderPOs,
+          shipments: (shipments as any[])
+            .filter((s) => s.customerOrderId === order.id)
+            .map((s) => ({ id: s.id, status: s.status, shipDate: s.shipDate, deliveryDate: s.deliveryDate })),
           riskLevel,
           problemCount: orderProblems.length,
         };

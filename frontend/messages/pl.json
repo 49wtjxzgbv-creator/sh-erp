@@ -1110,6 +1110,8 @@
     "resourceConflict": "conflict — assigned to multiple batches at once",
     "printYearButton": "Annual plan",
     "printYearTitle": "ANNUAL PRODUCTION SCHEDULE",
-    "pageLabel": "Page"
+    "pageLabel": "Page",
+    "productionLabel": "PRODUCTION",
+    "shipmentsLane": "Shipments"
   }
 }

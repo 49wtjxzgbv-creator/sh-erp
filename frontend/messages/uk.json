@@ -1110,6 +1110,8 @@
     "resourceConflict": "конфлікт — призначено на кілька партій одночасно",
     "printYearButton": "Річний план",
     "printYearTitle": "РІЧНИЙ ПЛАН-ГРАФІК ВИРОБНИЦТВА",
-    "pageLabel": "Сторінка"
+    "pageLabel": "Сторінка",
+    "productionLabel": "ВИРОБНИЦТВО",
+    "shipmentsLane": "Відвантаження"
   }
 }

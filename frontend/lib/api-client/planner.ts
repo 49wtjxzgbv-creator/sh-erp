@@ -25,6 +25,8 @@ export interface PlannerStageNode {
   sortOrder: number;
   /** null = "Етап не запланований" — never a guessed date. */
   plan: { startAt: string | null; endAt: string | null } | null;
+  /** Derived from real ProductionOrderStageEvent transitions — startAt is the previous stage's completion (null for the very first stage, genuinely unrecorded), endAt is null while this stage hasn't been left yet (still in progress or not reached). */
+  fact: { startAt: string | null; endAt: string | null };
 }
 
 export interface PlannerBatchNode {
@@ -67,6 +69,13 @@ export interface PlannerPurchaseOrderRef {
   orderDate: string;
 }
 
+export interface PlannerShipmentRef {
+  id: string;
+  status: 'SHIPPED' | 'DELIVERED';
+  shipDate: string | null;
+  deliveryDate: string | null;
+}
+
 export interface PlannerOrderNode {
   id: string;
   orderNumber: string | null;
@@ -76,6 +85,8 @@ export interface PlannerOrderNode {
   plan: { startAt: string | null; completionAt: string | null; shipmentAt: string | null; deliveryAt: string | null };
   items: PlannerItemNode[];
   purchaseOrders: PlannerPurchaseOrderRef[];
+  /** A row only ever exists once actually shipped — its presence here is itself the fact signal (План-графік §"Відвантаження"). */
+  shipments: PlannerShipmentRef[];
   riskLevel: 'none' | 'warning' | 'critical';
   problemCount: number;
 }

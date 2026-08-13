@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { useProductionStages } from '@/lib/hooks/use-production';
 import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/planner/planner-gantt';
 import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
@@ -126,6 +127,7 @@ export default function PlannerPage() {
   const { data: board, isLoading } = usePlannerBoard(query);
   const { data: kpis } = usePlannerKpis(query);
   const { data: suppliers } = useSuppliers({ limit: 200 });
+  const { data: stages } = useProductionStages();
 
   const allAssemblyIds = useMemo(() => Array.from(new Set((board?.orders ?? []).flatMap((o) => o.items.map((i) => i.assemblyId)))), [board]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', allAssemblyIds, 'ASSEMBLY_PHOTO');
@@ -303,7 +305,7 @@ export default function PlannerPage() {
           </div>
           <div className="no-print">
             {view === 'gantt' ? (
-              <PlannerGanttChart ref={ganttRef} orders={board.orders} photoByAssembly={photoByAssembly} year={year} onYearChange={setYear} />
+              <PlannerGanttChart ref={ganttRef} orders={board.orders} stages={stages ?? []} photoByAssembly={photoByAssembly} year={year} onYearChange={setYear} />
             ) : (
               <PlannerResourcesView orders={board.orders} problems={board.problems} year={year} />
             )}
