@@ -1100,6 +1100,16 @@
     "legendCritical": "🔴 Critical problem",
     "printButton": "Print / PDF",
     "openEntity": "Open card",
-    "filterSupplier": "Supplier"
+    "filterSupplier": "Supplier",
+    "scaleYear": "Year",
+    "yearOverview": "Overview",
+    "yearDetail": "Detail",
+    "resourcesTab": "Resources",
+    "ganttTab": "Chart",
+    "resourcesEmpty": "No employees are assigned to any planned production batches.",
+    "resourceConflict": "conflict — assigned to multiple batches at once",
+    "printYearButton": "Annual plan",
+    "printYearTitle": "ANNUAL PRODUCTION SCHEDULE",
+    "pageLabel": "Page"
   }
 }

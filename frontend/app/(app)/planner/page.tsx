@@ -2,14 +2,15 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircle, AlertTriangle, Info, Search, ExternalLink } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Search, ExternalLink, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/planner/planner-gantt';
+import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -109,6 +110,9 @@ export default function PlannerPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [pageSize, setPageSize] = useState<'A4' | 'A3'>('A4');
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [view, setView] = useState<'gantt' | 'resources'>('gantt');
+  const [printMode, setPrintMode] = useState<'current' | 'year'>('current');
 
   const query: QueryPlannerBoardInput = {
     search: search || undefined,
@@ -152,13 +156,23 @@ export default function PlannerPage() {
       ]
     : [];
 
-  const printFrom = board ? new Date(board.from) : new Date();
-  const printTo = board ? new Date(board.to) : new Date();
+  const printFrom = printMode === 'year' ? new Date(year, 0, 1) : board ? new Date(board.from) : new Date();
+  const printTo = printMode === 'year' ? new Date(year, 11, 31, 23, 59, 59) : board ? new Date(board.to) : new Date();
   const periodLabel = `${printFrom.toLocaleDateString()} — ${printTo.toLocaleDateString()}`;
+
+  /** Sets the print range before invoking window.print() — needs one tick for React to re-render the print table with the new from/to first. */
+  function handlePrint(mode: 'current' | 'year') {
+    setPrintMode(mode);
+    window.setTimeout(() => window.print(), 50);
+  }
 
   return (
     <div className="space-y-4">
-      <style>{`@page { size: ${pageSize} landscape; margin: 10mm; }`}</style>
+      <style>{`
+        @page { size: ${pageSize} landscape; margin: 10mm; }
+        /* Best-effort — Chromium-based print-to-PDF honors @page margin-box page counters; not universally supported across every browser, disclosed rather than assumed. */
+        @page { @bottom-center { content: "${t('pageLabel')} " counter(page) " / " counter(pages); font-size: 8px; } }
+      `}</style>
 
       <div className="flex flex-wrap items-start justify-between gap-3 no-print">
         <div>
@@ -166,6 +180,22 @@ export default function PlannerPage() {
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setView('gantt')}
+              className={cn('rounded px-2 py-1 text-xs font-medium', view === 'gantt' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+            >
+              {t('ganttTab')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('resources')}
+              className={cn('rounded px-2 py-1 text-xs font-medium', view === 'resources' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+            >
+              {t('resourcesTab')}
+            </button>
+          </div>
           <Select value={pageSize} onValueChange={(v) => setPageSize(v as 'A4' | 'A3')}>
             <SelectTrigger className="w-24">
               <SelectValue />
@@ -175,7 +205,14 @@ export default function PlannerPage() {
               <SelectItem value="A3">A3</SelectItem>
             </SelectContent>
           </Select>
-          <PrintButton label={t('printButton')} />
+          <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('current')}>
+            <Printer className="mr-2 h-4 w-4" />
+            {t('printButton')}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('year')}>
+            <Printer className="mr-2 h-4 w-4" />
+            {t('printYearButton')}
+          </Button>
         </div>
       </div>
 
@@ -252,11 +289,15 @@ export default function PlannerPage() {
             <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
           </div>
           <div className="no-print">
-            <PlannerGanttChart ref={ganttRef} orders={board.orders} photoByAssembly={photoByAssembly} />
+            {view === 'gantt' ? (
+              <PlannerGanttChart ref={ganttRef} orders={board.orders} photoByAssembly={photoByAssembly} year={year} onYearChange={setYear} />
+            ) : (
+              <PlannerResourcesView orders={board.orders} problems={board.problems} year={year} />
+            )}
           </div>
 
           <PrintArea>
-            <PrintDocumentHeader title={t('printTitle')} subtitle={t('printSubtitle')} />
+            <PrintDocumentHeader title={printMode === 'year' ? `${t('printYearTitle')} ${year}` : t('printTitle')} subtitle={t('printSubtitle')} />
             <p className="mb-3 text-xs">
               {t('printPeriod')}: {periodLabel}
             </p>

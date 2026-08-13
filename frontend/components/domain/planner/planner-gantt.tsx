@@ -15,7 +15,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react';
-import { timelineDayMarks, timelineHourMarks, timelineMonthMarks, isWeekend } from '@/lib/timeline-utils';
+import { timelineDayMarks, timelineHourMarks, timelineMonthMarks, timelineWeekMarks, isWeekend } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -39,28 +39,34 @@ import type { PlannerBatchNode, PlannerItemNode, PlannerOrderNode, PlannerProble
  * widths instead of percentages so zoom has something real to change.
  */
 
-export type GanttScale = 'day' | 'week' | 'month' | 'quarter';
+export type GanttScale = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
-const BASE_PX_PER_DAY: Record<GanttScale, number> = { day: 480, week: 34, month: 11, quarter: 3.4 };
-const WINDOW_DAYS: Record<GanttScale, number> = { day: 10, week: 90, month: 420, quarter: 900 };
-const PAN_STEP_DAYS: Record<GanttScale, number> = { day: 3, week: 21, month: 90, quarter: 180 };
+const BASE_PX_PER_DAY: Record<Exclude<GanttScale, 'year'>, number> = { day: 480, week: 34, month: 11, quarter: 3.4 };
+const WINDOW_DAYS: Record<Exclude<GanttScale, 'year'>, number> = { day: 10, week: 90, month: 420, quarter: 900 };
+const PAN_STEP_DAYS: Record<Exclude<GanttScale, 'year'>, number> = { day: 3, week: 21, month: 90, quarter: 180 };
+/** §23: two distinct zoom levels for the Year scale — an overview (12 month bars, strategic load-at-a-glance) and a detail level (month + week gridlines) — not just a shrunk Month view. */
+const YEAR_PX_PER_DAY = { overview: 2.4, detail: 9 };
+
+function daysInYear(year: number): number {
+  return (new Date(year, 11, 31).getTime() - new Date(year, 0, 1).getTime()) / 86400000 + 1;
+}
 
 const ROW_HEIGHT = 34;
 const LABEL_WIDTH = 300;
 
-interface Window {
+export interface Window {
   start: Date;
   end: Date;
 }
 
-function toWindow(startAt: string | null, endAt: string | null): Window | null {
+export function toWindow(startAt: string | null, endAt: string | null): Window | null {
   if (!startAt && !endAt) return null;
   const start = new Date(startAt ?? endAt!);
   const end = new Date(endAt ?? startAt!);
   return end < start ? { start: end, end: start } : { start, end };
 }
 
-function unionWindows(windows: (Window | null)[]): Window | null {
+export function unionWindows(windows: (Window | null)[]): Window | null {
   const real = windows.filter((w): w is Window => w != null);
   if (real.length === 0) return null;
   return {
@@ -69,10 +75,10 @@ function unionWindows(windows: (Window | null)[]): Window | null {
   };
 }
 
-function batchPlanWindow(b: PlannerBatchNode): Window | null {
+export function batchPlanWindow(b: PlannerBatchNode): Window | null {
   return toWindow(b.plan.startAt, b.plan.endAt);
 }
-function batchFactWindow(b: PlannerBatchNode, now: Date): Window | null {
+export function batchFactWindow(b: PlannerBatchNode, now: Date): Window | null {
   const w = toWindow(b.fact.startAt, b.fact.endAt);
   if (!w) return null;
   return b.fact.endAt ? w : { start: w.start, end: now };
@@ -118,7 +124,7 @@ function batchStatusKey(b: PlannerBatchNode, now: Date): BatchStatusKey {
   return b.status;
 }
 
-function px(day: Date, viewFrom: Date, pxPerDay: number): number {
+export function px(day: Date, viewFrom: Date, pxPerDay: number): number {
   return ((day.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay;
 }
 
@@ -150,8 +156,10 @@ function StatusBadge({ statusKey, label }: { statusKey: BatchStatusKey; label: s
   );
 }
 
-export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: PlannerOrderNode[]; photoByAssembly: Record<string, string | undefined> }>(
-  function PlannerGanttChart({ orders, photoByAssembly }, ref) {
+export const PlannerGanttChart = forwardRef<
+  PlannerGanttHandle,
+  { orders: PlannerOrderNode[]; photoByAssembly: Record<string, string | undefined>; year: number; onYearChange: (y: number) => void }
+>(function PlannerGanttChart({ orders, photoByAssembly, year, onYearChange }, ref) {
     const t = useTranslations('planner');
     const tp = useTranslations('production');
     const now = useMemo(() => new Date(), []);
@@ -159,6 +167,7 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
     const [scale, setScale] = useState<GanttScale>('month');
     const [zoom, setZoom] = useState(1);
     const [anchor, setAnchor] = useState(now);
+    const [yearDetail, setYearDetail] = useState(false);
     const [search, setSearch] = useState('');
     const [flashKey, setFlashKey] = useState<string | null>(null);
 
@@ -169,10 +178,11 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
     const scrollRef = useRef<HTMLDivElement>(null);
     const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-    const pxPerDay = BASE_PX_PER_DAY[scale] * zoom;
-    const windowDays = WINDOW_DAYS[scale];
-    const viewFrom = useMemo(() => new Date(anchor.getTime() - (windowDays / 2) * 86400000), [anchor, windowDays]);
-    const viewTo = useMemo(() => new Date(anchor.getTime() + (windowDays / 2) * 86400000), [anchor, windowDays]);
+    const isYearScale = scale === 'year';
+    const pxPerDay = (isYearScale ? YEAR_PX_PER_DAY[yearDetail ? 'detail' : 'overview'] : BASE_PX_PER_DAY[scale]) * zoom;
+    const windowDays = isYearScale ? daysInYear(year) : WINDOW_DAYS[scale];
+    const viewFrom = useMemo(() => (isYearScale ? new Date(year, 0, 1) : new Date(anchor.getTime() - (windowDays / 2) * 86400000)), [isYearScale, year, anchor, windowDays]);
+    const viewTo = useMemo(() => (isYearScale ? new Date(year, 11, 31, 23, 59, 59) : new Date(anchor.getTime() + (windowDays / 2) * 86400000)), [isYearScale, year, anchor, windowDays]);
     const canvasWidth = Math.max(windowDays * pxPerDay, 600);
 
     function toggle(set: Set<string>, setSet: (s: Set<string>) => void, id: string) {
@@ -190,9 +200,10 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
     }
 
     useEffect(() => {
-      scrollToDate(now);
+      const target = isYearScale ? (year === now.getFullYear() ? now : new Date(year, 0, 1)) : now;
+      scrollToDate(target);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scale]);
+    }, [scale, year, yearDetail]);
 
     useImperativeHandle(ref, () => ({
       revealEntity(entityType, entityId, orderId) {
@@ -288,6 +299,7 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
     const months = useMemo(() => timelineMonthMarks(viewFrom, viewTo), [viewFrom, viewTo]);
     const days = useMemo(() => ((scale === 'day' || scale === 'week') ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
     const hours = useMemo(() => (scale === 'day' ? timelineHourMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
+    const yearWeeks = useMemo(() => (isYearScale && yearDetail ? timelineWeekMarks(viewFrom, viewTo) : []), [isYearScale, yearDetail, viewFrom, viewTo]);
     const showToday = now >= viewFrom && now <= viewTo;
 
     return (
@@ -299,8 +311,19 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
           setZoom={setZoom}
           search={search}
           onSearch={runSearch}
-          onToday={() => { setAnchor(new Date()); scrollToDate(new Date()); }}
-          onPan={(dir) => setAnchor(new Date(anchor.getTime() + dir * PAN_STEP_DAYS[scale] * 86400000))}
+          year={year}
+          onYearChange={onYearChange}
+          yearDetail={yearDetail}
+          setYearDetail={setYearDetail}
+          onToday={() => {
+            setAnchor(new Date());
+            if (isYearScale) onYearChange(now.getFullYear());
+            scrollToDate(new Date());
+          }}
+          onPan={(dir) => {
+            if (isYearScale) onYearChange(year + dir);
+            else setAnchor(new Date(anchor.getTime() + dir * PAN_STEP_DAYS[scale] * 86400000));
+          }}
         />
 
         <div ref={scrollRef} className="relative max-h-[70vh] overflow-auto rounded-lg border border-border">
@@ -345,6 +368,9 @@ export const PlannerGanttChart = forwardRef<PlannerGanttHandle, { orders: Planne
                 )}
               {days.map((d, i) => (
                 <div key={`dl-${i}`} className="absolute inset-y-0 w-px bg-border/30" style={{ left: px(d, viewFrom, pxPerDay) }} />
+              ))}
+              {yearWeeks.map((w, i) => (
+                <div key={`yw-${i}`} className="absolute inset-y-0 w-px bg-border/30" style={{ left: px(w, viewFrom, pxPerDay) }} />
               ))}
               {months.map((m, i) => (
                 <div key={`ml-${i}`} className="absolute inset-y-0 w-px bg-border" style={{ left: px(m.start, viewFrom, pxPerDay) }} />
@@ -394,6 +420,10 @@ function GanttToolbar({
   setZoom,
   search,
   onSearch,
+  year,
+  onYearChange,
+  yearDetail,
+  setYearDetail,
   onToday,
   onPan,
 }: {
@@ -403,12 +433,17 @@ function GanttToolbar({
   setZoom: (z: number) => void;
   search: string;
   onSearch: (q: string) => void;
+  year: number;
+  onYearChange: (y: number) => void;
+  yearDetail: boolean;
+  setYearDetail: (v: boolean) => void;
   onToday: () => void;
   onPan: (dir: 1 | -1) => void;
 }) {
   const t = useTranslations('planner');
-  const SCALES: GanttScale[] = ['day', 'week', 'month', 'quarter'];
-  const SCALE_LABEL: Record<GanttScale, string> = { day: t('scaleDay'), week: t('scaleWeek'), month: t('scaleMonth'), quarter: t('scaleQuarter') };
+  const SCALES: GanttScale[] = ['day', 'week', 'month', 'quarter', 'year'];
+  const SCALE_LABEL: Record<GanttScale, string> = { day: t('scaleDay'), week: t('scaleWeek'), month: t('scaleMonth'), quarter: t('scaleQuarter'), year: t('scaleYear') };
+  const isYearScale = scale === 'year';
 
   return (
     <div className="flex flex-wrap items-center gap-2 no-print">
@@ -416,12 +451,21 @@ function GanttToolbar({
         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => onPan(-1)} title={t('prevPeriod')}>
           <ChevronRight className="h-4 w-4 rotate-180" />
         </Button>
-        <Button variant="outline" size="sm" onClick={onToday}>
-          {t('todayButton')}
-        </Button>
+        {isYearScale ? (
+          <span className="w-16 text-center text-sm font-semibold">{year}</span>
+        ) : (
+          <Button variant="outline" size="sm" onClick={onToday}>
+            {t('todayButton')}
+          </Button>
+        )}
         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => onPan(1)} title={t('nextPeriod')}>
           <ChevronRight className="h-4 w-4" />
         </Button>
+        {isYearScale && (
+          <Button variant="outline" size="sm" onClick={onToday}>
+            {t('todayButton')}
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
@@ -436,6 +480,21 @@ function GanttToolbar({
           </button>
         ))}
       </div>
+
+      {isYearScale && (
+        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+          {([false, true] as const).map((detail) => (
+            <button
+              key={String(detail)}
+              type="button"
+              onClick={() => setYearDetail(detail)}
+              className={cn('rounded px-2 py-1 text-xs font-medium', yearDetail === detail ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+            >
+              {detail ? t('yearDetail') : t('yearOverview')}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-1">
         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom(Math.max(zoom - 0.25, 0.5))} title={t('zoomOut')}>

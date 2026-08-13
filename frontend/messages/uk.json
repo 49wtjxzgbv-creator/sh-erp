@@ -1100,6 +1100,16 @@
     "legendCritical": "🔴 Критична проблема",
     "printButton": "Друкувати / PDF",
     "openEntity": "Відкрити картку",
-    "filterSupplier": "Постачальник"
+    "filterSupplier": "Постачальник",
+    "scaleYear": "Рік",
+    "yearOverview": "Огляд",
+    "yearDetail": "Деталі",
+    "resourcesTab": "Ресурси",
+    "ganttTab": "Графік",
+    "resourcesEmpty": "Немає працівників, призначених на заплановані виробничі партії.",
+    "resourceConflict": "конфлікт — призначено на кілька партій одночасно",
+    "printYearButton": "Річний план",
+    "printYearTitle": "РІЧНИЙ ПЛАН-ГРАФІК ВИРОБНИЦТВА",
+    "pageLabel": "Сторінка"
   }
 }
