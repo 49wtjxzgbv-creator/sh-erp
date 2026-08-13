@@ -3,11 +3,17 @@ import { cn } from '@/lib/utils';
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    // Horizontal clipping only — vertical scroll is left to the nearest
-    // page-level scroll ancestor (app/(app)/layout.tsx's <main>) so
-    // TableHeader's `sticky top-0` below actually has something to stick
-    // against; an `overflow-auto` div here would silently swallow that.
-    <div className="w-full overflow-x-auto rounded-md border border-border">
+    // `max-h` + `overflow-auto` makes this div its OWN bounded scrollport —
+    // required for TableHeader's `sticky top-0` to have anything to stick
+    // against. Delegating vertical scroll up to the page (`overflow-x-auto`
+    // only, no `max-h`) does not work: per the CSS Overflow spec, setting
+    // overflow-x to anything other than `visible` forces the computed value
+    // of overflow-y to `auto` too if it isn't already `visible` — the two
+    // axes can't be split apart — so the div silently becomes an unbounded
+    // (grows-to-content) scroll container either way, and sticky has no
+    // real scrollport to pin against. Same bounded-height + internal-scroll
+    // convention already used for the Planner board (`max-h-[75vh]`).
+    <div className="w-full max-h-[70vh] overflow-auto rounded-md border border-border">
       <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
     </div>
   ),
