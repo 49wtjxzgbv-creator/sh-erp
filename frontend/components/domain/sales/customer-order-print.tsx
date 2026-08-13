@@ -8,7 +8,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
-import { ComponentNameCell } from '@/components/domain/bom/assembly-spec-print';
+import { ComponentNameCell, ComponentArticleCell } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
 import type { CostBreakdownLine } from '@/lib/api-client/bom';
@@ -16,7 +16,13 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
 function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   const { data: assembly } = useAssembly(assemblyId);
-  return <>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</>;
+  return <>{assembly ? assembly.name : assemblyId}</>;
+}
+
+/** Article/SKU as its own cell — printed as a separate column (bolded by the caller), not folded into the name text. */
+function AssemblyArticleCell({ assemblyId }: { assemblyId: string }) {
+  const { data: assembly } = useAssembly(assemblyId);
+  return <>{assembly?.article ?? ''}</>;
 }
 
 /** Same estimated/actual split as the order detail page (app/(app)/sales/[id]/page.tsx) — see that file's EstimatedPriceCell/ActualPriceCell for the full rationale, just rendered as plain <td>s here for the print table. */
@@ -81,7 +87,7 @@ function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
  * (setAssemblyComponents), so the recursion always terminates at product
  * leaves — no depth guard needed here.
  */
-function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: string; qty: number; depth: number }) {
+function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { assemblyId: string; qty: number; depth: number; showPrice: boolean }) {
   const t = useTranslations('bom');
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
@@ -113,18 +119,22 @@ function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: st
         <thead>
           <tr>
             <th>{tp('photoColumn')}</th>
+            <th>{t('article')}</th>
             <th>{t('component')}</th>
             <th>{t('componentType')}</th>
             <th>{t('qty')}</th>
+            {showPrice && <th>{t('cost')}</th>}
           </tr>
         </thead>
         <tbody>
           {cost.breakdown.map((line, i) => (
             <tr key={i}>
               <td><Avatar src={lineDownloadUrl(line)} size="lg" /></td>
+              <td className="font-bold"><ComponentArticleCell line={line} /></td>
               <td><ComponentNameCell line={line} /></td>
               <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
               <td>{line.qtyPerUnit * qty}</td>
+              {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
             </tr>
           ))}
         </tbody>
@@ -132,7 +142,7 @@ function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: st
       {cost.breakdown
         .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
         .map((l, i) => (
-          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} />
+          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} showPrice={showPrice} />
         ))}
     </div>
   );
@@ -142,6 +152,7 @@ function AssemblyCompositionSection({ assemblyId, qty, depth }: { assemblyId: st
 export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const t = useTranslations('sales');
   const tp = useTranslations('print');
+  const tb = useTranslations('bom');
 
   const assemblyIds = useMemo(() => Array.from(new Set((order.items ?? []).map((i) => i.assemblyId))), [order.items]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
@@ -152,6 +163,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
     { id: 'estimatedPrice', label: t('estimatedPrice') },
     { id: 'actualPrice', label: t('actualPrice') },
     { id: 'composition', label: t('fullComposition') },
+    { id: 'compositionPrice', label: tb('cost') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -183,6 +195,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
             <tr>
               <th>#</th>
               {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.isColumnVisible('assembly') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('assembly') && <th>{t('assembly')}</th>}
               {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
               {printOptions.isColumnVisible('estimatedPrice') && <th>{t('estimatedPrice')}</th>}
@@ -198,6 +211,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
                     <Avatar src={photosByAssembly?.[item.assemblyId]?.[0]?.downloadUrl} size="lg" />
                   </td>
                 )}
+                {printOptions.isColumnVisible('assembly') && <td className="font-bold"><AssemblyArticleCell assemblyId={item.assemblyId} /></td>}
                 {printOptions.isColumnVisible('assembly') && <td><AssemblyNameCell assemblyId={item.assemblyId} /></td>}
                 {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
                 {printOptions.isColumnVisible('estimatedPrice') && <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />}
@@ -213,7 +227,13 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           <div className="mt-6">
             <h2 className="mb-2 text-base font-semibold">{tp('compositionSectionTitle')}</h2>
             {order.items.map((item) => (
-              <AssemblyCompositionSection key={item.id} assemblyId={item.assemblyId} qty={Number(item.qty)} depth={0} />
+              <AssemblyCompositionSection
+                key={item.id}
+                assemblyId={item.assemblyId}
+                qty={Number(item.qty)}
+                depth={0}
+                showPrice={printOptions.isColumnVisible('compositionPrice')}
+              />
             ))}
           </div>
         )}

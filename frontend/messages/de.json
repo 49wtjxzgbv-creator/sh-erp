@@ -429,6 +429,7 @@
     "comment": "Comment",
     "items": "Items",
     "assembly": "Assembly",
+    "article": "Article",
     "qty": "Qty",
     "estimatedPrice": "Estimated price",
     "actualPrice": "Actual price",

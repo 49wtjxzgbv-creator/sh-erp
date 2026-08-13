@@ -24,8 +24,16 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
 export function ComponentNameCell({ line }: { line: CostBreakdownLine }) {
   const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
   const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
-  if (line.componentType === 'PRODUCT') return <>{product ? `${product.name} (${product.article})` : line.productId}</>;
-  return <>{subAssembly ? `${subAssembly.name}${subAssembly.article ? ` (${subAssembly.article})` : ''}` : line.subAssemblyId}</>;
+  if (line.componentType === 'PRODUCT') return <>{product ? product.name : line.productId}</>;
+  return <>{subAssembly ? subAssembly.name : line.subAssemblyId}</>;
+}
+
+/** Article/SKU as its own cell — printed as a separate column (bolded by the caller), not folded into the name text. */
+export function ComponentArticleCell({ line }: { line: CostBreakdownLine }) {
+  const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
+  const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
+  if (line.componentType === 'PRODUCT') return <>{product?.article ?? ''}</>;
+  return <>{subAssembly?.article ?? ''}</>;
 }
 
 export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
@@ -77,6 +85,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
             <tr>
               <th>#</th>
               {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.isColumnVisible('component') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
               {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}
               {printOptions.isColumnVisible('qtyPerUnit') && <th>{t('qtyPerUnit')}</th>}
@@ -92,6 +101,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                     <Avatar src={lineDownloadUrl(line)} size="lg" />
                   </td>
                 )}
+                {printOptions.isColumnVisible('component') && <td className="font-bold"><ComponentArticleCell line={line} /></td>}
                 {printOptions.isColumnVisible('component') && <td><ComponentNameCell line={line} /></td>}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
