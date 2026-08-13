@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { timelinePercent as percent, timelineMonthMarks as monthMarks } from '@/lib/timeline-utils';
+import { Badge } from '@/components/ui/badge';
 import type { TimelineLine, TimelineStage } from '@/lib/api-client/dashboard';
 
 /**
@@ -14,14 +16,22 @@ import type { TimelineLine, TimelineStage } from '@/lib/api-client/dashboard';
  * production/schedule-timeline.tsx (shared via lib/timeline-utils.ts) —
  * one lane per bar's `groupName` (supplier / assembly / customer), sorted
  * alphabetically, month header aligned to the same `from`/`to` range.
+ *
+ * Visual pass (2026-08-13, "інший дизайн і структура" — the flat table-ish
+ * first cut read as cramped and hard to scan): each section is now its own
+ * card with an icon/count header instead of a bare `<h3>`; a "today" marker
+ * and light month gridlines run down through the lanes so a bar can be
+ * traced back to the calendar without hunting; alternating row stripes and
+ * a bolder left-border-accented bar style (instead of a uniform thin
+ * outline) carry more visual weight per stage.
  */
-const STAGE_COLOR: Record<TimelineStage, string> = {
-  planned: 'bg-secondary border-border text-secondary-foreground',
-  in_progress: 'bg-warning/20 border-warning text-warning-foreground',
-  completed: 'bg-success/20 border-success text-success-foreground',
+const STAGE_BAR_STYLE: Record<TimelineStage, string> = {
+  planned: 'border-l-secondary-foreground/40 bg-secondary text-secondary-foreground',
+  in_progress: 'border-l-warning bg-warning/15 text-warning-foreground',
+  completed: 'border-l-success bg-success/15 text-success-foreground',
 };
 
-const ROW_HEIGHT = 30;
+const ROW_HEIGHT = 32;
 
 interface Lane {
   key: string;
@@ -36,9 +46,7 @@ interface Lane {
  * the time this one starts, opening a new sub-row only when none fits.
  * Without this, every order for the same supplier/assembly/customer drew
  * on top of each other at an identical vertical position — illegible once
- * there was more than a handful of concurrent orders (reported live: "буде
- * каша" — a real, not hypothetical, readability failure at realistic order
- * volumes, not an edge case).
+ * there was more than a handful of concurrent orders.
  */
 function packRows(items: TimelineLine[]): TimelineLine[][] {
   const sorted = [...items].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
@@ -66,27 +74,39 @@ function buildLanes(lines: TimelineLine[]): Lane[] {
 
 export interface OperationsTimelineSectionProps {
   title: string;
+  icon: LucideIcon;
   lines: TimelineLine[];
   from: Date;
   to: Date;
   emptyLabel: string;
+  todayLabel: string;
   onItemClick: (id: string) => void;
   /** Month header is only drawn once at the top of the combined chart, by the first section — later sections just line their bars up against the same from/to range. */
   showMonthHeader?: boolean;
 }
 
-export function OperationsTimelineSection({ title, lines, from, to, emptyLabel, onItemClick, showMonthHeader }: OperationsTimelineSectionProps) {
+export function OperationsTimelineSection({ title, icon: Icon, lines, from, to, emptyLabel, todayLabel, onItemClick, showMonthHeader }: OperationsTimelineSectionProps) {
   const lanes = useMemo(() => buildLanes(lines), [lines]);
   const months = useMemo(() => monthMarks(from, to), [from, to]);
+  const now = new Date();
+  const showToday = now >= from && now <= to;
 
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="overflow-x-auto">
+    <div className="overflow-hidden rounded-lg border border-border">
+      <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+          <Icon className="h-4 w-4" />
+        </span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <Badge variant="outline" className="ml-auto">
+          {lines.length}
+        </Badge>
+      </div>
+      <div className="overflow-x-auto p-3">
         {/* print:min-w-0 — the fixed 900px min-width exists for on-screen horizontal scrolling; PrintArea forces the page's own 100%-width box (globals.css's @media print block), so keeping the 900px floor there would just get cut off at the paper edge instead of scrolling. */}
         <div className="min-w-[900px] print:min-w-0">
           {showMonthHeader && (
-            <div className="relative flex border-b border-border pb-1 pl-40">
+            <div className="relative flex pb-1 pl-40">
               <div className="relative h-5 flex-1">
                 {months.map((m, i) => (
                   <span key={i} className="absolute top-0 text-xs text-muted-foreground" style={{ left: `${percent(m.start, from, to)}%` }}>
@@ -96,15 +116,28 @@ export function OperationsTimelineSection({ title, lines, from, to, emptyLabel, 
               </div>
             </div>
           )}
-          {/* max-h + overflow-y-auto — a section with many lanes (e.g. dozens of suppliers) would otherwise push the rest of the dashboard far down the page; scoped scrolling keeps the section itself navigable. Lifted for print (print:max-h-none/overflow-visible) since a printed page has no scrollbar — the whole thing should just flow onto as many pages as it needs. */}
           {lanes.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">{emptyLabel}</p>
           ) : (
-            <div className="max-h-[420px] overflow-y-auto print:max-h-none print:overflow-visible">
-              {lanes.map((lane) => (
-                <div key={lane.key} className="flex border-b border-border last:border-0">
+            // max-h + overflow-y-auto — a section with many lanes (e.g. dozens of suppliers) would otherwise push the rest of the dashboard far down the page; scoped scrolling keeps the section itself navigable. Lifted for print (print:max-h-none/overflow-visible) since a printed page has no scrollbar.
+            <div className="relative max-h-[420px] overflow-y-auto rounded-md border border-border print:max-h-none print:overflow-visible">
+              {/* Month gridlines + "today" marker — an absolutely-positioned overlay behind the lane rows; it doesn't participate in layout (pointer-events-none, no in-flow content), so it simply stretches to match whatever height the lane rows below it end up needing. */}
+              <div className="pointer-events-none absolute inset-y-0 left-40 right-0">
+                {months.map((m, i) => (
+                  <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: `${percent(m.start, from, to)}%` }} />
+                ))}
+                {showToday && (
+                  <div className="absolute inset-y-0 z-10 w-px bg-primary" style={{ left: `${percent(now, from, to)}%` }}>
+                    <span className="absolute -top-0.5 -translate-x-1/2 rounded-b bg-primary px-1 text-[10px] leading-tight text-primary-foreground">
+                      {todayLabel}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {lanes.map((lane, i) => (
+                <div key={lane.key} className={cn('relative flex border-b border-border last:border-0', i % 2 === 1 && 'bg-muted/30')}>
                   <div
-                    className="flex w-40 shrink-0 items-center truncate pr-2 text-sm"
+                    className="flex w-40 shrink-0 items-center truncate px-2 text-sm"
                     style={{ height: lane.rows.length * ROW_HEIGHT }}
                     title={lane.name}
                   >
@@ -123,10 +156,10 @@ export function OperationsTimelineSection({ title, lines, from, to, emptyLabel, 
                             title={item.label}
                             onClick={() => onItemClick(item.id)}
                             className={cn(
-                              'absolute h-6 truncate rounded border px-1.5 text-left text-xs leading-6 hover:opacity-80',
-                              STAGE_COLOR[item.stage] ?? 'bg-secondary border-border',
+                              'absolute h-6 truncate rounded-r border-l-4 px-1.5 text-left text-xs font-medium leading-6 shadow-sm hover:opacity-80',
+                              STAGE_BAR_STYLE[item.stage] ?? 'border-l-secondary-foreground/40 bg-secondary',
                             )}
-                            style={{ left: `${left}%`, width: `${width}%`, top: rowIndex * ROW_HEIGHT + 2 }}
+                            style={{ left: `${left}%`, width: `${width}%`, top: rowIndex * ROW_HEIGHT + 3 }}
                           >
                             {item.label}
                           </button>
@@ -148,15 +181,15 @@ export function OperationsTimelineLegend({ labels }: { labels: Record<TimelineSt
   return (
     <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
       <span className="flex items-center gap-1.5">
-        <span className="h-3 w-3 rounded-sm border border-border bg-secondary" />
+        <span className="h-3 w-3 rounded-sm border-l-2 border-secondary-foreground/40 bg-secondary" />
         {labels.planned}
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-3 w-3 rounded-sm border border-warning bg-warning/20" />
+        <span className="h-3 w-3 rounded-sm border-l-2 border-warning bg-warning/15" />
         {labels.in_progress}
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-3 w-3 rounded-sm border border-success bg-success/20" />
+        <span className="h-3 w-3 rounded-sm border-l-2 border-success bg-success/15" />
         {labels.completed}
       </span>
     </div>

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight, Send } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { useDashboardSummary, useOperationsTimeline } from '@/lib/hooks/use-dashboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -117,57 +117,68 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <Card className="no-print">
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <CardTitle className="w-16 text-center text-base">{year}</CardTitle>
-            <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <span className="ml-2 text-base font-semibold">{t('timelineTitle')}</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <OperationsTimelineLegend labels={stageLabels} />
-            <PrintButton label={tp('printAction')} />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {timelineLoading || !timeline ? (
-            <LoadingBlock />
-          ) : (
-            <>
-              <OperationsTimelineSection
-                title={t('timelinePurchaseOrders')}
-                lines={timeline.purchaseOrders}
-                from={from}
-                to={to}
-                emptyLabel={t('timelineEmpty')}
-                showMonthHeader
-                onItemClick={(id) => router.push(`/procurement/${id}`)}
-              />
-              <OperationsTimelineSection
-                title={t('timelineProduction')}
-                lines={timeline.productionOrders}
-                from={from}
-                to={to}
-                emptyLabel={t('timelineEmpty')}
-                onItemClick={(id) => router.push(`/production/${id}`)}
-              />
-              <OperationsTimelineSection
-                title={t('timelineShipments')}
-                lines={timeline.shipments}
-                from={from}
-                to={to}
-                emptyLabel={t('timelineEmpty')}
-                onItemClick={(id) => router.push(`/sales/shipments/${id}`)}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
+      <div className="no-print space-y-4">
+        <Card>
+          <CardContent className="flex flex-row flex-wrap items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="w-16 text-center text-base font-semibold">{year}</span>
+              <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <span className="ml-2 text-base font-semibold">{t('timelineTitle')}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <OperationsTimelineLegend labels={stageLabels} />
+              <PrintButton label={tp('printAction')} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {timelineLoading || !timeline ? (
+          <Card>
+            <CardContent className="py-6">
+              <LoadingBlock />
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <OperationsTimelineSection
+              title={t('timelinePurchaseOrders')}
+              icon={Truck}
+              lines={timeline.purchaseOrders}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
+              showMonthHeader
+              onItemClick={(id) => router.push(`/procurement/${id}`)}
+            />
+            <OperationsTimelineSection
+              title={t('timelineProduction')}
+              icon={Factory}
+              lines={timeline.productionOrders}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
+              onItemClick={(id) => router.push(`/production/${id}`)}
+            />
+            <OperationsTimelineSection
+              title={t('timelineShipments')}
+              icon={Send}
+              lines={timeline.shipments}
+              from={from}
+              to={to}
+              emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
+              onItemClick={(id) => router.push(`/sales/shipments/${id}`)}
+            />
+          </>
+        )}
+      </div>
 
       {timeline && (
         <PrintArea>
@@ -175,30 +186,36 @@ export default function DashboardPage() {
           <div className="mb-4">
             <OperationsTimelineLegend labels={stageLabels} />
           </div>
-          <div className="space-y-6">
+          <div className="space-y-4">
             <OperationsTimelineSection
               title={t('timelinePurchaseOrders')}
+              icon={Truck}
               lines={timeline.purchaseOrders}
               from={from}
               to={to}
               emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
               showMonthHeader
               onItemClick={() => {}}
             />
             <OperationsTimelineSection
               title={t('timelineProduction')}
+              icon={Factory}
               lines={timeline.productionOrders}
               from={from}
               to={to}
               emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
               onItemClick={() => {}}
             />
             <OperationsTimelineSection
               title={t('timelineShipments')}
+              icon={Send}
               lines={timeline.shipments}
               from={from}
               to={to}
               emptyLabel={t('timelineEmpty')}
+              todayLabel={t('today')}
               onItemClick={() => {}}
             />
           </div>

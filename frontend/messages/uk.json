@@ -79,7 +79,8 @@
     "timelineEmpty": "Немає даних за цей рік",
     "stagePlanned": "Заплановано",
     "stageInProgress": "Реалізується",
-    "stageCompleted": "Реалізовано"
+    "stageCompleted": "Реалізовано",
+    "today": "Сьогодні"
   },
   "search": {
     "placeholder": "Пошук товарів, специфікацій, замовлень, постачальників...",

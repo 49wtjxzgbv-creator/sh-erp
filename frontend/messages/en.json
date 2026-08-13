@@ -79,7 +79,8 @@
     "timelineEmpty": "No data for this year",
     "stagePlanned": "Planned",
     "stageInProgress": "In progress",
-    "stageCompleted": "Completed"
+    "stageCompleted": "Completed",
+    "today": "Today"
   },
   "search": {
     "placeholder": "Search products, BOMs, orders, suppliers...",
