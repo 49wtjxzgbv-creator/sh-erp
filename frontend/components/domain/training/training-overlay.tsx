@@ -113,13 +113,17 @@ export function TrainingOverlay() {
     <div className="fixed inset-0 z-[55]" aria-live="polite">
       {rect ? (
         <div
-          className="pointer-events-none fixed rounded-md ring-2 ring-primary transition-all duration-200"
+          className="pointer-events-none fixed rounded-md transition-all duration-200"
           style={{
             top: rect.top - SPOTLIGHT_PADDING,
             left: rect.left - SPOTLIGHT_PADDING,
             width: rect.width + SPOTLIGHT_PADDING * 2,
             height: rect.height + SPOTLIGHT_PADDING * 2,
-            boxShadow: '0 0 0 9999px hsl(var(--background) / 0.7)',
+            // Single box-shadow value combining both layers — an inline
+            // `style.boxShadow` completely replaces (not merges with) any
+            // box-shadow a Tailwind class like `ring-2` would otherwise
+            // contribute, since both ultimately set the same CSS property.
+            boxShadow: '0 0 0 3px hsl(var(--primary)), 0 0 0 9999px hsl(var(--background) / 0.7)',
           }}
         />
       ) : (
