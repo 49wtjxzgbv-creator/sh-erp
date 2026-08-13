@@ -21,10 +21,12 @@ function useTourTarget(selector: string | undefined) {
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   useEffect(() => {
-    if (!selector) {
-      setRect(null);
-      return;
-    }
+    // Clear immediately on every selector change (including to a new,
+    // different selector) — otherwise the previous step's rect stays on
+    // screen as a stale, wrongly-positioned ring for however long the new
+    // target takes to mount (a real, observed flash during route changes).
+    setRect(null);
+    if (!selector) return;
     let cancelled = false;
     let attempts = 0;
     let raf = 0;
