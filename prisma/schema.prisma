@@ -574,10 +574,35 @@ model Supplier {
   products           Product[]
   assemblies         Assembly[]
   purchaseOrders     PurchaseOrder[]
+  portalUser         SupplierPortalUser?
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
   @@map("suppliers")
+}
+
+// A separate table + separate auth surface, not a `User` row — same reasoning
+// as SuperAdmin (ADR-0010): a supplier's natural authorization scope ("my
+// own purchase orders only") doesn't fit RequestUser's "member of exactly
+// one Company with a Role" model, and giving it a Role/CompanyMembership
+// would understate how narrow it actually needs to be. See ADR-0011.
+model SupplierPortalUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @db.Uuid
+  supplierId   String   @unique @db.Uuid // one portal account per Supplier row (not per real-world company — a supplier serving two SH ERP tenants gets two separate Supplier rows and, if invited, two separate portal accounts)
+  email        String   @unique @db.Citext // globally unique, like SuperAdmin.email — keeps login a plain by-email lookup; see ADR-0011's §Consequences for the (accepted) limitation this implies
+  passwordHash String   // argon2id, same as User/SuperAdmin
+
+  active       Boolean   @default(true) // deactivate instead of delete — keeps the invite/reset history intact
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("supplier_portal_users")
 }
 
 // ============================================================================
@@ -1197,6 +1222,8 @@ model PurchaseOrder {
   status                PurchaseOrderStatus @default(ORDERED)
   orderDate             DateTime @default(now()) @db.Timestamptz(3)
   expectedDeliveryDate  DateTime? @db.Timestamptz(3)
+  supplierConfirmedAt           DateTime? @db.Timestamptz(3) // set once, first time the supplier confirms anything on this order via the portal
+  supplierConfirmedDeliveryDate DateTime? @db.Timestamptz(3) // supplier's own committed date — informational, does NOT overwrite expectedDeliveryDate (that stays "what we asked for")
   comment               String?
   sourceCustomerOrderId String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   createdById           String   @db.Uuid
@@ -1233,6 +1260,7 @@ model PurchaseOrderItem {
   qtyReceived     Decimal  @default(0) @db.Decimal(14, 3)
   expectedPrice   Decimal? @db.Decimal(14, 2)
   actualPrice     Decimal? @db.Decimal(14, 2)
+  supplierConfirmedPrice Decimal? @db.Decimal(14, 2) // supplier's own confirmed price via the portal — informational, does NOT overwrite expectedPrice/actualPrice (those stay internal staff's own numbers)
 
   company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   purchaseOrder   PurchaseOrder @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order

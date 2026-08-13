@@ -7,6 +7,8 @@ import {
   createSupplier,
   updateSupplier,
   deleteSupplier,
+  invitePortal,
+  deactivatePortal,
   queryPurchaseOrders,
   getPurchaseOrder,
   createPurchaseOrder,
@@ -60,6 +62,22 @@ export function useDeleteSupplier() {
   return useMutation({
     mutationFn: (id: string) => deleteSupplier(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+}
+
+export function useInvitePortal(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { email?: string } = {}) => invitePortal(id, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: supplierKey(id) }),
+  });
+}
+
+export function useDeactivatePortal(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => deactivatePortal(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: supplierKey(id) }),
   });
 }
 

@@ -91,6 +91,12 @@ export default function PurchaseOrderDetailPage() {
             <p className="text-xs text-muted-foreground">{t('expectedDeliveryDate')}</p>
             <p className="text-sm">{order.expectedDeliveryDate ? new Date(order.expectedDeliveryDate).toLocaleDateString() : '—'}</p>
           </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t('supplierConfirmedDeliveryDate')}</p>
+            <p className="text-sm">
+              {order.supplierConfirmedDeliveryDate ? new Date(order.supplierConfirmedDeliveryDate).toLocaleDateString() : '—'}
+            </p>
+          </div>
           {order.comment && (
             <div className="col-span-full">
               <p className="text-xs text-muted-foreground">{t('comment')}</p>
@@ -114,6 +120,7 @@ export default function PurchaseOrderDetailPage() {
                 <TableHead>{t('qtyReceived')}</TableHead>
                 <TableHead>{t('expectedPrice')}</TableHead>
                 <TableHead>{t('actualPrice')}</TableHead>
+                <TableHead>{t('supplierConfirmedPrice')}</TableHead>
                 {!isDelivered && <TableHead className="w-28">{t('receiveNow')}</TableHead>}
                 {!isDelivered && <TableHead className="w-28">{t('actualPrice')}</TableHead>}
               </TableRow>
@@ -127,6 +134,7 @@ export default function PurchaseOrderDetailPage() {
                   <TableCell>{item.qtyReceived}</TableCell>
                   <TableCell>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
                   <TableCell>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
+                  <TableCell>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
                   {!isDelivered && (
                     <TableCell>
                       <Input

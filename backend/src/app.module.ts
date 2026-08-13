@@ -27,6 +27,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
+import { SupplierPortalModule } from './modules/supplier-portal/supplier-portal.module';
 import { LegacyImportModule } from './modules/legacy-import/legacy-import.module';
 
 @Module({
@@ -63,6 +64,7 @@ import { LegacyImportModule } from './modules/legacy-import/legacy-import.module
     UsersModule,
     HealthModule,
     SuperAdminModule,
+    SupplierPortalModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

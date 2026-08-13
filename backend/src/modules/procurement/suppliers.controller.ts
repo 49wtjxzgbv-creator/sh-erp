@@ -4,6 +4,7 @@ import { CurrentUser, RequestUser } from '../../common/decorators/current-user.d
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { QuerySuppliersDto } from './dto/query-suppliers.dto';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
+import { SupplierPortalInviteDto } from './dto/supplier-portal-invite.dto';
 import { SuppliersService } from './suppliers.service';
 
 @ApiTags('procurement')
@@ -44,5 +45,19 @@ export class SuppliersController {
   @ApiOperation({ summary: 'Soft-delete a supplier. No in-use guard, by design — matches the legacy behavior (Phase 1 §3.4).' })
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.suppliersService.remove(user, id);
+  }
+
+  @Post(':id/portal-invite')
+  @RequirePermissions('suppliers:write')
+  @ApiOperation({ summary: 'Create (or reset) this supplier’s Supplier Portal login — separate from this app’s own auth, see SupplierPortalModule.' })
+  async invitePortal(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SupplierPortalInviteDto) {
+    return this.suppliersService.invitePortal(user, id, dto);
+  }
+
+  @Post(':id/portal-deactivate')
+  @RequirePermissions('suppliers:write')
+  @ApiOperation({ summary: 'Deactivate this supplier’s Supplier Portal login (does not delete it — portal-invite reactivates).' })
+  async deactivatePortal(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.suppliersService.deactivatePortal(user, id);
   }
 }

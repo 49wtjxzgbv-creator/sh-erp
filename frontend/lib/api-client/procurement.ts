@@ -14,6 +14,12 @@ import type { DecimalString } from './decimal';
  * DecimalString as usual.
  */
 
+export interface SupplierPortalUserStatus {
+  email: string;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface Supplier {
   id: string;
   companyId: string;
@@ -25,6 +31,8 @@ export interface Supplier {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Present on findOne(id) only (SuppliersService#findOne) — null if this supplier has no Supplier Portal login yet (ADR-0011). */
+  portalUser?: SupplierPortalUserStatus | null;
 }
 
 export interface CreateSupplierInput {
@@ -68,6 +76,14 @@ export function deleteSupplier(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`suppliers/${id}`);
 }
 
+/** Creates (or resets) this supplier's Supplier Portal login — see ADR-0011. `tempPassword` is shown once; it isn't retrievable again after this response. */
+export function invitePortal(id: string, dto: { email?: string } = {}): Promise<{ email: string; tempPassword: string }> {
+  return apiClient.post<{ email: string; tempPassword: string }>(`suppliers/${id}/portal-invite`, dto);
+}
+export function deactivatePortal(id: string): Promise<{ email: string; active: boolean }> {
+  return apiClient.post<{ email: string; active: boolean }>(`suppliers/${id}/portal-deactivate`, {});
+}
+
 export type PurchaseOrderStatus = 'ORDERED' | 'PARTIAL' | 'DELIVERED';
 
 export interface PurchaseOrderItem {
@@ -81,6 +97,8 @@ export interface PurchaseOrderItem {
   qtyReceived: DecimalString;
   expectedPrice: DecimalString | null;
   actualPrice: DecimalString | null;
+  /** Supplier's own confirmed price via the Supplier Portal (ADR-0011) — informational, never overwrites expectedPrice/actualPrice. */
+  supplierConfirmedPrice: DecimalString | null;
 }
 
 export interface PurchaseOrder {
@@ -91,6 +109,10 @@ export interface PurchaseOrder {
   status: PurchaseOrderStatus;
   orderDate: string;
   expectedDeliveryDate: string | null;
+  /** Set once, the first time the supplier confirms anything via the Supplier Portal. */
+  supplierConfirmedAt: string | null;
+  /** Supplier's own committed delivery date — informational, never overwrites expectedDeliveryDate. */
+  supplierConfirmedDeliveryDate: string | null;
   comment: string | null;
   sourceCustomerOrderId: string | null;
   createdById: string;
