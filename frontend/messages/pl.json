@@ -309,6 +309,7 @@
     "startOrder": "Start production",
     "startConfirmTitle": "Start production?",
     "startConfirmDescription": "Components will be consumed from stock immediately and finished goods will be generated. This cannot be undone.",
+    "subAssemblyNotProduced": "this sub-assembly has not been produced yet (no finished goods in stock)",
     "warehouseOptional": "Warehouse (optional)",
     "defaultWarehouse": "Default warehouse",
     "stageTracker": "Stage tracker",

@@ -14,10 +14,11 @@ import {
 } from '@/lib/hooks/use-production';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useAssembly } from '@/lib/hooks/use-bom';
+import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
-import type { ProductionOrderStatus, FinishedGoodStatus } from '@/lib/api-client/production';
+import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine } from '@/lib/api-client/production';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,9 +58,34 @@ function fmtEur(v: string | null | undefined): string {
   return v != null ? formatEur(Number(v)) : '—';
 }
 
+/**
+ * Resolves a start()-failure shortage line's raw productId/subAssemblyId to
+ * a real name — same "raw id isn't acceptable to show a user" fix applied
+ * everywhere else (bom/[id]/availability/page.tsx's ShortageProductCell).
+ * ASSEMBLY-kind lines mean the required sub-assembly hasn't been *produced*
+ * yet (start() checks `FinishedGood` rows with status IN_STOCK, not
+ * whether it's composable) — worth a visible hint since "start production"
+ * failing here isn't a data problem, it's "produce the sub-assembly first".
+ */
+function ShortageComponentCell({ line }: { line: ProductionShortageLine }) {
+  const t = useTranslations('production');
+  const { data: product } = useProduct(line.kind === 'PRODUCT' ? line.productId : undefined);
+  const { data: subAssembly } = useAssembly(line.kind === 'ASSEMBLY' ? line.subAssemblyId : undefined);
+  if (line.kind === 'PRODUCT') {
+    return <>{product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : line.productId}</>;
+  }
+  const name = subAssembly ? `${subAssembly.name}${subAssembly.article ? ` (${subAssembly.article})` : ''}` : line.subAssemblyId;
+  return (
+    <>
+      {name} <span className="text-muted-foreground">— {t('subAssemblyNotProduced')}</span>
+    </>
+  );
+}
+
 export default function ProductionOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('production');
+  const tb = useTranslations('bom');
   const tc = useTranslations('common');
 
   const { data: order, isLoading } = useProductionOrder(params.id);
@@ -78,6 +104,7 @@ export default function ProductionOrderDetailPage() {
   const [workersError, setWorkersError] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [startError, setStartError] = useState<string | null>(null);
+  const [startShortages, setStartShortages] = useState<ProductionShortageLine[]>([]);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -118,10 +145,13 @@ export default function ProductionOrderDetailPage() {
 
   async function handleStart() {
     setStartError(null);
+    setStartShortages([]);
     try {
       await startOrder.mutateAsync({ warehouseId });
     } catch (err) {
       setStartError(err instanceof ApiError ? err.message : tc('error'));
+      const shortages = err instanceof ApiError ? (err.body as { shortages?: ProductionShortageLine[] } | undefined)?.shortages : undefined;
+      setStartShortages(shortages ?? []);
     }
   }
 
@@ -285,6 +315,26 @@ export default function ProductionOrderDetailPage() {
                 </DialogContent>
               </Dialog>
               {startError && <p className="text-sm text-destructive">{startError}</p>}
+              {startShortages.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{tb('component')}</TableHead>
+                      <TableHead>{tb('needed')}</TableHead>
+                      <TableHead>{tb('available')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {startShortages.map((s, i) => (
+                      <TableRow key={i}>
+                        <TableCell><ShortageComponentCell line={s} /></TableCell>
+                        <TableCell>{s.needed}</TableCell>
+                        <TableCell>{s.available}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </>

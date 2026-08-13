@@ -147,13 +147,23 @@ export interface StartProductionOrderInput {
   warehouseId?: string;
 }
 
+/** Shape of the `shortages` array on a start() 400 body (production-orders.service.ts's `ShortageLine`) — ASSEMBLY-kind entries mean the required sub-assembly hasn't been produced yet (checked as `FinishedGood` rows with status IN_STOCK, not just "is it composable"), not a raw-material stock issue. */
+export interface ProductionShortageLine {
+  kind: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  needed: number;
+  available: number;
+}
+
 /**
  * Checks availability, consumes components (raw products from stock,
  * sub-assemblies via FIFO-consumed FinishedGoods), generates one
  * FinishedGood per planned unit, freezes cost, splits piecework pay, and
  * enters stage tracking (or completes immediately with 0 configured
- * stages). Throws an ApiError with a structured `shortages` array in the
- * body on insufficient stock — same pattern as BOM's produce().
+ * stages). Throws an ApiError whose body has a structured
+ * `shortages: ProductionShortageLine[]` on insufficient stock — same
+ * pattern as BOM's produce().
  */
 export function startProductionOrder(id: string, dto: StartProductionOrderInput = {}): Promise<ProductionOrder> {
   return apiClient.post<ProductionOrder>(`production-orders/${id}/start`, dto);
