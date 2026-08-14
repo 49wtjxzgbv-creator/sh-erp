@@ -15,6 +15,30 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+/** Same fields on both Create and the header-only Update DTO below — factored out once instead of duplicated. */
+class ExtraCostsDto {
+  @ApiPropertyOptional({ description: 'Доставка.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  deliveryCost?: number;
+
+  @ApiPropertyOptional({ description: 'Транспортно-такелажні витрати.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  transportRiggingCost?: number;
+
+  @ApiPropertyOptional({ description: 'Додаткові витрати.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  otherCost?: number;
+}
+
 export class CustomerOrderItemDto {
   @ApiProperty()
   @IsUUID()
@@ -48,7 +72,7 @@ export class CustomerOrderItemDto {
   itemDeadline?: Date;
 }
 
-export class CreateCustomerOrderDto {
+export class CreateCustomerOrderDto extends ExtraCostsDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -127,7 +151,7 @@ export class CreateCustomerOrderDto {
   items!: CustomerOrderItemDto[];
 }
 
-export class CustomerOrderHeaderDto {
+export class CustomerOrderHeaderDto extends ExtraCostsDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

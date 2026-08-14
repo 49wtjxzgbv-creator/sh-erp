@@ -1,7 +1,9 @@
 'use client';
 
-import { type ReactNode } from 'react';
-import { Printer } from 'lucide-react';
+import { type ReactNode, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Printer, ExternalLink } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 
@@ -19,9 +21,29 @@ import { Avatar } from '@/components/ui/avatar';
  * Usage: wrap the print-only markup in `<PrintArea>`, put a
  * `<PrintButton onClick={() => window.print()} />` (or any trigger that
  * ends in a `window.print()` call) somewhere in the normal (non-print) UI.
+ *
+ * `?print=1` (opened via PreviewButton below, paired with
+ * AppShellOrPrintPreview stripping the app chrome for that same query
+ * param) makes this render like `@media print` would — visible on screen,
+ * not just hidden-until-actually-printing — so a new tab is a real preview
+ * of the exact printable markup, not a guess at what printing will show.
  */
+function usePrintPreviewMode(): boolean {
+  const searchParams = useSearchParams();
+  return searchParams.get('print') === '1';
+}
+
+function PrintAreaInner({ children }: { children: ReactNode }) {
+  const isPreview = usePrintPreviewMode();
+  return <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>{children}</div>;
+}
+
 export function PrintArea({ children }: { children: ReactNode }) {
-  return <div className="print-area hidden print:block">{children}</div>;
+  return (
+    <Suspense fallback={<div className="print-area hidden print:block">{children}</div>}>
+      <PrintAreaInner>{children}</PrintAreaInner>
+    </Suspense>
+  );
 }
 
 export function PrintButton({ label, className }: { label: string; className?: string }) {
@@ -29,6 +51,22 @@ export function PrintButton({ label, className }: { label: string; className?: s
     <Button type="button" variant="outline" size="sm" className={className} onClick={() => window.print()}>
       <Printer className="mr-2 h-4 w-4" />
       {label}
+    </Button>
+  );
+}
+
+/** Opens THIS same page with `?print=1` in a new tab — see PrintArea's own comment for why this reuses the current route instead of a separate print-preview route. */
+export function PreviewButton({ className }: { className?: string }) {
+  const tp = useTranslations('print');
+  function openPreview() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('print', '1');
+    window.open(url.toString(), '_blank', 'noopener');
+  }
+  return (
+    <Button type="button" variant="outline" size="sm" className={className} onClick={openPreview}>
+      <ExternalLink className="mr-2 h-4 w-4" />
+      {tp('previewAction')}
     </Button>
   );
 }

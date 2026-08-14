@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 
 export interface SupplierRequestGroupForPrint {
@@ -34,13 +34,16 @@ export function SupplierRequestsPrint({ groups }: { groups: SupplierRequestGroup
 
   return (
     <>
-      <PrintOptionsDialog
-        open={printOptions.open}
-        onOpenChange={printOptions.setOpen}
-        columns={columns}
-        onConfirm={printOptions.confirm}
-        triggerLabel={tp('printPurchaseRequest')}
-      />
+      <div className="flex gap-2">
+        <PrintOptionsDialog
+          open={printOptions.open}
+          onOpenChange={printOptions.setOpen}
+          columns={columns}
+          onConfirm={printOptions.confirm}
+          triggerLabel={tp('printPurchaseRequest')}
+        />
+        <PreviewButton />
+      </div>
       <PrintArea>
         <PrintDocumentHeader title={tp('supplierRequestsTitle')} />
         {printable.map((group, gi) => (

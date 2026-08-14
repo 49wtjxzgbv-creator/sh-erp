@@ -6,7 +6,7 @@ import { useAssembly, useAssemblyCost } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
-import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
 import type { CostBreakdownLine } from '@/lib/api-client/bom';
@@ -94,14 +94,17 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
 
   return (
     <>
-      <PrintOptionsDialog
-        open={printOptions.open}
-        onOpenChange={printOptions.setOpen}
-        columns={columns}
-        hasPhotos
-        onConfirm={printOptions.confirm}
-        triggerLabel={tp('printSpecification')}
-      />
+      <div className="flex gap-2">
+        <PrintOptionsDialog
+          open={printOptions.open}
+          onOpenChange={printOptions.setOpen}
+          columns={columns}
+          hasPhotos
+          onConfirm={printOptions.confirm}
+          triggerLabel={tp('printSpecification')}
+        />
+        <PreviewButton />
+      </div>
       <PrintArea>
         <PrintDocumentHeader
           title={tp('specificationTitle')}

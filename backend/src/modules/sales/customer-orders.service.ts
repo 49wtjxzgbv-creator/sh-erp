@@ -41,6 +41,9 @@ export class CustomerOrdersService {
         plannedCompletionAt: dto.plannedCompletionAt,
         plannedShipmentAt: dto.plannedShipmentAt,
         plannedDeliveryAt: dto.plannedDeliveryAt,
+        deliveryCost: dto.deliveryCost,
+        transportRiggingCost: dto.transportRiggingCost,
+        otherCost: dto.otherCost,
         comment: dto.comment,
         status: 'NEW',
         createdById: user.userId,
@@ -136,7 +139,16 @@ export class CustomerOrdersService {
    * on the page: one cost calculation per *unique* assembly (not per
    * line), one findMany for every referenced ProductionOrder.
    */
-  private async withPriceTotals(user: RequestUser, orders: Array<{ id: string; items: { id: string; assemblyId: string; qty: Prisma.Decimal }[] }>) {
+  private async withPriceTotals(
+    user: RequestUser,
+    orders: Array<{
+      id: string;
+      items: { id: string; assemblyId: string; qty: Prisma.Decimal }[];
+      deliveryCost?: Prisma.Decimal | null;
+      transportRiggingCost?: Prisma.Decimal | null;
+      otherCost?: Prisma.Decimal | null;
+    }>,
+  ) {
     const allItems = orders.flatMap((o) => o.items);
 
     const uniqueAssemblyIds = Array.from(new Set(allItems.map((i) => i.assemblyId)));
@@ -184,6 +196,22 @@ export class CustomerOrdersService {
           hasActual = true;
         }
       }
+
+      // Extra costs (Продажі's delivery/transport-rigging/other, entered
+      // directly by staff, not derived) count toward the order total
+      // regardless of production progress — added to both estimated and
+      // actual rather than gated behind whether every line resolved a BOM
+      // cost, since these are known the moment they're entered.
+      const extraCosts =
+        Number(order.deliveryCost ?? 0) + Number(order.transportRiggingCost ?? 0) + Number(order.otherCost ?? 0);
+      const hasExtraCosts = order.deliveryCost != null || order.transportRiggingCost != null || order.otherCost != null;
+      if (hasExtraCosts) {
+        estimatedTotal += extraCosts;
+        hasEstimate = true;
+        actualTotal += extraCosts;
+        hasActual = true;
+      }
+
       const { items, ...header } = order as any;
       return { ...header, estimatedTotal: hasEstimate ? estimatedTotal : null, actualTotal: hasActual ? actualTotal : null };
     });

@@ -69,6 +69,10 @@ export interface CustomerOrder {
   plannedCompletionAt: string | null;
   plannedShipmentAt: string | null;
   plannedDeliveryAt: string | null;
+  /** Extra costs entered directly by staff (not BOM-derived), counted into estimatedTotal/actualTotal on both list and detail views. */
+  deliveryCost: DecimalString | null;
+  transportRiggingCost: DecimalString | null;
+  otherCost: DecimalString | null;
   comment: string | null;
   createdById: string;
   createdAt: string;
@@ -104,6 +108,9 @@ export interface CreateCustomerOrderInput {
   plannedCompletionAt?: string;
   plannedShipmentAt?: string;
   plannedDeliveryAt?: string;
+  deliveryCost?: number;
+  transportRiggingCost?: number;
+  otherCost?: number;
   comment?: string;
   items: CustomerOrderItemInput[];
 }

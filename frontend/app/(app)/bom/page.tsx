@@ -8,6 +8,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useAssemblies } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useSuppliers } from '@/lib/hooks/use-procurement';
 import type { Assembly } from '@/lib/api-client/bom';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
@@ -16,15 +17,21 @@ import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 
 const PAGE_SIZE = 50;
-const HIDDEN_COLUMNS_KEY = 'sh-erp-bom-hidden-columns';
+// Bumped from the original key: new optional columns below should start
+// hidden by default (matching the pre-existing name/article/laborCostPerUnit
+// default view), which only works cleanly for a key nothing has written to
+// yet — reusing the old key would show them all at once for anyone who'd
+// already saved a (now stale) preference under it.
+const HIDDEN_COLUMNS_KEY = 'sh-erp-bom-hidden-columns-v2';
+const DEFAULT_HIDDEN_COLUMNS = ['note', 'packagingCostPerUnit', 'deliveryCostPerUnit', 'otherCostPerUnit', 'supplier', 'createdAt'];
 
 function loadHiddenColumns(): Set<string> {
-  if (typeof window === 'undefined') return new Set();
+  if (typeof window === 'undefined') return new Set(DEFAULT_HIDDEN_COLUMNS);
   try {
     const raw = window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    return raw ? new Set(JSON.parse(raw)) : new Set(DEFAULT_HIDDEN_COLUMNS);
   } catch {
-    return new Set();
+    return new Set(DEFAULT_HIDDEN_COLUMNS);
   }
 }
 
@@ -40,6 +47,12 @@ export default function BomPage() {
       { id: 'name', label: t('name') },
       { id: 'article', label: t('article') },
       { id: 'laborCostPerUnit', label: t('laborCostPerUnit') },
+      { id: 'note', label: t('note') },
+      { id: 'packagingCostPerUnit', label: t('packagingCostPerUnit') },
+      { id: 'deliveryCostPerUnit', label: t('deliveryCostPerUnit') },
+      { id: 'otherCostPerUnit', label: t('otherCostPerUnit') },
+      { id: 'supplier', label: t('supplier') },
+      { id: 'createdAt', label: t('createdAt') },
     ],
     [t],
   );
@@ -59,9 +72,16 @@ export default function BomPage() {
   }
 
   const { data, isLoading } = useAssemblies({ search: search || undefined, limit: PAGE_SIZE, offset });
+  const { data: suppliers } = useSuppliers({ limit: 200 });
 
   const assemblyIds = useMemo(() => data?.items.map((a) => a.id) ?? [], [data]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+
+  const supplierById = useMemo(() => {
+    const map = new Map<string, string>();
+    suppliers?.items.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [suppliers]);
 
   const columns = useMemo<ColumnDef<Assembly>[]>(
     () => [
@@ -76,8 +96,26 @@ export default function BomPage() {
         accessorKey: 'laborCostPerUnit',
         header: t('laborCostPerUnit'),
       },
+      { accessorKey: 'note', header: t('note'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'packagingCostPerUnit', header: t('packagingCostPerUnit') },
+      { accessorKey: 'deliveryCostPerUnit', header: t('deliveryCostPerUnit') },
+      { accessorKey: 'otherCostPerUnit', header: t('otherCostPerUnit') },
+      {
+        id: 'supplier',
+        accessorFn: (row) => row.defaultSupplierId,
+        header: t('supplier'),
+        cell: ({ getValue }) => {
+          const id = getValue() as string | null;
+          return id ? (supplierById.get(id) ?? '—') : '—';
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: t('createdAt'),
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
     ],
-    [t, photosByAssembly],
+    [t, photosByAssembly, supplierById],
   );
 
   return (

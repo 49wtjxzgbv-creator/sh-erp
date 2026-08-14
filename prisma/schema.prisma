@@ -1202,6 +1202,14 @@ model CustomerOrder {
   plannedShipmentAt   DateTime? @db.Timestamptz(3)
   plannedDeliveryAt   DateTime? @db.Timestamptz(3)
 
+  // Extra costs that count toward the order total alongside the BOM-derived
+  // line costs (CustomerOrdersService#withPriceTotals) — entered directly
+  // by staff, not derived from anything else. Same nullable-Decimal(14,2)
+  // shape as Assembly's *CostPerUnit fields.
+  deliveryCost          Decimal? @db.Decimal(14, 2)
+  transportRiggingCost  Decimal? @db.Decimal(14, 2)
+  otherCost             Decimal? @db.Decimal(14, 2)
+
   legacyId       String?
 
   createdAt      DateTime @default(now()) @db.Timestamptz(3)

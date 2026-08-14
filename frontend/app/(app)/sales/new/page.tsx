@@ -50,6 +50,9 @@ export default function NewCustomerOrderPage() {
   const [plannedCompletionAt, setPlannedCompletionAt] = useState('');
   const [plannedShipmentAt, setPlannedShipmentAt] = useState('');
   const [plannedDeliveryAt, setPlannedDeliveryAt] = useState('');
+  const [deliveryCost, setDeliveryCost] = useState('');
+  const [transportRiggingCost, setTransportRiggingCost] = useState('');
+  const [otherCost, setOtherCost] = useState('');
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -66,9 +69,20 @@ export default function NewCustomerOrderPage() {
     const cost = costResults[i]?.data;
     return row.assemblyId && cost && qty > 0 ? cost.costPerUnit * qty : null;
   });
-  const estimatedTotal = rowEstimates.some((v) => v != null)
-    ? rowEstimates.reduce((sum: number, v) => sum + (v ?? 0), 0)
-    : null;
+  // Delivery/transport-rigging/other — entered directly, not BOM-derived —
+  // count toward the same live total as the line estimates (mirrors
+  // CustomerOrdersService#withPriceTotals' server-side fold for the list/
+  // detail views once the order exists).
+  const extraCosts = [deliveryCost, transportRiggingCost, otherCost]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const extraCostsTotal = extraCosts.reduce((sum, v) => sum + v, 0);
+  const hasExtraCosts = extraCosts.length > 0;
+
+  const estimatedTotal =
+    rowEstimates.some((v) => v != null) || hasExtraCosts
+      ? rowEstimates.reduce((sum: number, v) => sum + (v ?? 0), 0) + extraCostsTotal
+      : null;
 
   function addRow() {
     setRows((r) => [...r, { key: newRowKey(), qty: '', plannedStartAt: '', plannedEndAt: '', itemDeadline: '' }]);
@@ -117,6 +131,9 @@ export default function NewCustomerOrderPage() {
         plannedCompletionAt: fromDatetimeLocalValue(plannedCompletionAt),
         plannedShipmentAt: fromDatetimeLocalValue(plannedShipmentAt),
         plannedDeliveryAt: fromDatetimeLocalValue(plannedDeliveryAt),
+        deliveryCost: deliveryCost ? Number(deliveryCost) : undefined,
+        transportRiggingCost: transportRiggingCost ? Number(transportRiggingCost) : undefined,
+        otherCost: otherCost ? Number(otherCost) : undefined,
         comment: comment || undefined,
         items,
       });
@@ -184,6 +201,25 @@ export default function NewCustomerOrderPage() {
           <div className="space-y-1.5">
             <Label htmlFor="plannedDeliveryAt">{t('plannedDeliveryAt')}</Label>
             <Input id="plannedDeliveryAt" type="datetime-local" value={plannedDeliveryAt} onChange={(e) => setPlannedDeliveryAt(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="deliveryCost">{t('deliveryCost')}</Label>
+            <Input id="deliveryCost" type="number" step="any" min={0} value={deliveryCost} onChange={(e) => setDeliveryCost(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="transportRiggingCost">{t('transportRiggingCost')}</Label>
+            <Input
+              id="transportRiggingCost"
+              type="number"
+              step="any"
+              min={0}
+              value={transportRiggingCost}
+              onChange={(e) => setTransportRiggingCost(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="otherCost">{t('otherCost')}</Label>
+            <Input id="otherCost" type="number" step="any" min={0} value={otherCost} onChange={(e) => setOtherCost(e.target.value)} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="comment">{t('comment')}</Label>

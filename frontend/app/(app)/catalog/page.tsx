@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-react';
-import { useProducts, useExportProducts, useDeleteProducts } from '@/lib/hooks/use-catalog';
+import { useProducts, useExportProducts, useDeleteProducts, useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import type { Product } from '@/lib/api-client/catalog';
@@ -27,12 +27,54 @@ import {
 } from '@/components/ui/dialog';
 import { ImportProductsDialog } from '@/components/domain/catalog/import-products-dialog';
 import { ProductLabelsDialog } from '@/components/domain/catalog/product-labels-dialog';
+import { ProductLabelsPrintContent, expandLabelCopies } from '@/components/domain/catalog/product-labels-print-content';
+import { PrintArea } from '@/components/domain/print/print-area';
+import type { SelectedLabel } from '@/components/domain/catalog/product-labels-dialog';
 
 const PAGE_SIZE = 50;
+
+/**
+ * `?print=1&labels=productId:copies,productId:copies,...` — the preview
+ * ProductLabelsDialog's own "Переглянути" button opens (see that file's
+ * openPreview). Re-resolves each productId against real product data
+ * (article/name/cell can't be trusted from the URL) and renders the exact
+ * same ProductLabelsPrintContent the dialog itself prints from.
+ */
+function CatalogLabelsPreview({ payload }: { payload: string }) {
+  const parsed = useMemo(
+    () =>
+      payload
+        .split(',')
+        .map((pair) => {
+          const [productId, copies] = pair.split(':');
+          return { productId, copies: Math.max(1, Number(copies) || 1) };
+        })
+        .filter((p) => p.productId),
+    [payload],
+  );
+  const productIds = useMemo(() => parsed.map((p) => p.productId), [parsed]);
+  const { data: productsById } = useProductsByIds(productIds);
+
+  const selected: SelectedLabel[] = parsed
+    .map(({ productId, copies }) => {
+      const product = productsById?.get(productId);
+      if (!product) return null;
+      return { productId, article: product.article, code: product.code, name: product.name, cell: product.cell, copies };
+    })
+    .filter((s): s is SelectedLabel => s !== null);
+
+  return (
+    <PrintArea>
+      <ProductLabelsPrintContent labelInstances={expandLabelCopies(selected)} />
+    </PrintArea>
+  );
+}
 
 export default function CatalogPage() {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
+  const searchParams = useSearchParams();
+  const labelsPreviewPayload = searchParams.get('print') === '1' ? searchParams.get('labels') : null;
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
@@ -90,6 +132,10 @@ export default function CatalogPage() {
     ],
     [t, photosByProduct],
   );
+
+  if (labelsPreviewPayload) {
+    return <CatalogLabelsPreview payload={labelsPreviewPayload} />;
+  }
 
   return (
     <div className="space-y-4">

@@ -11,7 +11,7 @@ import { useProductionStages } from '@/lib/hooks/use-production';
 import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/planner/planner-gantt';
 import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
-import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -230,6 +230,7 @@ export default function PlannerPage() {
             <Printer className="mr-2 h-4 w-4" />
             {t('printYearButton')}
           </Button>
+          <PreviewButton />
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
-import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { ComponentNameCell, ComponentArticleCell, useOwnCostLines } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
@@ -185,14 +185,17 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
 
   return (
     <>
-      <PrintOptionsDialog
-        open={printOptions.open}
-        onOpenChange={printOptions.setOpen}
-        columns={columns}
-        hasPhotos
-        onConfirm={printOptions.confirm}
-        triggerLabel={tp('printOrder')}
-      />
+      <div className="flex gap-2">
+        <PrintOptionsDialog
+          open={printOptions.open}
+          onOpenChange={printOptions.setOpen}
+          columns={columns}
+          hasPhotos
+          onConfirm={printOptions.confirm}
+          triggerLabel={tp('printOrder')}
+        />
+        <PreviewButton />
+      </div>
       <PrintArea>
         <PrintDocumentHeader
           title={tp('customerOrderTitle')}

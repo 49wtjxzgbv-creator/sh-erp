@@ -17,7 +17,8 @@ import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import type { CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
+import { toNumber } from '@/lib/api-client/decimal';
+import type { CustomerOrder, CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
 import type { ProductionOrderStatus } from '@/lib/api-client/production';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -83,7 +84,7 @@ function ActualPriceCell({ batchIds }: { batchIds: string[] }) {
 }
 
 /** Order-level estimated/actual totals, batched — see EstimatedPriceCell/ActualPriceCell for what each is. */
-function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
+function OrderPriceTotals({ order, items }: { order: CustomerOrder; items: CustomerOrderItem[] }) {
   const t = useTranslations('sales');
   const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
   const allBatchIds = items.flatMap((i) => i.quantitySummary?.batches.map((b) => b.id) ?? []);
@@ -106,6 +107,21 @@ function OrderPriceTotals({ items }: { items: CustomerOrderItem[] }) {
       actualTotal += Number(r.data.totalLocalCostEur);
       hasActual = true;
     }
+  }
+
+  // Delivery/transport-rigging/other — entered directly, not BOM-derived —
+  // count toward both totals, same fold as CustomerOrdersService's own
+  // withPriceTotals (list view); this detail view computes its own totals
+  // independently (findOne doesn't pre-aggregate them), so the same logic
+  // is duplicated here rather than trusting a server-computed field.
+  const extraCostValues = [toNumber(order.deliveryCost), toNumber(order.transportRiggingCost), toNumber(order.otherCost)];
+  const extraCostsTotal = extraCostValues.reduce((sum: number, v) => sum + (v ?? 0), 0);
+  const hasExtraCosts = extraCostValues.some((v) => v != null);
+  if (hasExtraCosts) {
+    estimatedTotal += extraCostsTotal;
+    hasEstimate = true;
+    actualTotal += extraCostsTotal;
+    hasActual = true;
   }
 
   return (
@@ -401,6 +417,24 @@ export default function CustomerOrderDetailPage() {
             <p className="text-xs text-muted-foreground">{t('plannedDeliveryAt')}</p>
             <p className="text-sm">{formatPlannedDate(order.plannedDeliveryAt, t('notPlanned'))}</p>
           </div>
+          {toNumber(order.deliveryCost) != null && (
+            <div>
+              <p className="text-xs text-muted-foreground">{t('deliveryCost')}</p>
+              <p className="text-sm">{formatEur(toNumber(order.deliveryCost)!)}</p>
+            </div>
+          )}
+          {toNumber(order.transportRiggingCost) != null && (
+            <div>
+              <p className="text-xs text-muted-foreground">{t('transportRiggingCost')}</p>
+              <p className="text-sm">{formatEur(toNumber(order.transportRiggingCost)!)}</p>
+            </div>
+          )}
+          {toNumber(order.otherCost) != null && (
+            <div>
+              <p className="text-xs text-muted-foreground">{t('otherCost')}</p>
+              <p className="text-sm">{formatEur(toNumber(order.otherCost)!)}</p>
+            </div>
+          )}
           {order.comment && (
             <div className="col-span-full">
               <p className="text-xs text-muted-foreground">{t('comment')}</p>
@@ -414,7 +448,7 @@ export default function CustomerOrderDetailPage() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">{t('items')}</CardTitle>
           <div className="flex items-center gap-6">
-            {order.items && order.items.length > 0 && <OrderPriceTotals items={order.items} />}
+            {order.items && order.items.length > 0 && <OrderPriceTotals order={order} items={order.items} />}
             {hasUngivenLines && (
               <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
                 {t('giveAllToProduction')}

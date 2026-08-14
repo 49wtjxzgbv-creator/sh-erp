@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
-import { PrintArea, PrintDocumentHeader, PrintButton } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 import { OperationsTimelineSection, OperationsTimelineLegend } from '@/components/domain/dashboard/operations-timeline';
 import type { TimelineStage } from '@/lib/api-client/dashboard';
 
@@ -133,6 +133,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-4">
               <OperationsTimelineLegend labels={stageLabels} />
               <PrintButton label={tp('printAction')} />
+              <PreviewButton />
             </div>
           </CardContent>
         </Card>

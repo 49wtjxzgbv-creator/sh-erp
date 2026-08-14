@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { ExternalLink, X } from 'lucide-react';
 import { useProducts } from '@/lib/hooks/use-catalog';
-import { PrintArea, PrintButton, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintButton } from '@/components/domain/print/print-area';
+import { ProductLabelsPrintContent } from './product-labels-print-content';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
 
 export interface ProductLabelsDialogProps {
   open: boolean;
@@ -72,6 +73,23 @@ export function ProductLabelsDialog({ open, onOpenChange }: ProductLabelsDialogP
 
   const labelInstances = expandLabelCopies(selected);
 
+  /**
+   * Unlike every other print entry point, this dialog's selection (which
+   * products, how many copies each) lives only in local React state, not a
+   * URL a fresh tab could reload — so the preview serializes it into the
+   * URL itself (`productId:copies`, comma-separated) instead of just
+   * reopening the current route with `?print=1` the way PreviewButton
+   * does. catalog/page.tsx's own `?print=1&labels=...` branch decodes this
+   * and renders ProductLabelsPrintContent from real product data.
+   */
+  function openPreview() {
+    const payload = selected.map((s) => `${s.productId}:${s.copies}`).join(',');
+    const url = new URL(window.location.origin + '/catalog');
+    url.searchParams.set('print', '1');
+    url.searchParams.set('labels', payload);
+    window.open(url.toString(), '_blank', 'noopener');
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
       <DialogContent className="max-w-2xl">
@@ -126,27 +144,17 @@ export function ProductLabelsDialog({ open, onOpenChange }: ProductLabelsDialogP
         </div>
 
         <PrintArea>
-          <PrintDocumentHeader title={tp('labelsTitle')} />
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
-              gap: 8,
-            }}
-          >
-            {labelInstances.map((label, i) => (
-              <div key={i} style={{ border: '1px dashed #999', borderRadius: 4, padding: 8 }}>
-                {label.code && <div style={{ fontSize: 10 }}>{label.code}</div>}
-                <div style={{ fontSize: '1.5em', fontWeight: 700 }}>{label.article}</div>
-                <div style={{ fontSize: '0.85em' }}>{label.name}</div>
-                {label.cell && <div style={{ fontSize: 10 }}>{t('cell')}: {label.cell}</div>}
-              </div>
-            ))}
-          </div>
+          <ProductLabelsPrintContent labelInstances={labelInstances} />
         </PrintArea>
 
         <DialogFooter className="no-print">
           <PrintButton label={tp('printLabels')} />
+          {selected.length > 0 && (
+            <Button type="button" variant="outline" size="sm" onClick={openPreview}>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              {tp('previewAction')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { formatEur } from '@/lib/utils';
-import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import type { ProductionOrderPickListItem } from '@/lib/api-client/production';
 import type { DecimalString } from '@/lib/api-client/decimal';
@@ -46,13 +46,16 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
 
   return (
     <>
-      <PrintOptionsDialog
-        open={printOptions.open}
-        onOpenChange={printOptions.setOpen}
-        columns={columns}
-        onConfirm={printOptions.confirm}
-        triggerLabel={tp('printPickList')}
-      />
+      <div className="flex gap-2">
+        <PrintOptionsDialog
+          open={printOptions.open}
+          onOpenChange={printOptions.setOpen}
+          columns={columns}
+          onConfirm={printOptions.confirm}
+          triggerLabel={tp('printPickList')}
+        />
+        <PreviewButton />
+      </div>
       <PrintArea>
         <PrintDocumentHeader
           title={tp('pickListTitle')}

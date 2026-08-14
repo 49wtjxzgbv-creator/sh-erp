@@ -252,3 +252,80 @@
     color: #333;
   }
 }
+
+/*
+ * Same visual rules as the @media print block above, applied unconditionally
+ * under `.print-preview-mode` (set on <main> by AppShellOrPrintPreview.tsx
+ * for `?print=1`) instead of gated behind actual print media — so a
+ * "Переглянути" tab (print-area.tsx's PreviewButton) shows the real printed
+ * look on screen, not just once the browser's print engine kicks in. The
+ * @media print block itself stays untouched; this is a deliberate
+ * duplicate, not a refactor, to keep the real print path's behavior
+ * (already working, already tested) at zero risk.
+ */
+.print-preview-mode .print-area {
+  background: #fff;
+  color: #000;
+  padding: 12mm;
+}
+.print-preview-mode .print-area table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.print-preview-mode .print-area th,
+.print-preview-mode .print-area td {
+  border: 1px solid #999;
+  padding: 4px 6px;
+  text-align: left;
+  font-size: 11px;
+}
+.print-preview-mode .planner-print-table {
+  table-layout: fixed;
+}
+.print-preview-mode .planner-print-table thead {
+  display: table-header-group;
+}
+.print-preview-mode .planner-print-table td,
+.print-preview-mode .planner-print-table th {
+  font-size: 9px;
+  vertical-align: top;
+}
+.print-preview-mode .planner-print-order td {
+  background: #eee;
+  font-size: 11px;
+}
+.print-preview-mode .planner-print-photo {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1px solid #999;
+  border-radius: 2px;
+}
+.print-preview-mode .planner-print-photo-empty {
+  align-items: center;
+  justify-content: center;
+  font-size: 6px;
+  text-align: center;
+  color: #666;
+}
+.print-preview-mode .planner-print-muted {
+  color: #555;
+}
+.print-preview-mode .planner-print-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #ccc;
+}
+.print-preview-mode .planner-print-bar-label {
+  position: absolute;
+  left: 100%;
+  top: -1px;
+  margin-left: 2px;
+  font-size: 7px;
+  white-space: nowrap;
+  color: #333;
+}
