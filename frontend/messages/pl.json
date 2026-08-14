@@ -259,6 +259,7 @@
     "otherCostPerUnit": "Other cost / unit",
     "supplier": "Supplier",
     "createdAt": "Created",
+    "itemCost": "Item cost",
     "tabBom": "BOM",
     "tabCost": "Cost",
     "tabAvailability": "Availability & produce",

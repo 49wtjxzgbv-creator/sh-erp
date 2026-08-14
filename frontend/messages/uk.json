@@ -259,6 +259,7 @@
     "otherCostPerUnit": "Інші витрати за од.",
     "supplier": "Постачальник",
     "createdAt": "Дата створення",
+    "itemCost": "Вартість виробу",
     "tabBom": "Склад (BOM)",
     "tabCost": "Собівартість",
     "tabAvailability": "Наявність і виробництво",

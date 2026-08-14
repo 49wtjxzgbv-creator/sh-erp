@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
-import { useAssemblies } from '@/lib/hooks/use-bom';
+import { useAssemblies, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { formatEur } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
@@ -23,7 +24,15 @@ const PAGE_SIZE = 50;
 // yet — reusing the old key would show them all at once for anyone who'd
 // already saved a (now stale) preference under it.
 const HIDDEN_COLUMNS_KEY = 'sh-erp-bom-hidden-columns-v2';
-const DEFAULT_HIDDEN_COLUMNS = ['note', 'packagingCostPerUnit', 'deliveryCostPerUnit', 'otherCostPerUnit', 'supplier', 'createdAt'];
+const DEFAULT_HIDDEN_COLUMNS = [
+  'note',
+  'packagingCostPerUnit',
+  'deliveryCostPerUnit',
+  'otherCostPerUnit',
+  'supplier',
+  'createdAt',
+  'itemCost',
+];
 
 function loadHiddenColumns(): Set<string> {
   if (typeof window === 'undefined') return new Set(DEFAULT_HIDDEN_COLUMNS);
@@ -53,6 +62,7 @@ export default function BomPage() {
       { id: 'otherCostPerUnit', label: t('otherCostPerUnit') },
       { id: 'supplier', label: t('supplier') },
       { id: 'createdAt', label: t('createdAt') },
+      { id: 'itemCost', label: t('itemCost') },
     ],
     [t],
   );
@@ -76,6 +86,13 @@ export default function BomPage() {
 
   const assemblyIds = useMemo(() => data?.items.map((a) => a.id) ?? [], [data]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  // Full BOM-derived cost (materials + labor + packaging + delivery +
+  // other), the same computation the Собівартість tab and every price
+  // estimate elsewhere in the app already use — not a stored column, so
+  // it's fetched per row only when this column is actually shown (it
+  // starts hidden), same "cheap per-row calls, not hundreds at once"
+  // reasoning as useAssemblyCosts' own header comment.
+  const itemCosts = useAssemblyCosts(hiddenColumns.has('itemCost') ? [] : assemblyIds);
 
   const supplierById = useMemo(() => {
     const map = new Map<string, string>();
@@ -114,8 +131,18 @@ export default function BomPage() {
         header: t('createdAt'),
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
       },
+      {
+        id: 'itemCost',
+        header: t('itemCost'),
+        cell: ({ row }) => {
+          const result = itemCosts[row.index];
+          if (result?.isLoading) return '…';
+          const cost = result?.data?.costPerUnit;
+          return cost != null ? formatEur(cost) : '—';
+        },
+      },
     ],
-    [t, photosByAssembly, supplierById],
+    [t, photosByAssembly, supplierById, itemCosts],
   );
 
   return (
