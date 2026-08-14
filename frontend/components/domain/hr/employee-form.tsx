@@ -51,8 +51,20 @@ export function EmployeeForm({ employee, onSubmit, submitting, submitError }: Em
     defaultValues: employeeToFormValues(employee),
   });
 
+  function scrollToFirstError(formErrors: typeof errors) {
+    const elements = Object.keys(formErrors)
+      .map((key) => document.getElementById(key))
+      .filter((el): el is HTMLElement => el !== null);
+    if (elements.length === 0) return;
+    const topmost = elements.reduce((a, b) =>
+      a.getBoundingClientRect().top <= b.getBoundingClientRect().top ? a : b,
+    );
+    topmost.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    topmost.focus({ preventScroll: true });
+  }
+
   return (
-    <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+    <form className="space-y-4" onSubmit={handleSubmit(onSubmit, scrollToFirstError)} noValidate>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('employeeHeader')}</CardTitle>

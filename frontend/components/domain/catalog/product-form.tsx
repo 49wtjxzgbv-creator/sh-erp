@@ -123,6 +123,24 @@ export function ProductForm({
 
   const unitId = watch('unitId');
 
+  // Every field's `id` matches its zod schema key (see `id="article"`,
+  // `id="unitId"` below), so on failed validation we can generically find
+  // and scroll to whichever errored field sits highest on the page —
+  // without this, a required-field error (e.g. unitId) renders inline next
+  // to that field only, giving no feedback near the Save button and making
+  // the page look like it silently did nothing on submit.
+  function scrollToFirstError(formErrors: typeof errors) {
+    const elements = Object.keys(formErrors)
+      .map((key) => document.getElementById(key))
+      .filter((el): el is HTMLElement => el !== null);
+    if (elements.length === 0) return;
+    const topmost = elements.reduce((a, b) =>
+      a.getBoundingClientRect().top <= b.getBoundingClientRect().top ? a : b,
+    );
+    topmost.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    topmost.focus({ preventScroll: true });
+  }
+
   async function submit(values: ProductFormValues) {
     const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
     await onSubmit({
@@ -139,7 +157,7 @@ export function ProductForm({
   }
 
   return (
-    <form className="space-y-6" onSubmit={handleSubmit(submit)} noValidate>
+    <form className="space-y-6" onSubmit={handleSubmit(submit, scrollToFirstError)} noValidate>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('photo')}</CardTitle>

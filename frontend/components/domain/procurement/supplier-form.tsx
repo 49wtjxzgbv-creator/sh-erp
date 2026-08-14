@@ -55,8 +55,20 @@ export function SupplierForm({ supplier, onSubmit, submitting, submitError }: Su
     await onSubmit({ ...values, email: values.email || undefined });
   }
 
+  function scrollToFirstError(formErrors: typeof errors) {
+    const elements = Object.keys(formErrors)
+      .map((key) => document.getElementById(key))
+      .filter((el): el is HTMLElement => el !== null);
+    if (elements.length === 0) return;
+    const topmost = elements.reduce((a, b) =>
+      a.getBoundingClientRect().top <= b.getBoundingClientRect().top ? a : b,
+    );
+    topmost.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    topmost.focus({ preventScroll: true });
+  }
+
   return (
-    <form className="space-y-4" onSubmit={handleSubmit(submit)} noValidate>
+    <form className="space-y-4" onSubmit={handleSubmit(submit, scrollToFirstError)} noValidate>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('supplierHeader')}</CardTitle>
