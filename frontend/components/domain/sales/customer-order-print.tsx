@@ -6,6 +6,7 @@ import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
+import { toNumber } from '@/lib/api-client/decimal';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { ComponentNameCell, ComponentArticleCell, useOwnCostLines } from '@/components/domain/bom/assembly-spec-print';
@@ -39,7 +40,7 @@ function ActualPriceCell({ productionOrderId }: { productionOrderId: string | nu
   return <td>{formatEur(Number(po.totalLocalCostEur))}</td>;
 }
 
-function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
+function PrintPriceTotals({ order, items }: { order: CustomerOrder; items: CustomerOrderItem[] }) {
   const t = useTranslations('sales');
   const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
   const poResults = useProductionOrdersByIds(items.map((i) => i.productionOrderId ?? undefined));
@@ -63,6 +64,17 @@ function PrintPriceTotals({ items }: { items: CustomerOrderItem[] }) {
       hasActual = true;
     }
   });
+
+  // Same fold as the order detail page's own OrderPriceTotals (sales/[id]/page.tsx) — these count toward the total regardless of production progress.
+  const extraCostValues = [toNumber(order.deliveryCost), toNumber(order.transportRiggingCost), toNumber(order.otherCost)];
+  const extraCostsTotal = extraCostValues.reduce((sum: number, v) => sum + (v ?? 0), 0);
+  const hasExtraCosts = extraCostValues.some((v) => v != null);
+  if (hasExtraCosts) {
+    estimatedTotal += extraCostsTotal;
+    hasEstimate = true;
+    actualTotal += extraCostsTotal;
+    hasActual = true;
+  }
 
   return (
     <p className="mt-2 text-sm">
@@ -206,6 +218,9 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
             <tr><td>{t('contactPerson')}</td><td>{order.contactPerson ?? '—'}</td></tr>
             <tr><td>{t('deadline')}</td><td>{order.deadline ? new Date(order.deadline).toLocaleDateString() : '—'}</td></tr>
             <tr><td>{t('priority')}</td><td>{t(`priority${order.priority}`)}</td></tr>
+            {toNumber(order.deliveryCost) != null && <tr><td>{t('deliveryCost')}</td><td>{formatEur(toNumber(order.deliveryCost)!)}</td></tr>}
+            {toNumber(order.transportRiggingCost) != null && <tr><td>{t('transportRiggingCost')}</td><td>{formatEur(toNumber(order.transportRiggingCost)!)}</td></tr>}
+            {toNumber(order.otherCost) != null && <tr><td>{t('otherCost')}</td><td>{formatEur(toNumber(order.otherCost)!)}</td></tr>}
             {order.comment && <tr><td>{t('comment')}</td><td>{order.comment}</td></tr>}
           </tbody>
         </table>
@@ -240,7 +255,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           </tbody>
         </table>
         {(printOptions.isColumnVisible('estimatedPrice') || printOptions.isColumnVisible('actualPrice')) && order.items && order.items.length > 0 && (
-          <PrintPriceTotals items={order.items} />
+          <PrintPriceTotals order={order} items={order.items} />
         )}
         {printOptions.isColumnVisible('composition') && order.items && order.items.length > 0 && (
           <div className="mt-6">

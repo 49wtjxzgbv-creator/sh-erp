@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
+import { AssemblySpecPrint } from '@/components/domain/bom/assembly-spec-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -274,7 +275,9 @@ export default function ProductionOrderDetailPage() {
           <h2 className="text-lg font-semibold">{t('orderHeader')}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`status${order.status}`)}</Badge>
         </div>
-        {order.status === 'PLANNED' && (
+        <div className="flex items-center gap-2">
+          <AssemblySpecPrint assemblyId={order.assemblyId} />
+          {order.status === 'PLANNED' && (
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="destructive" size="sm">
@@ -296,7 +299,8 @@ export default function ProductionOrderDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        )}
+          )}
+        </div>
       </div>
       {cancelError && <p className="text-sm text-destructive">{cancelError}</p>}
 

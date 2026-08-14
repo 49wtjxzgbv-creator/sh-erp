@@ -29,9 +29,51 @@ import { ImportProductsDialog } from '@/components/domain/catalog/import-product
 import { ProductLabelsDialog } from '@/components/domain/catalog/product-labels-dialog';
 import { ProductLabelsPrintContent, expandLabelCopies } from '@/components/domain/catalog/product-labels-print-content';
 import { PrintArea } from '@/components/domain/print/print-area';
+import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
 import type { SelectedLabel } from '@/components/domain/catalog/product-labels-dialog';
 
 const PAGE_SIZE = 50;
+// Same reasoning as bom/page.tsx's own HIDDEN_COLUMNS_KEY/DEFAULT_HIDDEN_COLUMNS
+// comment: new optional columns start hidden so the current default view
+// (photo/article/name/category/qty/status) doesn't change for anyone.
+const HIDDEN_COLUMNS_KEY = 'sh-erp-catalog-hidden-columns';
+const DEFAULT_HIDDEN_COLUMNS = [
+  'code',
+  'description',
+  'productGroup',
+  'family',
+  'type',
+  'kind',
+  'productLine',
+  'barcode',
+  'cell',
+  'unitsPerPackage',
+  'minQty',
+  'sellPriceEur',
+  'localPriceExclVat',
+  'localPriceInclVat',
+  'germanPriceExclVat',
+  'germanPriceInclVat',
+  'weightPerUnitKg',
+  'warrantyMonths',
+  'manufacturer',
+  'manufacturerCode',
+  'countryOfOrigin',
+  'priceListRef',
+  'note',
+  'supplier',
+  'createdAt',
+];
+
+function loadHiddenColumns(): Set<string> {
+  if (typeof window === 'undefined') return new Set(DEFAULT_HIDDEN_COLUMNS);
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set(DEFAULT_HIDDEN_COLUMNS);
+  } catch {
+    return new Set(DEFAULT_HIDDEN_COLUMNS);
+  }
+}
 
 /**
  * `?print=1&labels=productId:copies,productId:copies,...` — the preview
@@ -86,6 +128,63 @@ export default function CatalogPage() {
   const exportMutation = useExportProducts();
   const deleteMutation = useDeleteProducts();
   const { data: suppliers } = useSuppliers({ limit: 200 });
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(loadHiddenColumns);
+
+  const supplierById = useMemo(() => {
+    const map = new Map<string, string>();
+    suppliers?.items.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [suppliers]);
+
+  const columnOptions = useMemo(
+    () => [
+      { id: 'article', label: t('article') },
+      { id: 'name', label: t('name') },
+      { id: 'category', label: t('category') },
+      { id: 'qty', label: t('qty') },
+      { id: 'status', label: t('status') },
+      { id: 'code', label: t('code') },
+      { id: 'description', label: t('description') },
+      { id: 'productGroup', label: t('productGroup') },
+      { id: 'family', label: t('family') },
+      { id: 'type', label: t('type') },
+      { id: 'kind', label: t('kind') },
+      { id: 'productLine', label: t('productLine') },
+      { id: 'barcode', label: t('barcode') },
+      { id: 'cell', label: t('cell') },
+      { id: 'unitsPerPackage', label: t('unitsPerPackage') },
+      { id: 'minQty', label: t('minQty') },
+      { id: 'sellPriceEur', label: t('sellPrice') },
+      { id: 'localPriceExclVat', label: t('localPriceExclVat') },
+      { id: 'localPriceInclVat', label: t('localPriceInclVat') },
+      { id: 'germanPriceExclVat', label: t('germanPriceExclVat') },
+      { id: 'germanPriceInclVat', label: t('germanPriceInclVat') },
+      { id: 'weightPerUnitKg', label: t('weightPerUnitKg') },
+      { id: 'warrantyMonths', label: t('warrantyMonths') },
+      { id: 'manufacturer', label: t('manufacturer') },
+      { id: 'manufacturerCode', label: t('manufacturerCode') },
+      { id: 'countryOfOrigin', label: t('countryOfOrigin') },
+      { id: 'priceListRef', label: t('priceListRef') },
+      { id: 'note', label: t('note') },
+      { id: 'supplier', label: t('filterBySupplier') },
+      { id: 'createdAt', label: t('createdAt') },
+    ],
+    [t],
+  );
+
+  function toggleColumn(id: string) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(Array.from(next)));
+      } catch {
+        // best-effort persistence only
+      }
+      return next;
+    });
+  }
 
   // "newest" (createdAt desc), not the alphabetical default other
   // pickers/dialogs use — a product just created in Catalog otherwise
@@ -129,8 +228,45 @@ export default function CatalogPage() {
           return value ? <Badge variant="outline">{value}</Badge> : '—';
         },
       },
+      { accessorKey: 'code', header: t('code'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'description', header: t('description'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'productGroup', header: t('productGroup'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'family', header: t('family'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'type', header: t('type'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'kind', header: t('kind'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'productLine', header: t('productLine'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'barcode', header: t('barcode'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'cell', header: t('cell'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'unitsPerPackage', header: t('unitsPerPackage'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'minQty', header: t('minQty') },
+      { accessorKey: 'sellPriceEur', header: t('sellPrice'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'localPriceExclVat', header: t('localPriceExclVat'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'localPriceInclVat', header: t('localPriceInclVat'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'germanPriceExclVat', header: t('germanPriceExclVat'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'germanPriceInclVat', header: t('germanPriceInclVat'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'weightPerUnitKg', header: t('weightPerUnitKg'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'warrantyMonths', header: t('warrantyMonths'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'manufacturer', header: t('manufacturer'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'manufacturerCode', header: t('manufacturerCode'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'countryOfOrigin', header: t('countryOfOrigin'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'priceListRef', header: t('priceListRef'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'note', header: t('note'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      {
+        id: 'supplier',
+        accessorFn: (row) => row.defaultSupplierId,
+        header: t('filterBySupplier'),
+        cell: ({ getValue }) => {
+          const id = getValue() as string | null;
+          return id ? (supplierById.get(id) ?? '—') : '—';
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: t('createdAt'),
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
     ],
-    [t, photosByProduct],
+    [t, photosByProduct, supplierById],
   );
 
   if (labelsPreviewPayload) {
@@ -232,6 +368,7 @@ export default function CatalogPage() {
             ))}
           </SelectContent>
         </Select>
+        <ColumnVisibilityMenu columns={columnOptions} hidden={hiddenColumns} onToggle={toggleColumn} />
       </div>
 
       <DataTable
@@ -240,6 +377,7 @@ export default function CatalogPage() {
         isLoading={isLoading}
         onRowClick={(product) => router.push(`/catalog/${product.id}`)}
         selection={{ selectedIds, onSelectionChange: setSelectedIds, getRowId: (product) => product.id }}
+        hiddenColumnIds={hiddenColumns}
         pagination={
           data
             ? {

@@ -38,6 +38,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
+import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
 
 /** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
 function AssemblyCell({ assemblyId }: { assemblyId: string }) {
@@ -277,6 +278,7 @@ export default function CustomerOrderDetailPage() {
   const giveAll = useGiveAllToProduction(params.id);
 
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   if (isLoading || !order) {
     return <LoadingBlock />;
@@ -331,6 +333,9 @@ export default function CustomerOrderDetailPage() {
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`orderStatus${order.status}`)}</Badge>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+            {t('editOrder')}
+          </Button>
           <CustomerOrderPrint order={order} />
           <Button asChild variant="outline" size="sm">
             <Link href={`/sales/${order.id}/shortage`}>{t('shortagePreview')}</Link>
@@ -491,6 +496,7 @@ export default function CustomerOrderDetailPage() {
           </Table>
         </CardContent>
       </Card>
+      <EditCustomerOrderDialog open={editOpen} onOpenChange={setEditOpen} order={order} />
     </div>
   );
 }
