@@ -64,8 +64,11 @@ export class ProductsService {
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
 
+    const orderBy: Prisma.ProductOrderByWithRelationInput =
+      query.sort === 'newest' ? { createdAt: 'desc' } : { name: 'asc' };
+
     const [items, total] = await Promise.all([
-      this.prisma.tenant.product.findMany({ where, orderBy: { name: 'asc' }, take, skip }),
+      this.prisma.tenant.product.findMany({ where, orderBy, take, skip }),
       this.prisma.tenant.product.count({ where }),
     ]);
 

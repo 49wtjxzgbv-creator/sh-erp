@@ -3,8 +3,10 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useCompanyUnits } from '@/lib/hooks/use-catalog';
+import { useWarehouses } from '@/lib/hooks/use-inventory';
 import type { Product, CreateProductInput } from '@/lib/api-client/catalog';
 import { toNumber } from '@/lib/api-client/decimal';
 import { Input } from '@/components/ui/input';
@@ -49,6 +51,13 @@ const productSchema = z.object({
   countryOfOrigin: z.string().optional(),
   priceListRef: z.string().optional(),
   note: z.string().optional(),
+  // Create-mode only, never sent as part of CreateProductInput (Product
+  // itself has no writable qty column — see StockService's header comment,
+  // it's the single path that mutates WarehouseStock/Product.qty). Stripped
+  // out in submit() and reported to the caller separately so it can record
+  // a real RECEIVE movement after the product is created.
+  initialQty: z.coerce.number().min(0).optional().or(z.literal('')),
+  initialWarehouseId: z.string().optional(),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;
@@ -87,9 +96,14 @@ export function productToFormValues(product?: Product): Partial<ProductFormValue
   };
 }
 
+export interface InitialStockInput {
+  warehouseId: string;
+  qty: number;
+}
+
 export interface ProductFormProps {
   product?: Product;
-  onSubmit: (values: CreateProductInput) => Promise<void>;
+  onSubmit: (values: CreateProductInput, initialStock?: InitialStockInput) => Promise<void>;
   submitting: boolean;
   submitError: string | null;
   /** Only used in create mode (no `product` yet) — see PendingPhotoField. */
@@ -109,6 +123,7 @@ export function ProductForm({
   const tc = useTranslations('common');
   const tf = useTranslations('files');
   const { data: units } = useCompanyUnits();
+  const { data: warehouses } = useWarehouses();
 
   const {
     register,
@@ -122,6 +137,17 @@ export function ProductForm({
   });
 
   const unitId = watch('unitId');
+  const initialWarehouseId = watch('initialWarehouseId');
+
+  // Pre-select the company's default warehouse for the "Наявна кількість"
+  // field once warehouses load, so the user only has to type a number in
+  // the common case — only in create mode, and only if nothing's been
+  // picked yet (don't fight a deliberate selection).
+  useEffect(() => {
+    if (product || initialWarehouseId || !warehouses?.length) return;
+    const def = warehouses.find((w) => w.isDefault) ?? warehouses[0];
+    setValue('initialWarehouseId', def.id);
+  }, [product, initialWarehouseId, warehouses, setValue]);
 
   // Every field's `id` matches its zod schema key (see `id="article"`,
   // `id="unitId"` below), so on failed validation we can generically find
@@ -143,17 +169,22 @@ export function ProductForm({
 
   async function submit(values: ProductFormValues) {
     const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
-    await onSubmit({
-      ...values,
-      unitsPerPackage: numeric(values.unitsPerPackage),
-      minQty: numeric(values.minQty),
-      localPriceExclVat: numeric(values.localPriceExclVat),
-      localPriceInclVat: numeric(values.localPriceInclVat),
-      germanPriceExclVat: numeric(values.germanPriceExclVat),
-      germanPriceInclVat: numeric(values.germanPriceInclVat),
-      sellPriceEur: numeric(values.sellPriceEur),
-      weightPerUnitKg: numeric(values.weightPerUnitKg),
-    });
+    const { initialQty, initialWarehouseId: warehouseId, ...productValues } = values;
+    const qty = numeric(initialQty);
+    await onSubmit(
+      {
+        ...productValues,
+        unitsPerPackage: numeric(productValues.unitsPerPackage),
+        minQty: numeric(productValues.minQty),
+        localPriceExclVat: numeric(productValues.localPriceExclVat),
+        localPriceInclVat: numeric(productValues.localPriceInclVat),
+        germanPriceExclVat: numeric(productValues.germanPriceExclVat),
+        germanPriceInclVat: numeric(productValues.germanPriceInclVat),
+        sellPriceEur: numeric(productValues.sellPriceEur),
+        weightPerUnitKg: numeric(productValues.weightPerUnitKg),
+      },
+      !product && qty && qty > 0 && warehouseId ? { warehouseId, qty } : undefined,
+    );
   }
 
   return (
@@ -287,6 +318,32 @@ export function ProductForm({
             <Label htmlFor="cell">{t('cell')}</Label>
             <Input id="cell" {...register('cell')} />
           </div>
+          {!product && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="initialQty">{t('initialQty')}</Label>
+                <Input id="initialQty" type="number" step="any" min={0} {...register('initialQty')} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="initialWarehouseId">{t('initialWarehouse')}</Label>
+                <Select
+                  value={initialWarehouseId ?? ''}
+                  onValueChange={(v) => setValue('initialWarehouseId', v)}
+                >
+                  <SelectTrigger id="initialWarehouseId">
+                    <SelectValue placeholder={t('initialWarehouse')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses?.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

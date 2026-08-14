@@ -41,7 +41,11 @@ export default function CatalogPage() {
   const exportMutation = useExportProducts();
   const deleteMutation = useDeleteProducts();
 
-  const { data, isLoading } = useProducts({ search: search || undefined, limit: PAGE_SIZE, offset });
+  // "newest" (createdAt desc), not the alphabetical default other
+  // pickers/dialogs use — a product just created in Catalog otherwise
+  // lands wherever its name sorts alphabetically among 100+ products,
+  // often past page 1, making it look like it was never created.
+  const { data, isLoading } = useProducts({ search: search || undefined, limit: PAGE_SIZE, offset, sort: 'newest' });
 
   async function handleBulkDelete() {
     await deleteMutation.mutateAsync([...selectedIds]);

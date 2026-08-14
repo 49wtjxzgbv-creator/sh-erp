@@ -110,6 +110,8 @@ export interface QueryProductsInput {
   includeDeleted?: boolean;
   limit?: number;
   offset?: number;
+  /** "newest" surfaces just-created products (createdAt desc) instead of alphabetical order. */
+  sort?: 'name' | 'newest';
 }
 
 export interface PaginatedProducts {

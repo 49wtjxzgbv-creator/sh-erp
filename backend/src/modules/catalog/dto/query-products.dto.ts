@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class QueryProductsDto {
   @ApiPropertyOptional({ description: 'Matches article (citext) or name, partial.' })
@@ -36,4 +36,13 @@ export class QueryProductsDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  @ApiPropertyOptional({
+    enum: ['name', 'newest'],
+    default: 'name',
+    description: '"newest" surfaces just-created products (createdAt desc) instead of alphabetical order.',
+  })
+  @IsOptional()
+  @IsIn(['name', 'newest'])
+  sort?: 'name' | 'newest';
 }

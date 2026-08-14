@@ -33,6 +33,9 @@ export default function WarehousesPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const filteredWarehouses = warehouses?.filter((w) => w.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -90,6 +93,13 @@ export default function WarehousesPage() {
         </CardContent>
       </Card>
 
+      <Input
+        placeholder={t('searchWarehouse')}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="max-w-xs"
+      />
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -105,14 +115,14 @@ export default function WarehousesPage() {
                 {tc('loading')}
               </TableCell>
             </TableRow>
-          ) : !warehouses || warehouses.length === 0 ? (
+          ) : !filteredWarehouses || filteredWarehouses.length === 0 ? (
             <TableRow>
               <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
           ) : (
-            warehouses.map((warehouse) => (
+            filteredWarehouses.map((warehouse) => (
               <TableRow key={warehouse.id}>
                 <TableCell>{warehouse.name}</TableCell>
                 <TableCell>{warehouse.isDefault && <Star className="h-4 w-4 text-primary" />}</TableCell>

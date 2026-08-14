@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCreateProduct } from '@/lib/hooks/use-catalog';
-import { ProductForm } from '@/components/domain/catalog/product-form';
+import { useRecordStockMovement } from '@/lib/hooks/use-inventory';
+import { ProductForm, type InitialStockInput } from '@/components/domain/catalog/product-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
@@ -15,10 +16,11 @@ export default function NewProductPage() {
   const apiErrorMessage = useApiErrorMessage();
   const router = useRouter();
   const createProduct = useCreateProduct();
+  const recordMovement = useRecordStockMovement();
   const [error, setError] = useState<string | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
 
-  async function handleSubmit(values: CreateProductInput) {
+  async function handleSubmit(values: CreateProductInput, initialStock?: InitialStockInput) {
     setError(null);
     try {
       const product = await createProduct.mutateAsync(values);
@@ -29,6 +31,20 @@ export default function NewProductPage() {
         await uploadFile(pendingPhoto, { domain: 'PRODUCT_PHOTO', entityType: 'Product', entityId: product.id }).catch(
           () => undefined,
         );
+      }
+      if (initialStock) {
+        // Same non-fatal reasoning as the photo upload above — the product
+        // is already saved, so a failure here shouldn't block navigation;
+        // the user can still set the quantity from Склад afterwards.
+        await recordMovement
+          .mutateAsync({
+            productId: product.id,
+            warehouseId: initialStock.warehouseId,
+            type: 'RECEIVE',
+            qtyDelta: initialStock.qty,
+            comment: t('initialQtyComment'),
+          })
+          .catch(() => undefined);
       }
       router.replace(`/catalog/${product.id}`);
     } catch (err) {
