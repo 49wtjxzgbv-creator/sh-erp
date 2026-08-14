@@ -10,6 +10,7 @@ const TABS = [
   { href: '/inventory/movements', labelKey: 'stockHistory' },
   { href: '/inventory/warehouses', labelKey: 'warehouses' },
   { href: '/inventory/sessions', labelKey: 'sessions' },
+  { href: '/inventory/expected', labelKey: 'expectedFromSupplier' },
 ] as const;
 
 export default function InventoryLayout({ children }: { children: React.ReactNode }) {

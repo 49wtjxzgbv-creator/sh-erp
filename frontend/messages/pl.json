@@ -24,7 +24,8 @@
     "requiredField": "Pole wymagane",
     "selectAll": "Select all",
     "selectRow": "Select row",
-    "rowNumber": "№"
+    "rowNumber": "№",
+    "columns": "Columns"
   },
   "nav": {
     "dashboard": "Panel",
@@ -138,6 +139,8 @@
     "initialWarehouse": "Receiving warehouse",
     "initialQtyComment": "Initial quantity on product creation",
     "searchPlaceholder": "Szukaj po artykule lub nazwie…",
+    "filterBySupplier": "Supplier",
+    "allSuppliers": "All suppliers",
     "deleteConfirmTitle": "Usunąć produkt?",
     "deleteConfirmDescription": "Produkt zostanie oznaczony jako usunięty. Historia zamówień i magazynu nie ulegnie zmianie.",
     "units": "Jednostki miary",
@@ -228,7 +231,18 @@
     "filterByProduct": "Filter by product",
     "filterByWarehouse": "Filter by warehouse",
     "allWarehouses": "All warehouses",
-    "qtyEditComment": "Manual quantity edit from the stock list"
+    "qtyEditComment": "Manual quantity edit from the stock list",
+    "expectedFromSupplier": "Expected from supplier",
+    "expectedFromSupplierDescription": "Purchase orders still in transit — dates at every stage can be corrected here.",
+    "noExpectedOrders": "No purchase orders currently expected from suppliers",
+    "plannedSendAt": "Planned to send",
+    "sentToSupplierAt": "Sent to supplier",
+    "shippedBySupplierAt": "Shipped by supplier",
+    "deliveredAt": "Delivered",
+    "markDelivered": "Delivered",
+    "supplierPortalSync": "Supplier-confirmed",
+    "supplierHasPortal": "Has portal",
+    "supplierConfirmed": "Confirmed"
   },
   "bom": {
     "title": "Bill of Materials",

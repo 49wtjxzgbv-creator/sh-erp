@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
+import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
 
 /**
  * Multi-line purchase orders with a receiving workflow (PurchaseOrders.gs,
@@ -150,6 +151,41 @@ export class PurchaseOrdersService {
     });
 
     return updated;
+  }
+
+  /**
+   * Склад's "Очікується від постачальника" tab — staff-corrected timeline
+   * dates, independent of `status`/`qtyReceived` (see PurchaseOrder's own
+   * schema comment). `dto` is passed straight to Prisma like `update()`
+   * above: a field the client omitted from the PATCH body isn't present on
+   * the transformed DTO instance at all, so it's left untouched; a field
+   * sent as `null` (see the DTO's toNullableDate) really does clear it.
+   */
+  async updateMilestones(user: RequestUser, id: string, dto: UpdatePurchaseOrderMilestonesDto) {
+    const before = await this.findOne(user, id);
+    const order = await this.prisma.tenant.purchaseOrder.update({ where: { id }, data: dto as any });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'purchase_order.milestones_updated',
+      entityType: 'PurchaseOrder',
+      entityId: id,
+      before: {
+        plannedSendAt: before.plannedSendAt,
+        sentToSupplierAt: before.sentToSupplierAt,
+        shippedBySupplierAt: before.shippedBySupplierAt,
+        deliveredAt: before.deliveredAt,
+      },
+      after: {
+        plannedSendAt: order.plannedSendAt,
+        sentToSupplierAt: order.sentToSupplierAt,
+        shippedBySupplierAt: order.shippedBySupplierAt,
+        deliveredAt: order.deliveredAt,
+      },
+    });
+
+    return order;
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {

@@ -24,7 +24,8 @@
     "requiredField": "Required field",
     "selectAll": "Select all",
     "selectRow": "Select row",
-    "rowNumber": "№"
+    "rowNumber": "№",
+    "columns": "Columns"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -138,6 +139,8 @@
     "initialWarehouse": "Receiving warehouse",
     "initialQtyComment": "Initial quantity on product creation",
     "searchPlaceholder": "Search by article or name…",
+    "filterBySupplier": "Supplier",
+    "allSuppliers": "All suppliers",
     "deleteConfirmTitle": "Delete product?",
     "deleteConfirmDescription": "The product will be marked deleted. Order and stock history are unaffected.",
     "units": "Units of measure",
@@ -228,7 +231,18 @@
     "filterByProduct": "Filter by product",
     "filterByWarehouse": "Filter by warehouse",
     "allWarehouses": "All warehouses",
-    "qtyEditComment": "Manual quantity edit from the stock list"
+    "qtyEditComment": "Manual quantity edit from the stock list",
+    "expectedFromSupplier": "Expected from supplier",
+    "expectedFromSupplierDescription": "Purchase orders still in transit — dates at every stage can be corrected here.",
+    "noExpectedOrders": "No purchase orders currently expected from suppliers",
+    "plannedSendAt": "Planned to send",
+    "sentToSupplierAt": "Sent to supplier",
+    "shippedBySupplierAt": "Shipped by supplier",
+    "deliveredAt": "Delivered",
+    "markDelivered": "Delivered",
+    "supplierPortalSync": "Supplier-confirmed",
+    "supplierHasPortal": "Has portal",
+    "supplierConfirmed": "Confirmed"
   },
   "bom": {
     "title": "Bill of Materials",

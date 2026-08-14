@@ -24,7 +24,8 @@
     "requiredField": "Обов'язкове поле",
     "selectAll": "Вибрати всі",
     "selectRow": "Вибрати рядок",
-    "rowNumber": "№"
+    "rowNumber": "№",
+    "columns": "Стовпці"
   },
   "nav": {
     "dashboard": "Дашборд",
@@ -138,6 +139,8 @@
     "initialWarehouse": "Склад надходження",
     "initialQtyComment": "Початкова кількість при створенні товару",
     "searchPlaceholder": "Пошук за артикулом або назвою…",
+    "filterBySupplier": "Постачальник",
+    "allSuppliers": "Усі постачальники",
     "deleteConfirmTitle": "Видалити товар?",
     "deleteConfirmDescription": "Товар буде позначено як видалений. Історію замовлень і складу це не торкнеться.",
     "units": "Одиниці виміру",
@@ -228,7 +231,18 @@
     "filterByProduct": "Фільтр за товаром",
     "filterByWarehouse": "Фільтр за складом",
     "allWarehouses": "Усі склади",
-    "qtyEditComment": "Ручне редагування кількості зі списку залишків"
+    "qtyEditComment": "Ручне редагування кількості зі списку залишків",
+    "expectedFromSupplier": "Очікується від постачальника",
+    "expectedFromSupplierDescription": "Замовлення постачальникам, які ще в дорозі — з можливістю відкоригувати дати на кожному етапі.",
+    "noExpectedOrders": "Немає замовлень, що очікуються від постачальників",
+    "plannedSendAt": "Заплановано відправити",
+    "sentToSupplierAt": "Дано постачальнику",
+    "shippedBySupplierAt": "Відвантажено постачальником",
+    "deliveredAt": "Доставлено",
+    "markDelivered": "Доставлено",
+    "supplierPortalSync": "Підтверджено постачальником",
+    "supplierHasPortal": "Є портал",
+    "supplierConfirmed": "Підтверджено"
   },
   "bom": {
     "title": "Специфікації (BOM)",

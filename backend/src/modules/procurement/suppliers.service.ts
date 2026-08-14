@@ -60,10 +60,20 @@ export class SuppliersService {
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
-    const [items, total] = await Promise.all([
-      this.prisma.tenant.supplier.findMany({ where, orderBy: { name: 'asc' }, take, skip }),
+    const [rows, total] = await Promise.all([
+      this.prisma.tenant.supplier.findMany({ where, orderBy: { name: 'asc' }, take, skip, include: { portalUser: true } }),
       this.prisma.tenant.supplier.count({ where }),
     ]);
+
+    // Same portalUser -> status shape as findOne — batch-included here (not
+    // an N+1 per-row lookup) so list consumers (e.g. Склад's "Очікується
+    // від постачальника" tab, which needs to know per-order whether that
+    // order's supplier even has a portal) don't need a second round-trip.
+    const items = rows.map(({ portalUser, ...rest }: any) => ({
+      ...rest,
+      portalUser: portalUser ? { email: portalUser.email, active: portalUser.active, createdAt: portalUser.createdAt } : null,
+    }));
+
     return { items, total, limit: take, offset: skip };
   }
 

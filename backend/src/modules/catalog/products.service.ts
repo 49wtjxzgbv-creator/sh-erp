@@ -54,6 +54,7 @@ export class ProductsService {
     if (!query.includeDeleted) where.deletedAt = null;
     if (query.category) where.category = query.category;
     if (query.barcode) where.barcode = query.barcode;
+    if (query.supplierId) where.defaultSupplierId = query.supplierId;
     if (query.search) {
       where.OR = [
         { article: { contains: query.search, mode: 'insensitive' } },

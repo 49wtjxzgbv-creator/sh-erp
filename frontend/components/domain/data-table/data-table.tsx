@@ -1,7 +1,9 @@
 'use client';
 
+import { useMemo } from 'react';
 import {
   type ColumnDef,
+  type VisibilityState,
   flexRender,
   getCoreRowModel,
   useReactTable,
@@ -51,6 +53,8 @@ export interface DataTableProps<TData, TValue> {
     onSelectionChange: (ids: Set<string>) => void;
     getRowId: (row: TData) => string;
   };
+  /** Column ids to hide — plain Set the caller owns (see ColumnVisibilityMenu), threaded into @tanstack/react-table's own columnVisibility state. */
+  hiddenColumnIds?: Set<string>;
 }
 
 export function DataTable<TData, TValue>({
@@ -61,9 +65,23 @@ export function DataTable<TData, TValue>({
   pagination,
   emptyState,
   selection,
+  hiddenColumnIds,
 }: DataTableProps<TData, TValue>) {
   const tc = useTranslations('common');
-  const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
+  const columnVisibility = useMemo<VisibilityState | undefined>(() => {
+    if (!hiddenColumnIds || hiddenColumnIds.size === 0) return undefined;
+    const visibility: VisibilityState = {};
+    hiddenColumnIds.forEach((id) => {
+      visibility[id] = false;
+    });
+    return visibility;
+  }, [hiddenColumnIds]);
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    state: columnVisibility ? { columnVisibility } : undefined,
+  });
 
   const rowIds = selection ? data.map(selection.getRowId) : [];
   const allSelected = selection ? rowIds.length > 0 && rowIds.every((id) => selection.selectedIds.has(id)) : false;

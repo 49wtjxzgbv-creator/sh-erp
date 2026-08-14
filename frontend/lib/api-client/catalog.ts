@@ -107,6 +107,7 @@ export interface QueryProductsInput {
   search?: string;
   category?: string;
   barcode?: string;
+  supplierId?: string;
   includeDeleted?: boolean;
   limit?: number;
   offset?: number;

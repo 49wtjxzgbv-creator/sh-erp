@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
+import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
 
 @ApiTags('procurement')
 @Controller({ path: 'purchase-orders', version: '1' })
@@ -45,5 +46,19 @@ export class PurchaseOrdersController {
     @Body() dto: ReceivePurchaseOrderDto,
   ) {
     return this.purchaseOrdersService.receive(user, id, dto);
+  }
+
+  @Patch(':id/milestones')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({
+    summary:
+      'Correct the staff-tracked supplier-request timeline (planned send / sent / shipped-by-supplier / delivered) — Склад\'s "Очікується від постачальника" tab. Independent of status/qtyReceived.',
+  })
+  async updateMilestones(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePurchaseOrderMilestonesDto,
+  ) {
+    return this.purchaseOrdersService.updateMilestones(user, id, dto);
   }
 }

@@ -8,12 +8,14 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-react';
 import { useProducts, useExportProducts, useDeleteProducts } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useSuppliers } from '@/lib/hooks/use-procurement';
 import type { Product } from '@/lib/api-client/catalog';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +35,7 @@ export default function CatalogPage() {
   const tc = useTranslations('common');
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
@@ -40,12 +43,19 @@ export default function CatalogPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const exportMutation = useExportProducts();
   const deleteMutation = useDeleteProducts();
+  const { data: suppliers } = useSuppliers({ limit: 200 });
 
   // "newest" (createdAt desc), not the alphabetical default other
   // pickers/dialogs use — a product just created in Catalog otherwise
   // lands wherever its name sorts alphabetically among 100+ products,
   // often past page 1, making it look like it was never created.
-  const { data, isLoading } = useProducts({ search: search || undefined, limit: PAGE_SIZE, offset, sort: 'newest' });
+  const { data, isLoading } = useProducts({
+    search: search || undefined,
+    supplierId,
+    limit: PAGE_SIZE,
+    offset,
+    sort: 'newest',
+  });
 
   async function handleBulkDelete() {
     await deleteMutation.mutateAsync([...selectedIds]);
@@ -145,16 +155,38 @@ export default function CatalogPage() {
         </DialogContent>
       </Dialog>
 
-      <Input
-        placeholder={t('searchPlaceholder')}
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setOffset(0);
-          setSelectedIds(new Set());
-        }}
-        className="max-w-sm"
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          placeholder={t('searchPlaceholder')}
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOffset(0);
+            setSelectedIds(new Set());
+          }}
+          className="max-w-sm"
+        />
+        <Select
+          value={supplierId ?? '__all'}
+          onValueChange={(v) => {
+            setSupplierId(v === '__all' ? undefined : v);
+            setOffset(0);
+            setSelectedIds(new Set());
+          }}
+        >
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder={t('filterBySupplier')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">{t('allSuppliers')}</SelectItem>
+            {suppliers?.items.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <DataTable
         columns={columns}

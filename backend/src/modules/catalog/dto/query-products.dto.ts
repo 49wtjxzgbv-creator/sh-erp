@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class QueryProductsDto {
   @ApiPropertyOptional({ description: 'Matches article (citext) or name, partial.' })
@@ -17,6 +17,11 @@ export class QueryProductsDto {
   @IsOptional()
   @IsString()
   barcode?: string;
+
+  @ApiPropertyOptional({ description: 'Matches Product.defaultSupplierId.' })
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
 
   @ApiPropertyOptional({ default: false, description: 'Include soft-deleted products.' })
   @IsOptional()

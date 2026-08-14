@@ -13,12 +13,14 @@ import {
   getPurchaseOrder,
   createPurchaseOrder,
   receivePurchaseOrder,
+  updatePurchaseOrderMilestones,
   type QuerySuppliersInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
   type QueryPurchaseOrdersInput,
   type CreatePurchaseOrderInput,
   type ReceivePurchaseOrderInput,
+  type UpdatePurchaseOrderMilestonesInput,
 } from '@/lib/api-client/procurement';
 
 const suppliersKey = (query: QuerySuppliersInput) => ['suppliers', query] as const;
@@ -111,6 +113,18 @@ export function useReceivePurchaseOrder(id: string) {
       qc.invalidateQueries({ queryKey: purchaseOrderKey(id) });
       qc.invalidateQueries({ queryKey: ['stock-levels'] });
       qc.invalidateQueries({ queryKey: ['stock-history'] });
+    },
+  });
+}
+
+export function useUpdatePurchaseOrderMilestones() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdatePurchaseOrderMilestonesInput }) =>
+      updatePurchaseOrderMilestones(id, dto),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      qc.invalidateQueries({ queryKey: purchaseOrderKey(id) });
     },
   });
 }

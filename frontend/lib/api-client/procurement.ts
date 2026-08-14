@@ -31,7 +31,7 @@ export interface Supplier {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
-  /** Present on findOne(id) only (SuppliersService#findOne) — null if this supplier has no Supplier Portal login yet (ADR-0011). */
+  /** null if this supplier has no Supplier Portal login yet (ADR-0011). Present on both findOne(id) and query() list rows. */
   portalUser?: SupplierPortalUserStatus | null;
 }
 
@@ -109,6 +109,11 @@ export interface PurchaseOrder {
   status: PurchaseOrderStatus;
   orderDate: string;
   expectedDeliveryDate: string | null;
+  /** Staff-tracked supplier-request timeline (Склад's "Очікується від постачальника" tab) — independent of status/qtyReceived, manually set/corrected. */
+  plannedSendAt: string | null;
+  sentToSupplierAt: string | null;
+  shippedBySupplierAt: string | null;
+  deliveredAt: string | null;
   /** Set once, the first time the supplier confirms anything via the Supplier Portal. */
   supplierConfirmedAt: string | null;
   /** Supplier's own committed delivery date — informational, never overwrites expectedDeliveryDate. */
@@ -182,4 +187,19 @@ export interface ReceivePurchaseOrderInput {
  */
 export function receivePurchaseOrder(id: string, dto: ReceivePurchaseOrderInput): Promise<PurchaseOrder> {
   return apiClient.post<PurchaseOrder>(`purchase-orders/${id}/receive`, dto);
+}
+
+export interface UpdatePurchaseOrderMilestonesInput {
+  /** `null` clears the date; an omitted key leaves it untouched. */
+  plannedSendAt?: string | null;
+  sentToSupplierAt?: string | null;
+  shippedBySupplierAt?: string | null;
+  deliveredAt?: string | null;
+}
+
+export function updatePurchaseOrderMilestones(
+  id: string,
+  dto: UpdatePurchaseOrderMilestonesInput,
+): Promise<PurchaseOrder> {
+  return apiClient.patch<PurchaseOrder>(`purchase-orders/${id}/milestones`, dto);
 }
