@@ -12,7 +12,8 @@ describe('StockService', () => {
       tenant: {
         warehouseStock: { upsert: jest.fn() },
         stockMovement: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
-        product: { update: jest.fn() },
+        product: { update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+        warehouse: { findFirst: jest.fn().mockResolvedValue(null) },
       },
     };
     audit = { record: jest.fn() };

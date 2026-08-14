@@ -164,7 +164,48 @@ export class StockService {
     const where: Record<string, any> = {};
     if (query.productId) where.productId = query.productId;
     if (query.warehouseId) where.warehouseId = query.warehouseId;
-    return this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] });
+    const existing = await this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] });
+
+    // A WarehouseStock row is only ever materialized reactively, by
+    // recordMovement's upsert (see this file's header comment) — a product
+    // that has never had a single movement (e.g. just created in Catalog)
+    // has no row anywhere and would otherwise be silently absent from this
+    // list instead of showing up with qty 0. Synthesize a zero row for
+    // every such product, attributed to whichever warehouse is being
+    // browsed (the explicit filter, or the company's default warehouse
+    // when browsing "all warehouses").
+    const targetWarehouseId = query.warehouseId ?? (await this.resolveDefaultWarehouseId());
+    if (!targetWarehouseId) return existing;
+
+    const productWhere: Record<string, any> = { deletedAt: null };
+    if (query.productId) productWhere.id = query.productId;
+    const products = await this.prisma.tenant.product.findMany({ where: productWhere, select: { id: true } });
+
+    const existingProductIds = new Set(existing.map((s) => s.productId));
+    const now = new Date();
+    const synthetic = products
+      .filter((p) => !existingProductIds.has(p.id))
+      .map((p) => ({
+        id: `virtual:${p.id}:${targetWarehouseId}`,
+        companyId: user.companyId,
+        productId: p.id,
+        warehouseId: targetWarehouseId,
+        qty: '0',
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+    return [...existing, ...synthetic].sort((a, b) => a.productId.localeCompare(b.productId));
+  }
+
+  private async resolveDefaultWarehouseId(): Promise<string | null> {
+    const def = await this.prisma.tenant.warehouse.findFirst({ where: { deletedAt: null, isDefault: true } });
+    if (def) return def.id;
+    const first = await this.prisma.tenant.warehouse.findFirst({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+    return first?.id ?? null;
   }
 
   async getHistory(user: RequestUser, query: QueryStockHistoryDto) {
