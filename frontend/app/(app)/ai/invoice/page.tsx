@@ -11,12 +11,15 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 /**
- * Supplier invoice photo/scan → structured line items, fuzzy-matched
+ * Supplier invoice photo/scan/PDF → structured line items, fuzzy-matched
  * against existing Products (ai.service.ts#recognizeInvoice). Deliberately
  * does NOT use `FileUploadField`/the presign-PUT-confirm flow — the backend
  * wants the raw base64 inline for a direct multimodal model call and never
  * persists the image as a FileAsset (see lib/api-client/ai.ts's header
- * comment) — so this page reads the file itself via FileReader.
+ * comment) — so this page reads the file itself via FileReader. Gemini
+ * accepts PDF as inline document data the same way it accepts images, and
+ * supplier накладні commonly arrive as PDF, not photos — so the file input
+ * must not filter them out.
  */
 export default function AiInvoicePage() {
   const t = useTranslations('ai');
@@ -72,14 +75,20 @@ export default function AiInvoicePage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf"
             onChange={handleFileChange}
             className="text-sm file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm"
           />
-          {preview && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview.dataUrl} alt={preview.name} className="max-h-64 rounded-md border border-border" />
-          )}
+          {preview &&
+            (preview.mimeType === 'application/pdf' ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm">
+                <span>📄</span>
+                <span>{preview.name}</span>
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview.dataUrl} alt={preview.name} className="max-h-64 rounded-md border border-border" />
+            ))}
           <div className="flex gap-2">
             <Button onClick={handleRecognize} loading={recognize.isPending} disabled={!preview}>
               {t('recognize')}

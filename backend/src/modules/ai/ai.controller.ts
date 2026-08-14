@@ -65,7 +65,7 @@ export class AiController {
   }
 
   @Post('recognize-invoice')
-  @RequirePermissions('purchase-orders:manage')
+  @RequirePermissions('ai:use')
   @ApiOperation({ summary: 'Supplier invoice photo/scan → structured line items, fuzzy-matched against existing Products.' })
   async recognizeInvoice(@CurrentUser() user: RequestUser, @Body() dto: RecognizeInvoiceDto) {
     return this.aiService.recognizeInvoice(user, dto.base64Image, dto.mimeType);

@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { CustomerOrdersService } from '../sales/customer-orders.service';
 import { HELP_MANUAL_TEXT } from './help-manual.constant';
-import { AI_PROVIDER_PORT, AiMessage, AiProviderException, AiProviderPort } from './providers/ai-provider.port';
+import { AI_PROVIDER_PORT, AiGenerateResult, AiMessage, AiProviderException, AiProviderPort, AiToolDeclaration } from './providers/ai-provider.port';
 import { AiActionsService } from './ai-actions.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiToolsRegistry } from './tools/tools.registry';
@@ -48,7 +48,7 @@ export class AiService {
       '\n\n=== ЗАПИТАННЯ КОРИСТУВАЧА ===\n' +
       question;
 
-    const result = await this.provider.generateContent([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
+    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
     await this.actionsService.logUsage(user, 'help-assistant', result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text;
@@ -109,7 +109,7 @@ export class AiService {
       '\n\n=== ЗАПИТАННЯ ===\n' +
       question;
 
-    const result = await this.provider.generateContent([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
+    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
     await this.actionsService.logUsage(user, 'customer-order-assistant', result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text;
@@ -162,13 +162,7 @@ export class AiService {
     let totalTokens = 0;
 
     for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
-      let result;
-      try {
-        result = await this.provider.generateContent(contents, apiKey, toolDeclarations);
-      } catch (e) {
-        if (e instanceof AiProviderException) throw new BadRequestException(e.message);
-        throw e;
-      }
+      const result = await this.generateContentOrThrow(contents, apiKey, toolDeclarations);
       if (result.usage?.totalTokens) totalTokens += result.usage.totalTokens;
       contents.push(result.message);
 
@@ -235,7 +229,7 @@ export class AiService {
       'Формат кожного елемента: {"name": "точна назва товару як у накладній", "qty": число}. ' +
       'Якщо кількість не вдається розпізнати — став 1. Накладна може бути українською, англійською або німецькою мовою.';
 
-    const result = await this.provider.generateContent(
+    const result = await this.generateContentOrThrow(
       [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       apiKey,
     );
@@ -271,5 +265,21 @@ export class AiService {
         matchedName: match ? match.name : '',
       };
     });
+  }
+
+  /**
+   * `AiProviderException` (invalid key, quota exhausted, Gemini overloaded,
+   * etc.) already carries a clear Ukrainian message — but if it escapes
+   * uncaught, Nest's default filter turns it into a generic 500 "Internal
+   * server error" for the frontend. Every call site must go through this so
+   * the real reason reaches the user instead of being swallowed.
+   */
+  private async generateContentOrThrow(contents: AiMessage[], apiKey: string, tools?: AiToolDeclaration[]): Promise<AiGenerateResult> {
+    try {
+      return await this.provider.generateContent(contents, apiKey, tools);
+    } catch (e) {
+      if (e instanceof AiProviderException) throw new BadRequestException(e.message);
+      throw e;
+    }
   }
 }
