@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useUsers, useUpdateUserRole, useDeactivateUser } from '@/lib/hooks/use-users';
 import { useRoles } from '@/lib/hooks/use-roles';
+import { roleDisplayName } from '@/lib/role-labels';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { InviteUserDialog } from '@/components/domain/admin/invite-user-dialog';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -85,7 +86,7 @@ export default function AdminUsersPage() {
                       <SelectContent>
                         {roles?.map((r) => (
                           <SelectItem key={r.id} value={r.id}>
-                            {r.name}
+                            {roleDisplayName(t, r.name)}
                           </SelectItem>
                         ))}
                       </SelectContent>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useCreateRole, useUpdateRole, usePermissionsCatalogue } from '@/lib/hooks/use-roles';
 import type { Role, PermissionDefinition } from '@/lib/api-client/roles';
+import { permissionResourceLabel, permissionDescriptionLabel } from '@/lib/role-labels';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -94,7 +95,9 @@ export function RoleFormDialog({ open, onOpenChange, role }: RoleFormDialogProps
             <Label>{t('permissions')}</Label>
             {Array.from(grouped.entries()).map(([resource, perms]) => (
               <div key={resource} className="space-y-1.5 rounded-md border border-border p-3">
-                <p className="text-xs font-medium uppercase text-muted-foreground">{resource}</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">
+                  {permissionResourceLabel(t, resource)}
+                </p>
                 {perms.map((p) => (
                   <label key={p.key} className="flex items-start gap-2 text-sm">
                     <input
@@ -105,7 +108,7 @@ export function RoleFormDialog({ open, onOpenChange, role }: RoleFormDialogProps
                     />
                     <span>
                       <span className="font-mono text-xs">{p.key}</span>
-                      <span className="block text-xs text-muted-foreground">{p.description}</span>
+                      <span className="block text-xs text-muted-foreground">{permissionDescriptionLabel(t, p.key)}</span>
                     </span>
                   </label>
                 ))}

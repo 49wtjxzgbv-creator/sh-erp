@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRoles, useDeleteRole } from '@/lib/hooks/use-roles';
 import type { Role } from '@/lib/api-client/roles';
+import { roleDisplayName } from '@/lib/role-labels';
 import { RoleFormDialog } from '@/components/domain/admin/role-form-dialog';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,7 +63,7 @@ export default function AdminRolesPage() {
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    {role.name}
+                    {roleDisplayName(t, role.name)}
                     {role.isSystem && <Badge variant="secondary">{t('systemRole')}</Badge>}
                   </CardTitle>
                   {role.description && <p className="mt-1 text-xs text-muted-foreground">{role.description}</p>}
