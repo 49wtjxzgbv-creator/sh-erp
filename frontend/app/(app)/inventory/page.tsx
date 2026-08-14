@@ -144,6 +144,12 @@ export default function StockLevelsPage() {
           const product = productsById?.get(row.original.productId);
           return (
             <Input
+              // Keyed on the value itself: this Input is uncontrolled
+              // (defaultValue only applies on mount), so after a successful
+              // save + refetch it would otherwise keep showing the old
+              // value the user typed over until a full page reload — force
+              // a remount when the source-of-truth value actually changes.
+              key={`${row.original.productId}-${product?.cell ?? ''}`}
               defaultValue={product?.cell ?? ''}
               disabled={!product}
               className={cn('h-8 w-28', savingCell === row.original.productId && 'opacity-50')}
@@ -166,6 +172,10 @@ export default function StockLevelsPage() {
         header: () => <span className="block text-right">{t('qty')}</span>,
         cell: ({ row }) => (
           <Input
+            // Same uncontrolled-input staleness fix as the "cell" column
+            // above: remount when the row's actual qty changes so a
+            // successful ADJUST movement is reflected without a reload.
+            key={`${row.original.id}-${row.original.qty}`}
             type="number"
             step="any"
             min={0}
