@@ -664,6 +664,7 @@
     "matchedProduct": "Товар у системі",
     "matched": "Знайдено",
     "notMatched": "Не знайдено",
+    "createProduct": "Створити товар",
     "settingsDescription": "Власний API-ключ Gemini (опційно) та місячна квота використання.",
     "apiKey": "API-ключ",
     "apiKeyConfigured": "Налаштовано",

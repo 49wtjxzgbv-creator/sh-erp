@@ -16,6 +16,14 @@ export interface AiContentPart {
   inlineData?: AiInlineData;
   functionCall?: { name: string; args: Record<string, any> };
   functionResponse?: { name: string; response: any };
+  /**
+   * Gemini "thinking" models attach this to functionCall parts and require
+   * it echoed back verbatim on the next turn — dropping it degrades tool
+   * calling and triggers "Function call is missing a thought_signature"
+   * (https://ai.google.dev/gemini-api/docs/thought-signatures). Opaque to
+   * us; just round-trip it.
+   */
+  thoughtSignature?: string;
 }
 
 /**

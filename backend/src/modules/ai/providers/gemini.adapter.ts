@@ -136,7 +136,11 @@ function toWireMessage(message: AiMessage): Record<string, any> {
 function toWirePart(part: AiContentPart): Record<string, any> {
   if (part.text !== undefined) return { text: part.text };
   if (part.inlineData) return { inline_data: { mime_type: part.inlineData.mimeType, data: part.inlineData.data } };
-  if (part.functionCall) return { functionCall: part.functionCall };
+  if (part.functionCall) {
+    const wire: Record<string, any> = { functionCall: part.functionCall };
+    if (part.thoughtSignature) wire.thoughtSignature = part.thoughtSignature;
+    return wire;
+  }
   if (part.functionResponse) return { functionResponse: part.functionResponse };
   return {};
 }
@@ -144,7 +148,11 @@ function toWirePart(part: AiContentPart): Record<string, any> {
 function fromWireMessage(content: any): AiMessage {
   const parts: AiContentPart[] = (content?.parts || []).map((p: any) => {
     if (p.text !== undefined) return { text: p.text };
-    if (p.functionCall) return { functionCall: { name: p.functionCall.name, args: p.functionCall.args || {} } };
+    if (p.functionCall) {
+      const part: AiContentPart = { functionCall: { name: p.functionCall.name, args: p.functionCall.args || {} } };
+      if (p.thoughtSignature) part.thoughtSignature = p.thoughtSignature;
+      return part;
+    }
     if (p.inline_data) return { inlineData: { mimeType: p.inline_data.mime_type, data: p.inline_data.data } };
     return {};
   });

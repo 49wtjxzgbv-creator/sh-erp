@@ -109,6 +109,8 @@ export interface ProductFormProps {
   /** Only used in create mode (no `product` yet) — see PendingPhotoField. */
   pendingPhoto?: File | null;
   onPendingPhotoChange?: (file: File | null) => void;
+  /** Create-mode only: seeds fields (e.g. name/initialQty from a recognized invoice line) without a full `Product`. */
+  initialValues?: Partial<ProductFormValues>;
 }
 
 export function ProductForm({
@@ -118,6 +120,7 @@ export function ProductForm({
   submitError,
   pendingPhoto,
   onPendingPhotoChange,
+  initialValues,
 }: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
@@ -133,7 +136,7 @@ export function ProductForm({
     formState: { errors },
   } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
-    defaultValues: productToFormValues(product),
+    defaultValues: { ...productToFormValues(product), ...initialValues },
   });
 
   const unitId = watch('unitId');

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 
 /**
  * Supplier invoice photo/scan/PDF → structured line items, fuzzy-matched
@@ -31,6 +32,7 @@ export default function AiInvoicePage() {
   const [preview, setPreview] = useState<{ base64: string; mimeType: string; name: string; dataUrl: string } | null>(null);
   const [lines, setLines] = useState<InvoiceRecognitionLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createLineIndex, setCreateLineIndex] = useState<number | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -112,6 +114,7 @@ export default function AiInvoicePage() {
               <TableHead>{t('qty')}</TableHead>
               <TableHead>{t('matchStatus')}</TableHead>
               <TableHead>{t('matchedProduct')}</TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -127,10 +130,35 @@ export default function AiInvoicePage() {
                   )}
                 </TableCell>
                 <TableCell>{line.matched ? `${line.article} — ${line.matchedName}` : '—'}</TableCell>
+                <TableCell>
+                  {!line.matched && (
+                    <Button variant="outline" size="sm" onClick={() => setCreateLineIndex(i)}>
+                      {t('createProduct')}
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {createLineIndex !== null && lines && (
+        <CreateProductDialog
+          open={createLineIndex !== null}
+          onOpenChange={(open) => !open && setCreateLineIndex(null)}
+          initialValues={{ name: lines[createLineIndex].rawName, initialQty: lines[createLineIndex].qty }}
+          onCreated={(product) => {
+            setLines((prev) =>
+              prev
+                ? prev.map((line, i) =>
+                    i === createLineIndex ? { ...line, matched: true, article: product.article, matchedName: product.name } : line,
+                  )
+                : prev,
+            );
+            setCreateLineIndex(null);
+          }}
+        />
       )}
     </div>
   );

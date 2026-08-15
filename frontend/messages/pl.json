@@ -259,7 +259,7 @@
     "deliveryCostPerUnit": "Delivery cost / unit",
     "otherCostPerUnit": "Other cost / unit",
     "supplier": "Supplier",
-    "createdAt": "Created",
+    "createdAt": "Date",
     "itemCost": "Item cost",
     "tabBom": "BOM",
     "tabCost": "Cost",
@@ -296,7 +296,6 @@
     "warehouse": "Consume from warehouse",
     "comment": "Comment",
     "versionNumber": "Version",
-    "createdAt": "Date",
     "viewVersion": "View",
     "deleteConfirmTitle": "Delete assembly?",
     "deleteConfirmDescription": "The assembly will be marked deleted.",
@@ -672,7 +671,8 @@
     "clearApiKey": "Clear key",
     "monthlyUsageQuota": "Monthly quota (tokens)",
     "unlimited": "Unlimited",
-    "saveSuccess": "Saved"
+    "saveSuccess": "Saved",
+    "createProduct": "Create product"
   },
   "notifications": {
     "title": "Notifications",

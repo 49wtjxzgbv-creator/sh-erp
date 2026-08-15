@@ -36,13 +36,13 @@ import { apiClient } from './http';
  *
  * Permission notes (server-enforced only, no client-side gating — same
  * convention as every other module's permission quirks): every ask-…
- * action/settings-read endpoint requires `ai:use`; `confirm-action`
- * specifically requires the separate `ai:use-critical-actions` permission
- * (not just `ai:use` — a user can chat with the assistant and see a
- * proposed critical action without being allowed to confirm it);
- * `recognize-invoice` requires `purchase-orders:manage` (not `ai:use` —
- * it's gated by the domain the result feeds into, not the AI module
- * itself); `GET/PUT settings` requires `ai:settings-manage`.
+ * action/settings-read endpoint requires `ai:use`, and so does
+ * `recognize-invoice` (previously required `purchase-orders:manage`, which
+ * only the default Admin role had — inconsistent with every other AI
+ * endpoint, fixed); `confirm-action` specifically requires the separate
+ * `ai:use-critical-actions` permission (not just `ai:use` — a user can chat
+ * with the assistant and see a proposed critical action without being
+ * allowed to confirm it); `GET/PUT settings` requires `ai:settings-manage`.
  */
 
 export interface AskAnswer {
