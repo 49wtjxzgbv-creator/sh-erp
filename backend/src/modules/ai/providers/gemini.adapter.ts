@@ -64,7 +64,7 @@ export class GeminiAdapter implements AiProviderPort {
   }
 
   private async fetchWithQuotaRetry(url: string, payload: Record<string, any>): Promise<any> {
-    const maxAttempts = 2;
+    const maxAttempts = 3;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const response = await fetch(url, {
         method: 'POST',
@@ -91,9 +91,22 @@ export class GeminiAdapter implements AiProviderPort {
           Number(json?.error?.code) === 429 ||
           /quota|rate.?limit/i.test(errMessage);
 
-        if (isQuota && attempt < maxAttempts) {
-          const delayMs = Math.min(this.retryDelayMs(json?.error) ?? 5000, 55000);
-          this.logger.warn(`Gemini quota/429 — retrying in ${delayMs}ms (attempt ${attempt}/${maxAttempts})`);
+        // Google's own model-overload message ("This model is currently
+        // experiencing high demand") comes back as a 503 UNAVAILABLE — a
+        // transient, Google-side condition distinct from quota exhaustion,
+        // but just as worth retrying. No structured retryDelay is provided
+        // for it (unlike quota errors), so a short fixed backoff is used.
+        const isOverloaded =
+          httpCode === 503 ||
+          json?.error?.status === 'UNAVAILABLE' ||
+          Number(json?.error?.code) === 503 ||
+          /overloaded|high demand/i.test(errMessage);
+
+        if ((isQuota || isOverloaded) && attempt < maxAttempts) {
+          const delayMs = isQuota ? Math.min(this.retryDelayMs(json?.error) ?? 5000, 55000) : Math.min(3000 * attempt, 15000);
+          this.logger.warn(
+            `Gemini ${isQuota ? 'quota/429' : 'overloaded/503'} — retrying in ${delayMs}ms (attempt ${attempt}/${maxAttempts})`,
+          );
           await sleep(delayMs);
           continue;
         }
@@ -102,6 +115,9 @@ export class GeminiAdapter implements AiProviderPort {
             'Вичерпано ліміт запитів Gemini. Зачекайте хвилину-дві й спробуйте ще раз, або перевірте тариф/Billing для цього API-ключа в Google Cloud Console. ' +
               `Деталі від Google: ${errMessage}`,
           );
+        }
+        if (isOverloaded) {
+          throw new AiProviderException('Gemini зараз перевантажено запитами від усіх користувачів Google. Спробуйте ще раз за хвилину.');
         }
         throw new AiProviderException(`Gemini: ${errMessage}`);
       }
