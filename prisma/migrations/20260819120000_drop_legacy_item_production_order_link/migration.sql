@@ -7,5 +7,5 @@
 -- grep before this migration was written).
 
 ALTER TABLE "customer_order_items" DROP CONSTRAINT "customer_order_items_productionOrderId_fkey";
-DROP INDEX "customer_order_items_productionOrderId_key";
+ALTER TABLE "customer_order_items" DROP CONSTRAINT "customer_order_items_productionOrderId_key";
 ALTER TABLE "customer_order_items" DROP COLUMN "productionOrderId";

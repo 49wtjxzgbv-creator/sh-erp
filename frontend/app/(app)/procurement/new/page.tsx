@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
-import { useCreatePurchaseOrder } from '@/lib/hooks/use-procurement';
+import { useCreatePurchaseOrder, useSupplierLinkedProducts } from '@/lib/hooks/use-procurement';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreatePurchaseOrderItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
@@ -45,6 +45,12 @@ export default function NewPurchaseOrderPage() {
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: supplierProducts } = useSupplierLinkedProducts(supplierId);
+  const supplierPriceByProduct = useMemo(
+    () => new Map((supplierProducts ?? []).map((sp) => [sp.productId, sp.price])),
+    [supplierProducts],
+  );
+
   function addRow() {
     setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qtyOrdered: '', expectedPrice: '' }]);
   }
@@ -67,6 +73,12 @@ export default function NewPurchaseOrderPage() {
       const [article, name] = label.split(' — ');
       if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
       if (row && !row.productNameSnapshot && name) patch.productNameSnapshot = name;
+    }
+    // Pre-fill from this supplier's own catalog price, if one exists and the
+    // staff hasn't already typed a number — never overwrites a manual edit.
+    if (row && !row.expectedPrice && productId) {
+      const supplierPrice = supplierPriceByProduct.get(productId);
+      if (supplierPrice != null) patch.expectedPrice = String(supplierPrice);
     }
     updateRow(key, patch);
   }

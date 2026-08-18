@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { usePurchaseOrder, useReceivePurchaseOrder, useDeletePurchaseOrder } from '@/lib/hooks/use-procurement';
+import { usePurchaseOrder, useReceivePurchaseOrder, useDeletePurchaseOrder, useSupplierLinkedProducts } from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput } from '@/lib/api-client/procurement';
@@ -16,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { Avatar } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogTrigger,
@@ -50,6 +52,17 @@ export default function PurchaseOrderDetailPage() {
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const productIds = useMemo(
+    () => Array.from(new Set((order?.items ?? []).filter((i) => i.productId).map((i) => i.productId as string))),
+    [order?.items],
+  );
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: supplierProducts } = useSupplierLinkedProducts(order?.supplierId ?? undefined);
+  const supplierPriceByProduct = useMemo(
+    () => new Map((supplierProducts ?? []).map((sp) => [sp.productId, sp.price])),
+    [supplierProducts],
+  );
 
   if (isLoading || !order) {
     return <LoadingBlock />;
@@ -160,10 +173,12 @@ export default function PurchaseOrderDetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-14">{t('photo')}</TableHead>
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead numeric>{t('qtyOrdered')}</TableHead>
                 <TableHead numeric>{t('qtyReceived')}</TableHead>
+                <TableHead numeric>{t('supplierPrice')}</TableHead>
                 <TableHead numeric>{t('expectedPrice')}</TableHead>
                 <TableHead numeric>{t('actualPrice')}</TableHead>
                 <TableHead numeric>{t('supplierConfirmedPrice')}</TableHead>
@@ -174,10 +189,19 @@ export default function PurchaseOrderDetailPage() {
             <TableBody>
               {(order.items ?? []).map((item) => (
                 <TableRow key={item.id}>
+                  <TableCell>
+                    <Avatar src={item.productId ? photosByProduct?.[item.productId]?.[0]?.downloadUrl : undefined} size="sm" />
+                  </TableCell>
                   <TableCell>{item.articleSnapshot}</TableCell>
                   <TableCell className="max-w-[220px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
                   <TableCell numeric>{item.qtyOrdered}</TableCell>
                   <TableCell numeric>{item.qtyReceived}</TableCell>
+                  <TableCell numeric>
+                    {(() => {
+                      const price = item.productId ? supplierPriceByProduct.get(item.productId) : undefined;
+                      return price != null ? formatEur(Number(price)) : '—';
+                    })()}
+                  </TableCell>
                   <TableCell numeric>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
