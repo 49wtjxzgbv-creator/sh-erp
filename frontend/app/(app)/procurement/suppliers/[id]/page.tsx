@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
@@ -14,11 +14,13 @@ import {
   useSupplierLinkedProducts,
   useSupplierLinkedAssemblies,
 } from '@/lib/hooks/use-procurement';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { SupplierForm } from '@/components/domain/procurement/supplier-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import { formatEur } from '@/lib/utils';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -132,6 +134,10 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
   const tc = useTranslations('common');
   const { data: products } = useSupplierLinkedProducts(supplierId);
   const { data: assemblies } = useSupplierLinkedAssemblies(supplierId);
+  const productIds = useMemo(() => products?.map((p) => p.productId) ?? [], [products]);
+  const assemblyIds = useMemo(() => assemblies?.map((a) => a.assemblyId) ?? [], [assemblies]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
 
   return (
     <Card>
@@ -145,6 +151,7 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14">{t('photo')}</TableHead>
                   <TableHead>{t('article')}</TableHead>
                   <TableHead>{t('productName')}</TableHead>
                   <TableHead>{t('supplierPrice')}</TableHead>
@@ -153,6 +160,9 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
               <TableBody>
                 {products.map((p) => (
                   <TableRow key={p.id}>
+                    <TableCell>
+                      <Avatar src={photosByProduct?.[p.productId]?.[0]?.downloadUrl} size="sm" />
+                    </TableCell>
                     <TableCell>{p.productArticle}</TableCell>
                     <TableCell>
                       <Link href={`/catalog/${p.productId}`} className="text-primary hover:underline">
@@ -176,6 +186,7 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14">{t('photo')}</TableHead>
                   <TableHead>{t('article')}</TableHead>
                   <TableHead>{t('assemblyName')}</TableHead>
                   <TableHead>{t('supplierPrice')}</TableHead>
@@ -184,6 +195,9 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
               <TableBody>
                 {assemblies.map((a) => (
                   <TableRow key={a.id}>
+                    <TableCell>
+                      <Avatar src={photosByAssembly?.[a.assemblyId]?.[0]?.downloadUrl} size="sm" />
+                    </TableCell>
                     <TableCell>{a.assemblyArticle ?? '—'}</TableCell>
                     <TableCell>
                       <Link href={`/bom/${a.assemblyId}`} className="text-primary hover:underline">

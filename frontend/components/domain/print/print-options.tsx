@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useIsFetching } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Printer, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,15 @@ export interface PrintColumnOption {
   label: string;
 }
 
+// Deep print views (e.g. an order's full assembly/sub-assembly/product
+// composition — customer-order-print.tsx's AssemblyCompositionSection)
+// mount a chain of N+1 useAssembly/useAssemblyCost/useFilesForEntities
+// queries where each level only starts fetching once its parent's data has
+// arrived — a real, observed multi-second waterfall for a several-levels-
+// deep BOM. If a stray query never settles, print still has to happen
+// eventually rather than silently never firing.
+const PRINT_MAX_WAIT_MS = 8000;
+
 /**
  * Owns the "which columns / include photos" print-options state for one
  * print view, and the "print now with THIS state, not whatever was on
@@ -20,17 +30,43 @@ export interface PrintColumnOption {
  * render, so the effect (which only runs after that render commits) is
  * guaranteed to see the print-ready DOM with the just-confirmed selection
  * applied, not a stale one from before the dialog closed.
+ *
+ * `window.print()` itself waits for `useIsFetching()` (every in-flight
+ * React Query request app-wide) to drop to zero before firing — otherwise
+ * a still-loading nested async cell (a product/assembly name still
+ * resolving) gets captured blank in the printed/PDF output, which is
+ * exactly what happened before this existed: names and article numbers
+ * missing from a customer order's printed full composition because
+ * window.print() fired on the very next render after confirm, without
+ * waiting for the composition tree's own data to arrive.
  */
 export function usePrintOptions({ columns, hasPhotos = false }: { columns: PrintColumnOption[]; hasPhotos?: boolean }) {
   const [open, setOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(columns.map((c) => c.id)));
   const [includePhotos, setIncludePhotos] = useState(hasPhotos);
   const [printRequestId, setPrintRequestId] = useState(0);
+  const isFetching = useIsFetching();
+  const printedRequestId = useRef(0);
 
   useEffect(() => {
-    if (printRequestId === 0) return;
+    if (printRequestId === 0 || printRequestId === printedRequestId.current) return;
+    if (isFetching > 0) return;
+    printedRequestId.current = printRequestId;
     window.print();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per request id, not on every visibleColumns/includePhotos change
+  }, [printRequestId, isFetching]);
+
+  // Safety net: print anyway once PRINT_MAX_WAIT_MS has passed, in case one
+  // stray query never settles — a slightly-incomplete printout beats one
+  // that silently never happens.
+  useEffect(() => {
+    if (printRequestId === 0 || printRequestId === printedRequestId.current) return;
+    const timer = setTimeout(() => {
+      if (printedRequestId.current !== printRequestId) {
+        printedRequestId.current = printRequestId;
+        window.print();
+      }
+    }, PRINT_MAX_WAIT_MS);
+    return () => clearTimeout(timer);
   }, [printRequestId]);
 
   function confirm(nextVisibleColumns: Set<string>, nextIncludePhotos: boolean) {
