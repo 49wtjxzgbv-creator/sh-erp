@@ -124,7 +124,7 @@ export const DEFAULT_ROLES = [
     name: 'Sales',
     permissions: [
       'products:read', 'assemblies:read', 'customer-orders:read', 'customer-orders:manage',
-      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'ai:use',
+      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use',
     ],
   },
   {

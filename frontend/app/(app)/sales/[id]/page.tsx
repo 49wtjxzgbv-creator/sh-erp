@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
+import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 
 /** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
 function AssemblyCell({ assemblyId }: { assemblyId: string }) {
@@ -269,6 +270,7 @@ export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
+  const tf = useTranslations('files');
   const apiErrorMessage = useApiErrorMessage();
 
   const { data: order, isLoading } = useCustomerOrder(params.id);
@@ -446,6 +448,15 @@ export default function CustomerOrderDetailPage() {
               <p className="text-sm">{order.comment}</p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{tf('documents')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EntityDocumentsField domain="CUSTOMER_ORDER_DOCUMENT" entityType="CustomerOrder" entityId={order.id} accept="*/*" />
         </CardContent>
       </Card>
 

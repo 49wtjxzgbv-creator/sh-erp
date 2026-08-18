@@ -38,6 +38,9 @@ function isDxfFile(name: string): boolean {
 function isPdfFile(mimeType: string, name: string): boolean {
   return mimeType === 'application/pdf' || /\.pdf$/i.test(name);
 }
+function isTextFile(mimeType: string, name: string): boolean {
+  return mimeType.startsWith('text/') || /\.(txt|csv|json|md|log|xml|ya?ml)$/i.test(name);
+}
 /**
  * Extension excludes first: browsers/OS report DXF uploads with the real,
  * registered `image/vnd.dxf` MIME type (confirmed live — a user's actual
@@ -54,6 +57,7 @@ function fileIcon(file: FileAssetWithUrl) {
   if (isDxfFile(file.originalName)) return Ruler;
   if (isImageFile(file.mimeType, file.originalName)) return ImageIcon;
   if (isPdfFile(file.mimeType, file.originalName)) return FileText;
+  if (isTextFile(file.mimeType, file.originalName)) return FileText;
   return FileIcon;
 }
 
@@ -88,6 +92,8 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [stepDoc, setStepDoc] = useState<FileAssetWithUrl | null>(null);
   const [dxfDoc, setDxfDoc] = useState<FileAssetWithUrl | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<FileAssetWithUrl | null>(null);
+  const [textDoc, setTextDoc] = useState<{ file: FileAssetWithUrl; content: string | null; error: string | null } | null>(null);
 
   const { data: byEntity, isLoading } = useFilesForEntities(entityType, [entityId], domain);
   const files = byEntity?.[entityId] ?? [];
@@ -117,6 +123,17 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
     invalidate();
   }
 
+  async function openTextPreview(file: FileAssetWithUrl) {
+    setTextDoc({ file, content: null, error: null });
+    try {
+      const res = await fetch(file.downloadUrl);
+      if (!res.ok) throw new Error(tc('error'));
+      setTextDoc({ file, content: await res.text(), error: null });
+    } catch (err) {
+      setTextDoc({ file, content: null, error: err instanceof Error ? err.message : tc('error') });
+    }
+  }
+
   function handleView(file: FileAssetWithUrl) {
     if (isStepFile(file.originalName)) {
       setStepDoc(file);
@@ -125,12 +142,20 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
     } else if (isImageFile(file.mimeType, file.originalName)) {
       setLightboxSrc(file.downloadUrl);
     } else if (isPdfFile(file.mimeType, file.originalName)) {
-      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+      setPdfDoc(file);
+    } else if (isTextFile(file.mimeType, file.originalName)) {
+      openTextPreview(file);
     }
   }
 
   function isViewable(file: FileAssetWithUrl): boolean {
-    return isImageFile(file.mimeType, file.originalName) || isStepFile(file.originalName) || isDxfFile(file.originalName) || isPdfFile(file.mimeType, file.originalName);
+    return (
+      isImageFile(file.mimeType, file.originalName) ||
+      isStepFile(file.originalName) ||
+      isDxfFile(file.originalName) ||
+      isPdfFile(file.mimeType, file.originalName) ||
+      isTextFile(file.mimeType, file.originalName)
+    );
   }
 
   return (
@@ -211,6 +236,30 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
             <DialogTitle className="truncate">{dxfDoc?.originalName}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1">{dxfDoc && <Dxf2DViewer url={dxfDoc.downloadUrl} />}</div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(pdfDoc)} onOpenChange={(open) => !open && setPdfDoc(null)}>
+        <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col">
+          <DialogHeader>
+            <DialogTitle className="truncate">{pdfDoc?.originalName}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">
+            {pdfDoc && <iframe src={pdfDoc.downloadUrl} title={pdfDoc.originalName} className="h-full w-full rounded-md border border-border" />}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(textDoc)} onOpenChange={(open) => !open && setTextDoc(null)}>
+        <DialogContent className="flex h-[85vh] w-[95vw] max-w-4xl flex-col">
+          <DialogHeader>
+            <DialogTitle className="truncate">{textDoc?.file.originalName}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-secondary/30 p-3">
+            {textDoc?.error && <p className="text-sm text-destructive">{textDoc.error}</p>}
+            {!textDoc?.error && textDoc?.content === null && <p className="text-sm text-muted-foreground">{tc('loading')}</p>}
+            {textDoc?.content != null && <pre className="whitespace-pre-wrap break-words font-mono text-xs">{textDoc.content}</pre>}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
