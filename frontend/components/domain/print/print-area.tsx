@@ -38,8 +38,7 @@ function PrintAreaInner({ children }: { children: ReactNode }) {
   const isPreview = usePrintPreviewMode();
   return (
     <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>
-      <PdfBranding />
-      {children}
+      <PdfBranding>{children}</PdfBranding>
     </div>
   );
 }
@@ -49,8 +48,7 @@ export function PrintArea({ children }: { children: ReactNode }) {
     <Suspense
       fallback={
         <div className="print-area hidden print:block">
-          <PdfBranding />
-          {children}
+          <PdfBranding>{children}</PdfBranding>
         </div>
       }
     >

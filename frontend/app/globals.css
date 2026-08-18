@@ -312,7 +312,7 @@
 .print-preview-mode .print-area {
   background: #fff;
   color: #000;
-  padding: 42mm 12mm 28mm 12mm;
+  padding: 12mm;
 }
 .print-preview-mode .print-area table {
   width: 100%;
@@ -325,11 +325,14 @@
   text-align: left;
   font-size: 11px;
 }
+/* Unlike @media print above, `.print-area` here is a normal in-flow block,
+ * not pinned to one page-sized box — there is no real pagination to repeat
+ * a fixed header/footer across. Rendering both in normal flow (once above,
+ * once below the content) avoids a `position: fixed` header/footer
+ * floating over the viewport and overlapping whatever content happens to
+ * be scrolled underneath it. */
 .print-preview-mode .pdf-header {
-  position: fixed;
-  top: 15mm;
-  left: 15mm;
-  z-index: 50;
+  margin: 0 0 8mm 0;
 }
 .print-preview-mode .pdf-header-logo {
   height: 19mm;
@@ -337,11 +340,7 @@
   display: block;
 }
 .print-preview-mode .pdf-footer {
-  position: fixed;
-  bottom: 10mm;
-  left: 0;
-  right: 0;
-  z-index: 50;
+  margin: 8mm 0 0 0;
   text-align: center;
 }
 .print-preview-mode .pdf-footer-line {
