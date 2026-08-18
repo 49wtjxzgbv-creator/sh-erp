@@ -507,6 +507,7 @@
     "currentStock": "Наявно",
     "qtyToOrder": "Кількість до замовлення",
     "noShortage": "Дефіциту немає — усі компоненти вже забезпечені.",
+    "allSuppliersPrint": "Усі постачальники",
     "createPurchaseOrders": "Створити замовлення постачальникам",
     "purchaseOrdersCreated": "Створено замовлень постачальникам: {count}",
     "newShipment": "Нове відвантаження",

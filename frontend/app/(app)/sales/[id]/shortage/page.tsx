@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useShortagePreview, useCreatePurchaseOrdersFromShortage } from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -9,6 +9,7 @@ import type { PurchaseOrderGroupInput, ShortageGroupLineInput } from '@/lib/api-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -25,6 +26,25 @@ interface EditableGroup {
   lines: EditableLine[];
 }
 
+const ALL_SUPPLIERS = 'all';
+const NO_SUPPLIER = '__none__';
+
+function lineId(line: { productId?: string; subAssemblyId?: string; description: string }): string {
+  return line.productId ?? line.subAssemblyId ?? line.description;
+}
+
+function parseQtyParam(raw: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const pair of raw.split(',')) {
+    const idx = pair.lastIndexOf(':');
+    if (idx === -1) continue;
+    const id = pair.slice(0, idx);
+    const qty = Number(pair.slice(idx + 1));
+    if (id && !Number.isNaN(qty)) map.set(id, qty);
+  }
+  return map;
+}
+
 /**
  * The recursive, whole-order shortage analysis (Phase 1 §6.3) — grouped by
  * supplier, gross requirement shown next to current stock, never netted
@@ -34,11 +54,12 @@ interface EditableGroup {
  * editable input — the human is expected to look at currentStock and adjust
  * before committing, not have it computed for them.
  */
-export default function ShortagePreviewPage() {
+function ShortagePreviewPageInner() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
+  const searchParams = useSearchParams();
 
   const { data: preview, isLoading } = useShortagePreview(params.id);
   const createPOs = useCreatePurchaseOrdersFromShortage(params.id);
@@ -47,12 +68,30 @@ export default function ShortagePreviewPage() {
   const hydrated = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
+  const [printSupplierId, setPrintSupplierId] = useState<string>(ALL_SUPPLIERS);
+
+  // In a preview tab opened via handlePreview below, `?print=1` carries the
+  // supplier filter and the live-typed quantities the opener tab had at the
+  // moment of preview — otherwise this fresh page load would only ever see
+  // the raw, unedited shortage preview, silently diverging from what the
+  // opener was about to print.
+  const isPreview = searchParams.get('print') === '1';
+  const previewSupplierParam = isPreview ? searchParams.get('supplier') : null;
+  const previewQtyOverrides = useMemo(() => {
+    if (!isPreview) return null;
+    const raw = searchParams.get('qty');
+    return raw ? parseQtyParam(raw) : null;
+  }, [isPreview, searchParams]);
 
   useEffect(() => {
     if (hydrated.current || !preview) return;
     hydrated.current = true;
+    const rawGroups =
+      previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS
+        ? preview.groups.filter((g) => (g.supplierId ?? NO_SUPPLIER) === previewSupplierParam)
+        : preview.groups;
     setGroups(
-      preview.groups.map((g) => ({
+      rawGroups.map((g) => ({
         supplierId: g.supplierId ?? undefined,
         supplierName: g.supplierName,
         lines: g.lines.map((line) => ({
@@ -60,13 +99,14 @@ export default function ShortagePreviewPage() {
           productId: line.productId,
           subAssemblyId: line.subAssemblyId,
           description: line.description,
-          qty: line.neededQty,
+          qty: previewQtyOverrides?.get(lineId(line)) ?? line.neededQty,
           neededQty: line.neededQty,
           currentStock: line.currentStock,
         })),
       })),
     );
-  }, [preview]);
+    if (previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS) setPrintSupplierId(previewSupplierParam);
+  }, [preview, previewSupplierParam, previewQtyOverrides]);
 
   function updateLineQty(groupIdx: number, lineIdx: number, qty: number) {
     setGroups((prev) =>
@@ -100,15 +140,48 @@ export default function ShortagePreviewPage() {
     }
   }
 
+  const printGroups = groups.filter((g) => printSupplierId === ALL_SUPPLIERS || (g.supplierId ?? NO_SUPPLIER) === printSupplierId);
+
+  function handlePreview() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('print', '1');
+    url.searchParams.set('supplier', printSupplierId);
+    const qtyPayload = printGroups
+      .flatMap((g) => g.lines)
+      .filter((l) => l.qty > 0)
+      .map((l) => `${lineId(l)}:${l.qty}`)
+      .join(',');
+    if (qtyPayload) url.searchParams.set('qty', qtyPayload);
+    else url.searchParams.delete('qty');
+    window.open(url.toString(), '_blank', 'noopener');
+  }
+
   if (isLoading || !preview) {
     return <LoadingBlock />;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{t('shortagePreview')}</h2>
-        {groups.length > 0 && <SupplierRequestsPrint groups={groups} />}
+        {groups.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={printSupplierId} onValueChange={setPrintSupplierId}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_SUPPLIERS}>{t('allSuppliersPrint')}</SelectItem>
+                {groups.map((g, gi) => (
+                  <SelectItem key={g.supplierId ?? `none-${gi}`} value={g.supplierId ?? NO_SUPPLIER}>
+                    {g.supplierName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <SupplierRequestsPrint groups={printGroups} onPreview={handlePreview} />
+          </div>
+        )}
       </div>
 
       {groups.length === 0 && <p className="text-sm text-muted-foreground">{t('noShortage')}</p>}
@@ -161,5 +234,13 @@ export default function ShortagePreviewPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ShortagePreviewPage() {
+  return (
+    <Suspense fallback={<LoadingBlock />}>
+      <ShortagePreviewPageInner />
+    </Suspense>
   );
 }

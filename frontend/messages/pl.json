@@ -555,7 +555,8 @@
     "batchScheduledEndAt": "Batch planned completion",
     "giveToProductionDialogTitle": "Give to production",
     "giveToProductionDialogDescription": "Creates a new production batch for this item. Can be given in parts.",
-    "invalidGiveToProduction": "Batch quantity must be positive and cannot exceed what remains"
+    "invalidGiveToProduction": "Batch quantity must be positive and cannot exceed what remains",
+    "allSuppliersPrint": "All suppliers"
   },
   "hr": {
     "title": "HR",
