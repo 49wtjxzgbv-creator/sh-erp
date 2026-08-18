@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 type MilestoneField = 'plannedSendAt' | 'sentToSupplierAt' | 'shippedBySupplierAt';
 
@@ -31,6 +32,7 @@ function formatDate(value: string | null): string {
  */
 function MilestoneCell({ order, field }: { order: PurchaseOrder; field: MilestoneField }) {
   const updateMilestones = useUpdatePurchaseOrderMilestones();
+  const canManage = useHasPermission('purchase-orders:manage');
   const current = order[field];
 
   return (
@@ -38,7 +40,7 @@ function MilestoneCell({ order, field }: { order: PurchaseOrder; field: Mileston
       key={`${order.id}-${current ?? ''}`}
       type="date"
       defaultValue={toDateInputValue(current)}
-      disabled={updateMilestones.isPending}
+      disabled={updateMilestones.isPending || !canManage}
       className="h-8 w-36"
       onBlur={(e) => {
         const raw = toDateInputValue(current);
@@ -57,6 +59,7 @@ export default function ExpectedFromSupplierPage() {
 
   const { data, isLoading } = usePurchaseOrders({ limit: 100 });
   const { data: suppliersData } = useSuppliers({ limit: 200 });
+  const canManage = useHasPermission('purchase-orders:manage');
 
   const supplierById = useMemo(() => {
     const map = new Map<string, Supplier>();
@@ -151,10 +154,12 @@ export default function ExpectedFromSupplierPage() {
                           {tp('receiveNow')}
                         </Button>
                       </div>
-                    ) : (
+                    ) : canManage ? (
                       <Button size="sm" onClick={() => markDelivered(order)} loading={updateMilestones.isPending}>
                         {t('markDelivered')}
                       </Button>
+                    ) : (
+                      '—'
                     )}
                   </TableCell>
                 </TableRow>

@@ -31,6 +31,7 @@ import type {
   ReportIssue,
   ConnectorHealth,
 } from '@/lib/api-client/legacy-import';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 type View =
   | { name: 'list' }
@@ -69,35 +70,37 @@ export default function LegacyImportPage() {
   const [view, setView] = useState<View>({ name: 'list' });
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div className="flex items-center gap-2">
-        <Link href="/settings" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <h1 className="text-xl font-semibold">{t('title')}</h1>
-      </div>
-      <p className="text-sm text-muted-foreground">{t('description')}</p>
+    <RequirePermission permission="legacy-import:manage" redirectTo="/settings">
+      <div className="max-w-3xl space-y-6">
+        <div className="flex items-center gap-2">
+          <Link href="/settings" className="text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <h1 className="text-xl font-semibold">{t('title')}</h1>
+        </div>
+        <p className="text-sm text-muted-foreground">{t('description')}</p>
 
-      {view.name === 'list' && (
-        <ConnectionsListView
-          onAddSource={() => setView({ name: 'add-source' })}
-          onRun={(connectionId) => setView({ name: 'run', connectionId })}
-          onPairing={(connectionId) => setView({ name: 'pairing', connectionId })}
-        />
-      )}
-      {view.name === 'add-source' && (
-        <AddSourceView
-          onCreated={(connectionId) => setView({ name: 'pairing', connectionId })}
-          onBack={() => setView({ name: 'list' })}
-        />
-      )}
-      {view.name === 'pairing' && (
-        <PairingView connectionId={view.connectionId} onDone={() => setView({ name: 'list' })} onBack={() => setView({ name: 'list' })} />
-      )}
-      {view.name === 'run' && (
-        <RunImportView connectionId={view.connectionId} onBack={() => setView({ name: 'list' })} />
-      )}
-    </div>
+        {view.name === 'list' && (
+          <ConnectionsListView
+            onAddSource={() => setView({ name: 'add-source' })}
+            onRun={(connectionId) => setView({ name: 'run', connectionId })}
+            onPairing={(connectionId) => setView({ name: 'pairing', connectionId })}
+          />
+        )}
+        {view.name === 'add-source' && (
+          <AddSourceView
+            onCreated={(connectionId) => setView({ name: 'pairing', connectionId })}
+            onBack={() => setView({ name: 'list' })}
+          />
+        )}
+        {view.name === 'pairing' && (
+          <PairingView connectionId={view.connectionId} onDone={() => setView({ name: 'list' })} onBack={() => setView({ name: 'list' })} />
+        )}
+        {view.name === 'run' && (
+          <RunImportView connectionId={view.connectionId} onBack={() => setView({ name: 'list' })} />
+        )}
+      </div>
+    </RequirePermission>
   );
 }
 

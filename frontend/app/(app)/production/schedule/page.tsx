@@ -30,6 +30,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 function toDateInput(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -49,6 +50,7 @@ export default function ProductionSchedulePage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editSlot, setEditSlot] = useState<ScheduleSlotLine | null>(null);
+  const canManage = useHasPermission('production-orders:manage');
 
   if (isLoading || !data) {
     return <LoadingBlock />;
@@ -66,17 +68,19 @@ export default function ProductionSchedulePage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('addSlot')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <SlotForm onDone={() => setCreateOpen(false)} />
-          </DialogContent>
-        </Dialog>
+        {canManage && (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                {t('addSlot')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <SlotForm onDone={() => setCreateOpen(false)} />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>
@@ -110,6 +114,7 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
   const update = useUpdateProductionScheduleSlot(slot?.id ?? '');
   const remove = useDeleteProductionScheduleSlot();
   const convert = useConvertProductionScheduleSlot();
+  const canManage = useHasPermission('production-orders:manage');
 
   const [assemblyId, setAssemblyId] = useState<string | undefined>(slot?.assemblyId ?? undefined);
   const [title, setTitle] = useState(slot?.title ?? '');
@@ -201,7 +206,7 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
       </div>
       <DialogFooter className="flex-wrap gap-2 sm:justify-between">
         <div className="flex gap-2">
-          {slot && (
+          {slot && canManage && (
             <>
               <Button variant="destructive" size="sm" loading={remove.isPending} onClick={handleDelete}>
                 {tc('delete')}
@@ -216,9 +221,11 @@ function SlotForm({ slot, onDone }: { slot?: ScheduleSlotLine; onDone: () => voi
           <DialogClose asChild>
             <Button variant="outline" size="sm">{tc('cancel')}</Button>
           </DialogClose>
-          <Button size="sm" loading={create.isPending || update.isPending} onClick={handleSubmit}>
-            {tc('save')}
-          </Button>
+          {canManage && (
+            <Button size="sm" loading={create.isPending || update.isPending} onClick={handleSubmit}>
+              {tc('save')}
+            </Button>
+          )}
         </div>
       </DialogFooter>
     </>

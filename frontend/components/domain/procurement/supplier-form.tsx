@@ -36,9 +36,11 @@ export interface SupplierFormProps {
   onSubmit: (values: CreateSupplierInput) => Promise<void>;
   submitting: boolean;
   submitError: string | null;
+  /** View-only for a role with `suppliers:read` but not `suppliers:write`. */
+  readOnly?: boolean;
 }
 
-export function SupplierForm({ supplier, onSubmit, submitting, submitError }: SupplierFormProps) {
+export function SupplierForm({ supplier, onSubmit, submitting, submitError, readOnly }: SupplierFormProps) {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
 
@@ -69,6 +71,7 @@ export function SupplierForm({ supplier, onSubmit, submitting, submitError }: Su
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit(submit, scrollToFirstError)} noValidate>
+      <fieldset disabled={readOnly} className="contents">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('supplierHeader')}</CardTitle>
@@ -98,10 +101,13 @@ export function SupplierForm({ supplier, onSubmit, submitting, submitError }: Su
           </div>
         </CardContent>
       </Card>
+      </fieldset>
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-      <Button type="submit" loading={submitting}>
-        {tc('save')}
-      </Button>
+      {!readOnly && (
+        <Button type="submit" loading={submitting}>
+          {tc('save')}
+        </Button>
+      )}
     </form>
   );
 }

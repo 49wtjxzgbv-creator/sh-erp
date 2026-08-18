@@ -19,6 +19,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { cn } from '@/lib/utils';
 
 export default function StockLevelsPage() {
@@ -38,6 +39,8 @@ export default function StockLevelsPage() {
   const { data: warehouses } = useWarehouses();
   const { data: levels, isLoading } = useStockLevels({ warehouseId });
   const recordMovement = useRecordStockMovement();
+  const canAdjustStock = useHasPermission('stock:adjust');
+  const canWriteProducts = useHasPermission('products:write');
 
   const warehouseName = useMemo(() => {
     const map = new Map<string, string>();
@@ -151,7 +154,7 @@ export default function StockLevelsPage() {
               // a remount when the source-of-truth value actually changes.
               key={`${row.original.productId}-${product?.cell ?? ''}`}
               defaultValue={product?.cell ?? ''}
-              disabled={!product}
+              disabled={!product || !canWriteProducts}
               className={cn('h-8 w-28', savingCell === row.original.productId && 'opacity-50')}
               onClick={(e) => e.stopPropagation()}
               onBlur={(e) => {
@@ -180,7 +183,7 @@ export default function StockLevelsPage() {
             step="any"
             min={0}
             defaultValue={row.original.qty}
-            disabled={savingQty === row.original.id}
+            disabled={savingQty === row.original.id || !canAdjustStock}
             className={cn('h-8 w-24 text-right tabular-nums', savingQty === row.original.id && 'opacity-50')}
             onClick={(e) => e.stopPropagation()}
             onBlur={(e) => {
@@ -191,7 +194,7 @@ export default function StockLevelsPage() {
         ),
       },
     ],
-    [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell, savingQty],
+    [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell, savingQty, canWriteProducts, canAdjustStock],
   );
 
   return (
@@ -220,14 +223,18 @@ export default function StockLevelsPage() {
         </div>
         <div className="flex gap-2">
           <LearnThisButton courseId="warehouse" label="Навчитися працювати зі складом" />
-          <Button variant="outline" onClick={() => setMoveOpen(true)}>
-            <ArrowLeftRight className="mr-2 h-4 w-4" />
-            {t('moveStock')}
-          </Button>
-          <Button onClick={() => setMovementOpen(true)} data-tour="inventory-record-movement-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('recordMovement')}
-          </Button>
+          {canAdjustStock && (
+            <>
+              <Button variant="outline" onClick={() => setMoveOpen(true)}>
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+                {t('moveStock')}
+              </Button>
+              <Button onClick={() => setMovementOpen(true)} data-tour="inventory-record-movement-button">
+                <Plus className="mr-2 h-4 w-4" />
+                {t('recordMovement')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -237,8 +244,12 @@ export default function StockLevelsPage() {
         <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
       </div>
 
-      <RecordMovementDialog open={movementOpen} onOpenChange={setMovementOpen} />
-      <MoveStockDialog open={moveOpen} onOpenChange={setMoveOpen} />
+      {canAdjustStock && (
+        <>
+          <RecordMovementDialog open={movementOpen} onOpenChange={setMovementOpen} />
+          <MoveStockDialog open={moveOpen} onOpenChange={setMoveOpen} />
+        </>
+      )}
     </div>
   );
 }

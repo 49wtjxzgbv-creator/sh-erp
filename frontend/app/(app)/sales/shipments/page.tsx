@@ -12,6 +12,7 @@ import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -62,12 +63,14 @@ export default function ShipmentsPage() {
             <SelectItem value="DELIVERED">{t('shipmentStatusDELIVERED')}</SelectItem>
           </SelectContent>
         </Select>
-        <Button asChild>
-          <Link href="/sales/shipments/new" data-tour="shipments-new-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newShipment')}
-          </Link>
-        </Button>
+        {useHasPermission('shipments:manage') && (
+          <Button asChild>
+            <Link href="/sales/shipments/new" data-tour="shipments-new-button">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newShipment')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <DataTable

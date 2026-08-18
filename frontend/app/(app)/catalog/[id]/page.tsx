@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useProduct, useUpdateProduct, useDeleteProduct } from '@/lib/hooks/use-catalog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { ProductForm } from '@/components/domain/catalog/product-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
@@ -31,6 +32,7 @@ export default function EditProductPage() {
   const { data: product, isLoading } = useProduct(params.id);
   const updateProduct = useUpdateProduct(params.id);
   const deleteProduct = useDeleteProduct();
+  const canWrite = useHasPermission('products:write');
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(values: CreateProductInput) {
@@ -57,34 +59,37 @@ export default function EditProductPage() {
         <h1 className="text-xl font-semibold">
           {t('editProduct')} — {product.article}
         </h1>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              <Trash2 className="mr-2 h-4 w-4" />
-              {tc('delete')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-              <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">{tc('cancel')}</Button>
-              </DialogClose>
-              <Button variant="destructive" loading={deleteProduct.isPending} onClick={handleDelete}>
+        {canWrite && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                <Trash2 className="mr-2 h-4 w-4" />
                 {tc('delete')}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteProduct.isPending} onClick={handleDelete}>
+                  {tc('delete')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
       <ProductForm
         product={product}
         onSubmit={handleSubmit}
         submitting={updateProduct.isPending}
         submitError={error}
+        readOnly={!canWrite}
       />
     </div>
   );

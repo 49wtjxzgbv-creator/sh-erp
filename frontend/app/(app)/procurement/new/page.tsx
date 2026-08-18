@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 interface EditableItemRow {
   key: string;
@@ -124,6 +125,7 @@ export default function NewPurchaseOrderPage() {
   }
 
   return (
+    <RequirePermission permission="purchase-orders:manage" redirectTo="/procurement">
     <div className="max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('newPurchaseOrder')}</h1>
       <Card>
@@ -240,5 +242,6 @@ export default function NewPurchaseOrderPage() {
         {tc('create')}
       </Button>
     </div>
+    </RequirePermission>
   );
 }

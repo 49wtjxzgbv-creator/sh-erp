@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 /**
  * Phase 0 billing stub (billing.service.ts's own header comment): switching
@@ -45,6 +46,7 @@ export default function BillingPage() {
   const isLoading = plansLoading || subscriptionLoading;
 
   return (
+    <RequirePermission permission="company:billing" redirectTo="/dashboard">
     <div className="max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('title')}</h1>
 
@@ -108,5 +110,6 @@ export default function BillingPage() {
         </>
       )}
     </div>
+    </RequirePermission>
   );
 }

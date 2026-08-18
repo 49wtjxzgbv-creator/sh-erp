@@ -48,6 +48,8 @@ export interface AssemblyFormProps {
   /** Only used in create mode (no `assembly` yet) — see PendingPhotoField. */
   pendingPhoto?: File | null;
   onPendingPhotoChange?: (file: File | null) => void;
+  /** View-only for a role with `assemblies:read` but not `assemblies:write`. */
+  readOnly?: boolean;
 }
 
 export function AssemblyForm({
@@ -57,6 +59,7 @@ export function AssemblyForm({
   submitError,
   pendingPhoto,
   onPendingPhotoChange,
+  readOnly,
 }: AssemblyFormProps) {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
@@ -100,6 +103,7 @@ export function AssemblyForm({
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit(submit, scrollToFirstError)} noValidate>
+      <fieldset disabled={readOnly} className="contents">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('photo')}</CardTitle>
@@ -171,10 +175,13 @@ export function AssemblyForm({
           </div>
         </CardContent>
       </Card>
+      </fieldset>
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-      <Button type="submit" loading={submitting}>
-        {tc('save')}
-      </Button>
+      {!readOnly && (
+        <Button type="submit" loading={submitting}>
+          {tc('save')}
+        </Button>
+      )}
     </form>
   );
 }

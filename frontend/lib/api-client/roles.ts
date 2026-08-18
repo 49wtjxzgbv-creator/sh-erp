@@ -31,6 +31,11 @@ export function listRoles(): Promise<Role[]> {
   return apiClient.get<Role[]>('roles');
 }
 
+/** Unlike every other route in this file, does NOT require `roles:manage` — any authenticated user can read their own grants. */
+export function getMyPermissions(): Promise<{ permissionKeys: string[] }> {
+  return apiClient.get<{ permissionKeys: string[] }>('roles/me/permissions');
+}
+
 export interface CreateRoleInput {
   name: string;
   description?: string;

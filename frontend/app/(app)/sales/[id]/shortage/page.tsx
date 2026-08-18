@@ -16,6 +16,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Avatar } from '@/components/ui/avatar';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 interface EditableLine extends Omit<ShortageGroupLineInput, 'price'> {
   /** Frozen at hydration — the original gross requirement, kept visible and never mutated by editing `qty`. */
@@ -381,8 +382,10 @@ function ShortagePreviewPageInner() {
 
 export default function ShortagePreviewPage() {
   return (
-    <Suspense fallback={<LoadingBlock />}>
-      <ShortagePreviewPageInner />
-    </Suspense>
+    <RequirePermission permission="customer-orders:manage" redirectTo="/sales">
+      <Suspense fallback={<LoadingBlock />}>
+        <ShortagePreviewPageInner />
+      </Suspense>
+    </RequirePermission>
   );
 }

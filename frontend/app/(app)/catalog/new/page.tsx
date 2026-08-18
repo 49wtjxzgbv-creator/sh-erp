@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { useCreateProduct } from '@/lib/hooks/use-catalog';
 import { useRecordStockMovement } from '@/lib/hooks/use-inventory';
 import { ProductForm, type InitialStockInput } from '@/components/domain/catalog/product-form';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
@@ -53,15 +54,17 @@ export default function NewProductPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <h1 className="text-xl font-semibold">{t('newProduct')}</h1>
-      <ProductForm
-        onSubmit={handleSubmit}
-        submitting={createProduct.isPending}
-        submitError={error}
-        pendingPhoto={pendingPhoto}
-        onPendingPhotoChange={setPendingPhoto}
-      />
-    </div>
+    <RequirePermission permission="products:write" redirectTo="/catalog">
+      <div className="max-w-3xl space-y-4">
+        <h1 className="text-xl font-semibold">{t('newProduct')}</h1>
+        <ProductForm
+          onSubmit={handleSubmit}
+          submitting={createProduct.isPending}
+          submitError={error}
+          pendingPhoto={pendingPhoto}
+          onPendingPhotoChange={setPendingPhoto}
+        />
+      </div>
+    </RequirePermission>
   );
 }

@@ -22,6 +22,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const STATUS_VARIANT: Record<ShipmentStatus, 'secondary' | 'success'> = {
   SHIPPED: 'secondary',
@@ -38,6 +39,7 @@ export default function ShipmentDetailPage() {
   const { data: shipment, isLoading } = useShipment(params.id);
   const markDelivered = useMarkShipmentDelivered(params.id);
   const deleteShipment = useDeleteShipment();
+  const canManage = useHasPermission('shipments:manage');
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading || !shipment) {
@@ -67,7 +69,7 @@ export default function ShipmentDetailPage() {
           <h2 className="text-lg font-semibold">{shipment.waybillNumber ?? shipment.id}</h2>
           <Badge variant={STATUS_VARIANT[shipment.status]}>{t(`shipmentStatus${shipment.status}`)}</Badge>
         </div>
-        {!isDelivered && (
+        {!isDelivered && canManage && (
           <div className="flex gap-2">
             <Dialog>
               <DialogTrigger asChild>

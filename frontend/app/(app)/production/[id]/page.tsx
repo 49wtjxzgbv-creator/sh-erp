@@ -21,6 +21,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { ApiError } from '@/lib/api-client/types';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine, ProductionStage } from '@/lib/api-client/production';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -101,6 +102,7 @@ function StagePlanEditor({ productionOrderId, stages }: { productionOrderId: str
   const tc = useTranslations('common');
   const { data: plan } = useProductionOrderStagePlan(productionOrderId);
   const setPlan = useSetProductionOrderStagePlan(productionOrderId);
+  const canManage = useHasPermission('production-orders:manage');
   const apiErrorMessage = useApiErrorMessage();
 
   const [rows, setRows] = useState<Record<string, { start: string; end: string }>>({});
@@ -142,6 +144,7 @@ function StagePlanEditor({ productionOrderId, stages }: { productionOrderId: str
 
   return (
     <div className="space-y-3">
+      <fieldset disabled={!canManage} className="contents">
       {[...stages].sort((a, b) => a.sortOrder - b.sortOrder).map((stage) => {
         const row = rows[stage.id] ?? { start: '', end: '' };
         return (
@@ -169,10 +172,13 @@ function StagePlanEditor({ productionOrderId, stages }: { productionOrderId: str
           </div>
         );
       })}
+      </fieldset>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button variant="outline" onClick={handleSave} loading={setPlan.isPending}>
-        {t('savePlan')}
-      </Button>
+      {canManage && (
+        <Button variant="outline" onClick={handleSave} loading={setPlan.isPending}>
+          {t('savePlan')}
+        </Button>
+      )}
     </div>
   );
 }
@@ -194,6 +200,7 @@ export default function ProductionOrderDetailPage() {
   const cancelOrder = useCancelProductionOrder(params.id);
   const startOrder = useStartProductionOrder(params.id);
   const advanceStage = useAdvanceProductionOrderStage(params.id);
+  const canManage = useHasPermission('production-orders:manage');
 
   const [workerRows, setWorkerRows] = useState<EditableWorkerRow[]>([]);
   const workersHydrated = useRef(false);
@@ -277,7 +284,7 @@ export default function ProductionOrderDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <AssemblySpecPrint assemblyId={order.assemblyId} />
-          {order.status === 'PLANNED' && (
+          {order.status === 'PLANNED' && canManage && (
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="destructive" size="sm">
@@ -359,15 +366,17 @@ export default function ProductionOrderDetailPage() {
               ))}
             </div>
             {currentStageName && <p className="text-sm text-muted-foreground">{t('currentStage')}: {currentStageName}</p>}
-            <Button onClick={handleAdvance} loading={advanceStage.isPending}>
-              {isLastStage ? t('completeOrder') : t('advanceStage')}
-            </Button>
+            {canManage && (
+              <Button onClick={handleAdvance} loading={advanceStage.isPending}>
+                {isLastStage ? t('completeOrder') : t('advanceStage')}
+              </Button>
+            )}
             {advanceError && <p className="text-sm text-destructive">{advanceError}</p>}
           </CardContent>
         </Card>
       )}
 
-      {order.status === 'PLANNED' && (
+      {order.status === 'PLANNED' && canManage && (
         <>
           <Card>
             <CardHeader>

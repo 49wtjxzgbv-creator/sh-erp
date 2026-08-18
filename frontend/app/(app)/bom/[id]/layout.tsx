@@ -5,6 +5,7 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
 import { useAssembly, useDeleteAssembly } from '@/lib/hooks/use-bom';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -37,6 +38,7 @@ export default function AssemblyLayout({ children }: { children: React.ReactNode
 
   const { data: assembly } = useAssembly(params.id);
   const deleteAssembly = useDeleteAssembly();
+  const canWrite = useHasPermission('assemblies:write');
 
   const tabs = tabsFor(params.id);
 
@@ -49,28 +51,30 @@ export default function AssemblyLayout({ children }: { children: React.ReactNode
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{assembly?.name ?? '…'}</h1>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              <Trash2 className="mr-2 h-4 w-4" />
-              {tc('delete')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-              <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">{tc('cancel')}</Button>
-              </DialogClose>
-              <Button variant="destructive" loading={deleteAssembly.isPending} onClick={handleDelete}>
+        {canWrite && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                <Trash2 className="mr-2 h-4 w-4" />
                 {tc('delete')}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteAssembly.isPending} onClick={handleDelete}>
+                  {tc('delete')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/*

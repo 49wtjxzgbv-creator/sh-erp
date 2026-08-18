@@ -19,6 +19,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function WarehousesPage() {
   const t = useTranslations('inventory');
@@ -62,6 +63,7 @@ export default function WarehousesPage() {
   }
 
   return (
+    <RequirePermission permission="warehouses:manage" redirectTo="/inventory">
     <div className="max-w-2xl space-y-4">
       <Card>
         <CardHeader>
@@ -155,5 +157,6 @@ export default function WarehousesPage() {
       </Table>
       {rowError && <p className="text-sm text-destructive">{rowError}</p>}
     </div>
+    </RequirePermission>
   );
 }

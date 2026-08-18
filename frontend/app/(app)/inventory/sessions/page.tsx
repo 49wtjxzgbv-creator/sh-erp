@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function InventorySessionsPage() {
   const t = useTranslations('inventory');
@@ -48,6 +49,7 @@ export default function InventorySessionsPage() {
   }
 
   return (
+    <RequirePermission permission="inventory-sessions:manage" redirectTo="/inventory">
     <div className="space-y-4">
       <div className="flex justify-end">
         <Dialog open={open} onOpenChange={setOpen}>
@@ -110,5 +112,6 @@ export default function InventorySessionsPage() {
         </TableBody>
       </Table>
     </div>
+    </RequirePermission>
   );
 }

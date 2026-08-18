@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -91,12 +92,14 @@ export default function ProductionOrdersPage() {
           </SelectContent>
         </Select>
         <LearnThisButton courseId="production-orders" label="Навчитися працювати з виробництвом" />
-        <Button asChild>
-          <Link href="/production/new" data-tour="production-new-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newOrder')}
-          </Link>
-        </Button>
+        {useHasPermission('production-orders:manage') && (
+          <Button asChild>
+            <Link href="/production/new" data-tour="production-new-button">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newOrder')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <DataTable

@@ -18,6 +18,8 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 export default function QcChecklistPage() {
   const t = useTranslations('production');
@@ -26,6 +28,7 @@ export default function QcChecklistPage() {
   const { data: items, isLoading } = useQcChecklistItems();
   const createItem = useCreateQcChecklistItem();
   const deleteItem = useDeleteQcChecklistItem();
+  const canManage = useHasPermission('qc-checklist:manage');
 
   const [name, setName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
@@ -56,27 +59,30 @@ export default function QcChecklistPage() {
   }
 
   return (
+    <RequirePermission permission="qc:record" redirectTo="/production">
     <div className="max-w-2xl space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('newChecklistItem')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-wrap items-end gap-3" onSubmit={handleCreate}>
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground" htmlFor="itemName">
-                {t('checklistItemName')}
-              </label>
-              <Input id="itemName" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
-            </div>
-            <Button type="submit" loading={createItem.isPending}>
-              <Plus className="mr-2 h-4 w-4" />
-              {tc('create')}
-            </Button>
-          </form>
-          {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
-        </CardContent>
-      </Card>
+      {canManage && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('newChecklistItem')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-wrap items-end gap-3" onSubmit={handleCreate}>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground" htmlFor="itemName">
+                  {t('checklistItemName')}
+                </label>
+                <Input id="itemName" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
+              </div>
+              <Button type="submit" loading={createItem.isPending}>
+                <Plus className="mr-2 h-4 w-4" />
+                {tc('create')}
+              </Button>
+            </form>
+            {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+          </CardContent>
+        </Card>
+      )}
 
       <Table>
         <TableHeader>
@@ -103,26 +109,28 @@ export default function QcChecklistPage() {
               <TableRow key={item.id}>
                 <TableCell>{item.name}</TableCell>
                 <TableCell>
-                  <Dialog open={pendingDeleteId === item.id} onOpenChange={(o) => setPendingDeleteId(o ? item.id : null)}>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t('deleteChecklistItemConfirmTitle')}</DialogTitle>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button variant="outline">{tc('cancel')}</Button>
-                        </DialogClose>
-                        <Button variant="destructive" loading={deleteItem.isPending} onClick={() => handleDelete(item.id)}>
-                          {tc('delete')}
+                  {canManage && (
+                    <Dialog open={pendingDeleteId === item.id} onOpenChange={(o) => setPendingDeleteId(o ? item.id : null)}>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>{t('deleteChecklistItemConfirmTitle')}</DialogTitle>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">{tc('cancel')}</Button>
+                          </DialogClose>
+                          <Button variant="destructive" loading={deleteItem.isPending} onClick={() => handleDelete(item.id)}>
+                            {tc('delete')}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                 </TableCell>
               </TableRow>
             ))
@@ -131,5 +139,6 @@ export default function QcChecklistPage() {
       </Table>
       {rowError && <p className="text-sm text-destructive">{rowError}</p>}
     </div>
+    </RequirePermission>
   );
 }

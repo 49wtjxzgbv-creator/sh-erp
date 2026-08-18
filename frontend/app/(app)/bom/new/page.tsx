@@ -8,6 +8,7 @@ import { AssemblyForm } from '@/components/domain/bom/assembly-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { CreateAssemblyInput } from '@/lib/api-client/bom';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function NewAssemblyPage() {
   const t = useTranslations('bom');
@@ -34,15 +35,17 @@ export default function NewAssemblyPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
-      <h1 className="text-xl font-semibold">{t('newAssembly')}</h1>
-      <AssemblyForm
-        onSubmit={handleSubmit}
-        submitting={createAssembly.isPending}
-        submitError={error}
-        pendingPhoto={pendingPhoto}
-        onPendingPhotoChange={setPendingPhoto}
-      />
-    </div>
+    <RequirePermission permission="assemblies:write" redirectTo="/bom">
+      <div className="max-w-2xl space-y-4">
+        <h1 className="text-xl font-semibold">{t('newAssembly')}</h1>
+        <AssemblyForm
+          onSubmit={handleSubmit}
+          submitting={createAssembly.isPending}
+          submitError={error}
+          pendingPhoto={pendingPhoto}
+          onPendingPhotoChange={setPendingPhoto}
+        />
+      </div>
+    </RequirePermission>
   );
 }

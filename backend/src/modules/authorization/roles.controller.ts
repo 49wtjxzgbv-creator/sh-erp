@@ -17,6 +17,12 @@ export class RolesController {
     return this.rolesService.list(user);
   }
 
+  @Get('me/permissions')
+  @ApiOperation({ summary: 'The current user\'s own effective permission keys — no special permission required, just authentication.' })
+  async myPermissions(@CurrentUser() user: RequestUser) {
+    return this.rolesService.myPermissions(user);
+  }
+
   @Get('permissions-catalogue')
   @RequirePermissions('roles:manage')
   @ApiOperation({ summary: 'The fixed, global permission catalogue — every key a role can be granted.' })

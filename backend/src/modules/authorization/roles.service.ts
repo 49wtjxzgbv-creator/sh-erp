@@ -73,6 +73,24 @@ export class RolesService {
     return roles.map((r) => this.toRoleDto(r));
   }
 
+  /**
+   * The caller's own effective permission keys — deliberately unguarded by
+   * `@RequirePermissions` (same self-service posture as `PATCH
+   * users/me/password`): listing every role in the company requires
+   * `roles:manage`, which a restricted role (e.g. Viewer) never has, so
+   * without this endpoint a low-privilege user would have no way to learn
+   * their own grants at all. The frontend uses this to hide (not just
+   * disable) actions a role can't perform, instead of relying solely on the
+   * backend's 403 after the fact.
+   */
+  async myPermissions(user: RequestUser) {
+    const role = await this.prisma.tenant.role.findUnique({
+      where: { id: user.roleId },
+      include: { permissions: { include: { permission: true } } },
+    });
+    return { permissionKeys: role ? role.permissions.map((p) => p.permission.key) : [] };
+  }
+
   async create(user: RequestUser, dto: CreateRoleDto) {
     const permissionIds = await this.resolvePermissionIds(dto.permissionKeys);
 

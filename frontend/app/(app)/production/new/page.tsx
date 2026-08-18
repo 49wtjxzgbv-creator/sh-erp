@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function NewProductionOrderPage() {
   const t = useTranslations('production');
@@ -52,6 +53,7 @@ export default function NewProductionOrderPage() {
   }
 
   return (
+    <RequirePermission permission="production-orders:manage" redirectTo="/production">
     <div className="max-w-2xl space-y-4">
       <h1 className="text-xl font-semibold">{t('newOrder')}</h1>
       <Card>
@@ -96,5 +98,6 @@ export default function NewProductionOrderPage() {
         {tc('create')}
       </Button>
     </div>
+    </RequirePermission>
   );
 }

@@ -18,6 +18,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Avatar } from '@/components/ui/avatar';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import {
   Dialog,
   DialogTrigger,
@@ -46,6 +47,9 @@ export default function PurchaseOrderDetailPage() {
   const { data: warehouses } = useWarehouses();
   const receive = useReceivePurchaseOrder(params.id);
   const deleteOrder = useDeletePurchaseOrder();
+  const canManage = useHasPermission('purchase-orders:manage');
+  const canDelete = useHasPermission('purchase-orders:delete');
+  const canReadSuppliers = useHasPermission('suppliers:read');
 
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
   const [receivePrice, setReceivePrice] = useState<Record<string, string>>({});
@@ -58,7 +62,7 @@ export default function PurchaseOrderDetailPage() {
     [order?.items],
   );
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
-  const { data: supplierProducts } = useSupplierLinkedProducts(order?.supplierId ?? undefined);
+  const { data: supplierProducts } = useSupplierLinkedProducts(canReadSuppliers ? order?.supplierId ?? undefined : undefined);
   const supplierPriceByProduct = useMemo(
     () => new Map((supplierProducts ?? []).map((sp) => [sp.productId, sp.price])),
     [supplierProducts],
@@ -117,27 +121,29 @@ export default function PurchaseOrderDetailPage() {
           <h2 className="text-lg font-semibold">{order.supplierNameSnapshot}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
         </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              {t('deleteOrderPermanently')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
-              <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">{tc('cancel')}</Button>
-              </DialogClose>
-              <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
-                {tc('delete')}
+        {canDelete && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                {t('deleteOrderPermanently')}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
+                  {tc('delete')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>
@@ -182,8 +188,8 @@ export default function PurchaseOrderDetailPage() {
                 <TableHead numeric>{t('expectedPrice')}</TableHead>
                 <TableHead numeric>{t('actualPrice')}</TableHead>
                 <TableHead numeric>{t('supplierConfirmedPrice')}</TableHead>
-                {!isDelivered && <TableHead className="w-28">{t('receiveNow')}</TableHead>}
-                {!isDelivered && <TableHead className="w-28">{t('actualPrice')}</TableHead>}
+                {!isDelivered && canManage && <TableHead className="w-28">{t('receiveNow')}</TableHead>}
+                {!isDelivered && canManage && <TableHead className="w-28">{t('actualPrice')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,7 +211,7 @@ export default function PurchaseOrderDetailPage() {
                   <TableCell numeric>{item.expectedPrice != null ? formatEur(Number(item.expectedPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
-                  {!isDelivered && (
+                  {!isDelivered && canManage && (
                     <TableCell>
                       <Input
                         type="number"
@@ -216,7 +222,7 @@ export default function PurchaseOrderDetailPage() {
                       />
                     </TableCell>
                   )}
-                  {!isDelivered && (
+                  {!isDelivered && canManage && (
                     <TableCell>
                       <Input
                         type="number"
@@ -234,7 +240,7 @@ export default function PurchaseOrderDetailPage() {
         </CardContent>
       </Card>
 
-      {!isDelivered && (
+      {!isDelivered && canManage && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('receiveDelivery')}</CardTitle>

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function AdminRolesPage() {
   const t = useTranslations('admin');
@@ -46,6 +47,7 @@ export default function AdminRolesPage() {
   }
 
   return (
+    <RequirePermission permission="roles:manage" redirectTo="/dashboard">
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{t('rolesDescription')}</p>
@@ -99,5 +101,6 @@ export default function AdminRolesPage() {
 
       <RoleFormDialog open={formOpen} onOpenChange={setFormOpen} role={editingRole} />
     </div>
+    </RequirePermission>
   );
 }

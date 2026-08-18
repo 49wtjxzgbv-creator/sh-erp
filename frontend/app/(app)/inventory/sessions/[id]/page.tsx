@@ -27,6 +27,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function InventorySessionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -76,6 +77,7 @@ export default function InventorySessionDetailPage() {
   }
 
   return (
+    <RequirePermission permission="inventory-sessions:manage" redirectTo="/inventory">
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
@@ -184,5 +186,6 @@ export default function InventorySessionDetailPage() {
         </TableBody>
       </Table>
     </div>
+    </RequirePermission>
   );
 }

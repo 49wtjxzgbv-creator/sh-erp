@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 export default function AdminUsersPage() {
   const t = useTranslations('admin');
@@ -23,6 +25,7 @@ export default function AdminUsersPage() {
   const { data: roles } = useRoles();
   const updateRole = useUpdateUserRole();
   const deactivate = useDeactivateUser();
+  const canInvite = useHasPermission('users:invite');
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,10 +52,11 @@ export default function AdminUsersPage() {
   }
 
   return (
+    <RequirePermission permission="users:manage" redirectTo="/dashboard">
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{t('usersDescription')}</p>
-        <Button onClick={() => setInviteOpen(true)}>{t('inviteUser')}</Button>
+        {canInvite && <Button onClick={() => setInviteOpen(true)}>{t('inviteUser')}</Button>}
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -117,7 +121,8 @@ export default function AdminUsersPage() {
         </Table>
       )}
 
-      <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      {canInvite && <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />}
     </div>
+    </RequirePermission>
   );
 }

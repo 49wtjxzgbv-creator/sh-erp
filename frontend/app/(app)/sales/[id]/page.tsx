@@ -41,6 +41,7 @@ import {
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 /** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
 function AssemblyCell({ assemblyId }: { assemblyId: string }) {
@@ -281,6 +282,8 @@ export default function CustomerOrderDetailPage() {
   const deleteOrder = useDeleteCustomerOrder();
   const giveItem = useGiveItemToProduction(params.id);
   const giveAll = useGiveAllToProduction(params.id);
+  const canManage = useHasPermission('customer-orders:manage');
+  const canDelete = useHasPermission('customer-orders:delete');
 
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -348,14 +351,18 @@ export default function CustomerOrderDetailPage() {
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`orderStatus${order.status}`)}</Badge>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-            {t('editOrder')}
-          </Button>
+          {canManage && (
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+              {t('editOrder')}
+            </Button>
+          )}
           <CustomerOrderPrint order={order} />
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/sales/${order.id}/shortage`}>{t('shortagePreview')}</Link>
-          </Button>
-          {canComplete && (
+          {canManage && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/sales/${order.id}/shortage`}>{t('shortagePreview')}</Link>
+            </Button>
+          )}
+          {canComplete && canManage && (
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -377,7 +384,7 @@ export default function CustomerOrderDetailPage() {
               </DialogContent>
             </Dialog>
           )}
-          {canCancel && (
+          {canCancel && canManage && (
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="destructive" size="sm">
@@ -399,27 +406,29 @@ export default function CustomerOrderDetailPage() {
               </DialogContent>
             </Dialog>
           )}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="destructive" size="sm">
-                {t('deleteOrderPermanently')}
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
-                <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">{tc('cancel')}</Button>
-                </DialogClose>
-                <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
-                  {tc('delete')}
+          {canDelete && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  {t('deleteOrderPermanently')}
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
+                  <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">{tc('cancel')}</Button>
+                  </DialogClose>
+                  <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
+                    {tc('delete')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -499,7 +508,7 @@ export default function CustomerOrderDetailPage() {
           <CardTitle className="text-base">{t('items')}</CardTitle>
           <div className="flex items-center gap-6">
             {order.items && order.items.length > 0 && <OrderPriceTotals order={order} items={order.items} />}
-            {hasUngivenLines && (
+            {hasUngivenLines && canManage && (
               <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
                 {t('giveAllToProduction')}
               </Button>
@@ -530,7 +539,7 @@ export default function CustomerOrderDetailPage() {
                     <ActualPriceCell batchIds={batchIds} />
                     <ItemBatchesCell item={item} />
                     <TableCell>
-                      {remaining > 0 && (
+                      {remaining > 0 && canManage && (
                         <GiveToProductionDialog itemId={item.id} remaining={remaining} onSubmit={handleGiveItem} pending={giveItem.isPending} />
                       )}
                     </TableCell>

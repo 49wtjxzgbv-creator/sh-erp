@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 /**
  * Dense inline-editable grid view of Products — ported from legacy's
@@ -205,6 +206,7 @@ export default function ProductGridPage() {
   if (isLoading) return <LoadingBlock />;
 
   return (
+    <RequirePermission permission="products:write" redirectTo="/catalog">
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -435,5 +437,6 @@ export default function ProductGridPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </RequirePermission>
   );
 }

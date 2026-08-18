@@ -12,6 +12,7 @@ import { DataTable } from '@/components/domain/data-table/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -68,12 +69,14 @@ export default function PurchaseOrdersPage() {
             <SelectItem value="DELIVERED">{t('poStatusDELIVERED')}</SelectItem>
           </SelectContent>
         </Select>
-        <Button asChild>
-          <Link href="/procurement/new" data-tour="procurement-new-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newPurchaseOrder')}
-          </Link>
-        </Button>
+        {useHasPermission('purchase-orders:manage') && (
+          <Button asChild>
+            <Link href="/procurement/new" data-tour="procurement-new-button">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newPurchaseOrder')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <DataTable

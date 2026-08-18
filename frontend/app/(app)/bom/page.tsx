@@ -9,6 +9,7 @@ import { Plus } from 'lucide-react';
 import { useAssemblies, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { formatEur } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
 import { DataTable } from '@/components/domain/data-table/data-table';
@@ -149,12 +150,14 @@ export default function BomPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('title')}</h1>
-        <Button asChild>
-          <Link href="/bom/new" data-tour="bom-new-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newAssembly')}
-          </Link>
-        </Button>
+        {useHasPermission('assemblies:write') && (
+          <Button asChild>
+            <Link href="/bom/new" data-tour="bom-new-button">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newAssembly')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMobileNav } from '@/components/domain/shell/mobile-nav-context';
+import { useMyPermissions } from '@/lib/hooks/use-roles';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 /**
@@ -44,13 +45,19 @@ export const NAV_ITEMS = [
   { href: '/production', labelKey: 'production', icon: Factory },
   { href: '/procurement', labelKey: 'procurement', icon: Truck },
   { href: '/sales', labelKey: 'sales', icon: ShoppingCart },
-  { href: '/hr', labelKey: 'hr', icon: Users },
+  // `employees:manage`/`payroll:manage` gate EVERY route in this module,
+  // including plain GET — there is no read-only view a restricted role
+  // could land on, so hide the entry point outright rather than let it
+  // 403 immediately.
+  { href: '/hr', labelKey: 'hr', icon: Users, permission: 'employees:manage' },
   { href: '/reports', labelKey: 'reports', icon: BarChart3 },
   { href: '/ai', labelKey: 'ai', icon: Sparkles },
   { href: '/notifications', labelKey: 'notifications', icon: Bell },
   { href: '/training', labelKey: 'training', icon: GraduationCap },
-  { href: '/billing', labelKey: 'billing', icon: CreditCard },
-  { href: '/admin', labelKey: 'admin', icon: ShieldCheck },
+  { href: '/billing', labelKey: 'billing', icon: CreditCard, permission: 'company:billing' },
+  // Any one of these unlocks at least one admin tab (Users / Roles / Audit
+  // log) — OR, not AND, unlike every other gate in this app.
+  { href: '/admin', labelKey: 'admin', icon: ShieldCheck, permissionAnyOf: ['users:invite', 'users:manage', 'roles:manage', 'audit:read'] },
   { href: '/settings', labelKey: 'settings', icon: Settings },
 ] as const;
 
@@ -88,9 +95,20 @@ function NavLink({ href, labelKey, icon: Icon, collapsed }: (typeof NAV_ITEMS)[n
 }
 
 function SidebarNav({ collapsed }: { collapsed: boolean }) {
+  const { data: myPermissions } = useMyPermissions();
+  const granted = new Set(myPermissions?.permissionKeys ?? []);
+  // While permissions haven't loaded yet, show every item rather than
+  // flashing a truncated nav — `visible` only ever removes items once we
+  // positively know they're ungranted, never before that's known.
+  const visible = NAV_ITEMS.filter((item) => {
+    if (!myPermissions) return true;
+    if ('permission' in item) return granted.has(item.permission);
+    if ('permissionAnyOf' in item) return item.permissionAnyOf.some((k) => granted.has(k));
+    return true;
+  });
   return (
     <nav data-tour="sidebar-nav" className="flex-1 space-y-0.5 overflow-y-auto p-2">
-      {NAV_ITEMS.map((item) => (
+      {visible.map((item) => (
         <NavLink key={item.href} {...item} collapsed={collapsed} />
       ))}
     </nav>

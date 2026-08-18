@@ -18,6 +18,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 /**
  * No drag-and-drop library is in this project's dependency set (see
@@ -34,6 +35,7 @@ export default function ProductionStagesPage() {
   const createStage = useCreateProductionStage();
   const reorderStages = useReorderProductionStages();
   const deleteStage = useDeleteProductionStage();
+  const canManage = useHasPermission('production-stages:manage');
 
   const [name, setName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
@@ -79,26 +81,28 @@ export default function ProductionStagesPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('newStage')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-wrap items-end gap-3" onSubmit={handleCreate}>
-            <div className="space-y-1.5">
-              <label className="text-sm text-muted-foreground" htmlFor="stageName">
-                {t('stageName')}
-              </label>
-              <Input id="stageName" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
-            </div>
-            <Button type="submit" loading={createStage.isPending}>
-              <Plus className="mr-2 h-4 w-4" />
-              {tc('create')}
-            </Button>
-          </form>
-          {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
-        </CardContent>
-      </Card>
+      {canManage && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('newStage')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-wrap items-end gap-3" onSubmit={handleCreate}>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground" htmlFor="stageName">
+                  {t('stageName')}
+                </label>
+                <Input id="stageName" value={name} onChange={(e) => setName(e.target.value)} className="max-w-xs" />
+              </div>
+              <Button type="submit" loading={createStage.isPending}>
+                <Plus className="mr-2 h-4 w-4" />
+                {tc('create')}
+              </Button>
+            </form>
+            {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+          </CardContent>
+        </Card>
+      )}
 
       <Table data-tour="production-stages-list">
         <TableHeader>
@@ -126,36 +130,40 @@ export default function ProductionStagesPage() {
               <TableRow key={stage.id}>
                 <TableCell>{stage.name}</TableCell>
                 <TableCell>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" disabled={idx === 0} onClick={() => handleMove(idx, -1)}>
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" disabled={idx === stages.length - 1} onClick={() => handleMove(idx, 1)}>
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {canManage && (
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" disabled={idx === 0} onClick={() => handleMove(idx, -1)}>
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" disabled={idx === stages.length - 1} onClick={() => handleMove(idx, 1)}>
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <Dialog open={pendingDeleteId === stage.id} onOpenChange={(o) => setPendingDeleteId(o ? stage.id : null)}>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{t('deleteStageConfirmTitle')}</DialogTitle>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button variant="outline">{tc('cancel')}</Button>
-                        </DialogClose>
-                        <Button variant="destructive" loading={deleteStage.isPending} onClick={() => handleDelete(stage.id)}>
-                          {tc('delete')}
+                  {canManage && (
+                    <Dialog open={pendingDeleteId === stage.id} onOpenChange={(o) => setPendingDeleteId(o ? stage.id : null)}>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>{t('deleteStageConfirmTitle')}</DialogTitle>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">{tc('cancel')}</Button>
+                          </DialogClose>
+                          <Button variant="destructive" loading={deleteStage.isPending} onClick={() => handleDelete(stage.id)}>
+                            {tc('delete')}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                 </TableCell>
               </TableRow>
             ))

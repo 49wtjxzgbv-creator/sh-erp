@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 /**
  * Supplier invoice photo/scan/PDF → structured line items, fuzzy-matched
@@ -27,6 +28,7 @@ export default function AiInvoicePage() {
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const recognize = useRecognizeInvoice();
+  const canCreateProduct = useHasPermission('products:write');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [preview, setPreview] = useState<{ base64: string; mimeType: string; name: string; dataUrl: string } | null>(null);
@@ -131,7 +133,7 @@ export default function AiInvoicePage() {
                 </TableCell>
                 <TableCell>{line.matched ? `${line.article} — ${line.matchedName}` : '—'}</TableCell>
                 <TableCell>
-                  {!line.matched && (
+                  {!line.matched && canCreateProduct && (
                     <Button variant="outline" size="sm" onClick={() => setCreateLineIndex(i)}>
                       {t('createProduct')}
                     </Button>

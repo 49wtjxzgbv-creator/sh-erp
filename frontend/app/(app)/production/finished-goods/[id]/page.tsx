@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
   IN_STOCK: 'success',
@@ -38,6 +39,7 @@ export default function FinishedGoodDetailPage() {
   const { data: checklistItems } = useQcChecklistItems();
   const { data: qcChecks } = useQcChecksForFinishedGood(params.id);
   const recordCheck = useRecordQcCheck();
+  const canRecordQc = useHasPermission('qc:record');
 
   const [passedMap, setPassedMap] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<QcResult>('ACCEPTED');
@@ -121,6 +123,7 @@ export default function FinishedGoodDetailPage() {
         </CardContent>
       </Card>
 
+      {canRecordQc && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('recordQcCheck')}</CardTitle>
@@ -164,6 +167,7 @@ export default function FinishedGoodDetailPage() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       {qcChecks && qcChecks.length > 0 && (
         <Card>

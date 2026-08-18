@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { HelpHint } from '@/components/ui/help-hint';
@@ -144,6 +145,7 @@ export default function NewCustomerOrderPage() {
   }
 
   return (
+    <RequirePermission permission="customer-orders:manage" redirectTo="/sales">
     <div className="max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('newOrder')}</h1>
       <Card>
@@ -316,5 +318,6 @@ export default function NewCustomerOrderPage() {
         {tc('create')}
       </Button>
     </div>
+    </RequirePermission>
   );
 }

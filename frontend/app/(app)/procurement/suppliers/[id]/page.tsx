@@ -36,6 +36,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 /** ADR-0011's onboarding card — mirrors app/super-admin/users/page.tsx's ResetPasswordDialog UX: show the generated temp password once, with a copy button, since it can't be retrieved again after this response. */
 function SupplierPortalCard({ supplierId }: { supplierId: string }) {
@@ -229,6 +230,7 @@ export default function SupplierDetailPage() {
   const { data: supplier, isLoading } = useSupplier(params.id);
   const updateSupplier = useUpdateSupplier(params.id);
   const deleteSupplier = useDeleteSupplier();
+  const canWrite = useHasPermission('suppliers:write');
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(values: CreateSupplierInput) {
@@ -253,32 +255,34 @@ export default function SupplierDetailPage() {
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{supplier.name}</h1>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              <Trash2 className="mr-2 h-4 w-4" />
-              {tc('delete')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('deleteSupplierConfirmTitle')}</DialogTitle>
-              <DialogDescription>{t('deleteSupplierConfirmDescription')}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">{tc('cancel')}</Button>
-              </DialogClose>
-              <Button variant="destructive" loading={deleteSupplier.isPending} onClick={handleDelete}>
+        {canWrite && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                <Trash2 className="mr-2 h-4 w-4" />
                 {tc('delete')}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteSupplierConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteSupplierConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteSupplier.isPending} onClick={handleDelete}>
+                  {tc('delete')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
-      <SupplierForm supplier={supplier} onSubmit={handleSubmit} submitting={updateSupplier.isPending} submitError={error} />
+      <SupplierForm supplier={supplier} onSubmit={handleSubmit} submitting={updateSupplier.isPending} submitError={error} readOnly={!canWrite} />
       <SupplierLinkedEntitiesCard supplierId={params.id} />
-      <SupplierPortalCard supplierId={params.id} />
+      {canWrite && <SupplierPortalCard supplierId={params.id} />}
     </div>
   );
 }

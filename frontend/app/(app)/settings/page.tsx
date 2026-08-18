@@ -20,18 +20,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { FileUploadField } from '@/components/domain/files/file-upload-field';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const tc = useTranslations('common');
   const companyId = useSessionStore((s) => s.companyId);
+  const canManageSettings = useHasPermission('settings:manage');
+  const canManageImport = useHasPermission('legacy-import:manage');
 
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-xl font-semibold">{t('title')}</h1>
-      <GeneralSettingsCard t={t} tc={tc} />
-      {companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
-      <LegacyImportCard t={t} />
+      {canManageSettings && <GeneralSettingsCard t={t} tc={tc} />}
+      {canManageSettings && companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
+      {canManageImport && <LegacyImportCard t={t} />}
       <ChangePasswordCard t={t} tc={tc} />
     </div>
   );

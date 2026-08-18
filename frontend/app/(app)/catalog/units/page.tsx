@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 export default function CompanyUnitsPage() {
   const t = useTranslations('catalog');
@@ -44,6 +45,7 @@ export default function CompanyUnitsPage() {
   }
 
   return (
+    <RequirePermission permission="units:manage" redirectTo="/catalog">
     <div className="max-w-xl space-y-4">
       <h1 className="text-xl font-semibold">{t('units')}</h1>
 
@@ -109,5 +111,6 @@ export default function CompanyUnitsPage() {
       </Table>
       {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
     </div>
+    </RequirePermission>
   );
 }

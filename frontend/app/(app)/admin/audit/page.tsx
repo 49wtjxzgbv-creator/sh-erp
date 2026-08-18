@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 const PAGE_SIZE = 50;
 
@@ -33,6 +34,7 @@ export default function AdminAuditPage() {
   });
 
   return (
+    <RequirePermission permission="audit:read" redirectTo="/dashboard">
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1.5">
@@ -109,5 +111,6 @@ export default function AdminAuditPage() {
         </>
       )}
     </div>
+    </RequirePermission>
   );
 }

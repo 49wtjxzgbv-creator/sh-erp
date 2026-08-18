@@ -9,6 +9,7 @@ import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-
 import { useProducts, useExportProducts, useDeleteProducts, useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { SuppliersCell } from '@/components/domain/procurement/suppliers-cell';
 import type { Product } from '@/lib/api-client/catalog';
 import { DataTable } from '@/components/domain/data-table/data-table';
@@ -128,6 +129,8 @@ export default function CatalogPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const exportMutation = useExportProducts();
   const deleteMutation = useDeleteProducts();
+  const canWrite = useHasPermission('products:write');
+  const canManageUnits = useHasPermission('units:manage');
   const { data: suppliers } = useSuppliers({ limit: 200 });
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(loadHiddenColumns);
 
@@ -282,7 +285,7 @@ export default function CatalogPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('title')}</h1>
         <div className="flex flex-wrap gap-2">
-          {selectedIds.size > 0 && (
+          {canWrite && selectedIds.size > 0 && (
             <Button variant="destructive" onClick={() => setDeleteConfirmOpen(true)}>
               <Trash2 className="mr-2 h-4 w-4" />
               {t('deleteSelected', { count: selectedIds.size })}
@@ -292,36 +295,44 @@ export default function CatalogPage() {
             <Download className="mr-2 h-4 w-4" />
             {t('exportProducts')}
           </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t('importProducts')}
-          </Button>
+          {canWrite && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              {t('importProducts')}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setLabelsOpen(true)}>
             <Tag className="mr-2 h-4 w-4" />
             {t('printLabels')}
           </Button>
-          <Button variant="outline" asChild>
-            <Link href="/catalog/grid">
-              <Grid3x3 className="mr-2 h-4 w-4" />
-              {t('gridViewTitle')}
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/catalog/units">
-              <Settings2 className="mr-2 h-4 w-4" />
-              {t('units')}
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/catalog/new" data-tour="catalog-new-button">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('newProduct')}
-            </Link>
-          </Button>
+          {canWrite && (
+            <Button variant="outline" asChild>
+              <Link href="/catalog/grid">
+                <Grid3x3 className="mr-2 h-4 w-4" />
+                {t('gridViewTitle')}
+              </Link>
+            </Button>
+          )}
+          {canManageUnits && (
+            <Button variant="outline" asChild>
+              <Link href="/catalog/units">
+                <Settings2 className="mr-2 h-4 w-4" />
+                {t('units')}
+              </Link>
+            </Button>
+          )}
+          {canWrite && (
+            <Button asChild>
+              <Link href="/catalog/new" data-tour="catalog-new-button">
+                <Plus className="mr-2 h-4 w-4" />
+                {t('newProduct')}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      <ImportProductsDialog open={importOpen} onOpenChange={setImportOpen} />
+      {canWrite && <ImportProductsDialog open={importOpen} onOpenChange={setImportOpen} />}
       <ProductLabelsDialog open={labelsOpen} onOpenChange={setLabelsOpen} />
 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>

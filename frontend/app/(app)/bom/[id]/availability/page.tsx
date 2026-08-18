@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCheckAvailability, useProduceAssembly } from '@/lib/hooks/use-bom';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -52,6 +53,7 @@ export default function AssemblyAvailabilityPage() {
   const { data: warehouses } = useWarehouses();
   const checkAvailability = useCheckAvailability();
   const produceAssembly = useProduceAssembly(params.id);
+  const canProduce = useHasPermission('assemblies:write');
 
   const [qty, setQty] = useState('');
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
@@ -151,7 +153,7 @@ export default function AssemblyAvailabilityPage() {
                   </TableBody>
                 </Table>
               )}
-              {result.sufficient && (
+              {result.sufficient && canProduce && (
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button>{t('produce')}</Button>

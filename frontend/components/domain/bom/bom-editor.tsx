@@ -40,9 +40,11 @@ function newRowKey() {
 
 export interface BomEditorProps {
   assemblyId: string;
+  /** View-only for a role with `assemblies:read` but not `assemblies:write` — disables every field via a `<fieldset>` wrap and hides Add line/Save. */
+  readOnly?: boolean;
 }
 
-export function BomEditor({ assemblyId }: BomEditorProps) {
+export function BomEditor({ assemblyId, readOnly }: BomEditorProps) {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
@@ -123,6 +125,7 @@ export function BomEditor({ assemblyId }: BomEditorProps) {
 
   return (
     <div className="space-y-3">
+      <fieldset disabled={readOnly} className="contents">
       <Table>
         <TableHeader>
           <TableRow>
@@ -220,15 +223,18 @@ export function BomEditor({ assemblyId }: BomEditorProps) {
         <Plus className="mr-2 h-4 w-4" />
         {t('addLine')}
       </Button>
+      </fieldset>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {saved && !error && <p className="text-sm text-success">{t('bomSaved')}</p>}
 
-      <div>
-        <Button onClick={handleSave} loading={setComponents.isPending}>
-          {t('saveBom')}
-        </Button>
-      </div>
+      {!readOnly && (
+        <div>
+          <Button onClick={handleSave} loading={setComponents.isPending}>
+            {t('saveBom')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -103,12 +104,14 @@ export default function CustomerOrdersPage() {
           </Select>
         </div>
         <LearnThisButton courseId="sales-order" label="Як створити замовлення" />
-        <Button asChild>
-          <Link href="/sales/new" data-tour="sales-new-button">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newOrder')}
-          </Link>
-        </Button>
+        {useHasPermission('customer-orders:manage') && (
+          <Button asChild>
+            <Link href="/sales/new" data-tour="sales-new-button">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newOrder')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <DataTable

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 /**
  * Bring-your-own Gemini API key + monthly usage quota
@@ -70,6 +71,7 @@ export default function AiSettingsPage() {
   }
 
   return (
+    <RequirePermission permission="ai:settings-manage" redirectTo="/ai">
     <div className="max-w-lg">
       <Card>
         <CardHeader>
@@ -123,5 +125,6 @@ export default function AiSettingsPage() {
         </CardContent>
       </Card>
     </div>
+    </RequirePermission>
   );
 }

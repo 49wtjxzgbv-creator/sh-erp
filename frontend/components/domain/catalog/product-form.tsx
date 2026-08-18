@@ -112,6 +112,8 @@ export interface ProductFormProps {
   onPendingPhotoChange?: (file: File | null) => void;
   /** Create-mode only: seeds fields (e.g. name/initialQty from a recognized invoice line) without a full `Product`. */
   initialValues?: Partial<ProductFormValues>;
+  /** View-only: disables every field (a `<fieldset>` wrap, not per-input) and hides the Save button — for a role with `products:read` but not `products:write`. */
+  readOnly?: boolean;
 }
 
 export function ProductForm({
@@ -122,6 +124,7 @@ export function ProductForm({
   pendingPhoto,
   onPendingPhotoChange,
   initialValues,
+  readOnly,
 }: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
@@ -205,6 +208,7 @@ export function ProductForm({
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit(submit, scrollToFirstError)} noValidate>
+      <fieldset disabled={readOnly} className="contents">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('photo')}</CardTitle>
@@ -445,13 +449,16 @@ export function ProductForm({
           </div>
         </CardContent>
       </Card>
+      </fieldset>
 
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-      <div className="flex justify-end gap-2">
-        <Button type="submit" loading={submitting} data-tour="catalog-form-save">
-          {tc('save')}
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end gap-2">
+          <Button type="submit" loading={submitting} data-tour="catalog-form-save">
+            {tc('save')}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

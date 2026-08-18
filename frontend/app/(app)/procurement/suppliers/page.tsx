@@ -11,6 +11,7 @@ import type { Supplier } from '@/lib/api-client/procurement';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -44,12 +45,14 @@ export default function SuppliersPage() {
           }}
           className="max-w-sm"
         />
-        <Button asChild>
-          <Link href="/procurement/suppliers/new">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newSupplier')}
-          </Link>
-        </Button>
+        {useHasPermission('suppliers:write') && (
+          <Button asChild>
+            <Link href="/procurement/suppliers/new">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newSupplier')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <DataTable

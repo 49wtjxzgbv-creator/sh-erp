@@ -5,6 +5,7 @@ import { useWarehouseValuation } from '@/lib/hooks/use-reports';
 import { formatEur } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 const fmt = formatEur;
 
@@ -15,6 +16,7 @@ export default function WarehouseValuationPage() {
   const { data, isLoading } = useWarehouseValuation();
 
   return (
+    <RequirePermission permission="reports:valuation" redirectTo="/reports">
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6">
@@ -60,5 +62,6 @@ export default function WarehouseValuationPage() {
         </CardContent>
       </Card>
     </div>
+    </RequirePermission>
   );
 }
