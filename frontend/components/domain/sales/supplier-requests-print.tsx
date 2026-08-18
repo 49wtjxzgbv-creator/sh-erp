@@ -77,8 +77,15 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   const columns: PrintColumnOption[] = [
     { id: 'description', label: t('description') },
     { id: 'qtyToOrder', label: t('qtyToOrder') },
+    { id: 'unitPrice', label: t('unitPrice') },
     { id: 'price', label: t('expectedPrice') },
   ];
+
+  function groupTotal(group: SupplierRequestGroupForPrint): number {
+    return group.lines
+      .filter((l) => l.qty > 0 && l.price != null)
+      .reduce((sum, l) => sum + (l.price as number) * l.qty, 0);
+  }
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
   return (
@@ -113,6 +120,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
+                  {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
                   {printOptions.isColumnVisible('price') && <th>{t('expectedPrice')}</th>}
                 </tr>
               </thead>
@@ -129,10 +137,32 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                       )}
                       {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
-                      {printOptions.isColumnVisible('price') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
+                      {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
+                      {printOptions.isColumnVisible('price') && (
+                        <td>{line.price != null ? formatEur(line.price * line.qty) : '—'}</td>
+                      )}
                     </tr>
                   ))}
               </tbody>
+              {printOptions.isColumnVisible('price') && (
+                <tfoot>
+                  <tr>
+                    <td
+                      colSpan={
+                        1 +
+                        (printOptions.includePhotos ? 1 : 0) +
+                        (printOptions.isColumnVisible('description') ? 1 : 0) +
+                        (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
+                        (printOptions.isColumnVisible('unitPrice') ? 1 : 0)
+                      }
+                      style={{ textAlign: 'right', fontWeight: 600 }}
+                    >
+                      {tp('supplierRequestTotal')}
+                    </td>
+                    <td style={{ fontWeight: 600 }}>{formatEur(groupTotal(group))}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         ))}

@@ -573,6 +573,7 @@
     "chooseSupplier": "Choose supplier",
     "resolveSupplierChoiceFirst": "First choose a supplier for each line above — it has more than one supplier linked.",
     "photo": "Photo",
+    "unitPrice": "Unit price",
     "expectedPrice": "Expected price"
   },
   "hr": {
@@ -836,6 +837,7 @@
     "printPurchaseRequest": "Print supplier requests",
     "supplierRequestsTitle": "Supplier purchase requests",
     "requestTo": "Request to",
+    "supplierRequestTotal": "Total",
     "printLabels": "Print labels",
     "labelsTitle": "Product labels",
     "printOptionsTitle": "Print options",

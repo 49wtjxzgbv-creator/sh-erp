@@ -43,6 +43,13 @@ function lineId(line: { productId?: string; subAssemblyId?: string; description:
   return line.productId ?? line.subAssemblyId ?? line.description;
 }
 
+/** Sum of price × qty across a group's lines, skipping lines with no known price rather than treating them as zero. */
+function groupTotal(group: EditableGroup): number {
+  return group.lines
+    .filter((l) => l.price != null)
+    .reduce((sum, l) => sum + (l.price as number) * l.qty, 0);
+}
+
 function parseQtyParam(raw: string): Map<string, number> {
   const map = new Map<string, number>();
   for (const pair of raw.split(',')) {
@@ -67,6 +74,7 @@ function parseQtyParam(raw: string): Map<string, number> {
 function ShortagePreviewPageInner() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
+  const tp = useTranslations('print');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const searchParams = useSearchParams();
@@ -322,6 +330,7 @@ function ShortagePreviewPageInner() {
                   <TableHead>{t('description')}</TableHead>
                   <TableHead>{t('neededQty')}</TableHead>
                   <TableHead>{t('currentStock')}</TableHead>
+                  <TableHead>{t('unitPrice')}</TableHead>
                   <TableHead>{t('expectedPrice')}</TableHead>
                   <TableHead className="w-32">{t('qtyToOrder')}</TableHead>
                 </TableRow>
@@ -336,6 +345,7 @@ function ShortagePreviewPageInner() {
                     <TableCell>{line.neededQty}</TableCell>
                     <TableCell>{line.currentStock}</TableCell>
                     <TableCell>{line.price != null ? formatEur(line.price) : '—'}</TableCell>
+                    <TableCell>{line.price != null ? formatEur(line.price * line.qty) : '—'}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
@@ -349,6 +359,9 @@ function ShortagePreviewPageInner() {
                 ))}
               </TableBody>
             </Table>
+            <p className="mt-3 text-right text-sm font-semibold">
+              {tp('supplierRequestTotal')}: {formatEur(groupTotal(group))}
+            </p>
           </CardContent>
         </Card>
       ))}
