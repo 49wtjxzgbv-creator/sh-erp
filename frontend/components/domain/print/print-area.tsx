@@ -6,6 +6,7 @@ import { Printer, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
+import { PdfBranding } from './pdf-branding';
 
 /**
  * Shared print scaffolding for every document/label print view (production-
@@ -35,12 +36,24 @@ function usePrintPreviewMode(): boolean {
 
 function PrintAreaInner({ children }: { children: ReactNode }) {
   const isPreview = usePrintPreviewMode();
-  return <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>{children}</div>;
+  return (
+    <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>
+      <PdfBranding />
+      {children}
+    </div>
+  );
 }
 
 export function PrintArea({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={<div className="print-area hidden print:block">{children}</div>}>
+    <Suspense
+      fallback={
+        <div className="print-area hidden print:block">
+          <PdfBranding />
+          {children}
+        </div>
+      }
+    >
       <PrintAreaInner>{children}</PrintAreaInner>
     </Suspense>
   );

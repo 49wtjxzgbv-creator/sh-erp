@@ -170,7 +170,10 @@
     width: 100%;
     background: #fff;
     color: #000;
-    padding: 12mm;
+    /* Top/bottom widened to keep real content clear of the fixed corporate
+     * header/footer band below (42mm clears a 15mm-offset, up-to-20mm-tall
+     * logo; 28mm clears the footer's line + two text lines + margin). */
+    padding: 42mm 12mm 28mm 12mm;
   }
   .print-area table {
     width: 100%;
@@ -188,6 +191,49 @@
   }
   .no-print {
     display: none !important;
+  }
+
+  /* Corporate PDF branding (pdf-branding.tsx) — `position: fixed` is the one
+   * technique Chrome's print engine reliably repeats on every physical
+   * printed page (a normal in-flow element only ever prints once, wherever
+   * it happens to fall in the content). */
+  .pdf-header {
+    position: fixed;
+    top: 15mm;
+    left: 15mm;
+    z-index: 50;
+  }
+  .pdf-header-logo {
+    height: 19mm;
+    width: auto;
+    display: block;
+  }
+  .pdf-footer {
+    position: fixed;
+    bottom: 10mm;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    text-align: center;
+  }
+  .pdf-footer-line {
+    width: 60mm;
+    margin: 0 auto 2mm;
+    border-top: 0.3mm solid #ccc;
+  }
+  .pdf-footer-brand {
+    margin: 0;
+    font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 9.5pt;
+    font-weight: 600;
+    color: #777777;
+  }
+  .pdf-footer-tagline {
+    margin: 0;
+    font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 7.5pt;
+    font-weight: 400;
+    color: #777777;
   }
 
   /* План-графік print table (planner-gantt-print.tsx) — a real <table> so
@@ -266,7 +312,7 @@
 .print-preview-mode .print-area {
   background: #fff;
   color: #000;
-  padding: 12mm;
+  padding: 42mm 12mm 28mm 12mm;
 }
 .print-preview-mode .print-area table {
   width: 100%;
@@ -278,6 +324,44 @@
   padding: 4px 6px;
   text-align: left;
   font-size: 11px;
+}
+.print-preview-mode .pdf-header {
+  position: fixed;
+  top: 15mm;
+  left: 15mm;
+  z-index: 50;
+}
+.print-preview-mode .pdf-header-logo {
+  height: 19mm;
+  width: auto;
+  display: block;
+}
+.print-preview-mode .pdf-footer {
+  position: fixed;
+  bottom: 10mm;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  text-align: center;
+}
+.print-preview-mode .pdf-footer-line {
+  width: 60mm;
+  margin: 0 auto 2mm;
+  border-top: 0.3mm solid #ccc;
+}
+.print-preview-mode .pdf-footer-brand {
+  margin: 0;
+  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 9.5pt;
+  font-weight: 600;
+  color: #777777;
+}
+.print-preview-mode .pdf-footer-tagline {
+  margin: 0;
+  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 7.5pt;
+  font-weight: 400;
+  color: #777777;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;
