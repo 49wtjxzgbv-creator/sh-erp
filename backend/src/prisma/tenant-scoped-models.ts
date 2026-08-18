@@ -53,4 +53,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'SupplierPortalUser',
   'ProductionScheduleSlot',
   'ProductionOrderStagePlan',
+  'ProductSupplier',
+  'AssemblySupplier',
 ]);
