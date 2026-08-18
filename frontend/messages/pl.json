@@ -107,6 +107,7 @@
     "qty": "Ilość",
     "minQty": "Min. ilość",
     "sellPrice": "Cena sprzedaży (EUR)",
+    "supplierPrice": "Supplier price",
     "barcode": "Kod kreskowy",
     "manufacturer": "Producent",
     "status": "Status",

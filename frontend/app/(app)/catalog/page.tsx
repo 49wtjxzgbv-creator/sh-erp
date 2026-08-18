@@ -62,6 +62,7 @@ const DEFAULT_HIDDEN_COLUMNS = [
   'priceListRef',
   'note',
   'supplier',
+  'resolvedSupplierPrice',
   'createdAt',
 ];
 
@@ -167,6 +168,7 @@ export default function CatalogPage() {
       { id: 'priceListRef', label: t('priceListRef') },
       { id: 'note', label: t('note') },
       { id: 'supplier', label: t('filterBySupplier') },
+      { id: 'resolvedSupplierPrice', label: t('supplierPrice') },
       { id: 'createdAt', label: t('createdAt') },
     ],
     [t],
@@ -253,12 +255,17 @@ export default function CatalogPage() {
       { accessorKey: 'note', header: t('note'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
       {
         id: 'supplier',
-        accessorFn: (row) => row.defaultSupplierId,
+        accessorFn: (row) => row.resolvedSupplierId,
         header: t('filterBySupplier'),
         cell: ({ getValue }) => {
           const id = getValue() as string | null;
           return id ? (supplierById.get(id) ?? '—') : '—';
         },
+      },
+      {
+        accessorKey: 'resolvedSupplierPrice',
+        header: t('supplierPrice'),
+        cell: ({ getValue }) => (getValue() as string) ?? '—',
       },
       {
         accessorKey: 'createdAt',

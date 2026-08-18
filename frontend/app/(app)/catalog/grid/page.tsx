@@ -8,9 +8,12 @@ import { ArrowLeft, Eye, ListChecks, Trash2 } from 'lucide-react';
 import { useProducts, useCompanyUnits } from '@/lib/hooks/use-catalog';
 import { updateProduct, bulkDeleteProducts, type Product } from '@/lib/api-client/catalog';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { recordStockMovement } from '@/lib/api-client/inventory';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { toNumber } from '@/lib/api-client/decimal';
+import { formatEur } from '@/lib/utils';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Avatar } from '@/components/ui/avatar';
 import {
@@ -70,7 +73,13 @@ export default function ProductGridPage() {
   const { data, isLoading } = useProducts({ limit: 200 });
   const { data: units } = useCompanyUnits();
   const { data: warehouses } = useWarehouses();
+  const { data: suppliers } = useSuppliers({ limit: 200 });
   const defaultWarehouse = warehouses?.find((w) => w.isDefault);
+  const supplierById = useMemo(() => {
+    const map = new Map<string, string>();
+    suppliers?.items.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [suppliers]);
 
   const [rows, setRows] = useState<Product[]>([]);
   const hydrated = useRef(false);
@@ -307,6 +316,8 @@ export default function ProductGridPage() {
               </TableHead>
             )}
             <TableHead className="w-14">{t('photo')}</TableHead>
+            <TableHead className="whitespace-normal align-bottom">{t('filterBySupplier')}</TableHead>
+            <TableHead className="whitespace-normal align-bottom">{t('supplierPrice')}</TableHead>
             {visibleColumns.map((col) => (
               <TableHead key={col.key} className="whitespace-normal align-bottom" style={{ minWidth: col.width }}>
                 {t(col.labelKey as any)}
@@ -330,6 +341,15 @@ export default function ProductGridPage() {
               )}
               <TableCell>
                 <Avatar src={photosByProduct?.[product.id]?.[0]?.downloadUrl} size="sm" />
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {product.resolvedSupplierId ? (supplierById.get(product.resolvedSupplierId) ?? '—') : '—'}
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                {(() => {
+                  const price = toNumber(product.resolvedSupplierPrice);
+                  return price != null ? formatEur(price) : '—';
+                })()}
               </TableCell>
               {visibleColumns.map((col) => (
                 <TableCell key={col.key} className={cn(savingCell === `${product.id}:${col.key}` && 'opacity-50')}>

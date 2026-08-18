@@ -55,13 +55,29 @@ export class ProductsService {
     if (!query.includeDeleted) where.deletedAt = null;
     if (query.category) where.category = query.category;
     if (query.barcode) where.barcode = query.barcode;
-    if (query.supplierId) where.defaultSupplierId = query.supplierId;
-    if (query.search) {
-      where.OR = [
-        { article: { contains: query.search, mode: 'insensitive' } },
-        { name: { contains: query.search, mode: 'insensitive' } },
-      ];
+
+    // Two independent OR-groups (supplier match, search match) combined
+    // with AND — flattening both into a single `where.OR` would wrongly
+    // turn "matches supplier AND matches search" into "matches supplier OR
+    // matches search".
+    const andConditions: Prisma.ProductWhereInput[] = [];
+    if (query.supplierId) {
+      andConditions.push({
+        OR: [
+          { defaultSupplierId: query.supplierId },
+          { suppliers: { some: { supplierId: query.supplierId, isDefault: true } } },
+        ],
+      });
     }
+    if (query.search) {
+      andConditions.push({
+        OR: [
+          { article: { contains: query.search, mode: 'insensitive' } },
+          { name: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (andConditions.length > 0) where.AND = andConditions;
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
@@ -74,7 +90,24 @@ export class ProductsService {
       this.prisma.tenant.product.count({ where }),
     ]);
 
-    return { items, total, limit: take, offset: skip };
+    // Resolve each row's current default supplier for the products
+    // table's "Постачальник"/"Ціна постачальника" columns — the new
+    // ProductSupplier.isDefault row when one exists, else the legacy
+    // defaultSupplierId (which never carried a price on its own).
+    const defaultRows = await this.prisma.tenant.productSupplier.findMany({
+      where: { productId: { in: items.map((p) => p.id) }, isDefault: true },
+    });
+    const defaultByProduct = new Map(defaultRows.map((r) => [r.productId, r]));
+    const itemsWithSupplier = items.map((p) => {
+      const row = defaultByProduct.get(p.id);
+      return {
+        ...p,
+        resolvedSupplierId: row?.supplierId ?? p.defaultSupplierId ?? null,
+        resolvedSupplierPrice: row?.price ?? null,
+      };
+    });
+
+    return { items: itemsWithSupplier, total, limit: take, offset: skip };
   }
 
   async update(user: RequestUser, id: string, dto: UpdateProductDto) {
