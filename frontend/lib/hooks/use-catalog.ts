@@ -166,6 +166,14 @@ export function useSetProductSuppliers(productId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (suppliers: SetProductSupplierInput[]) => setProductSuppliers(productId, suppliers),
-    onSuccess: () => qc.invalidateQueries({ queryKey: productSuppliersKey(productId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: productSuppliersKey(productId) });
+      // The default supplier's price may have just overwritten sellPriceEur
+      // server-side (ProductsService#setSuppliers) — refetch the product
+      // itself so the "Ціна продажу" field on the same form doesn't show a
+      // stale value until the next full reload.
+      qc.invalidateQueries({ queryKey: productKey(productId) });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    },
   });
 }

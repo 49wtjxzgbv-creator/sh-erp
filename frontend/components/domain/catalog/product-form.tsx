@@ -154,6 +154,17 @@ export function ProductForm({
     setValue('initialWarehouseId', def.id);
   }, [product, initialWarehouseId, warehouses, setValue]);
 
+  // `useForm`'s `defaultValues` only apply once at mount, so saving a
+  // default supplier's price in the "Постачальники" section below (which
+  // overwrites sellPriceEur server-side — see ProductsService#setSuppliers)
+  // wouldn't otherwise show up here until a full page reload. Re-syncing
+  // just this one field (not a blanket `reset()`) avoids clobbering
+  // whatever else the user might be mid-editing elsewhere on this form.
+  useEffect(() => {
+    if (!product) return;
+    setValue('sellPriceEur', toNumber(product.sellPriceEur) ?? undefined);
+  }, [product?.sellPriceEur, setValue]);
+
   // Every field's `id` matches its zod schema key (see `id="article"`,
   // `id="unitId"` below), so on failed validation we can generically find
   // and scroll to whichever errored field sits highest on the page —
