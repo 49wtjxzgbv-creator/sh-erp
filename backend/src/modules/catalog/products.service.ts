@@ -90,24 +90,33 @@ export class ProductsService {
       this.prisma.tenant.product.count({ where }),
     ]);
 
-    // Resolve each row's current default supplier for the products
-    // table's "Постачальник"/"Ціна постачальника" columns — the new
-    // ProductSupplier.isDefault row when one exists, else the legacy
-    // defaultSupplierId (which never carried a price on its own).
-    const defaultRows = await this.prisma.tenant.productSupplier.findMany({
-      where: { productId: { in: items.map((p) => p.id) }, isDefault: true },
+    // Every linked supplier per row (not just the default one) for the
+    // products table's "Постачальники" column, which shows and lets staff
+    // edit the full list inline — falls back to the legacy defaultSupplierId
+    // (as a single synthetic, price-less entry) only when a product has
+    // zero rows in the new join table.
+    const supplierRows = await this.prisma.tenant.productSupplier.findMany({
+      where: { productId: { in: items.map((p) => p.id) } },
+      orderBy: { createdAt: 'asc' },
     });
-    const defaultByProduct = new Map(defaultRows.map((r) => [r.productId, r]));
-    const itemsWithSupplier = items.map((p) => {
-      const row = defaultByProduct.get(p.id);
-      return {
-        ...p,
-        resolvedSupplierId: row?.supplierId ?? p.defaultSupplierId ?? null,
-        resolvedSupplierPrice: row?.price ?? null,
-      };
+    const rowsByProduct = new Map<string, typeof supplierRows>();
+    for (const row of supplierRows) {
+      const list = rowsByProduct.get(row.productId) ?? [];
+      list.push(row);
+      rowsByProduct.set(row.productId, list);
+    }
+    const itemsWithSuppliers = items.map((p) => {
+      const rows = rowsByProduct.get(p.id) ?? [];
+      const resolvedSuppliers =
+        rows.length > 0
+          ? rows.map((r) => ({ supplierId: r.supplierId, price: r.price, isDefault: r.isDefault }))
+          : p.defaultSupplierId
+            ? [{ supplierId: p.defaultSupplierId, price: null, isDefault: true }]
+            : [];
+      return { ...p, resolvedSuppliers };
     });
 
-    return { items: itemsWithSupplier, total, limit: take, offset: skip };
+    return { items: itemsWithSuppliers, total, limit: take, offset: skip };
   }
 
   async update(user: RequestUser, id: string, dto: UpdateProductDto) {

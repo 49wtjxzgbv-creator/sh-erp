@@ -9,6 +9,7 @@ import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-
 import { useProducts, useExportProducts, useDeleteProducts, useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
+import { SuppliersCell } from '@/components/domain/procurement/suppliers-cell';
 import type { Product } from '@/lib/api-client/catalog';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
@@ -61,8 +62,7 @@ const DEFAULT_HIDDEN_COLUMNS = [
   'countryOfOrigin',
   'priceListRef',
   'note',
-  'supplier',
-  'resolvedSupplierPrice',
+  'suppliers',
   'createdAt',
 ];
 
@@ -167,8 +167,7 @@ export default function CatalogPage() {
       { id: 'countryOfOrigin', label: t('countryOfOrigin') },
       { id: 'priceListRef', label: t('priceListRef') },
       { id: 'note', label: t('note') },
-      { id: 'supplier', label: t('filterBySupplier') },
-      { id: 'resolvedSupplierPrice', label: t('supplierPrice') },
+      { id: 'suppliers', label: t('suppliersColumn') },
       { id: 'createdAt', label: t('createdAt') },
     ],
     [t],
@@ -254,18 +253,16 @@ export default function CatalogPage() {
       { accessorKey: 'priceListRef', header: t('priceListRef'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
       { accessorKey: 'note', header: t('note'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
       {
-        id: 'supplier',
-        accessorFn: (row) => row.resolvedSupplierId,
-        header: t('filterBySupplier'),
-        cell: ({ getValue }) => {
-          const id = getValue() as string | null;
-          return id ? (supplierById.get(id) ?? '—') : '—';
-        },
-      },
-      {
-        accessorKey: 'resolvedSupplierPrice',
-        header: t('supplierPrice'),
-        cell: ({ getValue }) => (getValue() as string) ?? '—',
+        id: 'suppliers',
+        header: t('suppliersColumn'),
+        cell: ({ row }) => (
+          <SuppliersCell
+            entityId={row.original.id}
+            entityName={row.original.name}
+            suppliers={row.original.resolvedSuppliers ?? []}
+            supplierById={supplierById}
+          />
+        ),
       },
       {
         accessorKey: 'createdAt',

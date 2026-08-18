@@ -67,14 +67,18 @@ export interface Product {
   updatedAt: string;
   deletedAt: string | null;
   /**
-   * Only present on query() list rows (products table) — the current
-   * default supplier, resolved server-side: the `ProductSupplier` row with
-   * `isDefault: true` when one exists, else the legacy `defaultSupplierId`
-   * (which never carried a price, so `resolvedSupplierPrice` is null in
-   * that fallback case). See ProductsService#query.
+   * Only present on query() list rows (products table) — every linked
+   * supplier (new `ProductSupplier` rows), or a single synthetic
+   * price-less entry from the legacy `defaultSupplierId` when a product
+   * has zero rows in the new join table. See ProductsService#query.
    */
-  resolvedSupplierId?: string | null;
-  resolvedSupplierPrice?: DecimalString | null;
+  resolvedSuppliers?: ResolvedProductSupplier[];
+}
+
+export interface ResolvedProductSupplier {
+  supplierId: string;
+  price: DecimalString | null;
+  isDefault: boolean;
 }
 
 /** Every optional field in CreateProductDto is `?:`, matching the backend exactly — qty is deliberately absent (it's stock-ledger-derived, never client-settable, see the Inventory module). */

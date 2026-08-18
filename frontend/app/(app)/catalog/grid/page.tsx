@@ -12,8 +12,7 @@ import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { recordStockMovement } from '@/lib/api-client/inventory';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import { toNumber } from '@/lib/api-client/decimal';
-import { formatEur } from '@/lib/utils';
+import { SuppliersCell } from '@/components/domain/procurement/suppliers-cell';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Avatar } from '@/components/ui/avatar';
 import {
@@ -316,8 +315,7 @@ export default function ProductGridPage() {
               </TableHead>
             )}
             <TableHead className="w-14">{t('photo')}</TableHead>
-            <TableHead className="whitespace-normal align-bottom">{t('filterBySupplier')}</TableHead>
-            <TableHead className="whitespace-normal align-bottom">{t('supplierPrice')}</TableHead>
+            <TableHead className="whitespace-normal align-bottom">{t('suppliersColumn')}</TableHead>
             {visibleColumns.map((col) => (
               <TableHead key={col.key} className="whitespace-normal align-bottom" style={{ minWidth: col.width }}>
                 {t(col.labelKey as any)}
@@ -342,14 +340,13 @@ export default function ProductGridPage() {
               <TableCell>
                 <Avatar src={photosByProduct?.[product.id]?.[0]?.downloadUrl} size="sm" />
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {product.resolvedSupplierId ? (supplierById.get(product.resolvedSupplierId) ?? '—') : '—'}
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {(() => {
-                  const price = toNumber(product.resolvedSupplierPrice);
-                  return price != null ? formatEur(price) : '—';
-                })()}
+              <TableCell>
+                <SuppliersCell
+                  entityId={product.id}
+                  entityName={product.name}
+                  suppliers={product.resolvedSuppliers ?? []}
+                  supplierById={supplierById}
+                />
               </TableCell>
               {visibleColumns.map((col) => (
                 <TableCell key={col.key} className={cn(savingCell === `${product.id}:${col.key}` && 'opacity-50')}>

@@ -107,7 +107,7 @@
     "qty": "Кількість",
     "minQty": "Мін. залишок",
     "sellPrice": "Ціна продажу (EUR)",
-    "supplierPrice": "Ціна постачальника",
+    "suppliersColumn": "Постачальники",
     "barcode": "Штрихкод",
     "manufacturer": "Виробник",
     "status": "Статус",
