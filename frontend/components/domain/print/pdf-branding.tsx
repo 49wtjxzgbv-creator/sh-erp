@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * Corporate PDF branding — the SH ERP wordmark top-left plus a
- * "SH-ERP.PRO / by Shyryng" footer, on every printed document. Rendered
+ * Corporate PDF branding — the SH ERP wordmark once at the very top of the
+ * document (page 1 only) and a "SH-ERP.PRO / by Shyryng" footer once at the
+ * very end (the last page only, wherever that naturally falls). Rendered
  * exactly once here and composed straight into `<PrintArea>` (see
  * print-area.tsx) rather than required as a per-view opt-in — every one of
  * the app's print views (customer orders, BOM specs, supplier requests,
@@ -11,51 +12,37 @@ import type { ReactNode } from 'react';
  * inside `<PrintArea>`, so this reaches all of them automatically with zero
  * per-view wiring and nothing to forget on a new print view.
  *
- * Repeats on every physical printed page via `<thead>`/`<tfoot>` with
- * `display: table-header-group`/`table-footer-group` (globals.css) — NOT
- * `position: fixed`. A `position: fixed` element only ever repeats
- * correctly on the page it was reserved space for via container padding —
- * padding on a fragmented box applies once at the very top (page 1) and
- * once at the very bottom (the last page), never on the pages in between,
- * so a `fixed` header/footer overlapped real content on every page after
- * the first (confirmed live on a multi-page order). A table's
- * `table-header-group`/`table-footer-group` rows are specifically designed
- * by the CSS fragmentation model to repeat with correctly-reserved space on
- * every page a table spans — the exact mechanism this codebase already
- * relies on for the planner Gantt table's own repeating column header
- * (`.planner-print-table thead`, globals.css) — so this wraps all print
- * content in one such table instead of re-deriving the same problem a
- * second, less reliable way.
+ * Deliberately plain, normal-flow siblings — header before `children`,
+ * footer after — not `position: fixed`/`sticky` and not a `<thead>`/
+ * `<tfoot>` table wrapper. Two earlier attempts at "repeat on every page"
+ * both caused real regressions: `position: fixed` only gets reserved
+ * padding space on the first/last printed page (fragmented-box padding
+ * doesn't repeat on pages in between), so it overlapped real content from
+ * page 2 onward; a `<table>` wrapper with `table-header-group`/
+ * `table-footer-group` fixed that, but its own `td` border/padding reset
+ * (needed so the wrapper's structural cells stayed invisible) used a plain
+ * descendant selector that also matched every `<td>` inside the actual
+ * printed tables nested in `children`, stripping their borders/columns.
+ * Once the requirement changed to "logo only on page 1, footer only on the
+ * last page" (not every page), neither trick is needed at all — a normal
+ * in-flow element at the very start of the content naturally prints on
+ * page 1, and one at the very end naturally lands on whatever page the
+ * document happens to finish on, with zero risk of leaking styles into
+ * unrelated nested tables.
  */
 export function PdfBranding({ children }: { children: ReactNode }) {
   return (
-    <table className="pdf-page-frame" role="presentation">
-      <thead>
-        <tr>
-          <td>
-            <div className="pdf-header" aria-hidden="true">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo-sh-erp.svg" alt="" className="pdf-header-logo" />
-            </div>
-          </td>
-        </tr>
-      </thead>
-      <tfoot>
-        <tr>
-          <td>
-            <div className="pdf-footer" aria-hidden="true">
-              <div className="pdf-footer-line" />
-              <p className="pdf-footer-brand">SH-ERP.PRO</p>
-              <p className="pdf-footer-tagline">by Shyryng</p>
-            </div>
-          </td>
-        </tr>
-      </tfoot>
-      <tbody>
-        <tr>
-          <td>{children}</td>
-        </tr>
-      </tbody>
-    </table>
+    <>
+      <div className="pdf-header" aria-hidden="true">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-sh-erp.svg" alt="" className="pdf-header-logo" />
+      </div>
+      {children}
+      <div className="pdf-footer" aria-hidden="true">
+        <div className="pdf-footer-line" />
+        <p className="pdf-footer-brand">SH-ERP.PRO</p>
+        <p className="pdf-footer-tagline">by Shyryng</p>
+      </div>
+    </>
   );
 }

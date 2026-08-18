@@ -190,20 +190,6 @@
     display: none !important;
   }
 
-  /* Corporate PDF branding (pdf-branding.tsx) — the header/footer rows
-   * repeat via `.pdf-page-frame`'s table-header-group/table-footer-group
-   * display below, not `position: fixed`: a `fixed` element only gets the
-   * reserved padding space on the very first/last printed page (padding on
-   * a box fragmented across pages applies once at its top and once at its
-   * bottom, never on the pages between), so it overlapped real content on
-   * every page after the first — confirmed live on a multi-page order. */
-  .pdf-page-frame thead {
-    display: table-header-group;
-  }
-  .pdf-page-frame tfoot {
-    display: table-footer-group;
-  }
-
   /* План-графік print table (planner-gantt-print.tsx) — a real <table> so
    * the <thead> genuinely repeats on every printed page (sticky divs don't
    * paginate at all; this does, in every major browser's print engine) and
@@ -293,12 +279,6 @@
   text-align: left;
   font-size: 11px;
 }
-.print-preview-mode .pdf-page-frame thead {
-  display: table-header-group;
-}
-.print-preview-mode .pdf-page-frame tfoot {
-  display: table-footer-group;
-}
 .print-preview-mode .planner-print-table {
   table-layout: fixed;
 }
@@ -351,25 +331,18 @@
 }
 
 /*
- * Corporate PDF branding appearance (pdf-branding.tsx) — unlike everything
- * above, these rules apply the same way in both real print and the preview
- * (neither depends on `@media print` vs `.print-preview-mode`: there's
- * nothing page-count- or pagination-specific about how the logo/footer
- * *look*, only about how `.pdf-page-frame`'s thead/tfoot *repeat*, which is
- * handled separately above). `.pdf-page-frame td` overrides `.print-area
- * td`'s border/padding — needs to win over both the plain `@media print`
- * and the higher-specificity `.print-preview-mode .print-area td` rules
- * above, hence the extra `.print-area` scope plus living last in the file
- * as a tie-break.
+ * Corporate PDF branding appearance (pdf-branding.tsx) — the logo prints
+ * once at the very top of the document (page 1) and the footer once at the
+ * very end (whatever page that lands on), both as plain normal-flow
+ * elements — no `position: fixed`, no `<thead>`/`<tfoot>` wrapper table.
+ * An earlier version used such a wrapper purely to make the header/footer
+ * repeat on every page; its own `td` border/padding reset used a plain
+ * descendant selector (`.pdf-page-frame td`) that also matched every `<td>`
+ * inside the real printed tables nested in `children` — not just the
+ * wrapper's own structural cells — stripping borders/columns from actual
+ * document content. Removed along with the wrapper itself now that
+ * per-page repetition isn't needed at all.
  */
-.print-area .pdf-page-frame {
-  width: 100%;
-  border-collapse: collapse;
-}
-.print-area .pdf-page-frame td {
-  border: none;
-  padding: 0;
-}
 .pdf-header {
   margin-bottom: 8mm;
 }
