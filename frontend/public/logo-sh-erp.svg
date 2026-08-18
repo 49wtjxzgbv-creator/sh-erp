@@ -1,22 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" role="img" aria-label="SH ERP">
-  <text
-    x="100"
-    y="72"
-    text-anchor="middle"
-    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-    font-weight="700"
-    font-size="68"
-    letter-spacing="-2"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 180" role="img" aria-label="SH ERP">
+  <!-- "S" — drawn as a closed polygon (straight lines + right angles only, no
+       curves, uniform stroke width), not set in a font. -->
+  <path
+    transform="translate(77.5,10)"
     fill="#0D1B2A"
-  >SH</text>
+    d="M0,0 L70,0 L70,20 L20,20 L20,40 L70,40 L70,100 L0,100 L0,80 L50,80 L50,60 L0,60 Z"
+  />
+  <!-- "H" — same construction. -->
+  <path
+    transform="translate(162.5,10)"
+    fill="#0D1B2A"
+    d="M0,0 L20,0 L20,40 L50,40 L50,0 L70,0 L70,100 L50,100 L50,60 L20,60 L20,100 L0,100 Z"
+  />
   <text
-    x="100"
-    y="104"
+    x="155"
+    y="142"
     text-anchor="middle"
     font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
     font-weight="600"
-    font-size="24"
-    letter-spacing="10"
+    font-size="26"
+    letter-spacing="9"
     fill="#0D1B2A"
   >ERP</text>
+  <line x1="95" y1="160" x2="138" y2="160" stroke="#0D1B2A" stroke-width="1.5" />
+  <line x1="172" y1="160" x2="215" y2="160" stroke="#0D1B2A" stroke-width="1.5" />
 </svg>
