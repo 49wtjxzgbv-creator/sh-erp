@@ -171,6 +171,13 @@ export class ProductsService {
    * Replace-set, same convention as AssembliesService#setComponents: delete
    * every existing row and re-create the provided list in one go — no
    * partial-update endpoint, so every save is a clean, fully-specified set.
+   *
+   * The default supplier's price (when present) also overwrites
+   * `sellPriceEur` — the one cost basis every BOM/valuation calculation in
+   * this app is pinned to (assemblies.service.ts's own header comment).
+   * `sellPriceEur` stays a plain editable field on the product form too
+   * (manual override), so this is "last write wins", same as the other
+   * sync point in PurchaseOrdersService#receive.
    */
   async setSuppliers(user: RequestUser, productId: string, dto: SetProductSuppliersDto) {
     await this.findOne(user, productId);
@@ -184,6 +191,10 @@ export class ProductsService {
           isDefault: line.isDefault ?? false,
         })) as any,
       });
+    }
+    const defaultLine = dto.suppliers.find((line) => line.isDefault && line.price !== undefined);
+    if (defaultLine) {
+      await this.prisma.tenant.product.update({ where: { id: productId }, data: { sellPriceEur: defaultLine.price } });
     }
     return this.getSuppliers(user, productId);
   }

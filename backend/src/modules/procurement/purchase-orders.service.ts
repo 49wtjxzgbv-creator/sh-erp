@@ -127,6 +127,17 @@ export class PurchaseOrdersService {
           sourceId: order.id,
           comment: `Received against PO ${order.id}, item "${item.articleSnapshot}"`,
         });
+
+        // An actual receive price is ground truth — it overwrites
+        // sellPriceEur (the one cost basis every BOM/valuation calculation
+        // in this app is pinned to), same sync point as
+        // ProductsService#setSuppliers's default-supplier price.
+        if (line.actualPrice !== undefined) {
+          await this.prisma.tenant.product.update({
+            where: { id: item.productId },
+            data: { sellPriceEur: line.actualPrice },
+          });
+        }
       }
     }
 

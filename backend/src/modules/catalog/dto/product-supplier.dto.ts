@@ -7,7 +7,7 @@ export class ProductSupplierLineDto {
   @IsUUID()
   supplierId!: string;
 
-  @ApiPropertyOptional({ description: 'This supplier\'s price for this product — informational, not automatically pulled into any purchase order line.' })
+  @ApiPropertyOptional({ description: 'This supplier\'s price for this product. Not automatically pulled into any purchase order line — but when this line is also `isDefault`, saving it overwrites Product.sellPriceEur (see ProductsService#setSuppliers), the one cost basis every BOM/valuation calculation in this app is pinned to.' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

@@ -458,7 +458,7 @@
     "addSupplierLink": "Add supplier",
     "invalidSupplierRow": "Pick a supplier in every row",
     "duplicateSupplierRow": "This supplier is already added",
-    "multiSupplierHint": "This item has multiple suppliers — when generating a supplier request, the system will ask which one to order from.",
+    "multiSupplierHint": "This product has multiple suppliers — the shortage engine will ask which one to order from. The default supplier's price also becomes the product's \"Sell price (EUR)\" — the cost basis used by BOM and reports.",
     "suppliersSaved": "Saved",
     "linkedEntities": "Linked products and assemblies",
     "linkedProducts": "Products",
