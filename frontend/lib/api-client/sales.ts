@@ -194,6 +194,8 @@ export interface ShortageLine {
   neededQty: number;
   /** Real JSON number. Shown side-by-side with neededQty, never auto-subtracted ("no hidden arithmetic" rule) — the human decides the actual order qty. */
   currentStock: number;
+  /** The resolved supplier's price for this line, null when unknown. See customer-order-shortage.service.ts's ShortageLine header comment. */
+  price: number | null;
   /** Present only when the product/assembly has more than one linked supplier — see `ShortagePreview.ambiguousLines`. */
   supplierOptions?: ShortageSupplierOption[];
 }
@@ -223,6 +225,8 @@ export interface ShortageGroupLineInput {
   description: string;
   /** The actual qty to order — pre-filled from the preview's neededQty but human-editable before committing. */
   qty: number;
+  /** Carried through from the preview so the created PurchaseOrderItem.expectedPrice is populated. Omitted when no price was known. */
+  price?: number;
 }
 
 export interface PurchaseOrderGroupInput {

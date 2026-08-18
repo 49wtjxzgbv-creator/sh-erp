@@ -18,6 +18,16 @@ export interface ShortageLine {
   description: string;
   neededQty: number;
   currentStock: number;
+  /**
+   * The resolved supplier's price for this line — the single linked
+   * supplier's price when there's exactly one, else `Product.sellPriceEur`
+   * (which now mirrors the default supplier's price — see
+   * ProductsService#setSuppliers) as a last resort for the legacy
+   * defaultSupplierId fallback. Null when genuinely unknown. Assemblies
+   * have no equivalent field to fall back to, so this stays null there
+   * unless a single AssemblySupplier link exists.
+   */
+  price: number | null;
   /** Present only when the product/assembly has more than one linked supplier (ProductSupplier/AssemblySupplier) — the caller must ask which one to order from rather than guessing. See `ambiguousLines`. */
   supplierOptions?: SupplierOption[];
 }
@@ -153,13 +163,20 @@ export class CustomerOrderShortageService {
         description: product ? `${product.article} — ${product.name}` : productId,
         neededQty,
         currentStock: Number(product?.qty ?? 0),
+        price: null,
       };
       if (links.length > 1) {
         ambiguousLines.push({ ...line, supplierOptions: toSupplierOptions(links) });
       } else if (links.length === 1) {
-        getGroup(links[0].supplierId).lines.push(line);
+        getGroup(links[0].supplierId).lines.push({
+          ...line,
+          price: links[0].price != null ? Number(links[0].price) : null,
+        });
       } else {
-        getGroup(product?.defaultSupplierId ?? null).lines.push(line);
+        getGroup(product?.defaultSupplierId ?? null).lines.push({
+          ...line,
+          price: product?.sellPriceEur != null ? Number(product.sellPriceEur) : null,
+        });
       }
     }
 
@@ -175,11 +192,15 @@ export class CustomerOrderShortageService {
         description: assembly?.name ?? subAssemblyId,
         neededQty,
         currentStock: inStockCount,
+        price: null,
       };
       if (links.length > 1) {
         ambiguousLines.push({ ...line, supplierOptions: toSupplierOptions(links) });
       } else if (links.length === 1) {
-        getGroup(links[0].supplierId).lines.push(line);
+        getGroup(links[0].supplierId).lines.push({
+          ...line,
+          price: links[0].price != null ? Number(links[0].price) : null,
+        });
       } else {
         getGroup(assembly?.defaultSupplierId ?? null).lines.push(line);
       }
@@ -209,6 +230,7 @@ export class CustomerOrderShortageService {
           articleSnapshot: line.description,
           productNameSnapshot: line.description,
           qtyOrdered: line.qty,
+          expectedPrice: line.price,
         })),
       });
       created.push(po);

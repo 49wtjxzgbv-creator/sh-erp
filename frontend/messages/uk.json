@@ -523,6 +523,8 @@
     "needsSupplierChoice": "Потрібно обрати постачальника",
     "chooseSupplier": "Обрати постачальника",
     "resolveSupplierChoiceFirst": "Спершу оберіть постачальника для кожної позиції вище — у неї вказано кілька постачальників.",
+    "photo": "Фото",
+    "expectedPrice": "Очікувана ціна",
     "createPurchaseOrders": "Створити замовлення постачальникам",
     "purchaseOrdersCreated": "Створено замовлень постачальникам: {count}",
     "newShipment": "Нове відвантаження",

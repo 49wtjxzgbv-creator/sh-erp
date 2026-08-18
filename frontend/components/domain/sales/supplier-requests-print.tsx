@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { ExternalLink } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
@@ -15,6 +16,8 @@ export interface SupplierRequestLineForPrint {
   subAssemblyId?: string;
   description: string;
   qty: number;
+  /** The resolved supplier's price, null/undefined when unknown — printed only when the "Ціна" column is selected. */
+  price?: number | null;
 }
 
 export interface SupplierRequestGroupForPrint {
@@ -74,6 +77,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   const columns: PrintColumnOption[] = [
     { id: 'description', label: t('description') },
     { id: 'qtyToOrder', label: t('qtyToOrder') },
+    { id: 'price', label: t('expectedPrice') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -109,6 +113,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
+                  {printOptions.isColumnVisible('price') && <th>{t('expectedPrice')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -124,6 +129,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                       )}
                       {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
+                      {printOptions.isColumnVisible('price') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
                     </tr>
                   ))}
               </tbody>

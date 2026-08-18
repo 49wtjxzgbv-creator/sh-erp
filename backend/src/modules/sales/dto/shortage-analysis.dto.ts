@@ -43,6 +43,17 @@ export class ShortageGroupLineInputDto {
   @IsNumber()
   @Min(0.001)
   qty!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'The resolved supplier price shown in the preview — carried through so the created PurchaseOrderItem.expectedPrice ' +
+      'is populated instead of staying empty. Omitted/undefined when no price was known for this line.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  price?: number;
 }
 
 export class PurchaseOrderGroupInputDto {

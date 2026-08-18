@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useShortagePreview, useCreatePurchaseOrdersFromShortage } from '@/lib/hooks/use-sales';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderGroupInput, ShortageGroupLineInput, ShortageSupplierOption } from '@/lib/api-client/sales';
@@ -12,13 +13,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Avatar } from '@/components/ui/avatar';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
 import { LoadingBlock } from '@/components/ui/loading-block';
 
-interface EditableLine extends ShortageGroupLineInput {
+interface EditableLine extends Omit<ShortageGroupLineInput, 'price'> {
   /** Frozen at hydration — the original gross requirement, kept visible and never mutated by editing `qty`. */
   neededQty: number;
   currentStock: number;
+  /** The resolved supplier's price, null when unknown — read-only display here, mapped to `ShortageGroupLineInput.price` (undefined instead of null) when submitting. */
+  price: number | null;
 }
 
 interface EditableGroup {
@@ -77,6 +81,26 @@ function ShortagePreviewPageInner() {
   const [createdCount, setCreatedCount] = useState<number | null>(null);
   const [printSupplierId, setPrintSupplierId] = useState<string>(ALL_SUPPLIERS);
 
+  // One batch request per entity type for every line's photo across both
+  // tables (resolved groups + still-ambiguous lines) — same pattern as
+  // SupplierRequestsPrint's own photo lookup.
+  const allLines = useMemo(() => [...groups.flatMap((g) => g.lines), ...ambiguousLines], [groups, ambiguousLines]);
+  const productIds = useMemo(
+    () => Array.from(new Set(allLines.filter((l) => l.kind === 'PRODUCT' && l.productId).map((l) => l.productId as string))),
+    [allLines],
+  );
+  const assemblyIds = useMemo(
+    () => Array.from(new Set(allLines.filter((l) => l.kind === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string))),
+    [allLines],
+  );
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  function linePhotoUrl(line: EditableLine): string | undefined {
+    if (line.kind === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
+    if (line.kind === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
+    return undefined;
+  }
+
   // In a preview tab opened via handlePreview below, `?print=1` carries the
   // supplier filter and the live-typed quantities the opener tab had at the
   // moment of preview — otherwise this fresh page load would only ever see
@@ -109,6 +133,7 @@ function ShortagePreviewPageInner() {
           qty: previewQtyOverrides?.get(lineId(line)) ?? line.neededQty,
           neededQty: line.neededQty,
           currentStock: line.currentStock,
+          price: line.price,
         })),
       })),
     );
@@ -121,6 +146,7 @@ function ShortagePreviewPageInner() {
         qty: line.neededQty,
         neededQty: line.neededQty,
         currentStock: line.currentStock,
+        price: null,
         supplierOptions: line.supplierOptions ?? [],
       })),
     );
@@ -135,12 +161,13 @@ function ShortagePreviewPageInner() {
     if (!option) return;
 
     const { supplierOptions: _supplierOptions, ...plainLine } = line;
+    const resolvedLine: EditableLine = { ...plainLine, price: option.price };
     setGroups((prev) => {
       const existingIdx = prev.findIndex((g) => g.supplierId === supplierId);
       if (existingIdx >= 0) {
-        return prev.map((g, i) => (i === existingIdx ? { ...g, lines: [...g.lines, plainLine] } : g));
+        return prev.map((g, i) => (i === existingIdx ? { ...g, lines: [...g.lines, resolvedLine] } : g));
       }
-      return [...prev, { supplierId, supplierName: option.supplierName, lines: [plainLine] }];
+      return [...prev, { supplierId, supplierName: option.supplierName, lines: [resolvedLine] }];
     });
     setAmbiguousLines((prev) => prev.filter((_, i) => i !== index));
   }
@@ -167,7 +194,14 @@ function ShortagePreviewPageInner() {
         supplierName: g.supplierName,
         items: g.lines
           .filter((l) => l.qty > 0)
-          .map(({ kind, productId, subAssemblyId, description, qty }) => ({ kind, productId, subAssemblyId, description, qty })),
+          .map(({ kind, productId, subAssemblyId, description, qty, price }) => ({
+            kind,
+            productId,
+            subAssemblyId,
+            description,
+            qty,
+            price: price ?? undefined,
+          })),
       }));
     if (payload.length === 0) {
       setError(t('invalidRow'));
@@ -236,6 +270,7 @@ function ShortagePreviewPageInner() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14">{t('photo')}</TableHead>
                   <TableHead>{t('description')}</TableHead>
                   <TableHead>{t('neededQty')}</TableHead>
                   <TableHead>{t('currentStock')}</TableHead>
@@ -245,6 +280,9 @@ function ShortagePreviewPageInner() {
               <TableBody>
                 {ambiguousLines.map((line, li) => (
                   <TableRow key={li}>
+                    <TableCell>
+                      <Avatar src={linePhotoUrl(line)} size="sm" />
+                    </TableCell>
                     <TableCell className="max-w-[260px] truncate" title={line.description}>{line.description}</TableCell>
                     <TableCell>{line.neededQty}</TableCell>
                     <TableCell>{line.currentStock}</TableCell>
@@ -280,18 +318,24 @@ function ShortagePreviewPageInner() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-14">{t('photo')}</TableHead>
                   <TableHead>{t('description')}</TableHead>
                   <TableHead>{t('neededQty')}</TableHead>
                   <TableHead>{t('currentStock')}</TableHead>
+                  <TableHead>{t('expectedPrice')}</TableHead>
                   <TableHead className="w-32">{t('qtyToOrder')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {group.lines.map((line, li) => (
                   <TableRow key={li}>
+                    <TableCell>
+                      <Avatar src={linePhotoUrl(line)} size="sm" />
+                    </TableCell>
                     <TableCell className="max-w-[260px] truncate" title={line.description}>{line.description}</TableCell>
                     <TableCell>{line.neededQty}</TableCell>
                     <TableCell>{line.currentStock}</TableCell>
+                    <TableCell>{line.price != null ? formatEur(line.price) : '—'}</TableCell>
                     <TableCell>
                       <Input
                         type="number"

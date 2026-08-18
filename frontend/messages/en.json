@@ -571,7 +571,9 @@
     "allSuppliersPrint": "All suppliers",
     "needsSupplierChoice": "Needs a supplier choice",
     "chooseSupplier": "Choose supplier",
-    "resolveSupplierChoiceFirst": "First choose a supplier for each line above — it has more than one supplier linked."
+    "resolveSupplierChoiceFirst": "First choose a supplier for each line above — it has more than one supplier linked.",
+    "photo": "Photo",
+    "expectedPrice": "Expected price"
   },
   "hr": {
     "title": "HR",
