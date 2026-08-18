@@ -330,9 +330,9 @@ function ShortagePreviewPageInner() {
                   <TableHead>{t('description')}</TableHead>
                   <TableHead>{t('neededQty')}</TableHead>
                   <TableHead>{t('currentStock')}</TableHead>
+                  <TableHead className="w-32">{t('qtyToOrder')}</TableHead>
                   <TableHead>{t('unitPrice')}</TableHead>
                   <TableHead>{t('expectedPrice')}</TableHead>
-                  <TableHead className="w-32">{t('qtyToOrder')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -344,8 +344,6 @@ function ShortagePreviewPageInner() {
                     <TableCell className="max-w-[260px] truncate" title={line.description}>{line.description}</TableCell>
                     <TableCell>{line.neededQty}</TableCell>
                     <TableCell>{line.currentStock}</TableCell>
-                    <TableCell>{line.price != null ? formatEur(line.price) : '—'}</TableCell>
-                    <TableCell>{line.price != null ? formatEur(line.price * line.qty) : '—'}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
@@ -355,6 +353,8 @@ function ShortagePreviewPageInner() {
                         onChange={(e) => updateLineQty(gi, li, Number(e.target.value))}
                       />
                     </TableCell>
+                    <TableCell>{line.price != null ? formatEur(line.price) : '—'}</TableCell>
+                    <TableCell>{line.price != null ? formatEur(line.price * line.qty) : '—'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
