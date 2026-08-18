@@ -28,17 +28,26 @@ export function usePermissionsCatalogue() {
 }
 
 /**
- * The logged-in user's own effective permission keys. Keyed on `roleId`
- * (not just `myPermissionsKey`) so switching companies/roles — impersonation,
- * or an admin changing your own role while you're logged in elsewhere —
- * doesn't serve a stale cached set from before the switch.
+ * The logged-in user's own effective permission keys. Keyed on
+ * `userId`+`companyId` (not just `myPermissionsKey`) so switching companies
+ * — impersonation, or an admin changing your own role while you're logged
+ * in elsewhere — doesn't serve a stale cached set from before the switch.
+ *
+ * Deliberately NOT keyed/gated on `session-store`'s `roleId` — nothing in
+ * the real login/refresh flow (lib/auth/actions.ts) ever populates it
+ * (SessionResponse only carries accessToken/userId/companyId/companySlug),
+ * so it is always `null` in practice. Gating `enabled` on it here was a
+ * real bug caught in live testing: the query never fired, so every
+ * `RequirePermission`/layout guard depending on `isSuccess` hung on its
+ * loading state forever, for every role including Admin.
  */
 export function useMyPermissions() {
-  const roleId = useSessionStore((s) => s.roleId);
+  const userId = useSessionStore((s) => s.userId);
+  const companyId = useSessionStore((s) => s.companyId);
   return useQuery({
-    queryKey: [...myPermissionsKey, roleId] as const,
+    queryKey: [...myPermissionsKey, userId, companyId] as const,
     queryFn: () => getMyPermissions(),
-    enabled: Boolean(roleId),
+    enabled: Boolean(userId && companyId),
     staleTime: 5 * 60 * 1000,
   });
 }
