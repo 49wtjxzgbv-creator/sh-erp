@@ -91,6 +91,22 @@ export class AssembliesService {
     return assembly;
   }
 
+  /**
+   * Many assemblies in one call by id — mirrors ProductsService#findByIds.
+   * Added specifically to fix a real incident: printing a customer order's
+   * full composition (assembly -> sub-assembly -> product, recursively)
+   * fired one GET per node through individual useAssembly/useProduct
+   * hooks, and a real order with 150+ leaf products blew straight through
+   * the global per-client rate limit (100 req/60s) — the same failure
+   * mode already fixed once for bulk product delete (products.service.ts's
+   * own header comment). Names/articles for whichever requests got
+   * 429'd never resolved, silently falling back to the raw id forever.
+   */
+  async findByIds(user: RequestUser, ids: string[]) {
+    if (ids.length === 0) return [];
+    return this.prisma.tenant.assembly.findMany({ where: { id: { in: ids } } });
+  }
+
   async query(user: RequestUser, query: QueryAssembliesDto) {
     const where: Prisma.AssemblyWhereInput = {};
     if (!query.includeDeleted) where.deletedAt = null;

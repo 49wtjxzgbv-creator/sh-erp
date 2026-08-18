@@ -2,27 +2,34 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { useAssembly, useAssemblyCost, useAssemblyCosts, useAssembliesByIds } from '@/lib/hooks/use-bom';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { toNumber } from '@/lib/api-client/decimal';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
-import { ComponentNameCell, ComponentArticleCell, useOwnCostLines } from '@/components/domain/bom/assembly-spec-print';
+import {
+  ComponentNameCell,
+  ComponentArticleCell,
+  useOwnCostLines,
+  EMPTY_PRODUCTS_MAP,
+  EMPTY_ASSEMBLIES_MAP,
+} from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
 import type { CostBreakdownLine } from '@/lib/api-client/bom';
 
-/** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. */
-function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
-  const { data: assembly } = useAssembly(assemblyId);
+/** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. Takes the caller's already-batch-fetched map (see CustomerOrderPrint) rather than firing its own request per row. */
+function AssemblyNameCell({ assemblyId, assembliesById }: { assemblyId: string; assembliesById: Map<string, { name: string; article: string | null }> }) {
+  const assembly = assembliesById.get(assemblyId);
   return <>{assembly ? assembly.name : assemblyId}</>;
 }
 
 /** Article/SKU as its own cell — printed as a separate column (bolded by the caller), not folded into the name text. */
-function AssemblyArticleCell({ assemblyId }: { assemblyId: string }) {
-  const { data: assembly } = useAssembly(assemblyId);
+function AssemblyArticleCell({ assemblyId, assembliesById }: { assemblyId: string; assembliesById: Map<string, { name: string; article: string | null }> }) {
+  const assembly = assembliesById.get(assemblyId);
   return <>{assembly?.article ?? ''}</>;
 }
 
@@ -111,6 +118,13 @@ function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { ass
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
   const { data: photosByAssembly } = useFilesForEntities('Assembly', subAssemblyIds, 'ASSEMBLY_PHOTO');
   const { data: photosOfThis } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
+  // One batched request per level for names/articles instead of one per BOM
+  // line — a real incident: the individual-request version blew through
+  // the global per-client rate limit on a deep/wide real order (150+
+  // leaf products), permanently stranding whichever names got 429'd on
+  // their raw id. See ComponentNameCell's own header comment.
+  const { data: productsById } = useProductsByIds(productIds);
+  const { data: subAssembliesById } = useAssembliesByIds(subAssemblyIds);
 
   if (!assembly || !cost) return null;
 
@@ -143,8 +157,12 @@ function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { ass
           {cost.breakdown.map((line, i) => (
             <tr key={i}>
               <td><Avatar src={lineDownloadUrl(line)} size="lg" /></td>
-              <td className="font-bold"><ComponentArticleCell line={line} /></td>
-              <td><ComponentNameCell line={line} /></td>
+              <td className="font-bold">
+                <ComponentArticleCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+              </td>
+              <td>
+                <ComponentNameCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+              </td>
               <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
               <td>{line.qtyPerUnit * qty}</td>
               {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
@@ -184,6 +202,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
 
   const assemblyIds = useMemo(() => Array.from(new Set((order.items ?? []).map((i) => i.assemblyId))), [order.items]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  const { data: orderAssembliesById } = useAssembliesByIds(assemblyIds);
 
   const columns: PrintColumnOption[] = [
     { id: 'assembly', label: t('assembly') },
@@ -245,8 +264,16 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
                     <Avatar src={photosByAssembly?.[item.assemblyId]?.[0]?.downloadUrl} size="lg" />
                   </td>
                 )}
-                {printOptions.isColumnVisible('assembly') && <td className="font-bold"><AssemblyArticleCell assemblyId={item.assemblyId} /></td>}
-                {printOptions.isColumnVisible('assembly') && <td><AssemblyNameCell assemblyId={item.assemblyId} /></td>}
+                {printOptions.isColumnVisible('assembly') && (
+                  <td className="font-bold">
+                    <AssemblyArticleCell assemblyId={item.assemblyId} assembliesById={orderAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+                  </td>
+                )}
+                {printOptions.isColumnVisible('assembly') && (
+                  <td>
+                    <AssemblyNameCell assemblyId={item.assemblyId} assembliesById={orderAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+                  </td>
+                )}
                 {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
                 {printOptions.isColumnVisible('estimatedPrice') && <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />}
                 {printOptions.isColumnVisible('actualPrice') && <ActualPriceCell productionOrderId={item.productionOrderId} />}

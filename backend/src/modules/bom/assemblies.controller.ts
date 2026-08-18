@@ -28,6 +28,18 @@ export class AssembliesController {
     return this.assembliesService.query(user, query);
   }
 
+  /**
+   * Declared BEFORE `GET /:id` for the same reason as ProductsController's
+   * own `GET /batch` — otherwise `:id` would swallow the literal path
+   * segment "batch".
+   */
+  @Get('batch')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({ summary: 'Many assemblies in one call by id — avoids an N-request fan-out resolving assemblyIds into names (e.g. a customer order\'s full BOM composition print).' })
+  async findByIds(@CurrentUser() user: RequestUser, @Query('ids') ids: string) {
+    return this.assembliesService.findByIds(user, ids.split(',').filter(Boolean));
+  }
+
   @Get(':id')
   @RequirePermissions('assemblies:read')
   @ApiOperation({ summary: 'Get one assembly with its current BOM lines.' })

@@ -4,6 +4,7 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import {
   queryAssemblies,
   getAssembly,
+  getAssembliesByIds,
   createAssembly,
   updateAssembly,
   deleteAssembly,
@@ -41,6 +42,19 @@ export function useAssembly(id: string | undefined) {
     queryKey: assemblyKey(id ?? ''),
     queryFn: () => getAssembly(id as string),
     enabled: Boolean(id),
+  });
+}
+
+/** Many assemblies in one call, keyed by id — mirrors useProductsByIds's shape. */
+export function useAssembliesByIds(ids: string[]) {
+  const sortedIds = [...ids].sort();
+  return useQuery({
+    queryKey: ['assemblies', 'batch', sortedIds] as const,
+    queryFn: async () => {
+      const assemblies = await getAssembliesByIds(sortedIds);
+      return new Map(assemblies.map((a) => [a.id, a]));
+    },
+    enabled: sortedIds.length > 0,
   });
 }
 

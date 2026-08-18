@@ -2,14 +2,18 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAssembly, useAssemblyCost } from '@/lib/hooks/use-bom';
-import { useProduct } from '@/lib/hooks/use-catalog';
+import { useAssembly, useAssemblyCost, useAssembliesByIds } from '@/lib/hooks/use-bom';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
-import type { CostBreakdownLine } from '@/lib/api-client/bom';
+import type { CostBreakdownLine, Assembly } from '@/lib/api-client/bom';
+import type { Product } from '@/lib/api-client/catalog';
+
+export const EMPTY_PRODUCTS_MAP: Map<string, Product> = new Map();
+export const EMPTY_ASSEMBLIES_MAP: Map<string, Assembly> = new Map();
 
 /**
  * Resolves a single BOM line's component name for the print layout —
@@ -17,22 +21,49 @@ import type { CostBreakdownLine } from '@/lib/api-client/bom';
  * `subAssemblyId` (the same "known simplification" tracked across
  * Inventory/BOM/Production/Procurement/Sales in frontend/README.md), which
  * is fine for an on-screen table with a tooltip but not acceptable on a
- * printed shop-floor document. Resolved via the same `useProduct`/
- * `useAssembly` hooks every other page already uses — no new backend
- * endpoint, just paid for here instead of deferred to a raw-id table cell.
+ * printed shop-floor document. Takes already-batch-fetched maps rather
+ * than resolving its own id via useProduct/useAssembly — a real incident:
+ * one request per line (this cell used to call useProduct/useAssembly
+ * itself) blew straight through the global per-client rate limit on a
+ * customer order whose full composition print touched 150+ products,
+ * leaving whichever names got 429'd permanently stuck on the raw id (same
+ * failure mode already fixed once for bulk product delete — see
+ * ProductsService#bulkRemove's own header comment). The caller now does
+ * one batched useProductsByIds/useAssembliesByIds call per BOM level
+ * instead.
  */
-export function ComponentNameCell({ line }: { line: CostBreakdownLine }) {
-  const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
-  const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
-  if (line.componentType === 'PRODUCT') return <>{product ? product.name : line.productId}</>;
+export function ComponentNameCell({
+  line,
+  productsById,
+  assembliesById,
+}: {
+  line: CostBreakdownLine;
+  productsById: Map<string, Product>;
+  assembliesById: Map<string, Assembly>;
+}) {
+  if (line.componentType === 'PRODUCT') {
+    const product = line.productId ? productsById.get(line.productId) : undefined;
+    return <>{product ? product.name : line.productId}</>;
+  }
+  const subAssembly = line.subAssemblyId ? assembliesById.get(line.subAssemblyId) : undefined;
   return <>{subAssembly ? subAssembly.name : line.subAssemblyId}</>;
 }
 
 /** Article/SKU as its own cell — printed as a separate column (bolded by the caller), not folded into the name text. */
-export function ComponentArticleCell({ line }: { line: CostBreakdownLine }) {
-  const { data: product } = useProduct(line.componentType === 'PRODUCT' ? line.productId : undefined);
-  const { data: subAssembly } = useAssembly(line.componentType === 'ASSEMBLY' ? line.subAssemblyId : undefined);
-  if (line.componentType === 'PRODUCT') return <>{product?.article ?? ''}</>;
+export function ComponentArticleCell({
+  line,
+  productsById,
+  assembliesById,
+}: {
+  line: CostBreakdownLine;
+  productsById: Map<string, Product>;
+  assembliesById: Map<string, Assembly>;
+}) {
+  if (line.componentType === 'PRODUCT') {
+    const product = line.productId ? productsById.get(line.productId) : undefined;
+    return <>{product?.article ?? ''}</>;
+  }
+  const subAssembly = line.subAssemblyId ? assembliesById.get(line.subAssemblyId) : undefined;
   return <>{subAssembly?.article ?? ''}</>;
 }
 
@@ -75,6 +106,8 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
   const { data: photosOfThisAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
+  const { data: productsById } = useProductsByIds(productIds);
+  const { data: assembliesById } = useAssembliesByIds(assemblyIds);
 
   const columns: PrintColumnOption[] = [
     { id: 'component', label: t('component') },
@@ -132,8 +165,24 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                     <Avatar src={lineDownloadUrl(line)} size="lg" />
                   </td>
                 )}
-                {printOptions.isColumnVisible('component') && <td className="font-bold"><ComponentArticleCell line={line} /></td>}
-                {printOptions.isColumnVisible('component') && <td><ComponentNameCell line={line} /></td>}
+                {printOptions.isColumnVisible('component') && (
+                  <td className="font-bold">
+                    <ComponentArticleCell
+                      line={line}
+                      productsById={productsById ?? EMPTY_PRODUCTS_MAP}
+                      assembliesById={assembliesById ?? EMPTY_ASSEMBLIES_MAP}
+                    />
+                  </td>
+                )}
+                {printOptions.isColumnVisible('component') && (
+                  <td>
+                    <ComponentNameCell
+                      line={line}
+                      productsById={productsById ?? EMPTY_PRODUCTS_MAP}
+                      assembliesById={assembliesById ?? EMPTY_ASSEMBLIES_MAP}
+                    />
+                  </td>
+                )}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
                 {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost)}</td>}

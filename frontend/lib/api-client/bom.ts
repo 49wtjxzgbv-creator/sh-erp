@@ -83,6 +83,10 @@ export function queryAssemblies(query: QueryAssembliesInput = {}): Promise<Pagin
 export function getAssembly(id: string): Promise<Assembly> {
   return apiClient.get<Assembly>(`assemblies/${id}`);
 }
+/** Many assemblies in one call by id — avoids an N-request fan-out resolving assemblyIds into names (e.g. a customer order's full BOM composition print). Mirrors getProductsByIds. */
+export function getAssembliesByIds(ids: string[]): Promise<Assembly[]> {
+  return apiClient.get<Assembly[]>('assemblies/batch', { query: { ids: ids.join(',') } });
+}
 export function createAssembly(dto: CreateAssemblyInput): Promise<Assembly> {
   return apiClient.post<Assembly>('assemblies', dto);
 }
