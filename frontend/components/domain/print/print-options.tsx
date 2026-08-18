@@ -17,9 +17,13 @@ export interface PrintColumnOption {
 // mount a chain of N+1 useAssembly/useAssemblyCost/useFilesForEntities
 // queries where each level only starts fetching once its parent's data has
 // arrived — a real, observed multi-second waterfall for a several-levels-
-// deep BOM. If a stray query never settles, print still has to happen
-// eventually rather than silently never firing.
-const PRINT_MAX_WAIT_MS = 8000;
+// deep BOM (confirmed live: a real 6-assembly order pulled 150+ individual
+// product requests and still hadn't finished at the 8s mark this constant
+// used to be). If a stray query never settles, print still has to happen
+// eventually rather than silently never firing — this is only the ceiling
+// for that case, not the typical wait (the isFetching===0 gate below fires
+// as soon as everything's actually settled, often well under this).
+const PRINT_MAX_WAIT_MS = 20000;
 
 /**
  * Owns the "which columns / include photos" print-options state for one
