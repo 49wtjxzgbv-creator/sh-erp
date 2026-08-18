@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { CodedBadRequestException, CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ImportPairingPrismaService } from '../../prisma/import-pairing-prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
@@ -57,7 +58,7 @@ export class LegacyImportService {
 
   async getConnection(user: RequestUser, id: string) {
     const connection = await this.prisma.tenant.importConnection.findUnique({ where: { id } });
-    if (!connection) throw new NotFoundException('Import connection not found.');
+    if (!connection) throw new CodedNotFoundException('IMPORT_CONNECTION_NOT_FOUND', 'Import connection not found.');
     return sanitizeConnection(connection);
   }
 
@@ -110,10 +111,10 @@ export class LegacyImportService {
    */
   async completePairing(dto: CompletePairingDto) {
     const connection = await this.pairingPrisma.importConnection.findFirst({ where: { pairingCode: dto.pairingCode } });
-    if (!connection) throw new NotFoundException('Невірний код підключення.');
-    if (connection.status !== 'PENDING') throw new BadRequestException('Цей код підключення вже використано.');
+    if (!connection) throw new CodedNotFoundException('IMPORT_INVALID_PAIRING_CODE', 'Невірний код підключення.');
+    if (connection.status !== 'PENDING') throw new CodedBadRequestException('IMPORT_PAIRING_CODE_USED', 'Цей код підключення вже використано.');
     if (!connection.pairingCodeExpiresAt || connection.pairingCodeExpiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('Код підключення прострочено — згенеруйте новий у SH ERP.');
+      throw new CodedBadRequestException('IMPORT_PAIRING_CODE_EXPIRED', 'Код підключення прострочено — згенеруйте новий у SH ERP.');
     }
 
     const provider = getImportProvider(connection.providerType);
@@ -153,7 +154,7 @@ export class LegacyImportService {
     const connection = await this.prisma.runInTenantTransaction({ companyId, userId: actorUserId }, (tx) =>
       tx.importConnection.findUnique({ where: { id: connectionId } }),
     );
-    if (!connection?.configEncrypted) throw new NotFoundException('Import connection not found or not paired.');
+    if (!connection?.configEncrypted) throw new CodedNotFoundException('IMPORT_CONNECTION_NOT_PAIRED', 'Import connection not found or not paired.');
 
     const config = JSON.parse(decryptApiKey(connection.configEncrypted));
     const health = await provider.checkHealth(config);
@@ -204,7 +205,7 @@ export class LegacyImportService {
     const provider = getImportProvider(connection.providerType);
     const setup = await provider.initiateSetup({ companyId: user.companyId, userId: user.userId });
     if (!setup.requiresPairing) {
-      throw new BadRequestException('Цей тип джерела не потребує повторного підключення.');
+      throw new CodedBadRequestException('IMPORT_RECONNECT_NOT_SUPPORTED', 'Цей тип джерела не потребує повторного підключення.');
     }
 
     const updated = await this.prisma.tenant.importConnection.update({
@@ -264,7 +265,8 @@ export class LegacyImportService {
         connectorVersion: connection.connectorVersion ?? undefined,
       });
       if (report.errors.length > 0) {
-        throw new BadRequestException(
+        throw new CodedBadRequestException(
+          'IMPORT_BLOCKED_BY_ERRORS',
           `Імпорт заблоковано через критичні помилки: ${report.errors.map((e) => e.message).join(' ')}`,
         );
       }
@@ -290,7 +292,7 @@ export class LegacyImportService {
 
   async getJob(user: RequestUser, id: string) {
     const job = await this.prisma.tenant.importJob.findUnique({ where: { id } });
-    if (!job) throw new NotFoundException('Import job not found.');
+    if (!job) throw new CodedNotFoundException('IMPORT_JOB_NOT_FOUND', 'Import job not found.');
     return job;
   }
 
@@ -312,7 +314,7 @@ export class LegacyImportService {
     const startedAt = Date.now();
     try {
       const connection = await this.readConnection(companyId, actorUserId, connectionId);
-      if (!connection?.configEncrypted) throw new BadRequestException('Джерело не підключено.');
+      if (!connection?.configEncrypted) throw new CodedBadRequestException('IMPORT_SOURCE_NOT_CONNECTED', 'Джерело не підключено.');
       const provider = getImportProvider(connection.providerType);
       const config = JSON.parse(decryptApiKey(connection.configEncrypted));
 
@@ -329,7 +331,8 @@ export class LegacyImportService {
       });
 
       if (!dryRun && report.errors.length > 0) {
-        throw new BadRequestException(
+        throw new CodedBadRequestException(
+          'IMPORT_BLOCKED_BY_ERRORS',
           `Імпорт заблоковано через критичні помилки: ${report.errors.map((e) => e.message).join(' ')}`,
         );
       }
@@ -411,13 +414,13 @@ export class LegacyImportService {
 
   private async requireConnection(user: RequestUser, id: string) {
     const connection = await this.prisma.tenant.importConnection.findUnique({ where: { id } });
-    if (!connection) throw new NotFoundException('Import connection not found.');
+    if (!connection) throw new CodedNotFoundException('IMPORT_CONNECTION_NOT_FOUND', 'Import connection not found.');
     return connection;
   }
 
   private decryptConfig(connection: { configEncrypted: string | null; status: string }): unknown {
     if (connection.status !== 'PAIRED' || !connection.configEncrypted) {
-      throw new ForbiddenException('Це джерело ще не підключено — спочатку завершіть підключення.');
+      throw new CodedForbiddenException('IMPORT_NOT_CONNECTED', 'Це джерело ще не підключено — спочатку завершіть підключення.');
     }
     return JSON.parse(decryptApiKey(connection.configEncrypted));
   }

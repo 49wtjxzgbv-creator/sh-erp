@@ -1,7 +1,6 @@
 import {
   CallHandler,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
@@ -9,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { firstValueFrom, from, Observable } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { CodedForbiddenException } from '../api-exceptions';
 
 /**
  * Replaces what would otherwise be a separate PermissionsGuard, and is the
@@ -66,7 +66,7 @@ export class TenantScopeInterceptor implements NestInterceptor {
         // not "eventually."
         const company = await tenantDb.company.findUnique({ where: { id: user.companyId } });
         if (!company || company.status !== 'ACTIVE') {
-          throw new ForbiddenException('This company has been suspended. Contact support.');
+          throw new CodedForbiddenException('AUTH_COMPANY_SUSPENDED', 'This company has been suspended. Contact support.');
         }
 
         // Same gap, same fix, for a Super Admin blocking an individual user
@@ -76,7 +76,7 @@ export class TenantScopeInterceptor implements NestInterceptor {
         // would keep working for the rest of its ~15-minute lifetime.
         const requester = await tenantDb.user.findUnique({ where: { id: user.userId } });
         if (!requester || !requester.active) {
-          throw new ForbiddenException('Your account has been blocked. Contact your administrator.');
+          throw new CodedForbiddenException('AUTH_ACCOUNT_BLOCKED', 'Your account has been blocked. Contact your administrator.');
         }
 
         if (required && required.length > 0) {
@@ -85,12 +85,12 @@ export class TenantScopeInterceptor implements NestInterceptor {
             include: { permissions: { include: { permission: true } } },
           });
           if (!role) {
-            throw new ForbiddenException('Role no longer exists for this company.');
+            throw new CodedForbiddenException('AUTHZ_ROLE_GONE', 'Role no longer exists for this company.');
           }
           const granted = new Set(role.permissions.map((rp) => rp.permission.key));
           const missing = required.filter((key) => !granted.has(key));
           if (missing.length > 0) {
-            throw new ForbiddenException(`Missing required permission(s): ${missing.join(', ')}.`);
+            throw new CodedForbiddenException('AUTHZ_MISSING_PERMISSIONS', `Missing required permission(s): ${missing.join(', ')}.`);
           }
         }
 

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuthPrismaService } from '../../prisma/auth-prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { CodedNotFoundException, CodedUnauthorizedException } from '../../common/api-exceptions';
 
 export interface TokenPair {
   accessToken: string;
@@ -38,14 +39,14 @@ export class AuthService {
   async login(dto: LoginDto): Promise<TokenPair & { userId: string; companyId: string }> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.active) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     await this.verifyPassword(user, dto.password);
 
     const company = await this.prisma.company.findUnique({ where: { slug: dto.companySlug } });
     if (!company) {
-      throw new UnauthorizedException('Invalid email or password.'); // deliberately same message — don't leak slug existence
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.'); // deliberately same message — don't leak slug existence
     }
     // Real gap found and fixed during the production-readiness audit:
     // `Company.status` (schema.prisma) existed since Phase 3 but was never
@@ -55,14 +56,14 @@ export class AuthService {
     // token still expires within JWT_ACCESS_TTL regardless, but a blocked
     // company's users should not be able to mint a NEW session either way.
     if (company.status !== 'ACTIVE') {
-      throw new UnauthorizedException('This company has been suspended. Contact support.');
+      throw new CodedUnauthorizedException('AUTH_COMPANY_SUSPENDED', 'This company has been suspended. Contact support.');
     }
 
     const membership = await this.prisma.companyMembership.findUnique({
       where: { companyId_userId: { companyId: company.id, userId: user.id } },
     });
     if (!membership) {
-      throw new UnauthorizedException('You do not have access to this company.');
+      throw new CodedUnauthorizedException('AUTH_NO_COMPANY_ACCESS', 'You do not have access to this company.');
     }
 
     const tokens = await this.issueTokenPair(user.id, company.id, user.email, membership.roleId);
@@ -81,7 +82,7 @@ export class AuthService {
   async getPublicCompanyInfo(slug: string) {
     const company = await this.prisma.company.findUnique({ where: { slug } });
     if (!company) {
-      throw new NotFoundException('Company not found.');
+      throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
     }
     const branding = await this.prisma.companyBranding.findUnique({ where: { companyId: company.id } });
     return {
@@ -99,13 +100,13 @@ export class AuthService {
   ): Promise<void> {
     if (user.passwordHash) {
       const ok = await argon2.verify(user.passwordHash, plainPassword);
-      if (!ok) throw new UnauthorizedException('Invalid email or password.');
+      if (!ok) throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
       return;
     }
 
     if (user.legacyPasswordHash) {
       const legacyOk = this.verifyLegacySha256(plainPassword, user.legacyPasswordHash);
-      if (!legacyOk) throw new UnauthorizedException('Invalid email or password.');
+      if (!legacyOk) throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
 
       const newHash = await argon2.hash(plainPassword);
       await this.prisma.user.update({
@@ -115,7 +116,7 @@ export class AuthService {
       return;
     }
 
-    throw new UnauthorizedException('Invalid email or password.');
+    throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
   }
 
   private verifyLegacySha256(plainPassword: string, legacyHash: string): boolean {
@@ -136,7 +137,7 @@ export class AuthService {
     const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
 
     if (!stored || stored.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token invalid or expired.');
+      throw new CodedUnauthorizedException('AUTH_REFRESH_TOKEN_INVALID', 'Refresh token invalid or expired.');
     }
 
     if (stored.revokedAt) {
@@ -145,7 +146,7 @@ export class AuthService {
         where: { familyId: stored.familyId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      throw new UnauthorizedException('Refresh token has been revoked. Please sign in again.');
+      throw new CodedUnauthorizedException('AUTH_REFRESH_TOKEN_REVOKED', 'Refresh token has been revoked. Please sign in again.');
     }
 
     await this.prisma.refreshToken.update({
@@ -155,14 +156,14 @@ export class AuthService {
 
     const company = await this.prisma.company.findUnique({ where: { id: stored.companyId } });
     if (!company || company.status !== 'ACTIVE') {
-      throw new UnauthorizedException('This company has been suspended. Contact support.');
+      throw new CodedUnauthorizedException('AUTH_COMPANY_SUSPENDED', 'This company has been suspended. Contact support.');
     }
 
     const membership = await this.prisma.companyMembership.findUnique({
       where: { companyId_userId: { companyId: stored.companyId, userId: stored.userId } },
     });
     if (!membership) {
-      throw new UnauthorizedException('You no longer have access to this company.');
+      throw new CodedUnauthorizedException('AUTH_NO_COMPANY_ACCESS', 'You no longer have access to this company.');
     }
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: stored.userId } });
 

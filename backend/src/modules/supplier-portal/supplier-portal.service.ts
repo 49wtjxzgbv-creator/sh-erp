@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
  * The supplier-side view of purchase orders — `this.prisma.tenant` here is
@@ -35,7 +36,7 @@ export class SupplierPortalService {
     });
     // Same id but a different supplier's order (or a nonexistent id) both
     // 404 identically — never distinguish "not yours" from "doesn't exist".
-    if (!order) throw new NotFoundException('Purchase order not found.');
+    if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
     return order;
   }
 
@@ -45,7 +46,7 @@ export class SupplierPortalService {
     const itemIds = new Set((order.items as any[]).map((i) => i.id));
     for (const line of dto.items) {
       if (!itemIds.has(line.id)) {
-        throw new NotFoundException(`Line ${line.id} does not belong to this purchase order.`);
+        throw new CodedNotFoundException('SUPPLIER_PORTAL_LINE_NOT_FOUND', `Line ${line.id} does not belong to this purchase order.`);
       }
     }
 

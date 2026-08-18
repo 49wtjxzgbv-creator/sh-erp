@@ -3,9 +3,9 @@ import {
   createParamDecorator,
   ExecutionContext,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { CodedUnauthorizedException } from '../../common/api-exceptions';
 
 export interface RequestSupplierPortalUser {
   supplierPortalUserId: string;
@@ -46,12 +46,13 @@ export class SupplierPortalGuard implements CanActivate {
     const header = request.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) {
-      throw new UnauthorizedException('Missing supplier portal access token.');
+      throw new CodedUnauthorizedException('SUPPLIER_PORTAL_TOKEN_MISSING', 'Missing supplier portal access token.');
     }
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
     if (!secret) {
-      throw new UnauthorizedException(
+      throw new CodedUnauthorizedException(
+        'SUPPLIER_PORTAL_AUTH_DISABLED',
         'SUPPLIER_PORTAL_JWT_SECRET is not configured on this server — Supplier Portal auth is disabled until it is set.',
       );
     }
@@ -68,7 +69,7 @@ export class SupplierPortalGuard implements CanActivate {
       } satisfies RequestSupplierPortalUser;
       return true;
     } catch {
-      throw new UnauthorizedException('Invalid or expired supplier portal access token.');
+      throw new CodedUnauthorizedException('SUPPLIER_PORTAL_TOKEN_INVALID', 'Invalid or expired supplier portal access token.');
     }
   }
 }

@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminAuditService } from './super-admin-audit.service';
 import { RequestSuperAdmin } from './super-admin-context';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+import { CodedNotFoundException } from '../../common/api-exceptions';
 
 /** "Переглядати всіх користувачів; скидати пароль; блокувати" — cross-company, via SuperAdminPrismaService (BYPASSRLS). */
 @Injectable()
@@ -52,7 +53,7 @@ export class UsersAdminService {
    */
   async resetPassword(actor: RequestSuperAdmin, userId: string, dto: ResetUserPasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found.');
+    if (!user) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
 
     const newPassword = dto.newPassword ?? randomBytes(9).toString('base64url'); // 12 chars, URL-safe
     const passwordHash = await argon2.hash(newPassword);
@@ -79,7 +80,7 @@ export class UsersAdminService {
 
   async setActive(actor: RequestSuperAdmin, userId: string, active: boolean) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found.');
+    if (!user) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
 
     const updated = await this.prisma.user.update({ where: { id: userId }, data: { active } });
     if (!active) {

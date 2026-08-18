@@ -1,10 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateRoleDto, UpdateRoleDto } from './dto/upsert-role.dto';
 import { DEFAULT_ROLES, PERMISSIONS_CATALOGUE } from './permissions.catalogue';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 
 @Injectable()
 export class RolesService {
@@ -78,7 +79,7 @@ export class RolesService {
     const existing = await this.prisma.tenant.role.findUnique({
       where: { companyId_name: { companyId: user.companyId, name: dto.name } },
     });
-    if (existing) throw new ConflictException('A role with this name already exists.');
+    if (existing) throw new CodedConflictException('ROLE_NAME_TAKEN', 'A role with this name already exists.');
 
     const role = await this.prisma.tenant.role.create({
       data: {
@@ -116,7 +117,7 @@ export class RolesService {
       const existing = await this.prisma.tenant.role.findUnique({
         where: { companyId_name: { companyId: user.companyId, name: dto.name } },
       });
-      if (existing) throw new ConflictException('A role with this name already exists.');
+      if (existing) throw new CodedConflictException('ROLE_NAME_TAKEN', 'A role with this name already exists.');
     }
 
     const data: Prisma.RoleUpdateInput = {};
@@ -156,12 +157,12 @@ export class RolesService {
   async remove(user: RequestUser, roleId: string) {
     const role = await this.getRoleOrThrow(user.companyId, roleId);
     if (role.isSystem) {
-      throw new BadRequestException('The default system roles cannot be deleted, only edited.');
+      throw new CodedBadRequestException('ROLE_SYSTEM_CANNOT_DELETE', 'The default system roles cannot be deleted, only edited.');
     }
 
     const inUse = await this.prisma.tenant.companyMembership.count({ where: { roleId } });
     if (inUse > 0) {
-      throw new BadRequestException('This role is still assigned to at least one member — reassign them first.');
+      throw new CodedBadRequestException('ROLE_IN_USE', 'This role is still assigned to at least one member — reassign them first.');
     }
 
     await this.prisma.tenant.role.delete({ where: { id: roleId } });
@@ -190,14 +191,14 @@ export class RolesService {
     if (permissions.length !== keys.length) {
       const found = new Set(permissions.map((p) => p.key));
       const missing = keys.filter((k) => !found.has(k));
-      throw new BadRequestException(`Unknown permission key(s): ${missing.join(', ')}`);
+      throw new CodedBadRequestException('ROLE_UNKNOWN_PERMISSION_KEY', `Unknown permission key(s): ${missing.join(', ')}`);
     }
     return permissions.map((p) => p.id);
   }
 
   private async getRoleOrThrow(companyId: string, roleId: string) {
     const role = await this.prisma.tenant.role.findUnique({ where: { id: roleId } });
-    if (!role || role.companyId !== companyId) throw new NotFoundException('Role not found.');
+    if (!role || role.companyId !== companyId) throw new CodedNotFoundException('ROLE_NOT_FOUND', 'Role not found.');
     return role;
   }
 

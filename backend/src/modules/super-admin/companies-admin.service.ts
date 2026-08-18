@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
@@ -8,6 +8,7 @@ import { CreateCompanyDto } from '../tenancy/dto/create-company.dto';
 import { CompanyService } from '../tenancy/company.service';
 import { ImpersonateDto } from './dto/impersonate.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
  * "Бачити всі компанії; входити в будь-яку компанію; ... блокувати
@@ -53,7 +54,7 @@ export class CompaniesAdminService {
       where: { id: companyId },
       include: { subscription: true, memberships: { include: { user: true, role: true } } },
     });
-    if (!company) throw new NotFoundException('Company not found.');
+    if (!company) throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
     return company;
   }
 
@@ -93,7 +94,7 @@ export class CompaniesAdminService {
 
   async update(actor: RequestSuperAdmin, companyId: string, dto: UpdateCompanyDto) {
     const existing = await this.prisma.company.findUnique({ where: { id: companyId } });
-    if (!existing) throw new NotFoundException('Company not found.');
+    if (!existing) throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
 
     let updated;
     try {
@@ -103,7 +104,7 @@ export class CompaniesAdminService {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException('That slug is already taken by another company.');
+        throw new CodedConflictException('COMPANY_SLUG_TAKEN', 'That slug is already taken by another company.');
       }
       throw err;
     }
@@ -130,11 +131,11 @@ export class CompaniesAdminService {
     const membership = await this.prisma.companyMembership.findUnique({
       where: { companyId_userId: { companyId, userId } },
     });
-    if (!membership) throw new NotFoundException('That user is not a member of this company.');
+    if (!membership) throw new CodedNotFoundException('MEMBERSHIP_NOT_FOUND', 'That user is not a member of this company.');
 
     const memberCount = await this.prisma.companyMembership.count({ where: { companyId } });
     if (memberCount <= 1) {
-      throw new BadRequestException('Cannot remove the last remaining member of a company.');
+      throw new CodedBadRequestException('COMPANY_LAST_MEMBER', 'Cannot remove the last remaining member of a company.');
     }
 
     await this.prisma.companyMembership.delete({ where: { companyId_userId: { companyId, userId } } });
@@ -151,7 +152,7 @@ export class CompaniesAdminService {
 
   private async setStatus(companyId: string, status: 'ACTIVE' | 'SUSPENDED') {
     const existing = await this.prisma.company.findUnique({ where: { id: companyId } });
-    if (!existing) throw new NotFoundException('Company not found.');
+    if (!existing) throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
     return this.prisma.company.update({ where: { id: companyId }, data: { status } });
   }
 
@@ -166,9 +167,9 @@ export class CompaniesAdminService {
    */
   async impersonate(actor: RequestSuperAdmin, companyId: string, dto: ImpersonateDto) {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });
-    if (!company) throw new NotFoundException('Company not found.');
+    if (!company) throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
     if (company.status !== 'ACTIVE') {
-      throw new BadRequestException('Cannot impersonate into a non-active company — unblock it first.');
+      throw new CodedBadRequestException('COMPANY_NOT_ACTIVE', 'Cannot impersonate into a non-active company — unblock it first.');
     }
 
     const membership = dto.userId
@@ -183,9 +184,8 @@ export class CompaniesAdminService {
         });
 
     if (!membership) {
-      throw new NotFoundException(
-        dto.userId ? 'That user is not a member of this company.' : 'This company has no members to impersonate.',
-      );
+      if (dto.userId) throw new CodedNotFoundException('MEMBERSHIP_NOT_FOUND', 'That user is not a member of this company.');
+      throw new CodedNotFoundException('COMPANY_NO_MEMBERS', 'This company has no members to impersonate.');
     }
 
     const accessTtl = process.env.JWT_ACCESS_TTL ?? '15m';

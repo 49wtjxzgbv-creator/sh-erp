@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CodedBadRequestException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
@@ -203,7 +204,7 @@ export class AiService {
     }
 
     await this.actionsService.logUsage(user, 'full-assistant', { totalTokens });
-    throw new BadRequestException('Забагато кроків для відповіді — спробуйте перефразувати запитання простіше.');
+    throw new CodedBadRequestException('AI_TOO_MANY_STEPS', 'Забагато кроків для відповіді — спробуйте перефразувати запитання простіше.');
   }
 
   async confirmAction(user: RequestUser, pendingActionId: string) {
@@ -242,9 +243,9 @@ export class AiService {
     try {
       items = JSON.parse(cleaned);
     } catch {
-      throw new BadRequestException('AI did not return valid JSON for the recognized invoice.');
+      throw new CodedBadRequestException('AI_INVOICE_INVALID_JSON', 'AI did not return valid JSON for the recognized invoice.');
     }
-    if (!Array.isArray(items)) throw new BadRequestException('AI returned something other than a list of line items.');
+    if (!Array.isArray(items)) throw new CodedBadRequestException('AI_INVOICE_NOT_A_LIST', 'AI returned something other than a list of line items.');
 
     const products = await this.prisma.tenant.product.findMany({ where: { deletedAt: null } });
 
@@ -278,7 +279,7 @@ export class AiService {
     try {
       return await this.provider.generateContent(contents, apiKey, tools);
     } catch (e) {
-      if (e instanceof AiProviderException) throw new BadRequestException(e.message);
+      if (e instanceof AiProviderException) throw new CodedBadRequestException('AI_PROVIDER_ERROR', e.message);
       throw e;
     }
   }

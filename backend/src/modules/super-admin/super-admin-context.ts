@@ -3,9 +3,9 @@ import {
   createParamDecorator,
   ExecutionContext,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { CodedUnauthorizedException } from '../../common/api-exceptions';
 
 export interface RequestSuperAdmin {
   superAdminId: string;
@@ -46,7 +46,7 @@ export class SuperAdminGuard implements CanActivate {
     const header = request.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) {
-      throw new UnauthorizedException('Missing super-admin access token.');
+      throw new CodedUnauthorizedException('SUPER_ADMIN_TOKEN_MISSING', 'Missing super-admin access token.');
     }
 
     const secret = process.env.SUPER_ADMIN_JWT_SECRET;
@@ -56,7 +56,8 @@ export class SuperAdminGuard implements CanActivate {
       // Company Admin's token double as a Super Admin token, exactly the
       // "completely different roles" boundary this feature exists to
       // guarantee).
-      throw new UnauthorizedException(
+      throw new CodedUnauthorizedException(
+        'SUPER_ADMIN_AUTH_DISABLED',
         'SUPER_ADMIN_JWT_SECRET is not configured on this server — Super Admin auth is disabled until it is set.',
       );
     }
@@ -69,7 +70,7 @@ export class SuperAdminGuard implements CanActivate {
       request.superAdmin = { superAdminId: payload.sub, email: payload.email } satisfies RequestSuperAdmin;
       return true;
     } catch {
-      throw new UnauthorizedException('Invalid or expired super-admin access token.');
+      throw new CodedUnauthorizedException('SUPER_ADMIN_TOKEN_INVALID', 'Invalid or expired super-admin access token.');
     }
   }
 }

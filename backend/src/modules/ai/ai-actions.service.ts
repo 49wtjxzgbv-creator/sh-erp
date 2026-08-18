@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -6,6 +6,7 @@ import { AiUsage } from './providers/ai-provider.port';
 import { AiSettingsService } from './ai-settings.service';
 import { AiToolsRegistry } from './tools/tools.registry';
 import { loadPermissionSet } from '../../common/authorization/permission-set.util';
+import { CodedBadRequestException, CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 
 const DEFAULT_PENDING_ACTION_TTL_MINUTES = 10;
 
@@ -50,20 +51,20 @@ export class AiActionsService {
    */
   async confirmAction(user: RequestUser, pendingActionId: string) {
     const pending = await this.prisma.tenant.pendingAiAction.findUnique({ where: { id: pendingActionId } });
-    if (!pending) throw new NotFoundException('Pending AI action not found.');
+    if (!pending) throw new CodedNotFoundException('AI_PENDING_ACTION_NOT_FOUND', 'Pending AI action not found.');
     if (pending.status !== 'PENDING') {
-      throw new BadRequestException(`This action is no longer pending (status: ${pending.status}).`);
+      throw new CodedBadRequestException('AI_PENDING_ACTION_NOT_PENDING', `This action is no longer pending (status: ${pending.status}).`);
     }
     if (pending.expiresAt.getTime() < Date.now()) {
       await this.prisma.tenant.pendingAiAction.update({
         where: { id: pendingActionId },
         data: { status: 'EXPIRED', resolvedAt: new Date() },
       });
-      throw new BadRequestException('This action has expired — ask the assistant again.');
+      throw new CodedBadRequestException('AI_PENDING_ACTION_EXPIRED', 'This action has expired — ask the assistant again.');
     }
 
     const tool = this.toolsRegistry.getTool(pending.actionKey);
-    if (!tool) throw new BadRequestException(`Unknown action: ${pending.actionKey}`);
+    if (!tool) throw new CodedBadRequestException('AI_UNKNOWN_ACTION', `Unknown action: ${pending.actionKey}`);
 
     const permissions = await loadPermissionSet(this.prisma, user);
     const result = await tool.execute(pending.args as any, { user, permissions });
@@ -88,9 +89,9 @@ export class AiActionsService {
 
   async cancelAction(user: RequestUser, pendingActionId: string) {
     const pending = await this.prisma.tenant.pendingAiAction.findUnique({ where: { id: pendingActionId } });
-    if (!pending) throw new NotFoundException('Pending AI action not found.');
+    if (!pending) throw new CodedNotFoundException('AI_PENDING_ACTION_NOT_FOUND', 'Pending AI action not found.');
     if (pending.status !== 'PENDING') {
-      throw new BadRequestException(`This action is no longer pending (status: ${pending.status}).`);
+      throw new CodedBadRequestException('AI_PENDING_ACTION_NOT_PENDING', `This action is no longer pending (status: ${pending.status}).`);
     }
 
     const updated = await this.prisma.tenant.pendingAiAction.update({
@@ -143,7 +144,7 @@ export class AiActionsService {
     });
     const used = agg._sum.tokensUsed ?? 0;
     if (used >= quota) {
-      throw new ForbiddenException(`Monthly AI usage quota (${quota} tokens) has been reached for this company.`);
+      throw new CodedForbiddenException('AI_QUOTA_EXCEEDED', `Monthly AI usage quota (${quota} tokens) has been reached for this company.`);
     }
   }
 }

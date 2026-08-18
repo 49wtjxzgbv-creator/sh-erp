@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
@@ -8,6 +8,13 @@ import { EmailService } from '../notifications/email.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateMembershipRoleDto } from './dto/update-membership.dto';
+import {
+  CodedBadRequestException,
+  CodedConflictException,
+  CodedForbiddenException,
+  CodedNotFoundException,
+  CodedUnauthorizedException,
+} from '../../common/api-exceptions';
 
 /**
  * Company user management (Phase 1 §3.1's `Users.gs`, deliberately not
@@ -82,7 +89,7 @@ export class UsersService {
 
   async invite(user: RequestUser, dto: InviteUserDto) {
     const role = await this.prisma.tenant.role.findUnique({ where: { id: dto.roleId } });
-    if (!role) throw new BadRequestException('Unknown role.');
+    if (!role) throw new CodedBadRequestException('ROLE_UNKNOWN', 'Unknown role.');
 
     let target = await this.prisma.tenant.user.findUnique({ where: { email: dto.email } });
     let tempPassword: string | null = null;
@@ -92,7 +99,7 @@ export class UsersService {
         where: { companyId_userId: { companyId: user.companyId, userId: target.id } },
       });
       if (existingMembership) {
-        throw new ConflictException('This person already has access to this company.');
+        throw new CodedConflictException('MEMBERSHIP_ALREADY_EXISTS', 'This person already has access to this company.');
       }
     } else {
       tempPassword = this.generateTempPassword();
@@ -135,7 +142,7 @@ export class UsersService {
   async updateRole(user: RequestUser, targetUserId: string, dto: UpdateMembershipRoleDto) {
     const membership = await this.getMembershipOrThrow(user.companyId, targetUserId);
     const role = await this.prisma.tenant.role.findUnique({ where: { id: dto.roleId } });
-    if (!role) throw new BadRequestException('Unknown role.');
+    if (!role) throw new CodedBadRequestException('ROLE_UNKNOWN', 'Unknown role.');
 
     const updated = await this.prisma.tenant.companyMembership.update({
       where: { id: membership.id },
@@ -167,13 +174,13 @@ export class UsersService {
    */
   async deactivate(user: RequestUser, targetUserId: string) {
     if (targetUserId === user.userId) {
-      throw new ForbiddenException('You cannot remove your own access. Ask another admin to do this.');
+      throw new CodedForbiddenException('MEMBERSHIP_CANNOT_REMOVE_SELF', 'You cannot remove your own access. Ask another admin to do this.');
     }
     const membership = await this.getMembershipOrThrow(user.companyId, targetUserId);
 
     const memberCount = await this.prisma.tenant.companyMembership.count({ where: { companyId: user.companyId } });
     if (memberCount <= 1) {
-      throw new BadRequestException('Cannot remove the last remaining member of a company.');
+      throw new CodedBadRequestException('COMPANY_LAST_MEMBER', 'Cannot remove the last remaining member of a company.');
     }
 
     await this.prisma.tenant.companyMembership.delete({ where: { id: membership.id } });
@@ -193,10 +200,10 @@ export class UsersService {
   async changeOwnPassword(user: RequestUser, dto: ChangePasswordDto) {
     const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
     if (!dbUser || !dbUser.passwordHash) {
-      throw new UnauthorizedException('Cannot verify current password.');
+      throw new CodedUnauthorizedException('AUTH_PASSWORD_UNVERIFIABLE', 'Cannot verify current password.');
     }
     const ok = await argon2.verify(dbUser.passwordHash, dto.currentPassword);
-    if (!ok) throw new UnauthorizedException('Current password is incorrect.');
+    if (!ok) throw new CodedUnauthorizedException('AUTH_CURRENT_PASSWORD_INCORRECT', 'Current password is incorrect.');
 
     const newHash = await argon2.hash(dto.newPassword);
     await this.prisma.tenant.user.update({ where: { id: user.userId }, data: { passwordHash: newHash } });
@@ -216,7 +223,7 @@ export class UsersService {
     const membership = await this.prisma.tenant.companyMembership.findUnique({
       where: { companyId_userId: { companyId, userId } },
     });
-    if (!membership) throw new NotFoundException('This user is not a member of this company.');
+    if (!membership) throw new CodedNotFoundException('MEMBERSHIP_NOT_FOUND', 'This user is not a member of this company.');
     return membership;
   }
 

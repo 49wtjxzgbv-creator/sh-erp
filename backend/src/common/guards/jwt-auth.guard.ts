@@ -1,6 +1,7 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { CodedUnauthorizedException } from '../api-exceptions';
 
 /**
  * Requires `req.user` (populated by TenantContextMiddleware) unless the
@@ -21,7 +22,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     if (!request.user) {
-      throw new UnauthorizedException('Missing or invalid access token.');
+      throw new CodedUnauthorizedException('AUTH_TOKEN_MISSING_OR_INVALID', 'Missing or invalid access token.');
     }
     return true;
   }

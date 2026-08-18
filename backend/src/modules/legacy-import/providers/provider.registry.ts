@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
 import { GoogleAppsScriptProvider } from './google-apps-script.provider';
 import type { ImportConnectorProvider } from './provider.interface';
+import { CodedBadRequestException } from '../../../common/api-exceptions';
 
 /**
  * Every supported connector provider, keyed by `ImportConnection.providerType`
@@ -16,7 +16,7 @@ const PROVIDERS: Record<string, ImportConnectorProvider> = {
 export function getImportProvider(providerType: string): ImportConnectorProvider {
   const provider = PROVIDERS[providerType];
   if (!provider) {
-    throw new BadRequestException(`Unknown import provider type: ${providerType}`);
+    throw new CodedBadRequestException('IMPORT_UNKNOWN_PROVIDER', `Unknown import provider type: ${providerType}`);
   }
   return provider;
 }

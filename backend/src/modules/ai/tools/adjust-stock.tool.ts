@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StockService } from '../../inventory/stock.service';
 import { AiTool, AiToolContext } from './ai-tool.interface';
+import { CodedBadRequestException } from '../../../common/api-exceptions';
 
 /**
  * Ported from AI_TOOLS_.adjustProductStock / confirmAiAction's
@@ -49,12 +50,12 @@ export class AdjustProductStockTool implements AiTool {
       where: { article: { equals: String(args.article), mode: 'insensitive' }, deletedAt: null },
     });
     if (!product) {
-      throw new BadRequestException(`Товар з артикулом "${args.article}" не знайдено.`);
+      throw new CodedBadRequestException('AI_TOOL_PRODUCT_NOT_FOUND', `Товар з артикулом "${args.article}" не знайдено.`);
     }
 
     const newQty = Number(args.newQty);
     if (!Number.isFinite(newQty)) {
-      throw new BadRequestException('newQty must be a finite number.');
+      throw new CodedBadRequestException('AI_TOOL_INVALID_QTY', 'newQty must be a finite number.');
     }
 
     const delta = newQty - Number(product.qty);

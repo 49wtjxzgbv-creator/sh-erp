@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
 import { SupplierPortalLoginDto } from './dto/supplier-portal-login.dto';
+import { CodedUnauthorizedException } from '../../common/api-exceptions';
 
 /**
  * Genuinely separate login flow from both `AuthService` (Company Admin /
@@ -26,17 +27,18 @@ export class SupplierPortalAuthService {
   async login(dto: SupplierPortalLoginDto): Promise<{ accessToken: string; expiresIn: string }> {
     const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { email: dto.email } });
     if (!portalUser || !portalUser.active) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     const ok = await argon2.verify(portalUser.passwordHash, dto.password);
     if (!ok) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
     if (!secret) {
-      throw new UnauthorizedException(
+      throw new CodedUnauthorizedException(
+        'SUPPLIER_PORTAL_AUTH_DISABLED',
         'SUPPLIER_PORTAL_JWT_SECRET is not configured on this server — Supplier Portal auth is disabled until it is set.',
       );
     }

@@ -1,9 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminLoginDto } from './dto/super-admin-login.dto';
 import { SuperAdminAuditService } from './super-admin-audit.service';
+import { CodedUnauthorizedException } from '../../common/api-exceptions';
 
 /**
  * Genuinely separate login flow from `AuthService` (Company Admin / regular
@@ -29,17 +30,18 @@ export class SuperAdminAuthService {
   async login(dto: SuperAdminLoginDto): Promise<{ accessToken: string; expiresIn: string }> {
     const admin = await this.prisma.superAdmin.findUnique({ where: { email: dto.email } });
     if (!admin || !admin.active) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     const ok = await argon2.verify(admin.passwordHash, dto.password);
     if (!ok) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
     const secret = process.env.SUPER_ADMIN_JWT_SECRET;
     if (!secret) {
-      throw new UnauthorizedException(
+      throw new CodedUnauthorizedException(
+        'SUPER_ADMIN_AUTH_DISABLED',
         'SUPER_ADMIN_JWT_SECRET is not configured on this server — Super Admin auth is disabled until it is set.',
       );
     }

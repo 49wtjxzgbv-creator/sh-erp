@@ -1,5 +1,6 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import { BadGatewayException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { CodedBadRequestException } from '../../../common/api-exceptions';
 import type { LegacyExportPayload } from '../transform';
 import type {
   CompleteSetupResult,
@@ -58,12 +59,13 @@ export class GoogleAppsScriptProvider implements ImportConnectorProvider<GoogleA
   async completeSetup(payload: unknown): Promise<CompleteSetupResult<GoogleAppsScriptConfig>> {
     const p = (payload ?? {}) as PairingPayload;
     if (typeof p.webAppUrl !== 'string' || !isHttpsUrl(p.webAppUrl)) {
-      throw new BadRequestException('Pairing payload is missing a valid HTTPS webAppUrl.');
+      throw new CodedBadRequestException('IMPORT_PAIRING_PAYLOAD_INVALID', 'Pairing payload is missing a valid HTTPS webAppUrl.');
     }
     const protocolVersion = typeof p.protocolVersion === 'string' ? p.protocolVersion : undefined;
     const connectorVersion = typeof p.connectorVersion === 'string' ? p.connectorVersion : undefined;
     if (!protocolVersion || !SUPPORTED_PROTOCOL_VERSIONS.has(protocolVersion)) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'IMPORT_UNSUPPORTED_PROTOCOL_VERSION',
         `Версія конектора (protocolVersion=${protocolVersion ?? 'відсутня'}) не підтримується цією версією SH ERP ` +
           `(підтримується: ${Array.from(SUPPORTED_PROTOCOL_VERSIONS).join(', ')}). Оновіть SH ERP Import Connector до останньої версії.`,
       );
@@ -170,7 +172,7 @@ export class GoogleAppsScriptProvider implements ImportConnectorProvider<GoogleA
     }
 
     if (typeof json === 'object' && json !== null && (json as Record<string, unknown>).error) {
-      throw new BadRequestException(`Конектор повідомив про помилку: ${String((json as Record<string, unknown>).error)}`);
+      throw new CodedBadRequestException('IMPORT_CONNECTOR_ERROR', `Конектор повідомив про помилку: ${String((json as Record<string, unknown>).error)}`);
     }
 
     return json;

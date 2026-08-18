@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
 const DEFAULT_PLAN_KEY = 'starter';
 
@@ -33,7 +34,8 @@ export class BillingService {
   async seedDefaultSubscription(tx: Prisma.TransactionClient, companyId: string): Promise<void> {
     const plan = await tx.plan.findUnique({ where: { key: DEFAULT_PLAN_KEY } });
     if (!plan) {
-      throw new BadRequestException(
+      throw new CodedBadRequestException(
+        'BILLING_DEFAULT_PLAN_MISSING',
         `Default plan "${DEFAULT_PLAN_KEY}" not found — run \`prisma db seed\` before allowing signups.`,
       );
     }
@@ -46,7 +48,7 @@ export class BillingService {
     const subscription = await this.prisma.tenant.companySubscription.findUnique({
       where: { companyId: user.companyId },
     });
-    if (!subscription) throw new NotFoundException('No subscription on record for this company.');
+    if (!subscription) throw new CodedNotFoundException('BILLING_SUBSCRIPTION_NOT_FOUND', 'No subscription on record for this company.');
 
     const plan = await this.prisma.plan.findUnique({ where: { id: subscription.planId } });
     return { ...subscription, plan };
@@ -54,7 +56,7 @@ export class BillingService {
 
   async updatePlan(user: RequestUser, dto: UpdateSubscriptionDto) {
     const plan = await this.prisma.plan.findUnique({ where: { key: dto.planKey } });
-    if (!plan) throw new NotFoundException(`Unknown plan: ${dto.planKey}`);
+    if (!plan) throw new CodedNotFoundException('PLAN_NOT_FOUND', `Unknown plan: ${dto.planKey}`);
 
     const before = await this.prisma.tenant.companySubscription.findUnique({ where: { companyId: user.companyId } });
     const updated = await this.prisma.tenant.companySubscription.update({
