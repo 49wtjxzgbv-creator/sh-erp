@@ -9,41 +9,53 @@ import type { ReactNode } from 'react';
  * pick lists, product labels, planner, dashboard timeline, availability
  * reports, and anything printed in the future) already renders its content
  * inside `<PrintArea>`, so this reaches all of them automatically with zero
- * per-view wiring and nothing to forget on a new print view. Wraps
- * `children` (header before, footer after) rather than rendering as
- * standalone siblings, because real print and the on-screen preview need
- * opposite DOM/positioning strategies (see below) and getting the order
- * right matters for the preview's normal-flow case.
+ * per-view wiring and nothing to forget on a new print view.
  *
- * In real print (`@media print`), header/footer are `position: fixed`
- * (globals.css) — the one technique Chrome's print engine reliably repeats
- * on every physical printed page, since there is no server-side PDF
- * renderer in this app (`print-area.tsx`'s own header comment): "printing
- * to PDF" IS the browser's native print dialog over this same styled HTML.
- *
- * In the on-screen `?print=1` preview, `.print-area` is a normal in-flow
- * block (unlike real print, it isn't pinned to a single page-sized box), so
- * a `position: fixed` header/footer there would anchor to the raw browser
- * viewport instead of the document — floating on top of whatever content
- * happens to be scrolled underneath rather than sitting at the top/bottom
- * of the actual document. Preview CSS therefore renders both in normal flow
- * instead: once above the content, once below — an honest approximation
- * (there's no real pagination to repeat *across* outside of actual
- * printing), not a broken one.
+ * Repeats on every physical printed page via `<thead>`/`<tfoot>` with
+ * `display: table-header-group`/`table-footer-group` (globals.css) — NOT
+ * `position: fixed`. A `position: fixed` element only ever repeats
+ * correctly on the page it was reserved space for via container padding —
+ * padding on a fragmented box applies once at the very top (page 1) and
+ * once at the very bottom (the last page), never on the pages in between,
+ * so a `fixed` header/footer overlapped real content on every page after
+ * the first (confirmed live on a multi-page order). A table's
+ * `table-header-group`/`table-footer-group` rows are specifically designed
+ * by the CSS fragmentation model to repeat with correctly-reserved space on
+ * every page a table spans — the exact mechanism this codebase already
+ * relies on for the planner Gantt table's own repeating column header
+ * (`.planner-print-table thead`, globals.css) — so this wraps all print
+ * content in one such table instead of re-deriving the same problem a
+ * second, less reliable way.
  */
 export function PdfBranding({ children }: { children: ReactNode }) {
   return (
-    <>
-      <div className="pdf-header" aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-sh-erp.svg" alt="" className="pdf-header-logo" />
-      </div>
-      {children}
-      <div className="pdf-footer" aria-hidden="true">
-        <div className="pdf-footer-line" />
-        <p className="pdf-footer-brand">SH-ERP.PRO</p>
-        <p className="pdf-footer-tagline">by Shyryng</p>
-      </div>
-    </>
+    <table className="pdf-page-frame" role="presentation">
+      <thead>
+        <tr>
+          <td>
+            <div className="pdf-header" aria-hidden="true">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-sh-erp.svg" alt="" className="pdf-header-logo" />
+            </div>
+          </td>
+        </tr>
+      </thead>
+      <tfoot>
+        <tr>
+          <td>
+            <div className="pdf-footer" aria-hidden="true">
+              <div className="pdf-footer-line" />
+              <p className="pdf-footer-brand">SH-ERP.PRO</p>
+              <p className="pdf-footer-tagline">by Shyryng</p>
+            </div>
+          </td>
+        </tr>
+      </tfoot>
+      <tbody>
+        <tr>
+          <td>{children}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }

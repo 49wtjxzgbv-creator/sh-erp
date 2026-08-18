@@ -170,10 +170,7 @@
     width: 100%;
     background: #fff;
     color: #000;
-    /* Top/bottom widened to keep real content clear of the fixed corporate
-     * header/footer band below (42mm clears a 15mm-offset, up-to-20mm-tall
-     * logo; 28mm clears the footer's line + two text lines + margin). */
-    padding: 42mm 12mm 28mm 12mm;
+    padding: 12mm;
   }
   .print-area table {
     width: 100%;
@@ -193,47 +190,18 @@
     display: none !important;
   }
 
-  /* Corporate PDF branding (pdf-branding.tsx) — `position: fixed` is the one
-   * technique Chrome's print engine reliably repeats on every physical
-   * printed page (a normal in-flow element only ever prints once, wherever
-   * it happens to fall in the content). */
-  .pdf-header {
-    position: fixed;
-    top: 15mm;
-    left: 15mm;
-    z-index: 50;
+  /* Corporate PDF branding (pdf-branding.tsx) — the header/footer rows
+   * repeat via `.pdf-page-frame`'s table-header-group/table-footer-group
+   * display below, not `position: fixed`: a `fixed` element only gets the
+   * reserved padding space on the very first/last printed page (padding on
+   * a box fragmented across pages applies once at its top and once at its
+   * bottom, never on the pages between), so it overlapped real content on
+   * every page after the first — confirmed live on a multi-page order. */
+  .pdf-page-frame thead {
+    display: table-header-group;
   }
-  .pdf-header-logo {
-    height: 19mm;
-    width: auto;
-    display: block;
-  }
-  .pdf-footer {
-    position: fixed;
-    bottom: 10mm;
-    left: 0;
-    right: 0;
-    z-index: 50;
-    text-align: center;
-  }
-  .pdf-footer-line {
-    width: 60mm;
-    margin: 0 auto 2mm;
-    border-top: 0.3mm solid #ccc;
-  }
-  .pdf-footer-brand {
-    margin: 0;
-    font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 9.5pt;
-    font-weight: 600;
-    color: #777777;
-  }
-  .pdf-footer-tagline {
-    margin: 0;
-    font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 7.5pt;
-    font-weight: 400;
-    color: #777777;
+  .pdf-page-frame tfoot {
+    display: table-footer-group;
   }
 
   /* План-графік print table (planner-gantt-print.tsx) — a real <table> so
@@ -325,42 +293,11 @@
   text-align: left;
   font-size: 11px;
 }
-/* Unlike @media print above, `.print-area` here is a normal in-flow block,
- * not pinned to one page-sized box — there is no real pagination to repeat
- * a fixed header/footer across. Rendering both in normal flow (once above,
- * once below the content) avoids a `position: fixed` header/footer
- * floating over the viewport and overlapping whatever content happens to
- * be scrolled underneath it. */
-.print-preview-mode .pdf-header {
-  margin: 0 0 8mm 0;
+.print-preview-mode .pdf-page-frame thead {
+  display: table-header-group;
 }
-.print-preview-mode .pdf-header-logo {
-  height: 19mm;
-  width: auto;
-  display: block;
-}
-.print-preview-mode .pdf-footer {
-  margin: 8mm 0 0 0;
-  text-align: center;
-}
-.print-preview-mode .pdf-footer-line {
-  width: 60mm;
-  margin: 0 auto 2mm;
-  border-top: 0.3mm solid #ccc;
-}
-.print-preview-mode .pdf-footer-brand {
-  margin: 0;
-  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  font-size: 9.5pt;
-  font-weight: 600;
-  color: #777777;
-}
-.print-preview-mode .pdf-footer-tagline {
-  margin: 0;
-  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  font-size: 7.5pt;
-  font-weight: 400;
-  color: #777777;
+.print-preview-mode .pdf-page-frame tfoot {
+  display: table-footer-group;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;
@@ -411,4 +348,56 @@
   font-size: 7px;
   white-space: nowrap;
   color: #333;
+}
+
+/*
+ * Corporate PDF branding appearance (pdf-branding.tsx) — unlike everything
+ * above, these rules apply the same way in both real print and the preview
+ * (neither depends on `@media print` vs `.print-preview-mode`: there's
+ * nothing page-count- or pagination-specific about how the logo/footer
+ * *look*, only about how `.pdf-page-frame`'s thead/tfoot *repeat*, which is
+ * handled separately above). `.pdf-page-frame td` overrides `.print-area
+ * td`'s border/padding — needs to win over both the plain `@media print`
+ * and the higher-specificity `.print-preview-mode .print-area td` rules
+ * above, hence the extra `.print-area` scope plus living last in the file
+ * as a tie-break.
+ */
+.print-area .pdf-page-frame {
+  width: 100%;
+  border-collapse: collapse;
+}
+.print-area .pdf-page-frame td {
+  border: none;
+  padding: 0;
+}
+.pdf-header {
+  margin-bottom: 8mm;
+}
+.pdf-header-logo {
+  height: 19mm;
+  width: auto;
+  display: block;
+}
+.pdf-footer {
+  margin-top: 8mm;
+  text-align: center;
+}
+.pdf-footer-line {
+  width: 60mm;
+  margin: 0 auto 2mm;
+  border-top: 0.3mm solid #ccc;
+}
+.pdf-footer-brand {
+  margin: 0;
+  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 9.5pt;
+  font-weight: 600;
+  color: #777777;
+}
+.pdf-footer-tagline {
+  margin: 0;
+  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 7.5pt;
+  font-weight: 400;
+  color: #777777;
 }
