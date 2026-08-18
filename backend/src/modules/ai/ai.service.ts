@@ -67,15 +67,22 @@ export class AiService {
     let totalCostLocal = 0;
     for (const item of items) {
       const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: item.assemblyId } });
+      // A line can have multiple production batches (План-графік §1,
+      // batch-splitting) — summarize across all of them rather than a
+      // single 1:1 order, which the old CustomerOrderItem.productionOrderId
+      // link could never represent once splitting shipped.
+      const batches = await this.prisma.tenant.productionOrder.findMany({ where: { customerOrderItemId: item.id } });
       let productionOrderStatus = 'не створено';
       let lineTotalLocal: number | undefined;
-      if (item.productionOrderId) {
-        const po = await this.prisma.tenant.productionOrder.findUnique({ where: { id: item.productionOrderId } });
-        if (po) {
-          productionOrderStatus = po.status;
-          if (po.totalLocalCostEur != null) lineTotalLocal = Number(po.totalLocalCostEur);
-        }
+      if (batches.length === 1) {
+        productionOrderStatus = batches[0].status;
+      } else if (batches.length > 1) {
+        const byStatus = new Map<string, number>();
+        for (const b of batches) byStatus.set(b.status, (byStatus.get(b.status) ?? 0) + 1);
+        productionOrderStatus = Array.from(byStatus.entries()).map(([status, count]) => `${status} (${count})`).join(', ');
       }
+      const batchCosts = batches.map((b) => b.totalLocalCostEur).filter((c): c is NonNullable<typeof c> => c != null);
+      if (batchCosts.length > 0) lineTotalLocal = batchCosts.reduce((sum, c) => sum + Number(c), 0);
       if (lineTotalLocal === undefined && assembly) {
         try {
           const cost = await this.assembliesService.calculateCost(user, assembly.id);

@@ -969,7 +969,6 @@ model ProductionOrder {
   scheduledStartAt    DateTime? @db.Timestamptz(3)
   scheduledEndAt      DateTime? @db.Timestamptz(3)
 
-  // NEW — replaces the 1:1 CustomerOrderItem.productionOrderId link.
   // Nullable + NOT unique: many ProductionOrder batches can point at the
   // same CustomerOrderItem (План-графік §1, batch-splitting)
   customerOrderItemId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
@@ -995,8 +994,7 @@ model ProductionOrder {
   workers             ProductionOrderWorker[]
   finishedGoods       FinishedGood[]
   payrollEntries      PayrollEntry[]
-  legacyCustomerOrderItem CustomerOrderItem? @relation("LegacyItemProductionOrder") // DEPRECATED reverse of the old 1:1 — removed together with CustomerOrderItem.productionOrderId
-  customerOrderItem       CustomerOrderItem? @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // NEW — this batch's parent order line
+  customerOrderItem       CustomerOrderItem? @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // this batch's parent order line (План-графік §1, batch-splitting)
   stagePlans              ProductionOrderStagePlan[]
   scheduleSlot        ProductionScheduleSlot?
 
@@ -1308,8 +1306,6 @@ model CustomerOrderItem {
   customerOrderId   String   @db.Uuid
   assemblyId        String   @db.Uuid
   qty               Decimal  @db.Decimal(14, 3)
-  productionOrderId String?  @db.Uuid @unique // DEPRECATED — 1:1, superseded by ProductionOrder.customerOrderItemId (batch-splitting, План-графік §1). Kept read-only until data migration + reconciliation is confirmed, then dropped in a final separate migration — do not use in new code.
-
   // Optional per-line planning targets, only when they differ from the
   // order's own — never auto-derived (План-графік §4)
   plannedStartAt    DateTime? @db.Timestamptz(3)
@@ -1319,7 +1315,6 @@ model CustomerOrderItem {
   company           Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customerOrder     CustomerOrder    @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
   assembly          Assembly         @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrder   ProductionOrder? @relation("LegacyItemProductionOrder", fields: [productionOrderId], references: [id], onDelete: SetNull) // DEPRECATED — see productionOrderId comment
   productionOrders  ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
 
   @@index([customerOrderId])

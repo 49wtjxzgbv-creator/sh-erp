@@ -45,8 +45,6 @@ export interface CustomerOrderItem {
   customerOrderId: string;
   assemblyId: string;
   qty: DecimalString;
-  /** DEPRECATED — 1:1 legacy link, superseded by batches in quantitySummary. Do not use in new code. */
-  productionOrderId: string | null;
   /** Optional, only if it differs from the order's own — never auto-derived. */
   plannedStartAt: string | null;
   plannedEndAt: string | null;

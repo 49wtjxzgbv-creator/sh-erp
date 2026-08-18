@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost, useAssemblyCosts, useAssembliesByIds } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
-import { useProductionOrder, useProductionOrdersByIds } from '@/lib/hooks/use-production';
+import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { toNumber } from '@/lib/api-client/decimal';
@@ -40,17 +40,27 @@ function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: numb
   return <td>{cost ? formatEur(cost.costPerUnit * qty) : t('pricePending')}</td>;
 }
 
-function ActualPriceCell({ productionOrderId }: { productionOrderId: string | null }) {
+/** Sum of `totalLocalCostEur` across every batch behind this line — a line can have several once split (План-графік §1). Mirrors ActualPriceCell in sales/[id]/page.tsx. */
+function ActualPriceCell({ batchIds }: { batchIds: string[] }) {
   const t = useTranslations('sales');
-  const { data: po } = useProductionOrder(productionOrderId ?? undefined);
-  if (!productionOrderId || !po || po.totalLocalCostEur == null) return <td>{t('pricePending')}</td>;
-  return <td>{formatEur(Number(po.totalLocalCostEur))}</td>;
+  const poResults = useProductionOrdersByIds(batchIds);
+  let total = 0;
+  let hasActual = false;
+  for (const r of poResults) {
+    if (r.data?.totalLocalCostEur != null) {
+      total += Number(r.data.totalLocalCostEur);
+      hasActual = true;
+    }
+  }
+  if (!hasActual) return <td>{t('pricePending')}</td>;
+  return <td>{formatEur(total)}</td>;
 }
 
 function PrintPriceTotals({ order, items }: { order: CustomerOrder; items: CustomerOrderItem[] }) {
   const t = useTranslations('sales');
   const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
-  const poResults = useProductionOrdersByIds(items.map((i) => i.productionOrderId ?? undefined));
+  const allBatchIds = items.flatMap((i) => i.quantitySummary?.batches.map((b) => b.id) ?? []);
+  const poResults = useProductionOrdersByIds(allBatchIds);
 
   let estimatedTotal = 0;
   let hasEstimate = false;
@@ -64,13 +74,12 @@ function PrintPriceTotals({ order, items }: { order: CustomerOrder; items: Custo
 
   let actualTotal = 0;
   let hasActual = false;
-  items.forEach((item, i) => {
-    const po = poResults[i]?.data;
-    if (po?.totalLocalCostEur != null) {
-      actualTotal += Number(po.totalLocalCostEur);
+  for (const r of poResults) {
+    if (r.data?.totalLocalCostEur != null) {
+      actualTotal += Number(r.data.totalLocalCostEur);
       hasActual = true;
     }
-  });
+  }
 
   // Same fold as the order detail page's own OrderPriceTotals (sales/[id]/page.tsx) — these count toward the total regardless of production progress.
   const extraCostValues = [toNumber(order.deliveryCost), toNumber(order.transportRiggingCost), toNumber(order.otherCost)];
@@ -276,7 +285,9 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
                 )}
                 {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
                 {printOptions.isColumnVisible('estimatedPrice') && <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />}
-                {printOptions.isColumnVisible('actualPrice') && <ActualPriceCell productionOrderId={item.productionOrderId} />}
+                {printOptions.isColumnVisible('actualPrice') && (
+                  <ActualPriceCell batchIds={item.quantitySummary?.batches.map((b) => b.id) ?? []} />
+                )}
               </tr>
             ))}
           </tbody>

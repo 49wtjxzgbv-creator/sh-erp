@@ -306,9 +306,8 @@ export class CustomerOrdersService {
    * via ProductionOrdersService.create). Batch-splitting (План-графік §1):
    * a line can be given repeatedly, each call creating an independent
    * batch with its own qty/dates, as long as some quantity still remains
-   * (item.qty minus every non-cancelled batch's unitsPlanned so far). Does
-   * NOT touch the deprecated `CustomerOrderItem.productionOrderId` — new
-   * batches link via `ProductionOrder.customerOrderItemId` only.
+   * (item.qty minus every non-cancelled batch's unitsPlanned so far).
+   * Batches link back to their line via `ProductionOrder.customerOrderItemId`.
    */
   async giveItemToProduction(user: RequestUser, orderId: string, itemId: string, dto: GiveItemToProductionDto) {
     const order = await this.findOne(user, orderId);
