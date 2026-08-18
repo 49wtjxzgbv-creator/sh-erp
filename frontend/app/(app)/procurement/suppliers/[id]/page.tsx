@@ -4,13 +4,25 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Trash2 } from 'lucide-react';
-import { useSupplier, useUpdateSupplier, useDeleteSupplier, useInvitePortal, useDeactivatePortal } from '@/lib/hooks/use-procurement';
+import Link from 'next/link';
+import {
+  useSupplier,
+  useUpdateSupplier,
+  useDeleteSupplier,
+  useInvitePortal,
+  useDeactivatePortal,
+  useSupplierLinkedProducts,
+  useSupplierLinkedAssemblies,
+} from '@/lib/hooks/use-procurement';
 import { SupplierForm } from '@/components/domain/procurement/supplier-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { toNumber } from '@/lib/api-client/decimal';
+import { formatEur } from '@/lib/utils';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   Dialog,
@@ -114,6 +126,85 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
   );
 }
 
+/** Reverse view of ProductSupplier/AssemblySupplier — "which products/вироби is this supplier actually linked to, and at what price" (per the user's own explicit ask: it wasn't clear anywhere where already-linked products showed up). */
+function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
+  const t = useTranslations('procurement');
+  const tc = useTranslations('common');
+  const { data: products } = useSupplierLinkedProducts(supplierId);
+  const { data: assemblies } = useSupplierLinkedAssemblies(supplierId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('linkedEntities')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <p className="mb-2 text-sm font-medium">{t('linkedProducts')}</p>
+          {products && products.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('article')}</TableHead>
+                  <TableHead>{t('productName')}</TableHead>
+                  <TableHead>{t('supplierPrice')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {products.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>{p.productArticle}</TableCell>
+                    <TableCell>
+                      <Link href={`/catalog/${p.productId}`} className="text-primary hover:underline">
+                        {p.productName}
+                      </Link>
+                      {p.isDefault && <Badge variant="secondary" className="ml-2">{t('defaultSupplier')}</Badge>}
+                    </TableCell>
+                    <TableCell>{toNumber(p.price) != null ? formatEur(toNumber(p.price)!) : '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">{tc('noResults')}</p>
+          )}
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">{t('linkedAssemblies')}</p>
+          {assemblies && assemblies.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('article')}</TableHead>
+                  <TableHead>{t('assemblyName')}</TableHead>
+                  <TableHead>{t('supplierPrice')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assemblies.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell>{a.assemblyArticle ?? '—'}</TableCell>
+                    <TableCell>
+                      <Link href={`/bom/${a.assemblyId}`} className="text-primary hover:underline">
+                        {a.assemblyName}
+                      </Link>
+                      {a.isDefault && <Badge variant="secondary" className="ml-2">{t('defaultSupplier')}</Badge>}
+                    </TableCell>
+                    <TableCell>{toNumber(a.price) != null ? formatEur(toNumber(a.price)!) : '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">{tc('noResults')}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SupplierDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -145,7 +236,7 @@ export default function SupplierDetailPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{supplier.name}</h1>
         <Dialog>
@@ -172,6 +263,7 @@ export default function SupplierDetailPage() {
         </Dialog>
       </div>
       <SupplierForm supplier={supplier} onSubmit={handleSubmit} submitting={updateSupplier.isPending} submitError={error} />
+      <SupplierLinkedEntitiesCard supplierId={params.id} />
       <SupplierPortalCard supplierId={params.id} />
     </div>
   );

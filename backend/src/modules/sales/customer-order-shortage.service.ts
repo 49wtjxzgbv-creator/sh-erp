@@ -5,6 +5,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PurchaseOrdersService } from '../procurement/purchase-orders.service';
 import { CreatePurchaseOrdersFromGroupsDto } from './dto/shortage-analysis.dto';
 
+export interface SupplierOption {
+  supplierId: string;
+  supplierName: string;
+  price: number | null;
+}
+
 export interface ShortageLine {
   kind: 'PRODUCT' | 'ASSEMBLY';
   productId?: string;
@@ -12,6 +18,8 @@ export interface ShortageLine {
   description: string;
   neededQty: number;
   currentStock: number;
+  /** Present only when the product/assembly has more than one linked supplier (ProductSupplier/AssemblySupplier) — the caller must ask which one to order from rather than guessing. See `ambiguousLines`. */
+  supplierOptions?: SupplierOption[];
 }
 
 export interface SupplierGroup {
@@ -58,7 +66,10 @@ export class CustomerOrderShortageService {
     private readonly purchaseOrdersService: PurchaseOrdersService,
   ) {}
 
-  async previewShortage(user: RequestUser, orderId: string): Promise<{ orderId: string; groups: SupplierGroup[] }> {
+  async previewShortage(
+    user: RequestUser,
+    orderId: string,
+  ): Promise<{ orderId: string; groups: SupplierGroup[]; ambiguousLines: ShortageLine[] }> {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
@@ -77,9 +88,36 @@ export class CustomerOrderShortageService {
     const assemblyById = new Map<string, any>();
     for (const a of subAssemblies) assemblyById.set(a.id, a);
 
+    // Real multi-supplier links (ProductSupplier/AssemblySupplier) — a
+    // product/assembly with exactly one linked row resolves automatically,
+    // same as defaultSupplierId always has; with zero rows, defaultSupplierId
+    // is still the fallback (backward compatible with anyone who never
+    // adopts the new per-supplier-price feature); with more than one, the
+    // line is set aside for the caller to resolve (see ambiguousLines).
+    const productSupplierRows = (await this.prisma.tenant.productSupplier.findMany({
+      where: { productId: { in: Array.from(productPool.keys()) } },
+    })) as any[];
+    const assemblySupplierRows = (await this.prisma.tenant.assemblySupplier.findMany({
+      where: { assemblyId: { in: Array.from(assemblyBuyPool.keys()) } },
+    })) as any[];
+    const productLinksByProductId = new Map<string, any[]>();
+    for (const row of productSupplierRows) {
+      const list = productLinksByProductId.get(row.productId) ?? [];
+      list.push(row);
+      productLinksByProductId.set(row.productId, list);
+    }
+    const assemblyLinksByAssemblyId = new Map<string, any[]>();
+    for (const row of assemblySupplierRows) {
+      const list = assemblyLinksByAssemblyId.get(row.assemblyId) ?? [];
+      list.push(row);
+      assemblyLinksByAssemblyId.set(row.assemblyId, list);
+    }
+
     const supplierIds = new Set<string>();
     for (const p of products) if (p.defaultSupplierId) supplierIds.add(p.defaultSupplierId);
     for (const a of subAssemblies) if (a.defaultSupplierId) supplierIds.add(a.defaultSupplierId);
+    for (const row of productSupplierRows) supplierIds.add(row.supplierId);
+    for (const row of assemblySupplierRows) supplierIds.add(row.supplierId);
     const suppliers = (await this.prisma.tenant.supplier.findMany({ where: { id: { in: Array.from(supplierIds) } } })) as any[];
     const supplierById = new Map<string, any>();
     for (const s of suppliers) supplierById.set(s.id, s);
@@ -97,15 +135,32 @@ export class CustomerOrderShortageService {
       return groups.get(key)!;
     };
 
+    const toSupplierOptions = (links: any[]): SupplierOption[] =>
+      links.map((l) => ({
+        supplierId: l.supplierId,
+        supplierName: supplierById.get(l.supplierId)?.name ?? 'Unknown supplier',
+        price: l.price != null ? Number(l.price) : null,
+      }));
+
+    const ambiguousLines: ShortageLine[] = [];
+
     for (const [productId, neededQty] of productPool) {
       const product = productById.get(productId);
-      getGroup(product?.defaultSupplierId ?? null).lines.push({
+      const links = productLinksByProductId.get(productId) ?? [];
+      const line: ShortageLine = {
         kind: 'PRODUCT',
         productId,
         description: product ? `${product.article} — ${product.name}` : productId,
         neededQty,
         currentStock: Number(product?.qty ?? 0),
-      });
+      };
+      if (links.length > 1) {
+        ambiguousLines.push({ ...line, supplierOptions: toSupplierOptions(links) });
+      } else if (links.length === 1) {
+        getGroup(links[0].supplierId).lines.push(line);
+      } else {
+        getGroup(product?.defaultSupplierId ?? null).lines.push(line);
+      }
     }
 
     for (const [subAssemblyId, neededQty] of assemblyBuyPool) {
@@ -113,16 +168,24 @@ export class CustomerOrderShortageService {
       const inStockCount = await this.prisma.tenant.finishedGood.count({
         where: { assemblyId: subAssemblyId, status: 'IN_STOCK' },
       });
-      getGroup(assembly?.defaultSupplierId ?? null).lines.push({
+      const links = assemblyLinksByAssemblyId.get(subAssemblyId) ?? [];
+      const line: ShortageLine = {
         kind: 'ASSEMBLY',
         subAssemblyId,
         description: assembly?.name ?? subAssemblyId,
         neededQty,
         currentStock: inStockCount,
-      });
+      };
+      if (links.length > 1) {
+        ambiguousLines.push({ ...line, supplierOptions: toSupplierOptions(links) });
+      } else if (links.length === 1) {
+        getGroup(links[0].supplierId).lines.push(line);
+      } else {
+        getGroup(assembly?.defaultSupplierId ?? null).lines.push(line);
+      }
     }
 
-    return { orderId, groups: Array.from(groups.values()) };
+    return { orderId, groups: Array.from(groups.values()), ambiguousLines };
   }
 
   /**
@@ -180,7 +243,10 @@ export class CustomerOrderShortageService {
         const subAssembly = await this.prisma.tenant.assembly.findUnique({ where: { id: line.subAssemblyId } });
         if (!subAssembly) continue; // defensive — shouldn't happen given FK integrity
 
-        if (subAssembly.defaultSupplierId) {
+        const hasSupplierLink =
+          Boolean(subAssembly.defaultSupplierId) ||
+          (await this.prisma.tenant.assemblySupplier.count({ where: { assemblyId: line.subAssemblyId } })) > 0;
+        if (hasSupplierLink) {
           assemblyBuyPool.set(line.subAssemblyId, (assemblyBuyPool.get(line.subAssemblyId) ?? 0) + neededQty);
         } else {
           await this.walkAssembly(line.subAssemblyId, neededQty, productPool, assemblyBuyPool, visited);

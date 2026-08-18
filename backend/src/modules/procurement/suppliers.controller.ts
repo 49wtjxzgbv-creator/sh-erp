@@ -33,6 +33,20 @@ export class SuppliersController {
     return this.suppliersService.findOne(user, id);
   }
 
+  @Get(':id/products')
+  @RequirePermissions('suppliers:read')
+  @ApiOperation({ summary: 'Products linked to this supplier (ProductSupplier), each with its own price.' })
+  async getLinkedProducts(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.suppliersService.getLinkedProducts(user, id);
+  }
+
+  @Get(':id/assemblies')
+  @RequirePermissions('suppliers:read')
+  @ApiOperation({ summary: 'Assemblies ("вироби") linked to this supplier (AssemblySupplier), each with its own price.' })
+  async getLinkedAssemblies(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.suppliersService.getLinkedAssemblies(user, id);
+  }
+
   @Patch(':id')
   @RequirePermissions('suppliers:write')
   @ApiOperation({ summary: 'Update a supplier.' })

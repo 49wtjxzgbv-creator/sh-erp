@@ -6,6 +6,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
 import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
+import { SetProductSuppliersDto } from './dto/product-supplier.dto';
 
 @Injectable()
 export class ProductsService {
@@ -147,6 +148,44 @@ export class ProductsService {
     );
 
     return { deletedCount: products.length };
+  }
+
+  /** Linked suppliers, each with its own optional price — joined with the supplier's name so the frontend never needs a second round-trip. */
+  async getSuppliers(user: RequestUser, productId: string) {
+    await this.findOne(user, productId);
+    const rows = await this.prisma.tenant.productSupplier.findMany({
+      where: { productId },
+      include: { supplier: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      supplierId: r.supplierId,
+      supplierName: r.supplier.name,
+      price: r.price,
+      isDefault: r.isDefault,
+    }));
+  }
+
+  /**
+   * Replace-set, same convention as AssembliesService#setComponents: delete
+   * every existing row and re-create the provided list in one go — no
+   * partial-update endpoint, so every save is a clean, fully-specified set.
+   */
+  async setSuppliers(user: RequestUser, productId: string, dto: SetProductSuppliersDto) {
+    await this.findOne(user, productId);
+    await this.prisma.tenant.productSupplier.deleteMany({ where: { productId } });
+    if (dto.suppliers.length > 0) {
+      await this.prisma.tenant.productSupplier.createMany({
+        data: dto.suppliers.map((line) => ({
+          productId,
+          supplierId: line.supplierId,
+          price: line.price,
+          isDefault: line.isDefault ?? false,
+        })) as any,
+      });
+    }
+    return this.getSuppliers(user, productId);
   }
 
   private translatePrismaError(err: unknown, article?: string): Error {

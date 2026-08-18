@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { CodedBadRequestException } from '../../common/api-exceptions';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -8,6 +8,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
+import { SetProductSuppliersDto } from './dto/product-supplier.dto';
 import { ProductsService } from './products.service';
 import { ProductsImportExportService } from './import-export/products-import-export.service';
 
@@ -102,6 +103,20 @@ export class ProductsController {
   @ApiOperation({ summary: 'Soft-delete a product.' })
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.productsService.remove(user, id);
+  }
+
+  @Get(':id/suppliers')
+  @RequirePermissions('products:read')
+  @ApiOperation({ summary: 'Linked suppliers for this product, each with its own optional price.' })
+  async getSuppliers(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productsService.getSuppliers(user, id);
+  }
+
+  @Put(':id/suppliers')
+  @RequirePermissions('products:write')
+  @ApiOperation({ summary: 'Replace the full linked-supplier list for this product.' })
+  async setSuppliers(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SetProductSuppliersDto) {
+    return this.productsService.setSuppliers(user, id, dto);
   }
 
   @Post('bulk-delete')

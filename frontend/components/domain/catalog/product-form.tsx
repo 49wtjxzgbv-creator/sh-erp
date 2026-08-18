@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
@@ -125,6 +126,7 @@ export function ProductForm({
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
   const tf = useTranslations('files');
+  const tp = useTranslations('procurement');
   const { data: units } = useCompanyUnits();
   const { data: warehouses } = useWarehouses();
 
@@ -381,6 +383,17 @@ export function ProductForm({
           </div>
         </CardContent>
       </Card>
+
+      {product && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{tp('suppliers')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntitySuppliersEditor entityType="Product" entityId={product.id} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

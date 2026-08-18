@@ -20,11 +20,13 @@ export interface SupplierPickerProps {
   value: string | undefined;
   onChange: (supplierId: string | undefined, label: string | undefined) => void;
   placeholder?: string;
+  /** Seeds the search box on mount for a row hydrated from server data where the supplier's name is already known — without this, a picker that already has `value` set shows an empty box until the user re-searches (this component only ever learns a label from its own onChange). Only read once, at mount; not synced on later prop changes. */
+  initialLabel?: string;
 }
 
-export function SupplierPicker({ value, onChange, placeholder }: SupplierPickerProps) {
+export function SupplierPicker({ value, onChange, placeholder, initialLabel }: SupplierPickerProps) {
   const t = useTranslations('procurement');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialLabel ?? '');
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 

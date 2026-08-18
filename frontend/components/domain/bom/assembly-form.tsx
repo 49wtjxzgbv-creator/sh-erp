@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -60,6 +61,7 @@ export function AssemblyForm({
   const t = useTranslations('bom');
   const tc = useTranslations('common');
   const tf = useTranslations('files');
+  const tp = useTranslations('procurement');
 
   const {
     register,
@@ -118,6 +120,17 @@ export function AssemblyForm({
           </CardHeader>
           <CardContent>
             <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} />
+          </CardContent>
+        </Card>
+      )}
+
+      {assembly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{tp('suppliers')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntitySuppliersEditor entityType="Assembly" entityId={assembly.id} />
           </CardContent>
         </Card>
       )}

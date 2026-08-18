@@ -107,6 +107,30 @@ export function getAssemblyComponents(assemblyId: string): Promise<AssemblyCompo
   return apiClient.get<AssemblyComponent[]>(`assemblies/${assemblyId}/components`);
 }
 
+/** One linked supplier for an assembly ("виріб"), with its own optional price — mirrors ProductSupplierLink in api-client/catalog.ts. */
+export interface AssemblySupplierLink {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  price: DecimalString | null;
+  isDefault: boolean;
+}
+
+export interface SetAssemblySupplierInput {
+  supplierId: string;
+  price?: number;
+  isDefault?: boolean;
+}
+
+export function getAssemblySuppliers(assemblyId: string): Promise<AssemblySupplierLink[]> {
+  return apiClient.get<AssemblySupplierLink[]>(`assemblies/${assemblyId}/suppliers`);
+}
+
+/** Replaces the full linked-supplier list for this assembly — no partial-update endpoint, same convention as setAssemblyComponents. */
+export function setAssemblySuppliers(assemblyId: string, suppliers: SetAssemblySupplierInput[]): Promise<AssemblySupplierLink[]> {
+  return apiClient.put<AssemblySupplierLink[]>(`assemblies/${assemblyId}/suppliers`, { suppliers });
+}
+
 /** Replaces the full BOM line list — there is no partial-update endpoint, by design (see assembly-component.dto.ts). Always writes a new immutable AssemblyVersion. */
 export function setAssemblyComponents(
   assemblyId: string,

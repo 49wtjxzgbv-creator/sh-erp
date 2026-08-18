@@ -80,6 +80,34 @@ export function deleteSupplier(id: string): Promise<{ ok: true }> {
 export function invitePortal(id: string, dto: { email?: string } = {}): Promise<{ email: string; tempPassword: string }> {
   return apiClient.post<{ email: string; tempPassword: string }>(`suppliers/${id}/portal-invite`, dto);
 }
+/** Reverse view of ProductSupplierLink — the products this supplier is linked to (Supplier detail page). */
+export interface SupplierLinkedProduct {
+  id: string;
+  productId: string;
+  productArticle: string;
+  productName: string;
+  price: DecimalString | null;
+  isDefault: boolean;
+}
+
+/** Same as SupplierLinkedProduct, for assemblies ("вироби") bought whole from this supplier. */
+export interface SupplierLinkedAssembly {
+  id: string;
+  assemblyId: string;
+  assemblyArticle: string | null;
+  assemblyName: string;
+  price: DecimalString | null;
+  isDefault: boolean;
+}
+
+export function getSupplierLinkedProducts(supplierId: string): Promise<SupplierLinkedProduct[]> {
+  return apiClient.get<SupplierLinkedProduct[]>(`suppliers/${supplierId}/products`);
+}
+
+export function getSupplierLinkedAssemblies(supplierId: string): Promise<SupplierLinkedAssembly[]> {
+  return apiClient.get<SupplierLinkedAssembly[]>(`suppliers/${supplierId}/assemblies`);
+}
+
 export function deactivatePortal(id: string): Promise<{ email: string; active: boolean }> {
   return apiClient.post<{ email: string; active: boolean }>(`suppliers/${id}/portal-deactivate`, {});
 }

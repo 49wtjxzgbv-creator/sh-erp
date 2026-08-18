@@ -9,6 +9,8 @@ import {
   deleteSupplier,
   invitePortal,
   deactivatePortal,
+  getSupplierLinkedProducts,
+  getSupplierLinkedAssemblies,
   queryPurchaseOrders,
   getPurchaseOrder,
   createPurchaseOrder,
@@ -37,6 +39,22 @@ export function useSupplier(id: string | undefined) {
     queryKey: supplierKey(id ?? ''),
     queryFn: () => getSupplier(id as string),
     enabled: Boolean(id),
+  });
+}
+
+export function useSupplierLinkedProducts(supplierId: string | undefined) {
+  return useQuery({
+    queryKey: ['suppliers', supplierId ?? '', 'products'] as const,
+    queryFn: () => getSupplierLinkedProducts(supplierId as string),
+    enabled: Boolean(supplierId),
+  });
+}
+
+export function useSupplierLinkedAssemblies(supplierId: string | undefined) {
+  return useQuery({
+    queryKey: ['suppliers', supplierId ?? '', 'assemblies'] as const,
+    queryFn: () => getSupplierLinkedAssemblies(supplierId as string),
+    enabled: Boolean(supplierId),
   });
 }
 

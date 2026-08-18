@@ -452,7 +452,18 @@
     "searchPlaceholder": "Search by name…",
     "searchSuppliers": "Search suppliers…",
     "deleteSupplierConfirmTitle": "Delete supplier?",
-    "deleteSupplierConfirmDescription": "The supplier will be marked deleted. Purchase order history is unaffected."
+    "deleteSupplierConfirmDescription": "The supplier will be marked deleted. Purchase order history is unaffected.",
+    "supplierPrice": "Supplier price",
+    "defaultSupplier": "Default",
+    "addSupplierLink": "Add supplier",
+    "invalidSupplierRow": "Pick a supplier in every row",
+    "duplicateSupplierRow": "This supplier is already added",
+    "multiSupplierHint": "This item has multiple suppliers — when generating a supplier request, the system will ask which one to order from.",
+    "suppliersSaved": "Saved",
+    "linkedEntities": "Linked products and assemblies",
+    "linkedProducts": "Products",
+    "linkedAssemblies": "Assemblies",
+    "assemblyName": "Assembly name"
   },
   "sales": {
     "title": "Sales",
@@ -556,7 +567,10 @@
     "giveToProductionDialogTitle": "Give to production",
     "giveToProductionDialogDescription": "Creates a new production batch for this item. Can be given in parts.",
     "invalidGiveToProduction": "Batch quantity must be positive and cannot exceed what remains",
-    "allSuppliersPrint": "All suppliers"
+    "allSuppliersPrint": "All suppliers",
+    "needsSupplierChoice": "Needs a supplier choice",
+    "chooseSupplier": "Choose supplier",
+    "resolveSupplierChoiceFirst": "First choose a supplier for each line above — it has more than one supplier linked."
   },
   "hr": {
     "title": "HR",

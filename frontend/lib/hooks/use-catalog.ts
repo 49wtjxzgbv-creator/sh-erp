@@ -14,10 +14,13 @@ import {
   deleteCompanyUnit,
   importProducts,
   exportProducts,
+  getProductSuppliers,
+  setProductSuppliers,
   type QueryProductsInput,
   type CreateProductInput,
   type UpdateProductInput,
   type CreateCompanyUnitInput,
+  type SetProductSupplierInput,
 } from '@/lib/api-client/catalog';
 
 /**
@@ -146,5 +149,23 @@ export function useDeleteCompanyUnit() {
   return useMutation({
     mutationFn: (id: string) => deleteCompanyUnit(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: unitsKey }),
+  });
+}
+
+const productSuppliersKey = (productId: string) => ['products', productId, 'suppliers'] as const;
+
+export function useProductSuppliers(productId: string | undefined) {
+  return useQuery({
+    queryKey: productSuppliersKey(productId ?? ''),
+    queryFn: () => getProductSuppliers(productId as string),
+    enabled: Boolean(productId),
+  });
+}
+
+export function useSetProductSuppliers(productId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (suppliers: SetProductSupplierInput[]) => setProductSuppliers(productId, suppliers),
+    onSuccess: () => qc.invalidateQueries({ queryKey: productSuppliersKey(productId) }),
   });
 }

@@ -5,7 +5,8 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useShortagePreview, useCreatePurchaseOrdersFromShortage } from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import type { PurchaseOrderGroupInput, ShortageGroupLineInput } from '@/lib/api-client/sales';
+import { formatEur } from '@/lib/utils';
+import type { PurchaseOrderGroupInput, ShortageGroupLineInput, ShortageSupplierOption } from '@/lib/api-client/sales';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,11 @@ interface EditableGroup {
   supplierId?: string;
   supplierName: string;
   lines: EditableLine[];
+}
+
+/** A line whose product/assembly has more than one linked supplier — not in any group yet until the user picks one (resolveAmbiguousLine). */
+interface AmbiguousLine extends EditableLine {
+  supplierOptions: ShortageSupplierOption[];
 }
 
 const ALL_SUPPLIERS = 'all';
@@ -65,6 +71,7 @@ function ShortagePreviewPageInner() {
   const createPOs = useCreatePurchaseOrdersFromShortage(params.id);
 
   const [groups, setGroups] = useState<EditableGroup[]>([]);
+  const [ambiguousLines, setAmbiguousLines] = useState<AmbiguousLine[]>([]);
   const hydrated = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
@@ -105,8 +112,38 @@ function ShortagePreviewPageInner() {
         })),
       })),
     );
+    setAmbiguousLines(
+      preview.ambiguousLines.map((line) => ({
+        kind: line.kind,
+        productId: line.productId,
+        subAssemblyId: line.subAssemblyId,
+        description: line.description,
+        qty: line.neededQty,
+        neededQty: line.neededQty,
+        currentStock: line.currentStock,
+        supplierOptions: line.supplierOptions ?? [],
+      })),
+    );
     if (previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS) setPrintSupplierId(previewSupplierParam);
   }, [preview, previewSupplierParam, previewQtyOverrides]);
+
+  /** Moves a line out of `ambiguousLines` into the matching (or newly created) group once the user picks which of its several linked suppliers to order from. */
+  function resolveAmbiguousLine(index: number, supplierId: string) {
+    const line = ambiguousLines[index];
+    if (!line) return;
+    const option = line.supplierOptions.find((o) => o.supplierId === supplierId);
+    if (!option) return;
+
+    const { supplierOptions: _supplierOptions, ...plainLine } = line;
+    setGroups((prev) => {
+      const existingIdx = prev.findIndex((g) => g.supplierId === supplierId);
+      if (existingIdx >= 0) {
+        return prev.map((g, i) => (i === existingIdx ? { ...g, lines: [...g.lines, plainLine] } : g));
+      }
+      return [...prev, { supplierId, supplierName: option.supplierName, lines: [plainLine] }];
+    });
+    setAmbiguousLines((prev) => prev.filter((_, i) => i !== index));
+  }
 
   function updateLineQty(groupIdx: number, lineIdx: number, qty: number) {
     setGroups((prev) =>
@@ -119,6 +156,10 @@ function ShortagePreviewPageInner() {
   async function handleCreate() {
     setError(null);
     setCreatedCount(null);
+    if (ambiguousLines.length > 0) {
+      setError(t('resolveSupplierChoiceFirst'));
+      return;
+    }
     const payload: PurchaseOrderGroupInput[] = groups
       .filter((g) => g.lines.some((l) => l.qty > 0))
       .map((g) => ({
@@ -184,7 +225,51 @@ function ShortagePreviewPageInner() {
         )}
       </div>
 
-      {groups.length === 0 && <p className="text-sm text-muted-foreground">{t('noShortage')}</p>}
+      {groups.length === 0 && ambiguousLines.length === 0 && <p className="text-sm text-muted-foreground">{t('noShortage')}</p>}
+
+      {ambiguousLines.length > 0 && (
+        <Card className="border-warning">
+          <CardHeader>
+            <CardTitle className="text-base">{t('needsSupplierChoice')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('description')}</TableHead>
+                  <TableHead>{t('neededQty')}</TableHead>
+                  <TableHead>{t('currentStock')}</TableHead>
+                  <TableHead className="w-64">{t('chooseSupplier')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ambiguousLines.map((line, li) => (
+                  <TableRow key={li}>
+                    <TableCell className="max-w-[260px] truncate" title={line.description}>{line.description}</TableCell>
+                    <TableCell>{line.neededQty}</TableCell>
+                    <TableCell>{line.currentStock}</TableCell>
+                    <TableCell>
+                      <Select onValueChange={(supplierId) => resolveAmbiguousLine(li, supplierId)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('chooseSupplier')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {line.supplierOptions.map((opt) => (
+                            <SelectItem key={opt.supplierId} value={opt.supplierId}>
+                              {opt.supplierName}
+                              {opt.price != null ? ` — ${formatEur(opt.price)}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {groups.map((group, gi) => (
         <Card key={group.supplierId ?? `none-${gi}`}>
@@ -224,7 +309,7 @@ function ShortagePreviewPageInner() {
         </Card>
       ))}
 
-      {groups.length > 0 && (
+      {(groups.length > 0 || ambiguousLines.length > 0) && (
         <>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {createdCount !== null && <p className="text-sm text-success">{t('purchaseOrdersCreated', { count: createdCount })}</p>}

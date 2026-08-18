@@ -179,6 +179,12 @@ export function giveAllToProduction(orderId: string): Promise<GiveToProductionRe
   return apiClient.post<GiveToProductionResult[]>(`customer-orders/${orderId}/give-all-to-production`);
 }
 
+export interface ShortageSupplierOption {
+  supplierId: string;
+  supplierName: string;
+  price: number | null;
+}
+
 export interface ShortageLine {
   kind: 'PRODUCT' | 'ASSEMBLY';
   productId?: string;
@@ -188,6 +194,8 @@ export interface ShortageLine {
   neededQty: number;
   /** Real JSON number. Shown side-by-side with neededQty, never auto-subtracted ("no hidden arithmetic" rule) — the human decides the actual order qty. */
   currentStock: number;
+  /** Present only when the product/assembly has more than one linked supplier — see `ShortagePreview.ambiguousLines`. */
+  supplierOptions?: ShortageSupplierOption[];
 }
 
 export interface SupplierGroup {
@@ -199,6 +207,8 @@ export interface SupplierGroup {
 export interface ShortagePreview {
   orderId: string;
   groups: SupplierGroup[];
+  /** Lines whose product/assembly has more than one linked supplier — not placed in any group yet, since which one to order from is genuinely ambiguous until the human picks. */
+  ambiguousLines: ShortageLine[];
 }
 
 /** Recursive, whole-order shortage analysis grouped by supplier. Never mutates anything. */

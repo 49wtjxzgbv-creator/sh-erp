@@ -4,6 +4,7 @@ import { CurrentUser, RequestUser } from '../../common/decorators/current-user.d
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AssembliesService } from './assemblies.service';
 import { SetAssemblyComponentsDto } from './dto/assembly-component.dto';
+import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
 import { CheckAvailabilityDto, ProduceAssemblyDto } from './dto/produce-assembly.dto';
 import { QueryAssembliesDto } from './dto/query-assemblies.dto';
@@ -64,6 +65,20 @@ export class AssembliesController {
     @Body() dto: SetAssemblyComponentsDto,
   ) {
     return this.assembliesService.setComponents(user, id, dto);
+  }
+
+  @Get(':id/suppliers')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({ summary: 'Linked suppliers for this assembly, each with its own optional price.' })
+  async getSuppliers(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.assembliesService.getSuppliers(user, id);
+  }
+
+  @Put(':id/suppliers')
+  @RequirePermissions('assemblies:write')
+  @ApiOperation({ summary: 'Replace the full linked-supplier list for this assembly.' })
+  async setSuppliers(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SetAssemblySuppliersDto) {
+    return this.assembliesService.setSuppliers(user, id, dto);
   }
 
   @Get(':id/versions')

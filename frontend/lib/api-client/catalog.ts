@@ -163,6 +163,30 @@ export function bulkDeleteProducts(ids: string[]): Promise<{ deletedCount: numbe
   return apiClient.post<{ deletedCount: number }>('products/bulk-delete', { ids });
 }
 
+/** One linked supplier for a product, with its own optional price — the real many-to-many alongside Product.defaultSupplierId (see backend ProductSupplier's schema comment). */
+export interface ProductSupplierLink {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  price: DecimalString | null;
+  isDefault: boolean;
+}
+
+export interface SetProductSupplierInput {
+  supplierId: string;
+  price?: number;
+  isDefault?: boolean;
+}
+
+export function getProductSuppliers(productId: string): Promise<ProductSupplierLink[]> {
+  return apiClient.get<ProductSupplierLink[]>(`products/${productId}/suppliers`);
+}
+
+/** Replaces the full linked-supplier list for this product — no partial-update endpoint, same convention as setAssemblyComponents. */
+export function setProductSuppliers(productId: string, suppliers: SetProductSupplierInput[]): Promise<ProductSupplierLink[]> {
+  return apiClient.put<ProductSupplierLink[]>(`products/${productId}/suppliers`, { suppliers });
+}
+
 export interface ImportRowError {
   row: number;
   message: string;

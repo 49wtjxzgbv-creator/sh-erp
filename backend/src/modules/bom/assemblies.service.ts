@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
 import { AssemblyComponentLineDto, SetAssemblyComponentsDto } from './dto/assembly-component.dto';
+import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
 import { ProduceAssemblyDto } from './dto/produce-assembly.dto';
 import { QueryAssembliesDto } from './dto/query-assemblies.dto';
@@ -142,6 +143,42 @@ export class AssembliesService {
       before,
     });
     return assembly;
+  }
+
+  // ============================================================
+  // Suppliers (multi-supplier link, each with its own optional price)
+  // ============================================================
+
+  async getSuppliers(user: RequestUser, assemblyId: string) {
+    await this.findOne(user, assemblyId);
+    const rows = await this.prisma.tenant.assemblySupplier.findMany({
+      where: { assemblyId },
+      include: { supplier: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      supplierId: r.supplierId,
+      supplierName: r.supplier.name,
+      price: r.price,
+      isDefault: r.isDefault,
+    }));
+  }
+
+  async setSuppliers(user: RequestUser, assemblyId: string, dto: SetAssemblySuppliersDto) {
+    await this.findOne(user, assemblyId);
+    await this.prisma.tenant.assemblySupplier.deleteMany({ where: { assemblyId } });
+    if (dto.suppliers.length > 0) {
+      await this.prisma.tenant.assemblySupplier.createMany({
+        data: dto.suppliers.map((line) => ({
+          assemblyId,
+          supplierId: line.supplierId,
+          price: line.price,
+          isDefault: line.isDefault ?? false,
+        })) as any,
+      });
+    }
+    return this.getSuppliers(user, assemblyId);
   }
 
   // ============================================================

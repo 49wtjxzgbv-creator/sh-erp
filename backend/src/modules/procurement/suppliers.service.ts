@@ -53,6 +53,42 @@ export class SuppliersService {
     };
   }
 
+  /** Reverse view of ProductSupplier — "which products is this supplier linked to, and at what price" (Suppliers detail page). */
+  async getLinkedProducts(user: RequestUser, supplierId: string) {
+    await this.findOne(user, supplierId);
+    const rows = await this.prisma.tenant.productSupplier.findMany({
+      where: { supplierId },
+      include: { product: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      productId: r.productId,
+      productArticle: r.product.article,
+      productName: r.product.name,
+      price: r.price,
+      isDefault: r.isDefault,
+    }));
+  }
+
+  /** Same as getLinkedProducts, for AssemblySupplier ("виріб" bought whole from this supplier). */
+  async getLinkedAssemblies(user: RequestUser, supplierId: string) {
+    await this.findOne(user, supplierId);
+    const rows = await this.prisma.tenant.assemblySupplier.findMany({
+      where: { supplierId },
+      include: { assembly: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      assemblyId: r.assemblyId,
+      assemblyArticle: r.assembly.article,
+      assemblyName: r.assembly.name,
+      price: r.price,
+      isDefault: r.isDefault,
+    }));
+  }
+
   async query(user: RequestUser, query: QuerySuppliersDto) {
     const where: Prisma.SupplierWhereInput = {};
     if (!query.includeDeleted) where.deletedAt = null;

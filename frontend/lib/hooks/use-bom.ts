@@ -9,6 +9,8 @@ import {
   deleteAssembly,
   getAssemblyComponents,
   setAssemblyComponents,
+  getAssemblySuppliers,
+  setAssemblySuppliers,
   getAssemblyVersions,
   getAssemblyVersion,
   calculateAssemblyCost,
@@ -18,12 +20,14 @@ import {
   type CreateAssemblyInput,
   type UpdateAssemblyInput,
   type AssemblyComponentLineInput,
+  type SetAssemblySupplierInput,
   type ProduceAssemblyInput,
 } from '@/lib/api-client/bom';
 
 const assembliesKey = (query: QueryAssembliesInput) => ['assemblies', query] as const;
 const assemblyKey = (id: string) => ['assemblies', id] as const;
 const componentsKey = (id: string) => ['assemblies', id, 'components'] as const;
+const suppliersKey = (id: string) => ['assemblies', id, 'suppliers'] as const;
 const versionsKey = (id: string) => ['assemblies', id, 'versions'] as const;
 const versionKey = (id: string, versionId: string) => ['assemblies', id, 'versions', versionId] as const;
 const costKey = (id: string) => ['assemblies', id, 'cost'] as const;
@@ -85,6 +89,22 @@ export function useSetAssemblyComponents(assemblyId: string) {
       qc.invalidateQueries({ queryKey: costKey(assemblyId) });
       qc.invalidateQueries({ queryKey: assemblyKey(assemblyId) });
     },
+  });
+}
+
+export function useAssemblySuppliers(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: suppliersKey(assemblyId ?? ''),
+    queryFn: () => getAssemblySuppliers(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+export function useSetAssemblySuppliers(assemblyId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (suppliers: SetAssemblySupplierInput[]) => setAssemblySuppliers(assemblyId, suppliers),
+    onSuccess: () => qc.invalidateQueries({ queryKey: suppliersKey(assemblyId) }),
   });
 }
 

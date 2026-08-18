@@ -171,6 +171,8 @@ model Company {
   productionOrderStageEvents ProductionOrderStageEvent[]
   productionOrderWorkers ProductionOrderWorker[]
   productionScheduleSlots ProductionScheduleSlot[]
+  productSuppliers  ProductSupplier[]
+  assemblySuppliers AssemblySupplier[]
 
   @@map("companies")
 }
@@ -528,6 +530,7 @@ model Product {
   warehouseStocks       WarehouseStock[]
   inventoryItems        InventoryItem[]
   purchaseOrderItems    PurchaseOrderItem[]
+  suppliers             ProductSupplier[]
 
   @@unique([companyId, article])
   @@unique([companyId, id]) // composite-FK target for WarehouseStock/StockMovement/InventoryItem
@@ -573,14 +576,72 @@ model Supplier {
   deletedAt     DateTime? @db.Timestamptz(3)
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  products           Product[]
-  assemblies         Assembly[]
+  products           Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
+  assemblies         Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
   purchaseOrders     PurchaseOrder[]
   portalUser         SupplierPortalUser?
+  productLinks       ProductSupplier[]
+  assemblyLinks      AssemblySupplier[]
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
   @@map("suppliers")
+}
+
+// Multi-supplier link for a Product, each with its own optional price — the
+// real many-to-many this app needed alongside Product.defaultSupplierId
+// (kept as-is for backward compatibility: still the fallback when a product
+// has zero rows here). `previewShortage` (customer-order-shortage.service.ts)
+// auto-resolves a product with exactly one linked supplier the same way it
+// always resolved defaultSupplierId; with more than one, the line is
+// surfaced as "needs a choice" instead of silently picking one — the
+// product decision this table exists for. ON DELETE CASCADE on both FKs
+// (not SetNull, unlike defaultSupplierId): a join row has no meaning once
+// either side is gone, same reasoning as SupplierPortalUser.
+model ProductSupplier {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @db.Uuid
+  productId  String   @db.Uuid
+  supplierId String   @db.Uuid
+  price      Decimal? @db.Decimal(14, 2)
+  isDefault  Boolean  @default(false) // display/pre-selection hint only — never bypasses the "ask when >1" rule above
+
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, supplierId])
+  @@index([companyId])
+  @@index([supplierId])
+  @@map("product_suppliers")
+}
+
+// Same as ProductSupplier, for Assembly ("виріб" bought whole from a
+// supplier rather than manufactured in-house — Assembly.defaultSupplierId's
+// existing meaning in the shortage engine's walkAssembly recursion, kept as
+// the fallback here too).
+model AssemblySupplier {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @db.Uuid
+  assemblyId String   @db.Uuid
+  supplierId String   @db.Uuid
+  price      Decimal? @db.Decimal(14, 2)
+  isDefault  Boolean  @default(false)
+
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly   Assembly @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([assemblyId, supplierId])
+  @@index([companyId])
+  @@index([supplierId])
+  @@map("assembly_suppliers")
 }
 
 // A separate table + separate auth surface, not a `User` row — same reasoning
@@ -776,6 +837,7 @@ model Assembly {
   finishedGoods          FinishedGood[]
   customerOrderItems     CustomerOrderItem[]
   scheduleSlots          ProductionScheduleSlot[]
+  suppliers              AssemblySupplier[]
 
   @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem
