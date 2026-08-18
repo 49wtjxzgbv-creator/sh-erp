@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { usePurchaseOrder, useReceivePurchaseOrder } from '@/lib/hooks/use-procurement';
+import { usePurchaseOrder, useReceivePurchaseOrder, useDeletePurchaseOrder } from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
@@ -16,6 +16,16 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 
 const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success'> = {
   ORDERED: 'secondary',
@@ -25,6 +35,7 @@ const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'suc
 
 export default function PurchaseOrderDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
@@ -32,6 +43,7 @@ export default function PurchaseOrderDetailPage() {
   const { data: order, isLoading } = usePurchaseOrder(params.id);
   const { data: warehouses } = useWarehouses();
   const receive = useReceivePurchaseOrder(params.id);
+  const deleteOrder = useDeletePurchaseOrder();
 
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
   const [receivePrice, setReceivePrice] = useState<Record<string, string>>({});
@@ -73,13 +85,46 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    setError(null);
+    try {
+      await deleteOrder.mutateAsync(params.id);
+      router.replace('/procurement');
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
   const isDelivered = order.status === 'DELIVERED';
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h2 className="text-lg font-semibold">{order.supplierNameSnapshot}</h2>
-        <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">{order.supplierNameSnapshot}</h2>
+          <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
+        </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="destructive" size="sm">
+              {t('deleteOrderPermanently')}
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
+              <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">{tc('cancel')}</Button>
+              </DialogClose>
+              <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
+                {tc('delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>

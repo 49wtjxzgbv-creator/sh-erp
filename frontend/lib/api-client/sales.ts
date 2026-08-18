@@ -152,6 +152,10 @@ export function cancelCustomerOrder(id: string): Promise<CustomerOrder> {
 export function completeCustomerOrder(id: string): Promise<CustomerOrder> {
   return apiClient.post<CustomerOrder>(`customer-orders/${id}/complete`);
 }
+/** Permanent hard delete — admin-only (`customer-orders:delete`), cannot be undone. Use cancelCustomerOrder() for the reversible version. */
+export function deleteCustomerOrder(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`customer-orders/${id}`);
+}
 
 export interface GiveItemToProductionInput {
   /** This batch's quantity. Defaults to the line's full remaining (not-yet-given) qty if omitted. */

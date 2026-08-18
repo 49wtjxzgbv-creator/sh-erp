@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -42,6 +42,14 @@ export class CustomerOrdersController {
   @ApiOperation({ summary: 'Update order header fields — line items are immutable once created.' })
   async update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateCustomerOrderDto) {
     return this.customerOrdersService.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('customer-orders:delete')
+  @ApiOperation({ summary: 'Permanently delete a customer order and its lines — admin-only, cannot be undone (use cancel() for the reversible version).' })
+  async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    await this.customerOrdersService.remove(user, id);
+    return { ok: true };
   }
 
   @Post(':id/cancel')

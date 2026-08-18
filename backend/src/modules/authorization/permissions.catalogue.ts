@@ -69,10 +69,12 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   // Procurement
   { key: 'purchase-orders:read', resource: 'purchase-orders', action: 'read', description: 'View purchase orders.' },
   { key: 'purchase-orders:manage', resource: 'purchase-orders', action: 'manage', description: 'Create/edit purchase orders and record receiving.' },
+  { key: 'purchase-orders:delete', resource: 'purchase-orders', action: 'delete', description: 'Permanently delete a purchase order — admin-only, not granted to any default role besides Admin.' },
 
   // Sales
   { key: 'customer-orders:read', resource: 'customer-orders', action: 'read', description: 'View customer orders.' },
   { key: 'customer-orders:manage', resource: 'customer-orders', action: 'manage', description: 'Create/edit customer orders, give lines to production, preview and create shortage-driven purchase orders.' },
+  { key: 'customer-orders:delete', resource: 'customer-orders', action: 'delete', description: 'Permanently delete a customer order — admin-only, not granted to any default role besides Admin.' },
   { key: 'shipments:read', resource: 'shipments', action: 'read', description: 'View shipments.' },
   { key: 'shipments:manage', resource: 'shipments', action: 'manage', description: 'Create/edit shipments, mark delivered.' },
 

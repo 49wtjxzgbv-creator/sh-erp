@@ -194,6 +194,10 @@ export function getPurchaseOrder(id: string): Promise<PurchaseOrder> {
 export function createPurchaseOrder(dto: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
   return apiClient.post<PurchaseOrder>('purchase-orders', dto);
 }
+/** Permanent hard delete — admin-only (`purchase-orders:delete`), cannot be undone. Stock movements already posted against it (receiving) keep their own independent record. */
+export function deletePurchaseOrder(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`purchase-orders/${id}`);
+}
 
 export interface ReceivePurchaseOrderLineInput {
   purchaseOrderItemId: string;

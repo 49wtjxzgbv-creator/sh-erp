@@ -68,6 +68,30 @@ export class PurchaseOrdersService {
     return order;
   }
 
+  /**
+   * Permanent hard delete — admin-only (`purchase-orders:delete`, distinct
+   * from the regular `purchase-orders:manage` staff permission). Items
+   * cascade at the DB level (PurchaseOrderItem.purchaseOrder is
+   * `onDelete: Cascade`, schema.prisma). Any StockMovement already posted
+   * from `receive()` is untouched — `StockMovement.sourceId` is a
+   * polymorphic soft reference (plain string/uuid, not a real FK), so the
+   * physical stock adjustment stays recorded even though the order it came
+   * from no longer exists, same as `AuditEvent` never being retroactively
+   * altered.
+   */
+  async remove(user: RequestUser, id: string) {
+    const order = await this.findOne(user, id);
+    await this.prisma.tenant.purchaseOrder.delete({ where: { id } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'purchase_order.deleted',
+      entityType: 'PurchaseOrder',
+      entityId: id,
+      before: order,
+    });
+  }
+
   async query(user: RequestUser, query: QueryPurchaseOrdersDto) {
     const where: Prisma.PurchaseOrderWhereInput = {};
     if (query.status) where.status = query.status as any;

@@ -252,6 +252,33 @@ export class CustomerOrdersService {
   }
 
   /**
+   * Permanent hard delete — admin-only (`customer-orders:delete`, distinct
+   * from the regular `customer-orders:manage` staff permission), unlike
+   * `cancel()` which just flips status and keeps the record. Every
+   * downstream FK from CustomerOrder is `onDelete: SetNull` except
+   * CustomerOrderItem's, which is `Cascade` (schema.prisma) — so this
+   * removes the order and its lines, while any ProductionOrder, FinishedGood,
+   * Shipment, or PurchaseOrder that was ever linked to it survives, just
+   * orphaned (its own real-world work — material consumed, goods shipped,
+   * a supplier committed — doesn't un-happen because the order record is
+   * gone). The full `before` snapshot (including items) is captured in the
+   * audit trail since this is the one action here that can't be undone by
+   * re-fetching the row afterward.
+   */
+  async remove(user: RequestUser, id: string) {
+    const order = await this.findOne(user, id);
+    await this.prisma.tenant.customerOrder.delete({ where: { id } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'customer_order.deleted',
+      entityType: 'CustomerOrder',
+      entityId: id,
+      before: order,
+    });
+  }
+
+  /**
    * Manual completion — the legacy documentation doesn't specify an
    * automatic trigger (e.g. "every line shipped") for this transition, so
    * rather than invent one, completion is an explicit staff action.

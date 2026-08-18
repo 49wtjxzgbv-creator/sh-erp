@@ -8,6 +8,7 @@ import {
   updateCustomerOrder,
   cancelCustomerOrder,
   completeCustomerOrder,
+  deleteCustomerOrder,
   giveItemToProduction,
   giveAllToProduction,
   getShortagePreview,
@@ -82,6 +83,15 @@ export function useCompleteCustomerOrder(id: string) {
       qc.invalidateQueries({ queryKey: ['customer-orders'] });
       qc.invalidateQueries({ queryKey: customerOrderKey(id) });
     },
+  });
+}
+
+/** Permanent hard delete — admin-only, cannot be undone. See useCancelCustomerOrder for the reversible version. */
+export function useDeleteCustomerOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteCustomerOrder(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['customer-orders'] }),
   });
 }
 

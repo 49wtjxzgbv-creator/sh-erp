@@ -14,6 +14,7 @@ import {
   queryPurchaseOrders,
   getPurchaseOrder,
   createPurchaseOrder,
+  deletePurchaseOrder,
   receivePurchaseOrder,
   updatePurchaseOrderMilestones,
   type QuerySuppliersInput,
@@ -117,6 +118,15 @@ export function useCreatePurchaseOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dto: CreatePurchaseOrderInput) => createPurchaseOrder(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+/** Permanent hard delete — admin-only, cannot be undone. */
+export function useDeletePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deletePurchaseOrder(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
   });
 }

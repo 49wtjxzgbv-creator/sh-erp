@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCustomerOrder,
   useCancelCustomerOrder,
   useCompleteCustomerOrder,
+  useDeleteCustomerOrder,
   useGiveItemToProduction,
   useGiveAllToProduction,
 } from '@/lib/hooks/use-sales';
@@ -268,6 +269,7 @@ function ItemBatchesCell({ item }: { item: CustomerOrderItem }) {
 
 export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const t = useTranslations('sales');
   const tc = useTranslations('common');
   const tf = useTranslations('files');
@@ -276,6 +278,7 @@ export default function CustomerOrderDetailPage() {
   const { data: order, isLoading } = useCustomerOrder(params.id);
   const cancelOrder = useCancelCustomerOrder(params.id);
   const completeOrder = useCompleteCustomerOrder(params.id);
+  const deleteOrder = useDeleteCustomerOrder();
   const giveItem = useGiveItemToProduction(params.id);
   const giveAll = useGiveAllToProduction(params.id);
 
@@ -303,6 +306,16 @@ export default function CustomerOrderDetailPage() {
     setError(null);
     try {
       await completeOrder.mutateAsync();
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleDelete() {
+    setError(null);
+    try {
+      await deleteOrder.mutateAsync(params.id);
+      router.replace('/sales');
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
@@ -386,6 +399,27 @@ export default function CustomerOrderDetailPage() {
               </DialogContent>
             </Dialog>
           )}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                {t('deleteOrderPermanently')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
+                  {tc('delete')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
