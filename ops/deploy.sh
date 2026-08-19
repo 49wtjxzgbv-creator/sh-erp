@@ -108,7 +108,16 @@ esac
 echo "=== 5. Frontend: install, build (postbuild copies static automatically — see frontend/scripts/copy-standalone-static.js) ==="
 cd "$REPO_ROOT/frontend"
 npm ci
-npm run build
+# Real incident (2026-08-19): on this VPS's actual resources (1 vCPU,
+# 3.8GB RAM — confirmed via `free -h`/`nproc`), `next build`'s static-page
+# generation workers ran under enough memory pressure to corrupt React's
+# module state mid-render, surfacing as "Cannot read properties of null
+# (reading 'useContext')" on nearly every page — not a code bug (the exact
+# same commit built cleanly in a less constrained environment), and it did
+# NOT self-heal by clearing .next and rebuilding. Raising Node's old-space
+# ceiling for just this build step (not the whole script) fixed it
+# immediately on a clean rebuild.
+NODE_OPTIONS='--max-old-space-size=3072' npm run build
 cd "$REPO_ROOT"
 
 echo "=== 6. Restarting services ==="
