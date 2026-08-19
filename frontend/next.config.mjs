@@ -18,6 +18,23 @@ const nextConfig = {
   // Vercel-native deployment path (Vercel does its own equivalent tracing
   // regardless of this setting) — safe to enable unconditionally.
   output: 'standalone',
+  // Real, repeatedly-reproduced flakiness on the production VPS (2026-08-19,
+  // hit on 3 separate deploys): `next build`'s static-page generation
+  // workers intermittently threw "Cannot read properties of null (reading
+  // 'useContext')" on nearly every page — never reproduced locally, and a
+  // plain retry with a clean .next eventually succeeded every time (see
+  // ops/deploy.sh's own retry loop, kept as a safety net). That VPS is 1
+  // vCPU (`nproc` confirmed), so Next's default worker-parallelism for
+  // static generation buys zero real speed there anyway — only the race
+  // condition. Forcing serial (single-worker) generation trades a little
+  // build time for determinism, which is the better trade on a single-core
+  // box. No effect on Vercel or any multi-core environment beyond losing
+  // that same parallelism there too — acceptable given this repo's only
+  // real deploy target today is that one VPS (docs/deployment.md).
+  experimental: {
+    cpus: 1,
+    workerThreads: false,
+  },
   // Business logic never lives here (Phase 2 §3.2/§23's "thin client" rule)
   // — this file only wires framework plumbing (i18n, image domains for R2
   // file previews).
