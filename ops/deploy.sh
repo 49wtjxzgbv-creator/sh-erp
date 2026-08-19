@@ -108,16 +108,27 @@ esac
 echo "=== 5. Frontend: install, build (postbuild copies static automatically — see frontend/scripts/copy-standalone-static.js) ==="
 cd "$REPO_ROOT/frontend"
 npm ci
-# Real incident (2026-08-19): on this VPS's actual resources (1 vCPU,
-# 3.8GB RAM — confirmed via `free -h`/`nproc`), `next build`'s static-page
-# generation workers ran under enough memory pressure to corrupt React's
-# module state mid-render, surfacing as "Cannot read properties of null
-# (reading 'useContext')" on nearly every page — not a code bug (the exact
-# same commit built cleanly in a less constrained environment), and it did
-# NOT self-heal by clearing .next and rebuilding. Raising Node's old-space
-# ceiling for just this build step (not the whole script) fixed it
-# immediately on a clean rebuild.
-NODE_OPTIONS='--max-old-space-size=3072' npm run build
+# Real, reproducible flakiness on this VPS (2026-08-19, hit on two separate
+# deploys): `next build`'s static-page generation workers intermittently
+# throw "Cannot read properties of null (reading 'useContext')" on nearly
+# every page — not a code bug (the exact same commit builds cleanly
+# elsewhere, and a plain retry with a clean .next succeeds every time this
+# was tried). Root cause not fully pinned down (this box is 1 vCPU/3.8GB —
+# raising Node's old-space ceiling alone did NOT reliably prevent it on a
+# later deploy), so rather than chase it further, the build gets a few
+# clean-retry attempts here — cheap, and turns an intermittent failure that
+# needed manual SSH intervention into a self-healing step.
+for attempt in 1 2 3; do
+  rm -rf .next
+  if NODE_OPTIONS='--max-old-space-size=3072' npm run build; then
+    break
+  fi
+  if [ "$attempt" -eq 3 ]; then
+    echo "ERROR: frontend build failed $attempt times in a row — this looks like more than the known flakiness. Aborting." >&2
+    exit 1
+  fi
+  echo "Frontend build failed (attempt $attempt/3) — retrying with a clean .next..." >&2
+done
 cd "$REPO_ROOT"
 
 echo "=== 6. Restarting services ==="
