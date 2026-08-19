@@ -781,7 +781,7 @@ model StockReservation {
   product        Product        @relation(fields: [companyId, productId], references: [companyId, id]) // composite
   warehouse      Warehouse      @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
   warehouseStock WarehouseStock @relation(fields: [companyId, productId, warehouseId], references: [companyId, productId, warehouseId]) // composite — the row whose reservedQty this reservation contributes to
-  customerOrder  CustomerOrder  @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default): a reservation must always trace back to a real order
+  customerOrder  CustomerOrder  @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — a reservation hold has no meaning without its order (unlike e.g. FinishedGood, which is a real physical unit that outlives the order record); CustomerOrdersService#remove releases it (decrementing WarehouseStock.reservedQty) BEFORE the delete, so this cascade only ever removes already-zeroed rows
 
   @@unique([customerOrderId, productId, warehouseId, source])
   @@index([companyId, productId, warehouseId])
@@ -819,7 +819,7 @@ model OrderMaterialRequirement {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  customerOrder      CustomerOrder       @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default)
+  customerOrder      CustomerOrder       @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — a requirement record has no meaning without its order, same reasoning as StockReservation above
   product            Product             @relation(fields: [companyId, productId], references: [companyId, id]) // composite
   purchaseOrderItems PurchaseOrderItem[]
 

@@ -23,7 +23,7 @@ describe('CustomerOrdersService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn() },
+        customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
         customerOrderItem: { update: jest.fn() },
         productionOrder: { findMany: jest.fn().mockResolvedValue([]) },
       },
@@ -76,6 +76,19 @@ describe('CustomerOrdersService', () => {
       await service.cancel(user, 'co1');
       expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'CANCELLED' } });
+    });
+  });
+
+  describe('remove — permanent hard delete', () => {
+    it('releases the order\'s active reservations BEFORE deleting it, so WarehouseStock.reservedQty is correctly decremented (the DB-level cascade alone would strand it)', async () => {
+      await service.remove(user, 'co1');
+
+      const releaseCallOrder = stockReservationService.releaseAllForOrder.mock.invocationCallOrder[0];
+      const deleteCallOrder = prisma.tenant.customerOrder.delete.mock.invocationCallOrder[0];
+
+      expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(prisma.tenant.customerOrder.delete).toHaveBeenCalledWith({ where: { id: 'co1' } });
+      expect(releaseCallOrder).toBeLessThan(deleteCallOrder);
     });
   });
 

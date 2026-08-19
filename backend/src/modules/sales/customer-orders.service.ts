@@ -284,17 +284,24 @@ export class CustomerOrdersService {
    * from the regular `customer-orders:manage` staff permission), unlike
    * `cancel()` which just flips status and keeps the record. Every
    * downstream FK from CustomerOrder is `onDelete: SetNull` except
-   * CustomerOrderItem's, which is `Cascade` (schema.prisma) — so this
-   * removes the order and its lines, while any ProductionOrder, FinishedGood,
-   * Shipment, or PurchaseOrder that was ever linked to it survives, just
-   * orphaned (its own real-world work — material consumed, goods shipped,
-   * a supplier committed — doesn't un-happen because the order record is
-   * gone). The full `before` snapshot (including items) is captured in the
+   * CustomerOrderItem's and StockReservation/OrderMaterialRequirement's,
+   * which are `Cascade` (schema.prisma) — so this removes the order, its
+   * lines, and its reservation records, while any ProductionOrder,
+   * FinishedGood, Shipment, or PurchaseOrder that was ever linked to it
+   * survives, just orphaned (its own real-world work — material consumed,
+   * goods shipped, a supplier committed — doesn't un-happen because the
+   * order record is gone). Releasing reservations FIRST (not just letting
+   * the DB cascade the rows away) matters: the cascade alone would delete
+   * the StockReservation rows but never decrement the separate
+   * WarehouseStock.reservedQty counter they were holding, permanently
+   * stranding that stock as "reserved" for a customer order that no longer
+   * exists. The full `before` snapshot (including items) is captured in the
    * audit trail since this is the one action here that can't be undone by
    * re-fetching the row afterward.
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
+    await this.stockReservationService.releaseAllForOrder(user, id);
     await this.prisma.tenant.customerOrder.delete({ where: { id } });
     await this.auditService.record({
       companyId: user.companyId,

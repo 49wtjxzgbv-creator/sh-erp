@@ -3,10 +3,12 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Upload, X, FileIcon } from 'lucide-react';
+import { ClipboardPaste, Upload, X, FileIcon } from 'lucide-react';
 import { uploadFile, getFileDownloadUrl, type FileAsset, type FileDomain } from '@/lib/api-client/files';
+import { readImageFromClipboard, readImageFromDrop } from '@/lib/clipboard-image';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
+import { cn } from '@/lib/utils';
 
 /**
  * Shared "attach a file" widget — presign → direct-to-R2 PUT → confirm
@@ -44,6 +46,7 @@ export function FileUploadField({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUploaded, setLastUploaded] = useState<FileAsset | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // 1hr presigned URL TTL server-side (files.service.ts's DOWNLOAD_URL_TTL_SECONDS)
   // — refetch a little before that so a long-open form never shows a broken image.
@@ -54,11 +57,7 @@ export function FileUploadField({
     staleTime: 50 * 60 * 1000,
   });
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-selecting the same file later
-    if (!file) return;
-
+  async function submitFile(file: File) {
     setUploading(true);
     setError(null);
     try {
@@ -72,6 +71,26 @@ export function FileUploadField({
     }
   }
 
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (file) submitFile(file);
+  }
+
+  async function handlePaste() {
+    setError(null);
+    const file = await readImageFromClipboard();
+    if (file) await submitFile(file);
+    else setError(tc('pasteFromClipboardFailed'));
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = readImageFromDrop(e);
+    if (file) submitFile(file);
+  }
+
   function clear() {
     setLastUploaded(null);
     onChange(null);
@@ -81,21 +100,34 @@ export function FileUploadField({
     <div className="space-y-2">
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleFileSelected} />
       {preview ? (
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
             disabled={uploading}
-            className="rounded-md ring-offset-background transition-opacity hover:opacity-80 disabled:opacity-50"
+            className={cn(
+              'rounded-md ring-offset-background transition-opacity hover:opacity-80 disabled:opacity-50',
+              isDragOver && 'opacity-70 ring-2 ring-primary',
+            )}
             aria-label={tc('edit')}
           >
             <Avatar src={downloadUrl} size="2xl" zoomable={false} />
           </button>
           <div className="flex flex-col gap-1">
-            <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
-              <Upload className="mr-2 h-4 w-4" />
-              {value ? tc('edit') : tc('create')}
-            </Button>
+            <div className="flex gap-1.5">
+              <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                {value ? tc('edit') : tc('create')}
+              </Button>
+              <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={handlePaste}>
+                <ClipboardPaste className="mr-2 h-4 w-4" />
+                {tc('pasteFromClipboard')}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{tc('dropImageHere')}</p>
             {value && (
               <button type="button" onClick={clear} className="text-left text-xs text-muted-foreground hover:text-foreground">
                 {tc('delete')}

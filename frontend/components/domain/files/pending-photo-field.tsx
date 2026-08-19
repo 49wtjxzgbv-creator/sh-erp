@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Upload } from 'lucide-react';
+import { ClipboardPaste, Upload } from 'lucide-react';
+import { readImageFromClipboard, readImageFromDrop } from '@/lib/clipboard-image';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
+import { cn } from '@/lib/utils';
 
 /**
  * Photo picker for entities that don't exist yet (create forms).
@@ -24,6 +26,8 @@ export function PendingPhotoField({ value, onChange, accept = 'image/*' }: Pendi
   const tc = useTranslations('common');
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>();
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!value) {
@@ -41,22 +45,50 @@ export function PendingPhotoField({ value, onChange, accept = 'image/*' }: Pendi
     if (file) onChange(file);
   }
 
+  async function handlePaste() {
+    setPasteError(null);
+    const file = await readImageFromClipboard();
+    if (file) onChange(file);
+    else setPasteError(tc('pasteFromClipboardFailed'));
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = readImageFromDrop(e);
+    if (file) onChange(file);
+  }
+
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-start gap-3">
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleFileSelected} />
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="rounded-md ring-offset-background transition-opacity hover:opacity-80"
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+        className={cn(
+          'rounded-md ring-offset-background transition-opacity hover:opacity-80',
+          isDragOver && 'opacity-70 ring-2 ring-primary',
+        )}
         aria-label={tc('edit')}
       >
         <Avatar src={previewUrl} size="2xl" zoomable={false} />
       </button>
       <div className="flex flex-col gap-1">
-        <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-          <Upload className="mr-2 h-4 w-4" />
-          {value ? tc('edit') : tc('create')}
-        </Button>
+        <div className="flex gap-1.5">
+          <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+            <Upload className="mr-2 h-4 w-4" />
+            {value ? tc('edit') : tc('create')}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={handlePaste}>
+            <ClipboardPaste className="mr-2 h-4 w-4" />
+            {tc('pasteFromClipboard')}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{tc('dropImageHere')}</p>
+        {pasteError && <p className="text-xs text-destructive">{pasteError}</p>}
         {value && (
           <button
             type="button"
