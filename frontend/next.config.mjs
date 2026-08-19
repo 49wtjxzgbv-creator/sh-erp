@@ -18,19 +18,22 @@ const nextConfig = {
   // Vercel-native deployment path (Vercel does its own equivalent tracing
   // regardless of this setting) — safe to enable unconditionally.
   output: 'standalone',
-  // Real, repeatedly-reproduced flakiness on the production VPS (2026-08-19,
-  // hit on 3 separate deploys): `next build`'s static-page generation
-  // workers intermittently threw "Cannot read properties of null (reading
-  // 'useContext')" on nearly every page — never reproduced locally, and a
-  // plain retry with a clean .next eventually succeeded every time (see
-  // ops/deploy.sh's own retry loop, kept as a safety net). That VPS is 1
-  // vCPU (`nproc` confirmed), so Next's default worker-parallelism for
-  // static generation buys zero real speed there anyway — only the race
-  // condition. Forcing serial (single-worker) generation trades a little
-  // build time for determinism, which is the better trade on a single-core
-  // box. No effect on Vercel or any multi-core environment beyond losing
-  // that same parallelism there too — acceptable given this repo's only
-  // real deploy target today is that one VPS (docs/deployment.md).
+  // Real, repeatedly-reproduced flakiness on the production VPS
+  // (2026-08-19, hit on several separate deploys): `next build`'s
+  // static-page generation intermittently throws "Cannot read properties
+  // of null (reading 'useContext')" on nearly every page — never
+  // reproduced locally, and a plain retry with a clean .next eventually
+  // succeeds every time (see ops/deploy.sh's own retry loop — the actual
+  // mitigation keeping deploys green). That VPS is 1 vCPU (`nproc`
+  // confirmed), so Next's default worker-parallelism for static
+  // generation buys zero real speed there regardless. Forcing serial
+  // (single-worker) generation was tried as a suspected root-cause fix —
+  // it did NOT eliminate the flakiness on its own (retries were still
+  // needed after this was added), so treat this as a reasonable
+  // no-downside setting for a single-core box, not a confirmed fix. No
+  // effect on Vercel or any multi-core environment beyond losing that
+  // same parallelism there too — acceptable given this repo's only real
+  // deploy target today is that one VPS (docs/deployment.md).
   experimental: {
     cpus: 1,
     workerThreads: false,

@@ -118,16 +118,16 @@ npm ci
 # later deploy), so rather than chase it further, the build gets a few
 # clean-retry attempts here — cheap, and turns an intermittent failure that
 # needed manual SSH intervention into a self-healing step.
-for attempt in 1 2 3; do
+for attempt in 1 2 3 4 5 6; do
   rm -rf .next
   if NODE_OPTIONS='--max-old-space-size=3072' npm run build; then
     break
   fi
-  if [ "$attempt" -eq 3 ]; then
+  if [ "$attempt" -eq 6 ]; then
     echo "ERROR: frontend build failed $attempt times in a row — this looks like more than the known flakiness. Aborting." >&2
     exit 1
   fi
-  echo "Frontend build failed (attempt $attempt/3) — retrying with a clean .next..." >&2
+  echo "Frontend build failed (attempt $attempt/6) — retrying with a clean .next..." >&2
 done
 cd "$REPO_ROOT"
 
