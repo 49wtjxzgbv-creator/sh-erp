@@ -6,6 +6,7 @@ describe('ProductionOrdersService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
+  let stockReservationService: any;
   let finishedGoodsService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
@@ -26,6 +27,8 @@ describe('ProductionOrdersService', () => {
         productionOrder: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
         productionOrderWorker: { createMany: jest.fn(), deleteMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         product: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
+        warehouseStock: { findUnique: jest.fn().mockResolvedValue(null) },
+        customerOrderItem: { findUnique: jest.fn() },
         finishedGood: { count: jest.fn(), findMany: jest.fn(), update: jest.fn(), createMany: jest.fn() },
         productionOrderPickListItem: { createMany: jest.fn() },
         payrollEntry: { createMany: jest.fn() },
@@ -36,8 +39,12 @@ describe('ProductionOrdersService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
+    stockReservationService = {
+      getReservedForOrderItem: jest.fn().mockResolvedValue({ fromStock: 0, fromPurchase: 0 }),
+      consume: jest.fn().mockResolvedValue(0),
+    };
     finishedGoodsService = { generateSerialNumbers: jest.fn().mockResolvedValue(['SN-000001', 'SN-000002']) };
-    service = new ProductionOrdersService(prisma, audit, stock, finishedGoodsService);
+    service = new ProductionOrdersService(prisma, audit, stock, stockReservationService, finishedGoodsService);
 
     // findOne() default plumbing for most tests
     prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder });
@@ -109,7 +116,19 @@ describe('ProductionOrdersService', () => {
         id: 'v1',
         components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
       });
-      prisma.tenant.product.findUnique.mockResolvedValue({ qty: 5 });
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 0 });
+
+      await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
+      expect(stock.applyMovement).not.toHaveBeenCalled();
+    });
+
+    it('rejects a PRODUCT line whose physical stock is enough but is already reserved by another order', async () => {
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+        id: 'v1',
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
+      });
+      // needed = 20; physical = 25 but 10 already reserved by another order and this batch has no order line of its own => available = 15 < 20
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 25, reservedQty: 10 });
 
       await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
       expect(stock.applyMovement).not.toHaveBeenCalled();
@@ -144,7 +163,7 @@ describe('ProductionOrdersService', () => {
           { componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 },
         ],
       });
-      prisma.tenant.product.findUnique.mockResolvedValue({ qty: 100, localPriceExclVat: 5, germanPriceExclVat: 8, article: 'ABC', name: 'Widget part' });
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 100, reservedQty: 0 });
       prisma.tenant.product.findUniqueOrThrow.mockResolvedValue({ localPriceExclVat: 5, germanPriceExclVat: 8, article: 'ABC', name: 'Widget part' });
       prisma.tenant.finishedGood.count.mockResolvedValue(5); // enough sub1 units in stock (need 2)
       prisma.tenant.finishedGood.findMany.mockResolvedValue([

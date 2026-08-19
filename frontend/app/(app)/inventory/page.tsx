@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
+import { ReservationBreakdownPopover } from '@/components/domain/inventory/reservation-breakdown-popover';
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { cn } from '@/lib/utils';
@@ -192,6 +193,22 @@ export default function StockLevelsPage() {
             }}
           />
         ),
+      },
+      {
+        accessorKey: 'reservedQty',
+        header: () => <span className="block text-right">{t('reservedQty')}</span>,
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums">
+            <ReservationBreakdownPopover productId={row.original.productId} warehouseId={row.original.warehouseId} qty={Number(row.original.reservedQty)}>
+              {row.original.reservedQty}
+            </ReservationBreakdownPopover>
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'availableQty',
+        header: () => <span className="block text-right">{t('availableQty')}</span>,
+        cell: ({ row }) => <div className="text-right tabular-nums font-medium">{row.original.availableQty}</div>,
       },
     ],
     [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell, savingQty, canWriteProducts, canAdjustStock],

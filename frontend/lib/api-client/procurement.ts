@@ -127,6 +127,8 @@ export interface PurchaseOrderItem {
   actualPrice: DecimalString | null;
   /** Supplier's own confirmed price via the Supplier Portal (ADR-0011) — informational, never overwrites expectedPrice/actualPrice. */
   supplierConfirmedPrice: DecimalString | null;
+  /** Stock-reservation spec §5/§9: links this line to the customer-order material requirement it's covering — receiving it auto-reserves for that order. */
+  sourceRequirementId: string | null;
 }
 
 export interface PurchaseOrder {
@@ -160,6 +162,8 @@ export interface CreatePurchaseOrderItemInput {
   productNameSnapshot: string;
   qtyOrdered: number;
   expectedPrice?: number;
+  /** Stock-reservation spec §5/§9 — set when this line is being bought specifically to cover a customer order's material requirement. */
+  sourceRequirementId?: string;
 }
 
 export interface CreatePurchaseOrderInput {

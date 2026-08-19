@@ -5,6 +5,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
+import { StockReservationService } from '../inventory/stock-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto } from './dto/give-to-production.dto';
@@ -27,6 +28,7 @@ export class CustomerOrdersService {
     private readonly auditService: AuditService,
     private readonly productionOrdersService: ProductionOrdersService,
     private readonly assembliesService: AssembliesService,
+    private readonly stockReservationService: StockReservationService,
   ) {}
 
   async create(user: RequestUser, dto: CreateCustomerOrderDto) {
@@ -233,10 +235,23 @@ export class CustomerOrdersService {
     return order;
   }
 
+  /**
+   * §15: cancelling an order releases every active reservation its lines
+   * were holding — unused reserved stock becomes available to other orders
+   * again, physical stock is unchanged (nothing was ever written off just
+   * by reserving it). Item-quantity CHANGE (the other half of §15) has no
+   * real analog in this system to hook into: CustomerOrderItem lines are
+   * immutable once created (UpdateCustomerOrderDto's own header comment —
+   * "cancel and recreate for a genuine line change"), so that specific
+   * sub-scenario is out of scope here, not silently unhandled.
+   */
   async cancel(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
       throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_CANCEL_TERMINAL', `Cannot cancel a ${order.status} order.`);
+    }
+    for (const item of order.items as any[]) {
+      await this.stockReservationService.releaseAllForOrderItem(user, item.id);
     }
     const updated = await this.prisma.tenant.customerOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
     await this.auditService.record({

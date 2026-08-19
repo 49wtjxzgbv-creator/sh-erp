@@ -42,6 +42,11 @@ export class CreatePurchaseOrderItemDto {
   @IsNumber()
   @Min(0)
   expectedPrice?: number;
+
+  @ApiPropertyOptional({ description: 'Stock-reservation spec §5/§9: links this line back to the customer-order material requirement it\'s covering, so receiving it auto-reserves for that order (capped to its outstanding uncovered need, §8).' })
+  @IsOptional()
+  @IsUUID()
+  sourceRequirementId?: string;
 }
 
 export class CreatePurchaseOrderDto {

@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
+import { MaterialProvisioningCard } from '@/components/domain/sales/material-provisioning-card';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 
@@ -550,6 +551,9 @@ export default function CustomerOrderDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <MaterialProvisioningCard orderId={order.id} items={order.items ?? []} />
+
       <EditCustomerOrderDialog open={editOpen} onOpenChange={setEditOpen} order={order} />
     </div>
   );

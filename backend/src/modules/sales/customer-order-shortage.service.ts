@@ -239,6 +239,24 @@ export class CustomerOrderShortageService {
   }
 
   /**
+   * Single-line variant of the same recursive walk `previewShortage` uses
+   * for a whole order's shared pool — reused (not duplicated) by
+   * `MaterialProvisioningService` (stock-reservation spec §11/§12), which
+   * needs the flattened raw-PRODUCT requirement for exactly ONE
+   * CustomerOrderItem's assembly tree, not the whole order's merged pool.
+   * Deliberately drops the ASSEMBLY-buy pool (purchased-whole sub-
+   * assemblies) — the reservation system is scoped to raw materials that
+   * actually live in WarehouseStock; see that service's header comment for
+   * the disclosed reason purchased-whole sub-assemblies aren't covered.
+   */
+  async getProductRequirements(assemblyId: string, qtyOfAssembly: number): Promise<Map<string, number>> {
+    const productPool = new Map<string, number>();
+    const assemblyBuyPool = new Map<string, number>();
+    await this.walkAssembly(assemblyId, qtyOfAssembly, productPool, assemblyBuyPool, new Set());
+    return productPool;
+  }
+
+  /**
    * `visited` tracks the current ancestor path only (removed on the way
    * back out — same technique as AssembliesService's cost/availability
    * recursion, Module 5), so a legitimate diamond dependency isn't mistaken

@@ -75,6 +75,17 @@ export class QueryStockDto {
   warehouseId?: string;
 }
 
+/** Both required — the §17 drill-down always targets one exact (product, warehouse) cell. */
+export class QueryStockReservationsDto {
+  @ApiProperty()
+  @IsUUID()
+  productId!: string;
+
+  @ApiProperty()
+  @IsUUID()
+  warehouseId!: string;
+}
+
 /**
  * `QueryStockDto & { limit?: number; offset?: number }` (the previous
  * shape here) is a TypeScript-only lie: Nest's ValidationPipe resolves the

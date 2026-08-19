@@ -6,6 +6,7 @@ describe('PurchaseOrdersService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
+  let stockReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -23,11 +24,14 @@ describe('PurchaseOrdersService', () => {
         purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn() },
         purchaseOrderItem: { update: jest.fn(), findMany: jest.fn() },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
+        orderMaterialRequirement: { findUnique: jest.fn() },
+        stockReservation: { findUnique: jest.fn() },
       },
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
-    service = new PurchaseOrdersService(prisma, audit, stock);
+    stockReservationService = { reserveFromReceipt: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }) };
+    service = new PurchaseOrdersService(prisma, audit, stock, stockReservationService);
   });
 
   describe('create', () => {
@@ -138,6 +142,43 @@ describe('PurchaseOrdersService', () => {
       expect(prisma.tenant.purchaseOrder.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'po1' }, data: { status: 'DELIVERED' } }),
       );
+    });
+
+    it('§6/§8: auto-reserves the receipt for the linked order requirement, capped to its outstanding uncovered purchase need', async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
+        { id: 'item1', productId: 'p1', qtyOrdered: 15, qtyReceived: 15, sourceRequirementId: 'req1' },
+        { id: 'item2', productId: null, qtyOrdered: 5, qtyReceived: 0 },
+      ]);
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 15, qtyReceived: 0, sourceRequirementId: 'req1' }, order.items[1]],
+      });
+      prisma.tenant.purchaseOrder.update.mockResolvedValue({ id: 'po1', status: 'PARTIAL', items: [] });
+      // Order needs 15 to-purchase total; 10 already covered by an earlier partial receipt (still held) => 5 outstanding.
+      prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue({
+        id: 'req1', customerOrderId: 'co1', customerOrderItemId: 'item-x', qtyToPurchase: 15,
+      });
+      prisma.tenant.stockReservation.findUnique.mockResolvedValue({ qty: 10, consumedQty: 0 });
+
+      await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 15 }] });
+
+      expect(stockReservationService.reserveFromReceipt).toHaveBeenCalledWith(
+        user,
+        { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', customerOrderItemId: 'item-x' },
+        5, // min(15 received, 15 - 10 already covered)
+      );
+    });
+
+    it('does not touch reservations for a line with no sourceRequirementId', async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
+        { id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 4 },
+        { id: 'item2', productId: null, qtyOrdered: 5, qtyReceived: 0 },
+      ]);
+      prisma.tenant.purchaseOrder.update.mockResolvedValue({ id: 'po1', status: 'PARTIAL', items: [] });
+
+      await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 4 }] });
+
+      expect(stockReservationService.reserveFromReceipt).not.toHaveBeenCalled();
     });
 
     it('throws if no warehouse is given and none is configured as default', async () => {

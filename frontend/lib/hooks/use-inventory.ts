@@ -8,6 +8,7 @@ import {
   deleteWarehouse,
   getStockLevels,
   getStockHistory,
+  getStockReservationBreakdown,
   recordStockMovement,
   moveStock,
   listInventorySessions,
@@ -28,6 +29,7 @@ import {
 const warehousesKey = ['warehouses'] as const;
 const stockLevelsKey = (q: QueryStockInput) => ['stock-levels', q] as const;
 const stockHistoryKey = (q: QueryStockHistoryInput) => ['stock-history', q] as const;
+const stockReservationsKey = (productId: string, warehouseId: string) => ['stock-reservations', productId, warehouseId] as const;
 const sessionsKey = ['inventory-sessions'] as const;
 const sessionItemsKey = (id: string) => ['inventory-sessions', id, 'items'] as const;
 
@@ -61,6 +63,15 @@ export function useDeleteWarehouse() {
 
 export function useStockLevels(query: QueryStockInput) {
   return useQuery({ queryKey: stockLevelsKey(query), queryFn: () => getStockLevels(query) });
+}
+
+/** §17 drill-down — only fetched while the popover for a given cell is actually open (see `enabled`). */
+export function useStockReservationBreakdown(productId: string | undefined, warehouseId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: stockReservationsKey(productId ?? '', warehouseId ?? ''),
+    queryFn: () => getStockReservationBreakdown(productId as string, warehouseId as string),
+    enabled: Boolean(productId && warehouseId && enabled),
+  });
 }
 
 export function useStockHistory(query: QueryStockHistoryInput) {

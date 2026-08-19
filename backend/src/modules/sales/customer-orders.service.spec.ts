@@ -7,6 +7,7 @@ describe('CustomerOrdersService', () => {
   let audit: any;
   let productionOrdersService: any;
   let assembliesService: any;
+  let stockReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -29,7 +30,8 @@ describe('CustomerOrdersService', () => {
     audit = { record: jest.fn() };
     productionOrdersService = { create: jest.fn() };
     assembliesService = { calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }) };
-    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService);
+    stockReservationService = { releaseAllForOrderItem: jest.fn().mockResolvedValue(undefined) };
+    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService);
   });
 
   describe('create', () => {
@@ -59,6 +61,14 @@ describe('CustomerOrdersService', () => {
     it('rejects cancelling a COMPLETED order', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status: 'COMPLETED' });
       await expect(service.cancel(user, 'co1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('§15: releases every line\'s active reservations before flipping status to CANCELLED', async () => {
+      prisma.tenant.customerOrder.update.mockResolvedValue({ ...order, status: 'CANCELLED' });
+      await service.cancel(user, 'co1');
+      expect(stockReservationService.releaseAllForOrderItem).toHaveBeenCalledWith(user, 'item1');
+      expect(stockReservationService.releaseAllForOrderItem).toHaveBeenCalledWith(user, 'item2');
+      expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'CANCELLED' } });
     });
   });
 

@@ -160,11 +160,22 @@ export class StockService {
     return movement;
   }
 
+  /**
+   * Adds a computed `availableQty` (= qty - reservedQty, stock-reservation
+   * spec §4/§17) alongside the raw stored `qty`/`reservedQty` on every row —
+   * `reservedQty` is itself a stored, atomically-maintained denormalized
+   * counter (see WarehouseStock's own schema comment for why), but
+   * `availableQty` is trivial arithmetic, computed fresh here rather than
+   * also stored.
+   */
   async getLevels(user: RequestUser, query: QueryStockDto) {
     const where: Record<string, any> = {};
     if (query.productId) where.productId = query.productId;
     if (query.warehouseId) where.warehouseId = query.warehouseId;
-    const existing = await this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] });
+    const existing = (await this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] })).map((s) => ({
+      ...s,
+      availableQty: (Number(s.qty) - Number(s.reservedQty)).toString(),
+    }));
 
     // A WarehouseStock row is only ever materialized reactively, by
     // recordMovement's upsert (see this file's header comment) — a product
@@ -191,6 +202,8 @@ export class StockService {
         productId: p.id,
         warehouseId: targetWarehouseId,
         qty: '0',
+        reservedQty: '0',
+        availableQty: '0',
         createdAt: now,
         updatedAt: now,
       }));

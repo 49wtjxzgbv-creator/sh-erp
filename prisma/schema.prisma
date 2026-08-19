@@ -95,7 +95,7 @@ generator client {
   // place instead of overwriting that one, leaving backend/dist to load
   // a stale/placeholder client and crash with "@prisma/client did not
   // initialize yet." Pinning this removes the ambiguity outright.
-  output = "../backend/node_modules/.prisma/client"
+  output          = "../backend/node_modules/.prisma/client"
 }
 
 datasource db {
@@ -109,70 +109,72 @@ datasource db {
 // ============================================================================
 
 model Company {
-  id        String   @id @default(uuid()) @db.Uuid
-  slug      String   @unique // subdomain: {slug}.sh-erp.com — UX resolution only, never trusted for auth (ADR-0002)
-  name      String
-  status    CompanyStatus @default(ACTIVE)
-  timezone  String   @default("Europe/Kyiv")
-  locale    String   @default("uk") // default UI language for this company (Phase 2 §3.6)
+  id       String        @id @default(uuid()) @db.Uuid
+  slug     String        @unique // subdomain: {slug}.sh-erp.com — UX resolution only, never trusted for auth (ADR-0002)
+  name     String
+  status   CompanyStatus @default(ACTIVE)
+  timezone String        @default("Europe/Kyiv")
+  locale   String        @default("uk") // default UI language for this company (Phase 2 §3.6)
 
-  legacyId  String?  @unique // old Apps Script deployment identifier, if migrated — Company IS the tenant root (no companyId field to scope by), so this is a plain global unique rather than the [companyId, legacyId] pattern used elsewhere (Phase 4 decision)
+  legacyId String? @unique // old Apps Script deployment identifier, if migrated — Company IS the tenant root (no companyId field to scope by), so this is a plain global unique rather than the [companyId, legacyId] pattern used elsewhere (Phase 4 decision)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3) // soft-disable on offboarding (Phase 2 §11.5), never a hard delete
 
-  memberships       CompanyMembership[]
-  roles             Role[]
-  settings          CompanySettings?
-  branding          CompanyBranding?
-  aiSettings        CompanyAiSettings?
-  subscription      CompanySubscription?
+  memberships          CompanyMembership[]
+  roles                Role[]
+  settings             CompanySettings?
+  branding             CompanyBranding?
+  aiSettings           CompanyAiSettings?
+  subscription         CompanySubscription?
   featureFlagOverrides CompanyFeatureFlagOverride[]
 
   // Back-relations for every tenant-scoped domain model below — required by
   // Prisma for explicit foreign-key relations (both sides must be declared),
   // and genuinely useful in practice (typed `include`, cascading admin
   // tooling, company-level counts) despite the length of this list.
-  products          Product[]
-  units             CompanyUnit[]
-  suppliers         Supplier[]
-  warehouses        Warehouse[]
-  warehouseStocks   WarehouseStock[]
-  stockMovements    StockMovement[]
-  inventorySessions InventorySession[]
-  inventoryItems    InventoryItem[]
-  assemblies        Assembly[]
-  productionStages  ProductionStage[]
-  productionOrders  ProductionOrder[]
-  productionOrderStagePlans ProductionOrderStagePlan[]
-  finishedGoods     FinishedGood[]
-  qcChecklistItems  QcChecklistItem[]
-  qcChecks          QcCheck[]
-  qcCheckResults    QcCheckResult[]
-  customerOrders    CustomerOrder[]
-  customerOrderItems CustomerOrderItem[]
-  shipments         Shipment[]
-  shipmentItems     ShipmentItem[]
-  purchaseOrders    PurchaseOrder[]
-  purchaseOrderItems PurchaseOrderItem[]
-  employees         Employee[]
-  payrollEntries    PayrollEntry[]
-  fileAssets        FileAsset[]
-  pendingAiActions  PendingAiAction[]
-  aiUsageLogs       AiUsageLog[]
-  legacyMigrationRuns LegacyMigrationRun[]
-  importJobs        ImportJob[]
-  importConnections ImportConnection[]
-  assemblyComponents AssemblyComponent[]
-  assemblyVersions  AssemblyVersion[]
-  assemblyVersionComponents AssemblyVersionComponent[]
+  products                     Product[]
+  units                        CompanyUnit[]
+  suppliers                    Supplier[]
+  warehouses                   Warehouse[]
+  warehouseStocks              WarehouseStock[]
+  stockMovements               StockMovement[]
+  inventorySessions            InventorySession[]
+  inventoryItems               InventoryItem[]
+  assemblies                   Assembly[]
+  productionStages             ProductionStage[]
+  productionOrders             ProductionOrder[]
+  productionOrderStagePlans    ProductionOrderStagePlan[]
+  finishedGoods                FinishedGood[]
+  qcChecklistItems             QcChecklistItem[]
+  qcChecks                     QcCheck[]
+  qcCheckResults               QcCheckResult[]
+  customerOrders               CustomerOrder[]
+  customerOrderItems           CustomerOrderItem[]
+  shipments                    Shipment[]
+  shipmentItems                ShipmentItem[]
+  purchaseOrders               PurchaseOrder[]
+  purchaseOrderItems           PurchaseOrderItem[]
+  employees                    Employee[]
+  payrollEntries               PayrollEntry[]
+  fileAssets                   FileAsset[]
+  pendingAiActions             PendingAiAction[]
+  aiUsageLogs                  AiUsageLog[]
+  legacyMigrationRuns          LegacyMigrationRun[]
+  importJobs                   ImportJob[]
+  importConnections            ImportConnection[]
+  assemblyComponents           AssemblyComponent[]
+  assemblyVersions             AssemblyVersion[]
+  assemblyVersionComponents    AssemblyVersionComponent[]
   productionOrderPickListItems ProductionOrderPickListItem[]
-  productionOrderStageEvents ProductionOrderStageEvent[]
-  productionOrderWorkers ProductionOrderWorker[]
-  productionScheduleSlots ProductionScheduleSlot[]
-  productSuppliers  ProductSupplier[]
-  assemblySuppliers AssemblySupplier[]
+  productionOrderStageEvents   ProductionOrderStageEvent[]
+  productionOrderWorkers       ProductionOrderWorker[]
+  productionScheduleSlots      ProductionScheduleSlot[]
+  productSuppliers             ProductSupplier[]
+  assemblySuppliers            AssemblySupplier[]
+  stockReservations            StockReservation[]
+  orderMaterialRequirements    OrderMaterialRequirement[]
 
   @@map("companies")
 }
@@ -184,24 +186,24 @@ enum CompanyStatus {
 }
 
 model User {
-  id                String   @id @default(uuid()) @db.Uuid
-  email             String   @unique @db.Citext // case-insensitive (decision 3) — "a@b.com" and "A@B.com" are the same account
-  login             String?  @unique @db.Citext // preserves old-style username login alongside email (Phase 1 §1.2), also case-insensitive
-  fullName          String
-  passwordHash      String?  // argon2id — new accounts and post-re-hash migrated accounts
+  id                 String  @id @default(uuid()) @db.Uuid
+  email              String  @unique @db.Citext // case-insensitive (decision 3) — "a@b.com" and "A@B.com" are the same account
+  login              String? @unique @db.Citext // preserves old-style username login alongside email (Phase 1 §1.2), also case-insensitive
+  fullName           String
+  passwordHash       String? // argon2id — new accounts and post-re-hash migrated accounts
   legacyPasswordHash String? // unsalted SHA-256, present ONLY until first successful transparent re-hash (ADR-0006 / Phase 0)
-  mfaSecret         String?  // TOTP secret, unused at launch — schema field exists so enabling MFA later needs no migration (Phase 2 §5.7)
-  mfaEnabled        Boolean  @default(false)
-  active            Boolean  @default(true)
+  mfaSecret          String? // TOTP secret, unused at launch — schema field exists so enabling MFA later needs no migration (Phase 2 §5.7)
+  mfaEnabled         Boolean @default(false)
+  active             Boolean @default(true)
 
-  legacyId          String? // NOT unique-constrained, deliberately (Phase 4 decision): User is global, not company-scoped, and a local legacy row id from one company's spreadsheet has no guarantee of not colliding with another company's local legacy row id — a plain global unique here would be actively wrong. Migration load idempotency for User keys off `email` (already globally unique via citext) instead.
+  legacyId String? // NOT unique-constrained, deliberately (Phase 4 decision): User is global, not company-scoped, and a local legacy row id from one company's spreadsheet has no guarantee of not colliding with another company's local legacy row id — a plain global unique here would be actively wrong. Migration load idempotency for User keys off `email` (already globally unique via citext) instead.
 
-  createdAt         DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
-  deletedAt         DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
 
-  memberships       CompanyMembership[]
-  refreshTokens     RefreshToken[]
+  memberships   CompanyMembership[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
 }
@@ -210,17 +212,17 @@ model User {
 // companies via multiple memberships), so relations to User are never
 // composite — there is no "wrong tenant" concept for a global entity.
 model CompanyMembership {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
-  userId    String   @db.Uuid
-  roleId    String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
+  userId    String @db.Uuid
+  roleId    String @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  user      User     @relation(fields: [userId], references: [id])
-  role      Role     @relation(fields: [companyId, roleId], references: [companyId, id]) // composite — Role is tenant-scoped
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user    User    @relation(fields: [userId], references: [id])
+  role    Role    @relation(fields: [companyId, roleId], references: [companyId, id]) // composite — Role is tenant-scoped
 
   @@unique([companyId, userId]) // one active role per user per company
   @@index([companyId])
@@ -229,16 +231,16 @@ model CompanyMembership {
 }
 
 model Role {
-  id          String   @id @default(uuid()) @db.Uuid
-  companyId   String   @db.Uuid
+  id          String  @id @default(uuid()) @db.Uuid
+  companyId   String  @db.Uuid
   name        String
   description String?
-  isSystem    Boolean  @default(false) // true for the 5 seeded default roles (Phase 2 §6) — cannot be deleted, can still have permissions edited
+  isSystem    Boolean @default(false) // true for the 5 seeded default roles (Phase 2 §6) — cannot be deleted, can still have permissions edited
 
-  createdAt   DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
   permissions RolePermission[]
   memberships CompanyMembership[]
 
@@ -253,13 +255,13 @@ model Role {
 // needs a new enforcement point ships. Never a composite-FK target: it's
 // global, so there's no "wrong tenant" for a Permission reference either.
 model Permission {
-  id          String   @id @default(uuid()) @db.Uuid
-  key         String   @unique // e.g. "products:write", "payroll:manage", "ai:use-critical-actions"
-  resource    String   // e.g. "products"
-  action      String   // e.g. "write"
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique // e.g. "products:write", "payroll:manage", "ai:use-critical-actions"
+  resource    String // e.g. "products"
+  action      String // e.g. "write"
   description String
 
-  roles       RolePermission[]
+  roles RolePermission[]
 
   @@map("permissions")
 }
@@ -268,27 +270,27 @@ model RolePermission {
   roleId       String @db.Uuid
   permissionId String @db.Uuid
 
-  role         Role       @relation(fields: [roleId], references: [id])
-  permission   Permission @relation(fields: [permissionId], references: [id])
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
 
   @@id([roleId, permissionId])
   @@map("role_permissions")
 }
 
 model RefreshToken {
-  id            String   @id @default(uuid()) @db.Uuid
-  userId        String   @db.Uuid
-  companyId     String   @db.Uuid // token is scoped to one company session, even for multi-company users
-  tokenHash     String   @unique // never store the raw token
-  familyId      String   @db.Uuid // rotation family — reuse of a revoked token in this family revokes the whole family (ADR-0006)
-  device        String?
-  ipAddress     String?
-  expiresAt     DateTime @db.Timestamptz(3)
-  revokedAt     DateTime? @db.Timestamptz(3)
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  companyId String    @db.Uuid // token is scoped to one company session, even for multi-company users
+  tokenHash String    @unique // never store the raw token
+  familyId  String    @db.Uuid // rotation family — reuse of a revoked token in this family revokes the whole family (ADR-0006)
+  device    String?
+  ipAddress String?
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
 
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  user          User     @relation(fields: [userId], references: [id]) // User is global — no composite FK
+  user User @relation(fields: [userId], references: [id]) // User is global — no composite FK
 
   @@index([userId])
   @@index([familyId])
@@ -321,15 +323,15 @@ model RefreshToken {
 model SuperAdmin {
   id           String    @id @default(uuid()) @db.Uuid
   email        String    @unique @db.Citext
-  passwordHash String    // argon2id, same algorithm as User — no reason to use a weaker one here
+  passwordHash String // argon2id, same algorithm as User — no reason to use a weaker one here
   fullName     String
   active       Boolean   @default(true) // deactivate instead of delete — keeps SuperAdminAuditLog attributable
   lastLoginAt  DateTime? @db.Timestamptz(3)
 
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  auditLogs    SuperAdminAuditLog[]
+  auditLogs SuperAdminAuditLog[]
 
   @@map("super_admins")
 }
@@ -340,16 +342,16 @@ model SuperAdmin {
 // its plan, impersonating a user) often has no single `companyId` it
 // belongs to, and AuditEvent.companyId is required/RLS-scoped by design.
 model SuperAdminAuditLog {
-  id           String   @id @default(uuid()) @db.Uuid
-  superAdminId String   @db.Uuid
-  action       String   // e.g. "company.blocked", "company.impersonated", "plan.updated"
-  targetType   String?  // e.g. "Company", "Plan", "SuperAdmin"
+  id           String  @id @default(uuid()) @db.Uuid
+  superAdminId String  @db.Uuid
+  action       String // e.g. "company.blocked", "company.impersonated", "plan.updated"
+  targetType   String? // e.g. "Company", "Plan", "SuperAdmin"
   targetId     String?
   metadata     Json?
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+  superAdmin SuperAdmin @relation(fields: [superAdminId], references: [id])
 
   @@index([superAdminId])
   @@index([targetType, targetId])
@@ -361,17 +363,17 @@ model SuperAdminAuditLog {
 // ============================================================================
 
 model AuditEvent {
-  id           String   @id @default(uuid()) @db.Uuid
-  companyId    String   @db.Uuid
-  actorUserId  String?  @db.Uuid // null for system/job-initiated events
-  action       String   // e.g. "production_order.started", "product.price_changed"
-  entityType   String   // e.g. "ProductionOrder"
-  entityId     String   @db.Uuid
-  before       Json?
-  after        Json?
-  metadata     Json?    // free-form context (comment, ip, request id) — the ONE deliberate jsonb use here, because this is genuinely unstructured, per-event-type data, not a hidden relational table (contrast with the old PickListJson/StageHistoryJson pattern this schema explicitly normalizes away elsewhere)
+  id          String  @id @default(uuid()) @db.Uuid
+  companyId   String  @db.Uuid
+  actorUserId String? @db.Uuid // null for system/job-initiated events
+  action      String // e.g. "production_order.started", "product.price_changed"
+  entityType  String // e.g. "ProductionOrder"
+  entityId    String  @db.Uuid
+  before      Json?
+  after       Json?
+  metadata    Json? // free-form context (comment, ip, request id) — the ONE deliberate jsonb use here, because this is genuinely unstructured, per-event-type data, not a hidden relational table (contrast with the old PickListJson/StageHistoryJson pattern this schema explicitly normalizes away elsewhere)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
   // No updatedAt, no deletedAt — immutable by design, DB-grant-enforced (database-schema.md)
 
   @@index([companyId, entityType, entityId])
@@ -384,30 +386,30 @@ model AuditEvent {
 // ============================================================================
 
 model FeatureFlag {
-  id           String   @id @default(uuid()) @db.Uuid
-  key          String   @unique
-  description  String
-  defaultOn    Boolean  @default(false)
+  id          String  @id @default(uuid()) @db.Uuid
+  key         String  @unique
+  description String
+  defaultOn   Boolean @default(false)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  overrides    CompanyFeatureFlagOverride[]
+  overrides CompanyFeatureFlagOverride[]
 
   @@map("feature_flags")
 }
 
 model CompanyFeatureFlagOverride {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
-  featureFlagId String   @db.Uuid
+  id            String  @id @default(uuid()) @db.Uuid
+  companyId     String  @db.Uuid
+  featureFlagId String  @db.Uuid
   enabled       Boolean
 
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company       Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  featureFlag   FeatureFlag @relation(fields: [featureFlagId], references: [id]) // FeatureFlag is global — no composite FK
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  featureFlag FeatureFlag @relation(fields: [featureFlagId], references: [id]) // FeatureFlag is global — no composite FK
 
   @@unique([companyId, featureFlagId])
   @@index([companyId])
@@ -420,19 +422,19 @@ model CompanyFeatureFlagOverride {
 // ============================================================================
 
 model FileAsset {
-  id           String   @id @default(uuid()) @db.Uuid
-  companyId    String   @db.Uuid
+  id           String     @id @default(uuid()) @db.Uuid
+  companyId    String     @db.Uuid
   domain       FileDomain
-  entityType   String   // e.g. "Product", "Assembly"
-  entityId     String   @db.Uuid
-  storageKey   String   // R2 object key (Phase 2 §7 layout)
+  entityType   String // e.g. "Product", "Assembly"
+  entityId     String     @db.Uuid
+  storageKey   String // R2 object key (Phase 2 §7 layout)
   originalName String
   mimeType     String
   sizeBytes    Int
-  isPublic     Boolean  @default(false) // true for branding assets shown pre-login
+  isPublic     Boolean    @default(false) // true for branding assets shown pre-login
 
-  uploadedById String?  @db.Uuid
-  legacyId     String?  // old Drive file ID, for migration traceability
+  uploadedById String? @db.Uuid
+  legacyId     String? // old Drive file ID, for migration traceability
 
   // STEP/.stp files are converted to GLB server-side once at upload time
   // (StepConversionService) so viewing never re-parses raw CAD in the
@@ -442,13 +444,13 @@ model FileAsset {
   conversionStatus    FileConversionStatus @default(NONE)
   convertedStorageKey String? // R2 key of the generated .glb, set once conversionStatus = DONE
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  deletedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
 
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
-  @@index([companyId, entityType, entityId])
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, entityType, entityId])
   @@map("file_assets")
 }
 
@@ -478,59 +480,61 @@ enum FileConversionStatus {
 // ============================================================================
 
 model Product {
-  id                    String   @id @default(uuid()) @db.Uuid
-  companyId             String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
 
-  article               String   @db.Citext // unique business key, case-insensitive within a company (decision 3 — now DB-enforced)
-  code                  String?
-  name                  String
-  description           String?
-  category              String?
-  productGroup          String?
-  family                String?
-  type                  String?
-  kind                  String?
-  productLine           String?
-  barcode               String?
+  article      String  @db.Citext // unique business key, case-insensitive within a company (decision 3 — now DB-enforced)
+  code         String?
+  name         String
+  description  String?
+  category     String?
+  productGroup String?
+  family       String?
+  type         String?
+  kind         String?
+  productLine  String?
+  barcode      String?
 
-  unitId                String   @db.Uuid // FK to CompanyUnit (decision 1) — replaces the old free-text `unit` column
-  unitsPerPackage       Decimal? @db.Decimal(14, 3)
-  cell                  String?
-  qty                   Decimal  @default(0) @db.Decimal(14, 3)
-  minQty                Decimal  @default(0) @db.Decimal(14, 3)
+  unitId          String   @db.Uuid // FK to CompanyUnit (decision 1) — replaces the old free-text `unit` column
+  unitsPerPackage Decimal? @db.Decimal(14, 3)
+  cell            String?
+  qty             Decimal  @default(0) @db.Decimal(14, 3)
+  minQty          Decimal  @default(0) @db.Decimal(14, 3)
 
-  localPriceExclVat     Decimal? @db.Decimal(14, 2)
-  localPriceInclVat     Decimal? @db.Decimal(14, 2)
-  germanPriceExclVat    Decimal? @db.Decimal(14, 2)
-  germanPriceInclVat    Decimal? @db.Decimal(14, 2)
-  sellPriceEur          Decimal? @db.Decimal(14, 2)
+  localPriceExclVat  Decimal? @db.Decimal(14, 2)
+  localPriceInclVat  Decimal? @db.Decimal(14, 2)
+  germanPriceExclVat Decimal? @db.Decimal(14, 2)
+  germanPriceInclVat Decimal? @db.Decimal(14, 2)
+  sellPriceEur       Decimal? @db.Decimal(14, 2)
 
-  weightPerUnitKg       Decimal? @db.Decimal(10, 3)
-  warrantyMonths        String?
-  status                String?
-  manufacturer          String?
-  manufacturerCode      String?
-  countryOfOrigin       String?
-  priceListRef          String?
-  note                  String?
+  weightPerUnitKg  Decimal? @db.Decimal(10, 3)
+  warrantyMonths   String?
+  status           String?
+  manufacturer     String?
+  manufacturerCode String?
+  countryOfOrigin  String?
+  priceListRef     String?
+  note             String?
 
-  defaultSupplierId     String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
-  legacyId              String?
+  legacyId String?
 
-  createdAt             DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime @updatedAt @db.Timestamptz(3)
-  deletedAt             DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
 
-  company               Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  unit                  CompanyUnit @relation(fields: [companyId, unitId], references: [companyId, id]) // composite
-  defaultSupplier       Supplier?   @relation(fields: [defaultSupplierId], references: [id], onDelete: SetNull)
-  assemblyComponents    AssemblyComponent[]
-  stockMovements        StockMovement[]
-  warehouseStocks       WarehouseStock[]
-  inventoryItems        InventoryItem[]
-  purchaseOrderItems    PurchaseOrderItem[]
-  suppliers             ProductSupplier[]
+  company                   Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  unit                      CompanyUnit                @relation(fields: [companyId, unitId], references: [companyId, id]) // composite
+  defaultSupplier           Supplier?                  @relation(fields: [defaultSupplierId], references: [id], onDelete: SetNull)
+  assemblyComponents        AssemblyComponent[]
+  stockMovements            StockMovement[]
+  warehouseStocks           WarehouseStock[]
+  inventoryItems            InventoryItem[]
+  purchaseOrderItems        PurchaseOrderItem[]
+  suppliers                 ProductSupplier[]
+  stockReservations         StockReservation[]
+  orderMaterialRequirements OrderMaterialRequirement[]
 
   @@unique([companyId, article])
   @@unique([companyId, id]) // composite-FK target for WarehouseStock/StockMovement/InventoryItem
@@ -543,12 +547,12 @@ model Product {
 }
 
 model CompanyUnit {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
   name      String
 
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  products  Product[]
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products Product[]
 
   @@unique([companyId, name])
   @@unique([companyId, id]) // composite-FK target for Product.unit
@@ -561,27 +565,27 @@ model CompanyUnit {
 // ============================================================================
 
 model Supplier {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
+  id            String  @id @default(uuid()) @db.Uuid
+  companyId     String  @db.Uuid
   name          String
   contactPerson String?
   phone         String?
   email         String?
   notes         String?
 
-  legacyId      String?
+  legacyId String?
 
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
-  deletedAt     DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
 
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  products           Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
-  assemblies         Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
-  purchaseOrders     PurchaseOrder[]
-  portalUser         SupplierPortalUser?
-  productLinks       ProductSupplier[]
-  assemblyLinks      AssemblySupplier[]
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products       Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
+  assemblies     Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
+  purchaseOrders PurchaseOrder[]
+  portalUser     SupplierPortalUser?
+  productLinks   ProductSupplier[]
+  assemblyLinks  AssemblySupplier[]
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
@@ -606,12 +610,12 @@ model ProductSupplier {
   price      Decimal? @db.Decimal(14, 2)
   isDefault  Boolean  @default(false) // display/pre-selection hint only — never bypasses the "ask when >1" rule above
 
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
   @@unique([productId, supplierId])
   @@index([companyId])
@@ -631,12 +635,12 @@ model AssemblySupplier {
   price      Decimal? @db.Decimal(14, 2)
   isDefault  Boolean  @default(false)
 
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly   Assembly @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
-  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly Assembly @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
   @@unique([assemblyId, supplierId])
   @@index([companyId])
@@ -650,19 +654,19 @@ model AssemblySupplier {
 // one Company with a Role" model, and giving it a Role/CompanyMembership
 // would understate how narrow it actually needs to be. See ADR-0011.
 model SupplierPortalUser {
-  id           String   @id @default(uuid()) @db.Uuid
-  companyId    String   @db.Uuid
-  supplierId   String   @unique @db.Uuid // one portal account per Supplier row (not per real-world company — a supplier serving two SH ERP tenants gets two separate Supplier rows and, if invited, two separate portal accounts)
-  email        String   @unique @db.Citext // globally unique, like SuperAdmin.email — keeps login a plain by-email lookup; see ADR-0011's §Consequences for the (accepted) limitation this implies
-  passwordHash String   // argon2id, same as User/SuperAdmin
+  id           String @id @default(uuid()) @db.Uuid
+  companyId    String @db.Uuid
+  supplierId   String @unique @db.Uuid // one portal account per Supplier row (not per real-world company — a supplier serving two SH ERP tenants gets two separate Supplier rows and, if invited, two separate portal accounts)
+  email        String @unique @db.Citext // globally unique, like SuperAdmin.email — keeps login a plain by-email lookup; see ADR-0011's §Consequences for the (accepted) limitation this implies
+  passwordHash String // argon2id, same as User/SuperAdmin
 
-  active       Boolean   @default(true) // deactivate instead of delete — keeps the invite/reset history intact
-  lastLoginAt  DateTime? @db.Timestamptz(3)
+  active      Boolean   @default(true) // deactivate instead of delete — keeps the invite/reset history intact
+  lastLoginAt DateTime? @db.Timestamptz(3)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@map("supplier_portal_users")
@@ -673,25 +677,26 @@ model SupplierPortalUser {
 // ============================================================================
 
 model Warehouse {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
+  id        String  @id @default(uuid()) @db.Uuid
+  companyId String  @db.Uuid
   name      String
-  isDefault Boolean  @default(false)
+  isDefault Boolean @default(false)
 
-  legacyId  String?
+  legacyId String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
-  company             Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  stocks              WarehouseStock[]
-  movements           StockMovement[]
-  assemblyComponents  AssemblyComponent[]
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  stocks             WarehouseStock[]
+  movements          StockMovement[]
+  assemblyComponents AssemblyComponent[]
+  stockReservations  StockReservation[]
 
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for WarehouseStock.warehouse
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId])
   @@map("warehouses")
 }
 
@@ -701,21 +706,126 @@ model Warehouse {
 // flagged there as "a view, not a ledger"). Migration (Phase 2 §12.2)
 // computes and materializes that old implicit remainder into real rows here.
 model WarehouseStock {
-  id          String   @id @default(uuid()) @db.Uuid
-  companyId   String   @db.Uuid
-  productId   String   @db.Uuid
-  warehouseId String   @db.Uuid
-  qty         Decimal  @default(0) @db.Decimal(14, 3)
+  id          String  @id @default(uuid()) @db.Uuid
+  companyId   String  @db.Uuid
+  productId   String  @db.Uuid
+  warehouseId String  @db.Uuid
+  qty         Decimal @default(0) @db.Decimal(14, 3)
 
-  createdAt   DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  // Denormalized running total of every ACTIVE StockReservation.qty against
+  // this (product, warehouse) — the one deliberate exception to "compute,
+  // don't store" for this feature (stock-reservation system, 2026-08-19):
+  // mirrors `qty` itself and `Product.qty` (both also denormalized caches,
+  // see StockService's own header comment), and for the same reason —
+  // "must never allow total active reservations > physical stock" (a hard
+  // concurrency invariant) needs one atomically-conditioned row to check
+  // and increment in a single statement
+  // (`UPDATE ... SET reservedQty = reservedQty + $1 WHERE qty - reservedQty >= $1`,
+  // see StockReservationService#reserve). Computing `reserved` fresh via
+  // `SUM(StockReservation.qty)` on every check-then-write would reintroduce
+  // exactly the "read qty, compute in JS, write back" lost-update race that
+  // comment already documents avoiding. `availableQty` itself (qty -
+  // reservedQty) is NOT stored — it's trivial arithmetic, computed on read
+  // everywhere it's shown.
+  reservedQty Decimal @default(0) @db.Decimal(14, 3)
 
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  product     Product   @relation(fields: [companyId, productId], references: [companyId, id]) // composite
-  warehouse   Warehouse @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company      Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product      Product            @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  warehouse    Warehouse          @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+  reservations StockReservation[]
 
   @@unique([companyId, productId, warehouseId]) // leading companyId also serves as the tenant-scoped lookup index
   @@map("warehouse_stock")
+}
+
+// One row per (customer order line × product) reservation "hold" — the real
+// entity Section 10 of the 2026-08-19 stock-reservation spec asked for,
+// replacing what would otherwise be a primitive `reserved = true` boolean.
+// Mutable-status, like PurchaseOrder/ProductionOrder (not an immutable
+// ledger like StockMovement/AuditEvent) — `qty` is the amount STILL
+// actively held right now; `consumedQty`/`releasedQty` are cumulative
+// running totals of what left this reservation via each path, so
+// `qty + consumedQty + releasedQty` always equals everything ever reserved
+// here, without needing a separate append-only history table (the physical
+// side of consumption already gets its own StockMovement row via the
+// existing PRODUCTION_CONSUMPTION path — this table only tracks the HOLD,
+// never physical qty itself).
+//
+// At most one row per (customerOrderItem, product, warehouse, source) —
+// partial receipts/repeated stock-decisions increment the SAME row rather
+// than creating a new one each time (see StockReservationService#reserve's
+// upsert), matching how PurchaseOrderItem.qtyReceived already accumulates
+// in place rather than one row per receiving event.
+model StockReservation {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  companyId           String                 @db.Uuid
+  productId           String                 @db.Uuid
+  warehouseId         String                 @db.Uuid
+  customerOrderId     String                 @db.Uuid
+  customerOrderItemId String                 @db.Uuid
+  source              StockReservationSource
+  qty                 Decimal                @default(0) @db.Decimal(14, 3)
+  consumedQty         Decimal                @default(0) @db.Decimal(14, 3)
+  releasedQty         Decimal                @default(0) @db.Decimal(14, 3)
+  createdById         String                 @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product           Product           @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  warehouse         Warehouse         @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+  warehouseStock    WarehouseStock    @relation(fields: [companyId, productId, warehouseId], references: [companyId, productId, warehouseId]) // composite — the row whose reservedQty this reservation contributes to
+  customerOrder     CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default): a reservation must always trace back to a real order
+  customerOrderItem CustomerOrderItem @relation(fields: [companyId, customerOrderItemId], references: [companyId, id]) // composite — kept Restrict (default)
+
+  @@unique([customerOrderItemId, productId, warehouseId, source])
+  @@index([companyId, productId, warehouseId])
+  @@index([companyId, customerOrderId])
+  @@index([companyId, customerOrderItemId])
+  @@map("stock_reservations")
+}
+
+enum StockReservationSource {
+  STOCK // the user explicitly chose to take this qty from existing physical stock (§2/§3)
+  PURCHASE // auto-created/increased when a receipt against a linked purchase-order line lands (§6/§7/§8)
+}
+
+// The one thing Section 2 of the spec requires actually be PERSISTED per
+// (customer order line × material): the human's explicit choice of how much
+// to take from existing stock vs. how much to newly purchase. Deliberately
+// does NOT store requiredQty/reservedQty/orderedQty/receivedQty/issuedQty —
+// every one of those is computed live from the BOM tree, StockReservation,
+// and PurchaseOrderItem (MaterialProvisioningService#getRequirementSummary),
+// mirroring this app's own established convention of computing quantity
+// summaries server-side rather than storing them (CustomerOrdersService's
+// getItemQuantitySummary, CustomerOrderShortageService's previewShortage) —
+// see Section 11 of the spec, which asked for exactly this restraint.
+model OrderMaterialRequirement {
+  id                  String  @id @default(uuid()) @db.Uuid
+  companyId           String  @db.Uuid
+  customerOrderId     String  @db.Uuid
+  customerOrderItemId String  @db.Uuid
+  productId           String  @db.Uuid
+  qtyFromStock        Decimal @default(0) @db.Decimal(14, 3)
+  qtyToPurchase       Decimal @default(0) @db.Decimal(14, 3)
+  createdById         String  @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder      CustomerOrder       @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default)
+  customerOrderItem  CustomerOrderItem   @relation(fields: [companyId, customerOrderItemId], references: [companyId, id]) // composite — kept Restrict (default)
+  product            Product             @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  purchaseOrderItems PurchaseOrderItem[]
+
+  @@unique([customerOrderItemId, productId])
+  @@index([companyId, customerOrderId])
+  @@map("order_material_requirements")
 }
 
 // Structured, append-only stock ledger — the domain-specific counterpart to
@@ -723,25 +833,25 @@ model WarehouseStock {
 // moved per article this month") a proper table instead of a text-parsed
 // History sheet (Phase 1 §3.2's `getHistoryDerivedData_` pattern, done properly).
 model StockMovement {
-  id          String   @id @default(uuid()) @db.Uuid
-  companyId   String   @db.Uuid
-  productId   String   @db.Uuid
-  warehouseId String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  id          String            @id @default(uuid()) @db.Uuid
+  companyId   String            @db.Uuid
+  productId   String            @db.Uuid
+  warehouseId String?           @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   type        StockMovementType
-  qtyDelta    Decimal  @db.Decimal(14, 3) // signed
-  qtyAfter    Decimal  @db.Decimal(14, 3)
+  qtyDelta    Decimal           @db.Decimal(14, 3) // signed
+  qtyAfter    Decimal           @db.Decimal(14, 3)
   comment     String?
-  actorUserId String?  @db.Uuid
+  actorUserId String?           @db.Uuid
   // polymorphic link to the order/session/etc. that caused this movement, if any
-  sourceType  String?  // e.g. "ProductionOrder", "PurchaseOrder", "InventorySession"
-  sourceId    String?  @db.Uuid
+  sourceType  String? // e.g. "ProductionOrder", "PurchaseOrder", "InventorySession"
+  sourceId    String?           @db.Uuid
 
-  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
   // immutable — no updatedAt/deletedAt, same guarantee as AuditEvent
 
-  company     Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  product     Product    @relation(fields: [companyId, productId], references: [companyId, id]) // composite
-  warehouse   Warehouse? @relation(fields: [warehouseId], references: [id])
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product   Product    @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
 
   @@index([companyId, productId, createdAt])
   @@map("stock_movements")
@@ -759,24 +869,24 @@ enum StockMovementType {
 }
 
 model InventorySession {
-  id          String   @id @default(uuid()) @db.Uuid
-  companyId   String   @db.Uuid
+  id          String                 @id @default(uuid()) @db.Uuid
+  companyId   String                 @db.Uuid
   name        String
   status      InventorySessionStatus @default(IN_PROGRESS)
-  startedById String   @db.Uuid
+  startedById String                 @db.Uuid
   comment     String?
 
-  legacyId    String?
+  legacyId String?
 
-  startedAt   DateTime @default(now()) @db.Timestamptz(3)
+  startedAt   DateTime  @default(now()) @db.Timestamptz(3)
   completedAt DateTime? @db.Timestamptz(3)
 
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  items       InventoryItem[]
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items   InventoryItem[]
 
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for InventoryItem.session
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId])
   @@map("inventory_sessions")
 }
 
@@ -794,9 +904,9 @@ model InventoryItem {
   actualQty          Decimal? @db.Decimal(14, 3)
   counted            Boolean  @default(false)
 
-  company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  session            InventorySession @relation(fields: [companyId, inventorySessionId], references: [companyId, id], onDelete: Cascade) // composite — a count line has no meaning without its session
-  product            Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  company Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  session InventorySession @relation(fields: [companyId, inventorySessionId], references: [companyId, id], onDelete: Cascade) // composite — a count line has no meaning without its session
+  product Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
 
   @@index([inventorySessionId])
   @@index([companyId])
@@ -808,40 +918,40 @@ model InventoryItem {
 // ============================================================================
 
 model Assembly {
-  id                     String   @id @default(uuid()) @db.Uuid
-  companyId              String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
 
-  name                   String
-  article                String?
-  note                   String?
+  name    String
+  article String?
+  note    String?
 
-  laborCostPerUnit       Decimal  @default(0) @db.Decimal(14, 2)
-  packagingCostPerUnit   Decimal  @default(0) @db.Decimal(14, 2)
-  deliveryCostPerUnit    Decimal  @default(0) @db.Decimal(14, 2)
-  otherCostPerUnit       Decimal  @default(0) @db.Decimal(14, 2)
+  laborCostPerUnit     Decimal @default(0) @db.Decimal(14, 2)
+  packagingCostPerUnit Decimal @default(0) @db.Decimal(14, 2)
+  deliveryCostPerUnit  Decimal @default(0) @db.Decimal(14, 2)
+  otherCostPerUnit     Decimal @default(0) @db.Decimal(14, 2)
 
-  defaultSupplierId      String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
-  legacyId               String?
+  legacyId String?
 
-  createdAt              DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt              DateTime @updatedAt @db.Timestamptz(3)
-  deletedAt              DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
 
-  company                Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  defaultSupplier        Supplier? @relation(fields: [defaultSupplierId], references: [id], onDelete: SetNull)
-  components             AssemblyComponent[]
-  componentOfParents     AssemblyComponent[] @relation("SubAssembly")
-  versions               AssemblyVersion[]
-  productionOrders       ProductionOrder[]
-  finishedGoods          FinishedGood[]
-  customerOrderItems     CustomerOrderItem[]
-  scheduleSlots          ProductionScheduleSlot[]
-  suppliers              AssemblySupplier[]
+  company            Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  defaultSupplier    Supplier?                @relation(fields: [defaultSupplierId], references: [id], onDelete: SetNull)
+  components         AssemblyComponent[]
+  componentOfParents AssemblyComponent[]      @relation("SubAssembly")
+  versions           AssemblyVersion[]
+  productionOrders   ProductionOrder[]
+  finishedGoods      FinishedGood[]
+  customerOrderItems CustomerOrderItem[]
+  scheduleSlots      ProductionScheduleSlot[]
+  suppliers          AssemblySupplier[]
 
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId])
   @@map("assemblies")
 }
 
@@ -854,20 +964,20 @@ model Assembly {
 // CHECK constraint (decision 2, see database-schema.md §2b) — Prisma has no
 // declarative CHECK attribute, so it can't be expressed here.
 model AssemblyComponent {
-  id              String   @id @default(uuid()) @db.Uuid
-  companyId       String   @db.Uuid
-  assemblyId      String   @db.Uuid
-  componentType   ComponentType
-  productId       String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  subAssemblyId   String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  warehouseId     String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  qtyPerUnit      Decimal  @db.Decimal(14, 4)
+  id            String        @id @default(uuid()) @db.Uuid
+  companyId     String        @db.Uuid
+  assemblyId    String        @db.Uuid
+  componentType ComponentType
+  productId     String?       @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  subAssemblyId String?       @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  warehouseId   String?       @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  qtyPerUnit    Decimal       @db.Decimal(14, 4)
 
-  company         Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly        Assembly  @relation(fields: [companyId, assemblyId], references: [companyId, id], onDelete: Cascade) // composite — a BOM line has no meaning without its assembly
-  product         Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  subAssembly     Assembly? @relation("SubAssembly", fields: [subAssemblyId], references: [id], onDelete: SetNull)
-  warehouse       Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly    Assembly   @relation(fields: [companyId, assemblyId], references: [companyId, id], onDelete: Cascade) // composite — a BOM line has no meaning without its assembly
+  product     Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  subAssembly Assembly?  @relation("SubAssembly", fields: [subAssemblyId], references: [id], onDelete: SetNull)
+  warehouse   Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
 
   @@index([assemblyId])
   @@index([companyId])
@@ -884,23 +994,23 @@ enum ComponentType {
 // a specific row here so a later BOM edit never retroactively changes an
 // in-flight order (Phase 1 §6.4).
 model AssemblyVersion {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
-  assemblyId    String   @db.Uuid
+  id            String @id @default(uuid()) @db.Uuid
+  companyId     String @db.Uuid
+  assemblyId    String @db.Uuid
   versionNumber Int
-  createdById   String   @db.Uuid
+  createdById   String @db.Uuid
 
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
   // immutable — no updatedAt/deletedAt
 
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly      Assembly @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default): a BOM version is a permanent historical record, should not vanish just because the assembly is later deleted
-  components    AssemblyVersionComponent[]
+  company          Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly         Assembly                   @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default): a BOM version is a permanent historical record, should not vanish just because the assembly is later deleted
+  components       AssemblyVersionComponent[]
   productionOrders ProductionOrder[]
 
   @@unique([assemblyId, versionNumber])
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for AssemblyVersionComponent.assemblyVersion
+  @@index([companyId])
   @@map("assembly_versions")
 }
 
@@ -913,17 +1023,17 @@ model AssemblyVersion {
 // history. componentType/productId/subAssemblyId consistency is still
 // enforced by a raw-SQL CHECK constraint (decision 2, database-schema.md §2b).
 model AssemblyVersionComponent {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  assemblyVersionId String   @db.Uuid
+  id                String        @id @default(uuid()) @db.Uuid
+  companyId         String        @db.Uuid
+  assemblyVersionId String        @db.Uuid
   componentType     ComponentType
-  productId         String?  @db.Uuid
-  subAssemblyId     String?  @db.Uuid
-  warehouseId       String?  @db.Uuid
-  qtyPerUnit        Decimal  @db.Decimal(14, 4)
+  productId         String?       @db.Uuid
+  subAssemblyId     String?       @db.Uuid
+  warehouseId       String?       @db.Uuid
+  qtyPerUnit        Decimal       @db.Decimal(14, 4)
 
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assemblyVersion   AssemblyVersion @relation(fields: [companyId, assemblyVersionId], references: [companyId, id], onDelete: Cascade) // composite — a BOM-version line has no meaning without its version
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assemblyVersion AssemblyVersion @relation(fields: [companyId, assemblyVersionId], references: [companyId, id], onDelete: Cascade) // composite — a BOM-version line has no meaning without its version
 
   @@index([assemblyVersionId])
   @@index([companyId])
@@ -936,72 +1046,72 @@ model AssemblyVersionComponent {
 // ============================================================================
 
 model ProductionStage {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
   name      String
   sortOrder Int
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company    Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
   stagePlans ProductionOrderStagePlan[]
 
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for ProductionOrderStagePlan.productionStage
+  @@index([companyId])
   @@map("production_stages")
 }
 
 model ProductionOrder {
-  id                  String   @id @default(uuid()) @db.Uuid
-  companyId           String   @db.Uuid
-  assemblyId          String   @db.Uuid
-  assemblyVersionId   String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation; nullable only for pre-versioning legacy rows, Phase 1 §6.4)
-  unitsPlanned        Decimal  @db.Decimal(14, 3)
-  status              ProductionOrderStatus @default(PLANNED)
-  createdById         String   @db.Uuid
-  comment             String?
+  id                String                @id @default(uuid()) @db.Uuid
+  companyId         String                @db.Uuid
+  assemblyId        String                @db.Uuid
+  assemblyVersionId String?               @db.Uuid // single-column FK — see header §cross-tenant (optional relation; nullable only for pre-versioning legacy rows, Phase 1 §6.4)
+  unitsPlanned      Decimal               @db.Decimal(14, 3)
+  status            ProductionOrderStatus @default(PLANNED)
+  createdById       String                @db.Uuid
+  comment           String?
 
-  currentStageIndex   Int?
+  currentStageIndex Int?
 
   // Optional target window for the production schedule view — nullable,
   // since most existing orders were never given one; the schedule query
   // falls back to createdAt/completedAt for those. Deliberately separate
   // from totalLocalCostEur etc.'s "frozen at start()" semantics: these are
   // a plan, not a fact, and stay editable regardless of order status.
-  scheduledStartAt    DateTime? @db.Timestamptz(3)
-  scheduledEndAt      DateTime? @db.Timestamptz(3)
+  scheduledStartAt DateTime? @db.Timestamptz(3)
+  scheduledEndAt   DateTime? @db.Timestamptz(3)
 
   // Nullable + NOT unique: many ProductionOrder batches can point at the
   // same CustomerOrderItem (План-графік §1, batch-splitting)
   customerOrderItemId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
-  totalLocalCostEur   Decimal? @db.Decimal(14, 2)
-  totalGermanCostEur  Decimal? @db.Decimal(14, 2)
-  laborCostEur        Decimal? @db.Decimal(14, 2)
-  packagingCostEur    Decimal? @db.Decimal(14, 2)
-  deliveryCostEur     Decimal? @db.Decimal(14, 2)
-  otherCostEur        Decimal? @db.Decimal(14, 2)
-  fullCostEur         Decimal? @db.Decimal(14, 2)
+  totalLocalCostEur  Decimal? @db.Decimal(14, 2)
+  totalGermanCostEur Decimal? @db.Decimal(14, 2)
+  laborCostEur       Decimal? @db.Decimal(14, 2)
+  packagingCostEur   Decimal? @db.Decimal(14, 2)
+  deliveryCostEur    Decimal? @db.Decimal(14, 2)
+  otherCostEur       Decimal? @db.Decimal(14, 2)
+  fullCostEur        Decimal? @db.Decimal(14, 2)
 
-  legacyId            String?
+  legacyId String?
 
-  createdAt           DateTime @default(now()) @db.Timestamptz(3)
-  completedAt         DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
 
-  company             Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly            Assembly         @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default): can't delete an assembly with live production orders
-  assemblyVersion     AssemblyVersion? @relation(fields: [assemblyVersionId], references: [id])
-  pickListItems       ProductionOrderPickListItem[]
-  stageEvents         ProductionOrderStageEvent[]
-  workers             ProductionOrderWorker[]
-  finishedGoods       FinishedGood[]
-  payrollEntries      PayrollEntry[]
-  customerOrderItem       CustomerOrderItem? @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // this batch's parent order line (План-графік §1, batch-splitting)
-  stagePlans              ProductionOrderStagePlan[]
-  scheduleSlot        ProductionScheduleSlot?
+  company           Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly          Assembly                      @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default): can't delete an assembly with live production orders
+  assemblyVersion   AssemblyVersion?              @relation(fields: [assemblyVersionId], references: [id])
+  pickListItems     ProductionOrderPickListItem[]
+  stageEvents       ProductionOrderStageEvent[]
+  workers           ProductionOrderWorker[]
+  finishedGoods     FinishedGood[]
+  payrollEntries    PayrollEntry[]
+  customerOrderItem CustomerOrderItem?            @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // this batch's parent order line (План-графік §1, batch-splitting)
+  stagePlans        ProductionOrderStagePlan[]
+  scheduleSlot      ProductionScheduleSlot?
 
-  @@index([companyId, status])
-  @@index([companyId, customerOrderItemId])
   @@unique([companyId, id]) // composite-FK target for pick-list/stage-event/worker children and FinishedGood.productionOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, status])
+  @@index([companyId, customerOrderItemId])
   @@map("production_orders")
 }
 
@@ -1051,23 +1161,23 @@ enum ProductionOrderStatus {
 // though the frontend's default view drops converted slots from the
 // "unconfirmed" list.
 model ProductionScheduleSlot {
-  id                            String    @id @default(uuid()) @db.Uuid
-  companyId                     String    @db.Uuid
-  assemblyId                    String?   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  title                         String
-  plannedUnits                  Decimal?  @db.Decimal(14, 3)
-  startAt                       DateTime  @db.Timestamptz(3)
-  endAt                         DateTime  @db.Timestamptz(3)
-  comment                       String?
-  convertedToProductionOrderId  String?   @unique @db.Uuid
-  createdById                   String    @db.Uuid
+  id                           String   @id @default(uuid()) @db.Uuid
+  companyId                    String   @db.Uuid
+  assemblyId                   String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  title                        String
+  plannedUnits                 Decimal? @db.Decimal(14, 3)
+  startAt                      DateTime @db.Timestamptz(3)
+  endAt                        DateTime @db.Timestamptz(3)
+  comment                      String?
+  convertedToProductionOrderId String?  @unique @db.Uuid
+  createdById                  String   @db.Uuid
 
-  createdAt                     DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt                     DateTime  @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company                       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly                      Assembly?        @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
-  convertedToProductionOrder    ProductionOrder? @relation(fields: [convertedToProductionOrderId], references: [id], onDelete: SetNull)
+  company                    Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly                   Assembly?        @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
+  convertedToProductionOrder ProductionOrder? @relation(fields: [convertedToProductionOrderId], references: [id], onDelete: SetNull)
 
   @@index([companyId, startAt])
   @@map("production_schedule_slots")
@@ -1083,18 +1193,18 @@ model ProductionScheduleSlot {
 // productId is deliberately NOT a Prisma relation — see AssemblyVersionComponent
 // comment above for why snapshot/historical tables keep soft references.
 model ProductionOrderPickListItem {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  productionOrderId String   @db.Uuid
-  productId         String?  @db.Uuid // null for a "finished sub-assembly consumed" line
-  description       String   // article/name snapshot at time of consumption
-  qty               Decimal  @db.Decimal(14, 3)
-  unitPriceEur      Decimal? @db.Decimal(14, 2)
-  lineTotalEur      Decimal? @db.Decimal(14, 2)
+  id                      String   @id @default(uuid()) @db.Uuid
+  companyId               String   @db.Uuid
+  productionOrderId       String   @db.Uuid
+  productId               String?  @db.Uuid // null for a "finished sub-assembly consumed" line
+  description             String // article/name snapshot at time of consumption
+  qty                     Decimal  @db.Decimal(14, 3)
+  unitPriceEur            Decimal? @db.Decimal(14, 2)
+  lineTotalEur            Decimal? @db.Decimal(14, 2)
   consumedFinishedGoodIds String[] // serials consumed, if this line is a sub-assembly (Phase 1's FIFO consumption)
 
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  productionOrder   ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — a pick-list line has no meaning without its order
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  productionOrder ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — a pick-list line has no meaning without its order
 
   @@index([productionOrderId])
   @@index([companyId])
@@ -1104,16 +1214,16 @@ model ProductionOrderPickListItem {
 // Expansion of the old StageHistoryJson blob. companyId denormalized from
 // parent — see ProductionOrderPickListItem comment above.
 model ProductionOrderStageEvent {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  productionOrderId String   @db.Uuid
+  id                String @id @default(uuid()) @db.Uuid
+  companyId         String @db.Uuid
+  productionOrderId String @db.Uuid
   stageIndex        Int
-  actorUserId       String   @db.Uuid
+  actorUserId       String @db.Uuid
 
-  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  productionOrder   ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — an audit event has no meaning without its order
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  productionOrder ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — an audit event has no meaning without its order
 
   @@index([productionOrderId])
   @@index([companyId])
@@ -1125,15 +1235,15 @@ model ProductionOrderStageEvent {
 // prevents the same employee being listed twice on one order (Phase 3
 // review finding: previously unconstrained).
 model ProductionOrderWorker {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  productionOrderId String   @db.Uuid
-  employeeId        String   @db.Uuid
-  percent           Decimal  @db.Decimal(5, 2) // normalized to sum to 100 across a given order's workers
+  id                String  @id @default(uuid()) @db.Uuid
+  companyId         String  @db.Uuid
+  productionOrderId String  @db.Uuid
+  employeeId        String  @db.Uuid
+  percent           Decimal @db.Decimal(5, 2) // normalized to sum to 100 across a given order's workers
 
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  productionOrder   ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — a worker assignment has no meaning without its order
-  employee          Employee        @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  productionOrder ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id], onDelete: Cascade) // composite — a worker assignment has no meaning without its order
+  employee        Employee        @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite
 
   @@unique([productionOrderId, employeeId])
   @@index([companyId])
@@ -1141,35 +1251,35 @@ model ProductionOrderWorker {
 }
 
 model FinishedGood {
-  id                          String   @id @default(uuid()) @db.Uuid
-  companyId                   String   @db.Uuid
-  serialNumber                String   @unique // "SN-000001" format preserved
-  assemblyId                  String   @db.Uuid
-  productionOrderId           String   @db.Uuid
+  id                          String             @id @default(uuid()) @db.Uuid
+  companyId                   String             @db.Uuid
+  serialNumber                String             @unique // "SN-000001" format preserved
+  assemblyId                  String             @db.Uuid
+  productionOrderId           String             @db.Uuid
   status                      FinishedGoodStatus @default(IN_STOCK)
-  customerOrderId             String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  customerOrderId             String?            @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   comment                     String?
-  unitCostLocalEur            Decimal  @db.Decimal(14, 2)
-  unitCostGermanEur           Decimal  @db.Decimal(14, 2)
-  consumedInProductionOrderId String?  @db.Uuid // set when used as a sub-assembly component of a parent (Phase 1 FIFO consumption) — deliberately not a Prisma relation, same rationale as the other FIFO/snapshot fields
+  unitCostLocalEur            Decimal            @db.Decimal(14, 2)
+  unitCostGermanEur           Decimal            @db.Decimal(14, 2)
+  consumedInProductionOrderId String?            @db.Uuid // set when used as a sub-assembly component of a parent (Phase 1 FIFO consumption) — deliberately not a Prisma relation, same rationale as the other FIFO/snapshot fields
 
-  legacyId                    String?
+  legacyId String?
 
-  manufactureDate             DateTime @default(now()) @db.Timestamptz(3)
+  manufactureDate DateTime @default(now()) @db.Timestamptz(3)
 
-  company                     Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly                    Assembly        @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrder             ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id]) // composite — kept Restrict (default): a finished good must always trace back to the order that made it
-  customerOrder                CustomerOrder?  @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
-  qcChecks                    QcCheck[]
-  shipmentItems                ShipmentItem[]
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly        Assembly        @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  productionOrder ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id]) // composite — kept Restrict (default): a finished good must always trace back to the order that made it
+  customerOrder   CustomerOrder?  @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  qcChecks        QcCheck[]
+  shipmentItems   ShipmentItem[]
 
+  @@unique([companyId, id]) // composite-FK target for QcCheck.finishedGood/ShipmentItem.finishedGood
+  @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, status])
   @@index([companyId, assemblyId])
   @@index([customerOrderId])
   @@index([consumedInProductionOrderId])
-  @@unique([companyId, id]) // composite-FK target for QcCheck.finishedGood/ShipmentItem.finishedGood
-  @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@map("finished_goods")
 }
 
@@ -1186,12 +1296,12 @@ enum FinishedGoodStatus {
 // ============================================================================
 
 model QcChecklistItem {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
   name      String
   sortOrder Int
 
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@map("qc_checklist_items")
@@ -1205,14 +1315,14 @@ model QcCheck {
   inspectorId    String   @db.Uuid
   comment        String?
 
-  checkedAt      DateTime @default(now()) @db.Timestamptz(3)
+  checkedAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  finishedGood   FinishedGood  @relation(fields: [companyId, finishedGoodId], references: [companyId, id]) // composite — kept Restrict (default): a QC check must always trace back to the finished good it inspected
-  results        QcCheckResult[]
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  finishedGood FinishedGood    @relation(fields: [companyId, finishedGoodId], references: [companyId, id]) // composite — kept Restrict (default): a QC check must always trace back to the finished good it inspected
+  results      QcCheckResult[]
 
-  @@index([companyId, finishedGoodId])
   @@unique([companyId, id]) // composite-FK target for QcCheckResult.qcCheck
+  @@index([companyId, finishedGoodId])
   @@map("qc_checks")
 }
 
@@ -1227,11 +1337,11 @@ model QcCheckResult {
   id        String  @id @default(uuid()) @db.Uuid
   companyId String  @db.Uuid
   qcCheckId String  @db.Uuid
-  itemName  String  // snapshot of the checklist item text at time of check
+  itemName  String // snapshot of the checklist item text at time of check
   passed    Boolean
 
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  qcCheck   QcCheck @relation(fields: [companyId, qcCheckId], references: [companyId, id], onDelete: Cascade) // composite — a checklist result has no meaning without its check
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  qcCheck QcCheck @relation(fields: [companyId, qcCheckId], references: [companyId, id], onDelete: Cascade) // composite — a checklist result has no meaning without its check
 
   @@index([qcCheckId])
   @@index([companyId])
@@ -1243,16 +1353,16 @@ model QcCheckResult {
 // ============================================================================
 
 model CustomerOrder {
-  id             String   @id @default(uuid()) @db.Uuid
-  companyId      String   @db.Uuid
-  orderNumber    String?
-  clientName     String
-  contactPerson  String?
-  deadline       DateTime? @db.Timestamptz(3)
-  priority       CustomerOrderPriority @default(NORMAL)
-  status         CustomerOrderStatus @default(NEW)
-  comment        String?
-  createdById    String   @db.Uuid
+  id            String                @id @default(uuid()) @db.Uuid
+  companyId     String                @db.Uuid
+  orderNumber   String?
+  clientName    String
+  contactPerson String?
+  deadline      DateTime?             @db.Timestamptz(3)
+  priority      CustomerOrderPriority @default(NORMAL)
+  status        CustomerOrderStatus   @default(NEW)
+  comment       String?
+  createdById   String                @db.Uuid
 
   // Planning targets for the order as a whole — never auto-derived, set
   // only when the user enters them; aggregate views fall back to
@@ -1266,23 +1376,25 @@ model CustomerOrder {
   // line costs (CustomerOrdersService#withPriceTotals) — entered directly
   // by staff, not derived from anything else. Same nullable-Decimal(14,2)
   // shape as Assembly's *CostPerUnit fields.
-  deliveryCost          Decimal? @db.Decimal(14, 2)
-  transportRiggingCost  Decimal? @db.Decimal(14, 2)
-  otherCost             Decimal? @db.Decimal(14, 2)
+  deliveryCost         Decimal? @db.Decimal(14, 2)
+  transportRiggingCost Decimal? @db.Decimal(14, 2)
+  otherCost            Decimal? @db.Decimal(14, 2)
 
-  legacyId       String?
+  legacyId String?
 
-  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company        Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  items          CustomerOrderItem[]
-  finishedGoods  FinishedGood[]
-  shipments      Shipment[]
-  purchaseOrders PurchaseOrder[]
+  company              Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items                CustomerOrderItem[]
+  finishedGoods        FinishedGood[]
+  shipments            Shipment[]
+  purchaseOrders       PurchaseOrder[]
+  stockReservations    StockReservation[]
+  materialRequirements OrderMaterialRequirement[]
 
-  @@index([companyId, status])
   @@unique([companyId, id]) // composite-FK target for CustomerOrderItem.customerOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, status])
   @@map("customer_orders")
 }
 
@@ -1301,22 +1413,25 @@ enum CustomerOrderStatus {
 }
 
 model CustomerOrderItem {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  customerOrderId   String   @db.Uuid
-  assemblyId        String   @db.Uuid
-  qty               Decimal  @db.Decimal(14, 3)
+  id              String    @id @default(uuid()) @db.Uuid
+  companyId       String    @db.Uuid
+  customerOrderId String    @db.Uuid
+  assemblyId      String    @db.Uuid
+  qty             Decimal   @db.Decimal(14, 3)
   // Optional per-line planning targets, only when they differ from the
   // order's own — never auto-derived (План-графік §4)
-  plannedStartAt    DateTime? @db.Timestamptz(3)
-  plannedEndAt      DateTime? @db.Timestamptz(3)
-  itemDeadline      DateTime? @db.Timestamptz(3)
+  plannedStartAt  DateTime? @db.Timestamptz(3)
+  plannedEndAt    DateTime? @db.Timestamptz(3)
+  itemDeadline    DateTime? @db.Timestamptz(3)
 
-  company           Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  customerOrder     CustomerOrder    @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
-  assembly          Assembly         @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrders  ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
+  company              Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder        CustomerOrder              @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
+  assembly             Assembly                   @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  productionOrders     ProductionOrder[]          @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
+  stockReservations    StockReservation[]
+  materialRequirements OrderMaterialRequirement[]
 
+  @@unique([companyId, id]) // composite-FK target for StockReservation/OrderMaterialRequirement.customerOrderItem (stock-reservation spec)
   @@index([customerOrderId])
   @@index([companyId])
   @@index([assemblyId])
@@ -1324,31 +1439,31 @@ model CustomerOrderItem {
 }
 
 model Shipment {
-  id              String   @id @default(uuid()) @db.Uuid
-  companyId       String   @db.Uuid
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @db.Uuid
   carrier         String?
   waybillNumber   String?
   packageCount    Int?
-  weightKg        Decimal? @db.Decimal(10, 3)
+  weightKg        Decimal?       @db.Decimal(10, 3)
   dimensions      String?
   status          ShipmentStatus @default(SHIPPED)
-  customerOrderId String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  customerOrderId String?        @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   comment         String?
-  createdById     String   @db.Uuid
+  createdById     String         @db.Uuid
 
-  legacyId        String?
+  legacyId String?
 
-  shipDate        DateTime? @db.Timestamptz(3)
-  deliveryDate    DateTime? @db.Timestamptz(3)
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  shipDate     DateTime? @db.Timestamptz(3)
+  deliveryDate DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
-  company         Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  customerOrder   CustomerOrder? @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
-  items           ShipmentItem[]
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder CustomerOrder? @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  items         ShipmentItem[]
 
-  @@index([companyId, status])
   @@unique([companyId, id]) // composite-FK target for ShipmentItem.shipment
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, status])
   @@map("shipments")
 }
 
@@ -1359,14 +1474,14 @@ enum ShipmentStatus {
 
 // companyId denormalized from parent — see ProductionOrderPickListItem comment above.
 model ShipmentItem {
-  id             String   @id @default(uuid()) @db.Uuid
-  companyId      String   @db.Uuid
-  shipmentId     String   @db.Uuid
-  finishedGoodId String   @db.Uuid
+  id             String @id @default(uuid()) @db.Uuid
+  companyId      String @db.Uuid
+  shipmentId     String @db.Uuid
+  finishedGoodId String @db.Uuid
 
-  company        Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  shipment       Shipment     @relation(fields: [companyId, shipmentId], references: [companyId, id], onDelete: Cascade) // composite — a shipment line has no meaning without its shipment
-  finishedGood   FinishedGood @relation(fields: [companyId, finishedGoodId], references: [companyId, id]) // composite — kept Restrict (default): a shipped serial must always trace back to a real finished good
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  shipment     Shipment     @relation(fields: [companyId, shipmentId], references: [companyId, id], onDelete: Cascade) // composite — a shipment line has no meaning without its shipment
+  finishedGood FinishedGood @relation(fields: [companyId, finishedGoodId], references: [companyId, id]) // composite — kept Restrict (default): a shipped serial must always trace back to a real finished good
 
   @@index([shipmentId])
   @@index([companyId])
@@ -1378,13 +1493,13 @@ model ShipmentItem {
 // ============================================================================
 
 model PurchaseOrder {
-  id                    String   @id @default(uuid()) @db.Uuid
-  companyId             String   @db.Uuid
-  supplierId            String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed a free-text supplier with no FK match (Phase 1 §10.6); migration backfills where confident, flags the rest
-  supplierNameSnapshot  String   // preserves the free-text name even if supplierId is set, for historical accuracy
-  status                PurchaseOrderStatus @default(ORDERED)
-  orderDate             DateTime @default(now()) @db.Timestamptz(3)
-  expectedDeliveryDate  DateTime? @db.Timestamptz(3)
+  id                   String              @id @default(uuid()) @db.Uuid
+  companyId            String              @db.Uuid
+  supplierId           String?             @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed a free-text supplier with no FK match (Phase 1 §10.6); migration backfills where confident, flags the rest
+  supplierNameSnapshot String // preserves the free-text name even if supplierId is set, for historical accuracy
+  status               PurchaseOrderStatus @default(ORDERED)
+  orderDate            DateTime            @default(now()) @db.Timestamptz(3)
+  expectedDeliveryDate DateTime?           @db.Timestamptz(3)
 
   // Staff-tracked supplier-request timeline (Склад's "Очікується від
   // постачальника" tab) — manually set/corrected by staff, independent of
@@ -1395,29 +1510,29 @@ model PurchaseOrder {
   // sets before routing into the existing receive() flow — it is
   // deliberately separate from `status` reaching DELIVERED, since that
   // still requires the actual per-line qty/price receive step.
-  plannedSendAt         DateTime? @db.Timestamptz(3)
-  sentToSupplierAt      DateTime? @db.Timestamptz(3)
-  shippedBySupplierAt   DateTime? @db.Timestamptz(3)
-  deliveredAt           DateTime? @db.Timestamptz(3)
+  plannedSendAt       DateTime? @db.Timestamptz(3)
+  sentToSupplierAt    DateTime? @db.Timestamptz(3)
+  shippedBySupplierAt DateTime? @db.Timestamptz(3)
+  deliveredAt         DateTime? @db.Timestamptz(3)
 
   supplierConfirmedAt           DateTime? @db.Timestamptz(3) // set once, first time the supplier confirms anything on this order via the portal
   supplierConfirmedDeliveryDate DateTime? @db.Timestamptz(3) // supplier's own committed date — informational, does NOT overwrite expectedDeliveryDate (that stays "what we asked for")
-  comment               String?
-  sourceCustomerOrderId String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  createdById           String   @db.Uuid
+  comment                       String?
+  sourceCustomerOrderId         String?   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  createdById                   String    @db.Uuid
 
-  legacyId              String?
+  legacyId String?
 
-  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company               Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  supplier              Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  sourceCustomerOrder   CustomerOrder? @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
-  items                 PurchaseOrderItem[]
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier            Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  sourceCustomerOrder CustomerOrder?      @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
+  items               PurchaseOrderItem[]
 
-  @@index([companyId, status])
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderItem.purchaseOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, status])
   @@map("purchase_orders")
 }
 
@@ -1428,24 +1543,36 @@ enum PurchaseOrderStatus {
 }
 
 model PurchaseOrderItem {
-  id              String   @id @default(uuid()) @db.Uuid
-  companyId       String   @db.Uuid
-  purchaseOrderId String   @db.Uuid
-  productId       String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed ordering an article not yet in Products (Phase 1 §10.7)
-  articleSnapshot String
-  productNameSnapshot String
-  qtyOrdered      Decimal  @db.Decimal(14, 3)
-  qtyReceived     Decimal  @default(0) @db.Decimal(14, 3)
-  expectedPrice   Decimal? @db.Decimal(14, 2)
-  actualPrice     Decimal? @db.Decimal(14, 2)
+  id                     String   @id @default(uuid()) @db.Uuid
+  companyId              String   @db.Uuid
+  purchaseOrderId        String   @db.Uuid
+  productId              String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed ordering an article not yet in Products (Phase 1 §10.7)
+  articleSnapshot        String
+  productNameSnapshot    String
+  qtyOrdered             Decimal  @db.Decimal(14, 3)
+  qtyReceived            Decimal  @default(0) @db.Decimal(14, 3)
+  expectedPrice          Decimal? @db.Decimal(14, 2)
+  actualPrice            Decimal? @db.Decimal(14, 2)
   supplierConfirmedPrice Decimal? @db.Decimal(14, 2) // supplier's own confirmed price via the portal — informational, does NOT overwrite expectedPrice/actualPrice (those stay internal staff's own numbers)
 
-  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  purchaseOrder   PurchaseOrder @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
-  product         Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // Links this purchase line back to the customer-order material
+  // requirement it's covering (stock-reservation spec §5/§9) — single-
+  // column FK — see header §cross-tenant (optional relation): most
+  // purchase lines are ordinary restocking with no specific order behind
+  // them. When set, receiving against this line
+  // (PurchaseOrdersService#receive) auto-reserves the received qty for
+  // that requirement's order, capped to its outstanding uncovered need
+  // (§8) — see StockReservationService#reserve's PURCHASE-source path.
+  sourceRequirementId String? @db.Uuid
+
+  company           Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder     PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
+  product           Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sourceRequirement OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
 
   @@index([purchaseOrderId])
   @@index([companyId])
+  @@index([sourceRequirementId])
   @@map("purchase_order_items")
 }
 
@@ -1454,16 +1581,16 @@ model PurchaseOrderItem {
 // ============================================================================
 
 model Employee {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @db.Uuid
+  id        String         @id @default(uuid()) @db.Uuid
+  companyId String         @db.Uuid
   fullName  String
   position  String?
   phone     String?
-  hireDate  DateTime? @db.Timestamptz(3)
+  hireDate  DateTime?      @db.Timestamptz(3)
   status    EmployeeStatus @default(ACTIVE) // deactivate only, never hard-delete (Phase 1 §3.5) — preserved as policy here too
   notes     String?
 
-  legacyId  String?
+  legacyId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -1472,9 +1599,9 @@ model Employee {
   productionWorkers ProductionOrderWorker[]
   payrollEntries    PayrollEntry[]
 
-  @@index([companyId])
   @@unique([companyId, id]) // composite-FK target for ProductionOrderWorker.employee/PayrollEntry.employee
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId])
   @@map("employees")
 }
 
@@ -1484,28 +1611,28 @@ enum EmployeeStatus {
 }
 
 model PayrollEntry {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @db.Uuid
-  employeeId        String   @db.Uuid
+  id                String           @id @default(uuid()) @db.Uuid
+  companyId         String           @db.Uuid
+  employeeId        String           @db.Uuid
   type              PayrollEntryType
-  productionOrderId String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  unitsProduced     Decimal? @db.Decimal(14, 3)
-  amount            Decimal  @db.Decimal(14, 2) // signed: advances/penalties negative, bonuses/piecework positive (Phase 1 §2 convention, preserved)
-  entryDate         DateTime @default(now()) @db.Timestamptz(3)
+  productionOrderId String?          @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  unitsProduced     Decimal?         @db.Decimal(14, 3)
+  amount            Decimal          @db.Decimal(14, 2) // signed: advances/penalties negative, bonuses/piecework positive (Phase 1 §2 convention, preserved)
+  entryDate         DateTime         @default(now()) @db.Timestamptz(3)
   comment           String?
-  createdById       String   @db.Uuid
+  createdById       String           @db.Uuid
 
-  legacyId          String?
+  legacyId String?
 
-  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
   // immutable ledger — no updatedAt/deletedAt; a correction is a new entry, not an edit
 
-  company           Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  employee          Employee         @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite — kept Restrict (default): a payroll ledger entry must always trace back to a real employee
-  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee        Employee         @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite — kept Restrict (default): a payroll ledger entry must always trace back to a real employee
+  productionOrder ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
 
-  @@index([companyId, employeeId])
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@index([companyId, employeeId])
   @@map("payroll_entries")
 }
 
@@ -1527,30 +1654,30 @@ enum PayrollEntryType {
 // relational entity — a legitimate, narrow jsonb use, unlike the blobs
 // normalized away elsewhere in this schema).
 model CompanySettings {
-  companyId           String   @id @db.Uuid
-  vatRatePercent       Decimal  @default(20) @db.Decimal(5, 2)
-  dashboardWidgets     Json     @default("[]")
-  dailyDigestEmail     String?
-  dailyDigestEnabled   Boolean  @default(false)
+  companyId          String  @id @db.Uuid
+  vatRatePercent     Decimal @default(20) @db.Decimal(5, 2)
+  dashboardWidgets   Json    @default("[]")
+  dailyDigestEmail   String?
+  dailyDigestEnabled Boolean @default(false)
 
-  createdAt            DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company              Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@map("company_settings")
 }
 
 model CompanyBranding {
-  companyId       String   @id @db.Uuid
-  siteLogoFileId  String?  @db.Uuid
-  printLogoFileId String?  @db.Uuid
-  faviconFileId   String?  @db.Uuid
+  companyId       String  @id @db.Uuid
+  siteLogoFileId  String? @db.Uuid
+  printLogoFileId String? @db.Uuid
+  faviconFileId   String? @db.Uuid
 
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company         Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@map("company_branding")
 }
@@ -1560,14 +1687,14 @@ model CompanyBranding {
 // ============================================================================
 
 model CompanyAiSettings {
-  companyId          String   @id @db.Uuid
-  apiKeyEncrypted     String?  // present only if the company brings their own key (Phase 2 §8); null = platform-provided, metered
-  monthlyUsageQuota   Int?
+  companyId         String  @id @db.Uuid
+  apiKeyEncrypted   String? // present only if the company brings their own key (Phase 2 §8); null = platform-provided, metered
+  monthlyUsageQuota Int?
 
-  createdAt           DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company             Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@map("company_ai_settings")
 }
@@ -1576,19 +1703,19 @@ model CompanyAiSettings {
 // (Phase 1 §3.7's confirmAiAction, Phase 2 §8) — survives a page refresh or
 // API pod restart.
 model PendingAiAction {
-  id           String   @id @default(uuid()) @db.Uuid
-  companyId    String   @db.Uuid
-  userId       String   @db.Uuid
-  actionKey    String   // e.g. "adjustProductStock"
-  args         Json
-  description  String
-  status       PendingAiActionStatus @default(PENDING)
+  id          String                @id @default(uuid()) @db.Uuid
+  companyId   String                @db.Uuid
+  userId      String                @db.Uuid
+  actionKey   String // e.g. "adjustProductStock"
+  args        Json
+  description String
+  status      PendingAiActionStatus @default(PENDING)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  expiresAt    DateTime @db.Timestamptz(3)
-  resolvedAt   DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  resolvedAt DateTime? @db.Timestamptz(3)
 
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@index([companyId, status])
   @@map("pending_ai_actions")
@@ -1605,13 +1732,13 @@ model AiUsageLog {
   id           String   @id @default(uuid()) @db.Uuid
   companyId    String   @db.Uuid
   userId       String   @db.Uuid
-  feature      String   // e.g. "full-assistant", "invoice-ocr", "help-assistant"
+  feature      String // e.g. "full-assistant", "invoice-ocr", "help-assistant"
   tokensUsed   Int?
   costEstimate Decimal? @db.Decimal(10, 4)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@index([companyId, createdAt])
   @@map("ai_usage_logs")
@@ -1623,11 +1750,11 @@ model AiUsageLog {
 // ============================================================================
 
 model Plan {
-  id            String   @id @default(uuid()) @db.Uuid
-  key           String   @unique // e.g. "starter", "growth", "enterprise"
-  name          String
+  id              String  @id @default(uuid()) @db.Uuid
+  key             String  @unique // e.g. "starter", "growth", "enterprise"
+  name            String
   monthlyPriceEur Decimal @db.Decimal(10, 2)
-  limits        Json     // e.g. { "maxUsers": 10, "maxProducts": 5000 } — deliberately flexible, plan limits are inherently varied and non-relational
+  limits          Json // e.g. { "maxUsers": 10, "maxProducts": 5000 } — deliberately flexible, plan limits are inherently varied and non-relational
 
   subscriptions CompanySubscription[]
 
@@ -1635,18 +1762,18 @@ model Plan {
 }
 
 model CompanySubscription {
-  companyId          String   @id @db.Uuid
-  planId             String   @db.Uuid
-  status             SubscriptionStatus @default(TRIALING)
-  stripeCustomerId   String?  // null until Stripe integration is actually wired up
+  companyId            String             @id @db.Uuid
+  planId               String             @db.Uuid
+  status               SubscriptionStatus @default(TRIALING)
+  stripeCustomerId     String? // null until Stripe integration is actually wired up
   stripeSubscriptionId String?
-  currentPeriodEnd   DateTime? @db.Timestamptz(3)
+  currentPeriodEnd     DateTime?          @db.Timestamptz(3)
 
-  createdAt          DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company            Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  plan               Plan    @relation(fields: [planId], references: [id]) // Plan is global — no composite FK
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  plan    Plan    @relation(fields: [planId], references: [id]) // Plan is global — no composite FK
 
   @@map("company_subscriptions")
 }
@@ -1663,15 +1790,15 @@ enum SubscriptionStatus {
 // ============================================================================
 
 model LegacyMigrationRun {
-  id               String   @id @default(uuid()) @db.Uuid
-  companyId        String   @db.Uuid
-  status           MigrationRunStatus @default(EXTRACTING)
-  sourceDeploymentId String? // old Apps Script deployment identifier
-  reconciliationReport Json?  // row counts, sum checks, checksum results (Phase 2 §12.5)
-  startedAt        DateTime @default(now()) @db.Timestamptz(3)
-  completedAt      DateTime? @db.Timestamptz(3)
+  id                   String             @id @default(uuid()) @db.Uuid
+  companyId            String             @db.Uuid
+  status               MigrationRunStatus @default(EXTRACTING)
+  sourceDeploymentId   String? // old Apps Script deployment identifier
+  reconciliationReport Json? // row counts, sum checks, checksum results (Phase 2 §12.5)
+  startedAt            DateTime           @default(now()) @db.Timestamptz(3)
+  completedAt          DateTime?          @db.Timestamptz(3)
 
-  company          Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
   @@index([companyId])
   @@map("legacy_migration_runs")
@@ -1713,30 +1840,30 @@ enum MigrationRunStatus {
 // the actual bearer credential from then on, independently revocable per
 // connection.
 model ImportConnection {
-  id                   String                 @id @default(uuid()) @db.Uuid
-  companyId            String                 @db.Uuid
-  providerType         String // 'GOOGLE_APPS_SCRIPT' today — plain string (not a Postgres enum) validated against the app-level provider registry, so a future provider is addable without a schema migration
-  label                String // user-facing name, e.g. "Головна таблиця" — a company can have several connections at once
+  id           String @id @default(uuid()) @db.Uuid
+  companyId    String @db.Uuid
+  providerType String // 'GOOGLE_APPS_SCRIPT' today — plain string (not a Postgres enum) validated against the app-level provider registry, so a future provider is addable without a schema migration
+  label        String // user-facing name, e.g. "Головна таблиця" — a company can have several connections at once
 
-  configEncrypted      String? // provider-specific JSON blob (for Apps Script: {webAppUrl, connectionToken}), AES-256-GCM envelope-encrypted (same scheme as CompanyAiSettings.apiKeyEncrypted, backend/src/modules/ai/ai-crypto.util.ts) — null while still PENDING pairing
-  status               ImportConnectionStatus @default(PENDING)
+  configEncrypted String? // provider-specific JSON blob (for Apps Script: {webAppUrl, connectionToken}), AES-256-GCM envelope-encrypted (same scheme as CompanyAiSettings.apiKeyEncrypted, backend/src/modules/ai/ai-crypto.util.ts) — null while still PENDING pairing
+  status          ImportConnectionStatus @default(PENDING)
 
   pairingCode          String? // set while PENDING, cleared once PAIRED; one-time use
-  pairingCodeExpiresAt DateTime?              @db.Timestamptz(3)
+  pairingCodeExpiresAt DateTime? @db.Timestamptz(3)
 
-  protocolVersion      String? // last-seen connector protocol version (handshake/health-check) — compatibility diagnostics, see SUPPORTED_PROTOCOL_VERSIONS
-  connectorVersion     String? // last-seen connector's own self-reported version string, display-only
+  protocolVersion  String? // last-seen connector protocol version (handshake/health-check) — compatibility diagnostics, see SUPPORTED_PROTOCOL_VERSIONS
+  connectorVersion String? // last-seen connector's own self-reported version string, display-only
 
-  lastHealthCheckAt    DateTime?              @db.Timestamptz(3)
-  lastHealthStatus     Json? // last ConnectorHealth result (reachable, capabilities, diagnostics[]) — shown in the connections list
+  lastHealthCheckAt DateTime? @db.Timestamptz(3)
+  lastHealthStatus  Json? // last ConnectorHealth result (reachable, capabilities, diagnostics[]) — shown in the connections list
 
-  createdByUserId      String                 @db.Uuid
-  createdAt            DateTime               @default(now()) @db.Timestamptz(3)
-  pairedAt             DateTime?              @db.Timestamptz(3)
-  revokedAt            DateTime?              @db.Timestamptz(3)
+  createdByUserId String    @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  pairedAt        DateTime? @db.Timestamptz(3)
+  revokedAt       DateTime? @db.Timestamptz(3)
 
-  company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  importJobs           ImportJob[]
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  importJobs ImportJob[]
 
   @@index([companyId])
   @@map("import_connections")
@@ -1749,31 +1876,31 @@ enum ImportConnectionStatus {
 }
 
 model ImportJob {
-  id                String          @id @default(uuid()) @db.Uuid
-  companyId         String          @db.Uuid
-  connectionId      String          @db.Uuid
-  status            ImportJobStatus @default(PENDING)
-  step              String? // "fetching" | "transforming" | "loading" | "importing_photos" | "verifying" — human-readable substage within `status`, shown in the wizard's progress bar
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    String          @db.Uuid
+  connectionId String          @db.Uuid
+  status       ImportJobStatus @default(PENDING)
+  step         String? // "fetching" | "transforming" | "loading" | "importing_photos" | "verifying" — human-readable substage within `status`, shown in the wizard's progress bar
 
-  dryRun            Boolean         @default(false) // true = validate-only run, never writes business data
+  dryRun Boolean @default(false) // true = validate-only run, never writes business data
 
-  totalPhotos       Int?
-  processedPhotos   Int             @default(0)
+  totalPhotos     Int?
+  processedPhotos Int  @default(0)
 
-  warnings          Json? // TransformWarning[] — non-blocking, per-row data-quality notes
-  errors            Json? // NEW: blocking, structural problems (missing required sheet, unsupported protocol version, failed health check) — distinct from warnings; a non-empty errors[] on the connection's most recent dry run blocks starting a real import (checked both client-side and server-side)
-  report            Json? // full ImportReport: per-entity total/create/update/skip/failed counts, conflicts, photosDiscovered/Missing — see legacy-import.service.ts
-  errorMessage      String?
+  warnings     Json? // TransformWarning[] — non-blocking, per-row data-quality notes
+  errors       Json? // NEW: blocking, structural problems (missing required sheet, unsupported protocol version, failed health check) — distinct from warnings; a non-empty errors[] on the connection's most recent dry run blocks starting a real import (checked both client-side and server-side)
+  report       Json? // full ImportReport: per-entity total/create/update/skip/failed counts, conflicts, photosDiscovered/Missing — see legacy-import.service.ts
+  errorMessage String?
 
-  durationMs        Int? // completedAt - createdAt, computed on completion, surfaced directly rather than making the UI re-derive it
+  durationMs Int? // completedAt - createdAt, computed on completion, surfaced directly rather than making the UI re-derive it
 
-  startedByUserId   String          @db.Uuid
+  startedByUserId String @db.Uuid
 
-  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
-  completedAt       DateTime?       @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
 
-  company           Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  connection        ImportConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  connection ImportConnection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
 
   @@index([companyId, createdAt])
   @@index([connectionId, createdAt])

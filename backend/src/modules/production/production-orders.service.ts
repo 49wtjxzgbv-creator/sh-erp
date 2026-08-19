@@ -4,6 +4,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StockReservationService } from '../inventory/stock-reservation.service';
 import { StockService } from '../inventory/stock.service';
 import {
   CreateProductionOrderDto,
@@ -48,6 +49,7 @@ export class ProductionOrdersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
+    private readonly stockReservationService: StockReservationService,
     private readonly finishedGoodsService: FinishedGoodsService,
   ) {}
 
@@ -267,18 +269,43 @@ export class ProductionOrdersService {
     const unitsPlanned = Number(order.unitsPlanned);
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
 
+    // Stock-reservation spec §14: this batch's own order line (if any) — its
+    // reservations are what gets closed out as material is actually
+    // consumed below, and its customerOrderId is needed to address them
+    // (StockReservationService's target shape).
+    const orderItem = order.customerOrderItemId
+      ? await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: order.customerOrderItemId } })
+      : null;
+
     // ---- Pass 1: check availability for every line before consuming anything ----
     const shortages: ShortageLine[] = [];
     const productLines: Array<{ productId: string; needed: number }> = [];
     const assemblyLines: Array<{ subAssemblyId: string; needed: number }> = [];
+    // §4/§16: "available" for THIS batch's own consumption is physical
+    // minus what OTHER orders have reserved — this batch's own reservation
+    // (only present if it's linked to a customer order line) counts as
+    // available to itself, never double-subtracted. An ad-hoc/internal
+    // batch (no customerOrderItemId) has no reservation of its own, so it
+    // must still respect every OTHER order's reservation in full — it was
+    // never entitled to eat into material held for a real customer order.
+    const myReservedByProduct = new Map<string, { fromStock: number; fromPurchase: number }>();
 
     for (const line of version.components) {
       const qtyPerUnit = Number(line.qtyPerUnit);
       if (line.componentType === 'PRODUCT' && line.productId) {
         const needed = unitsPlanned * qtyPerUnit;
         productLines.push({ productId: line.productId, needed });
-        const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
-        const available = Number(product?.qty ?? 0);
+        const stock = await this.prisma.tenant.warehouseStock.findUnique({
+          where: { companyId_productId_warehouseId: { companyId: user.companyId, productId: line.productId, warehouseId } },
+        });
+        const physical = Number(stock?.qty ?? 0);
+        const totalReserved = Number(stock?.reservedQty ?? 0);
+        const mine = orderItem
+          ? await this.stockReservationService.getReservedForOrderItem(user, orderItem.id, line.productId, warehouseId)
+          : { fromStock: 0, fromPurchase: 0 };
+        myReservedByProduct.set(line.productId, mine);
+        const otherReserved = Math.max(totalReserved - (mine.fromStock + mine.fromPurchase), 0);
+        const available = physical - otherReserved;
         if (available < needed) {
           shortages.push({ kind: 'PRODUCT', productId: line.productId, needed, available });
         }
@@ -341,6 +368,36 @@ export class ProductionOrdersService {
         sourceType: 'ProductionOrder',
         sourceId: order.id,
       });
+
+      // §14: reservation is not a write-off — the physical decrement just
+      // above already happened through the normal ledger; this only closes
+      // out THIS order's own hold on the portion actually consumed, never
+      // touching what other orders have reserved. STOCK-source is closed
+      // first, then PURCHASE-source for any remainder — an arbitrary but
+      // consistent order, since both sources are equally "this order's
+      // material" once reserved.
+      if (orderItem) {
+        const mine = myReservedByProduct.get(productId) ?? { fromStock: 0, fromPurchase: 0 };
+        let remaining = needed;
+        const fromStockConsumed = Math.min(remaining, mine.fromStock);
+        if (fromStockConsumed > 0) {
+          await this.stockReservationService.consume(
+            user,
+            { productId, warehouseId, customerOrderId: orderItem.customerOrderId, customerOrderItemId: orderItem.id, source: 'STOCK' },
+            fromStockConsumed,
+          );
+          remaining -= fromStockConsumed;
+        }
+        const fromPurchaseConsumed = Math.min(remaining, mine.fromPurchase);
+        if (fromPurchaseConsumed > 0) {
+          await this.stockReservationService.consume(
+            user,
+            { productId, warehouseId, customerOrderId: orderItem.customerOrderId, customerOrderItemId: orderItem.id, source: 'PURCHASE' },
+            fromPurchaseConsumed,
+          );
+        }
+      }
+
       const unitPrice = Number(product.sellPriceEur ?? 0);
       materialsLocalCost += unitPrice * needed;
       materialsGermanCost += unitPrice * needed;
