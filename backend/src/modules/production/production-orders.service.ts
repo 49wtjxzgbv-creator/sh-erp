@@ -269,25 +269,27 @@ export class ProductionOrdersService {
     const unitsPlanned = Number(order.unitsPlanned);
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
 
-    // Stock-reservation spec §14: this batch's own order line (if any) — its
-    // reservations are what gets closed out as material is actually
-    // consumed below, and its customerOrderId is needed to address them
-    // (StockReservationService's target shape).
+    // Stock-reservation spec §14: this batch's own customer order (if any,
+    // resolved via its order line) — its reservations are what gets closed
+    // out as material is actually consumed below. Reservations are a
+    // shared pool for the WHOLE order (CustomerOrderShortageService's own
+    // design), so only the order id is needed, not the specific line.
     const orderItem = order.customerOrderItemId
       ? await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: order.customerOrderItemId } })
       : null;
+    const customerOrderId = orderItem?.customerOrderId ?? null;
 
     // ---- Pass 1: check availability for every line before consuming anything ----
     const shortages: ShortageLine[] = [];
     const productLines: Array<{ productId: string; needed: number }> = [];
     const assemblyLines: Array<{ subAssemblyId: string; needed: number }> = [];
     // §4/§16: "available" for THIS batch's own consumption is physical
-    // minus what OTHER orders have reserved — this batch's own reservation
-    // (only present if it's linked to a customer order line) counts as
-    // available to itself, never double-subtracted. An ad-hoc/internal
-    // batch (no customerOrderItemId) has no reservation of its own, so it
-    // must still respect every OTHER order's reservation in full — it was
-    // never entitled to eat into material held for a real customer order.
+    // minus what OTHER orders have reserved — this batch's own order's
+    // reservation (only present if it's linked to a customer order) counts
+    // as available to itself, never double-subtracted. An ad-hoc/internal
+    // batch (no customer order) has no reservation of its own, so it must
+    // still respect every OTHER order's reservation in full — it was never
+    // entitled to eat into material held for a real customer order.
     const myReservedByProduct = new Map<string, { fromStock: number; fromPurchase: number }>();
 
     for (const line of version.components) {
@@ -300,8 +302,8 @@ export class ProductionOrdersService {
         });
         const physical = Number(stock?.qty ?? 0);
         const totalReserved = Number(stock?.reservedQty ?? 0);
-        const mine = orderItem
-          ? await this.stockReservationService.getReservedForOrderItem(user, orderItem.id, line.productId, warehouseId)
+        const mine = customerOrderId
+          ? await this.stockReservationService.getReservedForOrder(user, customerOrderId, line.productId, warehouseId)
           : { fromStock: 0, fromPurchase: 0 };
         myReservedByProduct.set(line.productId, mine);
         const otherReserved = Math.max(totalReserved - (mine.fromStock + mine.fromPurchase), 0);
@@ -376,25 +378,17 @@ export class ProductionOrdersService {
       // first, then PURCHASE-source for any remainder — an arbitrary but
       // consistent order, since both sources are equally "this order's
       // material" once reserved.
-      if (orderItem) {
+      if (customerOrderId) {
         const mine = myReservedByProduct.get(productId) ?? { fromStock: 0, fromPurchase: 0 };
         let remaining = needed;
         const fromStockConsumed = Math.min(remaining, mine.fromStock);
         if (fromStockConsumed > 0) {
-          await this.stockReservationService.consume(
-            user,
-            { productId, warehouseId, customerOrderId: orderItem.customerOrderId, customerOrderItemId: orderItem.id, source: 'STOCK' },
-            fromStockConsumed,
-          );
+          await this.stockReservationService.consume(user, { productId, warehouseId, customerOrderId, source: 'STOCK' }, fromStockConsumed);
           remaining -= fromStockConsumed;
         }
         const fromPurchaseConsumed = Math.min(remaining, mine.fromPurchase);
         if (fromPurchaseConsumed > 0) {
-          await this.stockReservationService.consume(
-            user,
-            { productId, warehouseId, customerOrderId: orderItem.customerOrderId, customerOrderItemId: orderItem.id, source: 'PURCHASE' },
-            fromPurchaseConsumed,
-          );
+          await this.stockReservationService.consume(user, { productId, warehouseId, customerOrderId, source: 'PURCHASE' }, fromPurchaseConsumed);
         }
       }
 

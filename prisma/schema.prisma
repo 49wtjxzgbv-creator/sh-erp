@@ -741,89 +741,89 @@ model WarehouseStock {
   @@map("warehouse_stock")
 }
 
-// One row per (customer order line × product) reservation "hold" — the real
-// entity Section 10 of the 2026-08-19 stock-reservation spec asked for,
-// replacing what would otherwise be a primitive `reserved = true` boolean.
-// Mutable-status, like PurchaseOrder/ProductionOrder (not an immutable
-// ledger like StockMovement/AuditEvent) — `qty` is the amount STILL
-// actively held right now; `consumedQty`/`releasedQty` are cumulative
-// running totals of what left this reservation via each path, so
-// `qty + consumedQty + releasedQty` always equals everything ever reserved
-// here, without needing a separate append-only history table (the physical
-// side of consumption already gets its own StockMovement row via the
-// existing PRODUCTION_CONSUMPTION path — this table only tracks the HOLD,
-// never physical qty itself).
+// One row per (customer ORDER × product) reservation "hold" — deliberately
+// ORDER-level, not per line (2026-08-19 simplification pass): the shortage
+// engine below has always treated a whole order as one shared pool per
+// product (see its own header comment on why — undercounting a component
+// shared by two lines was a real historical bug), and reservations now
+// follow the exact same pool, which is also what the simplified
+// "Аналіз дефіциту" UI operates on. Mutable-status, like PurchaseOrder/
+// ProductionOrder (not an immutable ledger like StockMovement/AuditEvent) —
+// `qty` is the amount STILL actively held right now; `consumedQty`/
+// `releasedQty` are cumulative running totals of what left this reservation
+// via each path, so `qty + consumedQty + releasedQty` always equals
+// everything ever reserved here, without needing a separate append-only
+// history table (the physical side of consumption already gets its own
+// StockMovement row via the existing PRODUCTION_CONSUMPTION path — this
+// table only tracks the HOLD, never physical qty itself).
 //
-// At most one row per (customerOrderItem, product, warehouse, source) —
-// partial receipts/repeated stock-decisions increment the SAME row rather
-// than creating a new one each time (see StockReservationService#reserve's
-// upsert), matching how PurchaseOrderItem.qtyReceived already accumulates
-// in place rather than one row per receiving event.
+// At most one row per (customerOrder, product, warehouse, source) — partial
+// receipts/repeated top-ups increment the SAME row rather than creating a
+// new one each time (see StockReservationService's upsert), matching how
+// PurchaseOrderItem.qtyReceived already accumulates in place rather than
+// one row per receiving event.
 model StockReservation {
-  id                  String                 @id @default(uuid()) @db.Uuid
-  companyId           String                 @db.Uuid
-  productId           String                 @db.Uuid
-  warehouseId         String                 @db.Uuid
-  customerOrderId     String                 @db.Uuid
-  customerOrderItemId String                 @db.Uuid
-  source              StockReservationSource
-  qty                 Decimal                @default(0) @db.Decimal(14, 3)
-  consumedQty         Decimal                @default(0) @db.Decimal(14, 3)
-  releasedQty         Decimal                @default(0) @db.Decimal(14, 3)
-  createdById         String                 @db.Uuid
+  id              String                 @id @default(uuid()) @db.Uuid
+  companyId       String                 @db.Uuid
+  productId       String                 @db.Uuid
+  warehouseId     String                 @db.Uuid
+  customerOrderId String                 @db.Uuid
+  source          StockReservationSource
+  qty             Decimal                @default(0) @db.Decimal(14, 3)
+  consumedQty     Decimal                @default(0) @db.Decimal(14, 3)
+  releasedQty     Decimal                @default(0) @db.Decimal(14, 3)
+  createdById     String                 @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  product           Product           @relation(fields: [companyId, productId], references: [companyId, id]) // composite
-  warehouse         Warehouse         @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
-  warehouseStock    WarehouseStock    @relation(fields: [companyId, productId, warehouseId], references: [companyId, productId, warehouseId]) // composite — the row whose reservedQty this reservation contributes to
-  customerOrder     CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default): a reservation must always trace back to a real order
-  customerOrderItem CustomerOrderItem @relation(fields: [companyId, customerOrderItemId], references: [companyId, id]) // composite — kept Restrict (default)
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product        Product        @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  warehouse      Warehouse      @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+  warehouseStock WarehouseStock @relation(fields: [companyId, productId, warehouseId], references: [companyId, productId, warehouseId]) // composite — the row whose reservedQty this reservation contributes to
+  customerOrder  CustomerOrder  @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default): a reservation must always trace back to a real order
 
-  @@unique([customerOrderItemId, productId, warehouseId, source])
+  @@unique([customerOrderId, productId, warehouseId, source])
   @@index([companyId, productId, warehouseId])
   @@index([companyId, customerOrderId])
-  @@index([companyId, customerOrderItemId])
   @@map("stock_reservations")
 }
 
 enum StockReservationSource {
-  STOCK // the user explicitly chose to take this qty from existing physical stock (§2/§3)
-  PURCHASE // auto-created/increased when a receipt against a linked purchase-order line lands (§6/§7/§8)
+  STOCK // reserved directly from stock already on hand at the time (order creation's default auto-reserve, or the "Забронювати зі складу" button)
+  PURCHASE // auto-reserved when stock physically increased — either targeted at a specific order via a linked purchase, or the oldest-outstanding-order-first top-up (StockService#applyMovement)
 }
 
-// The one thing Section 2 of the spec requires actually be PERSISTED per
-// (customer order line × material): the human's explicit choice of how much
-// to take from existing stock vs. how much to newly purchase. Deliberately
-// does NOT store requiredQty/reservedQty/orderedQty/receivedQty/issuedQty —
-// every one of those is computed live from the BOM tree, StockReservation,
-// and PurchaseOrderItem (MaterialProvisioningService#getRequirementSummary),
-// mirroring this app's own established convention of computing quantity
-// summaries server-side rather than storing them (CustomerOrdersService's
-// getItemQuantitySummary, CustomerOrderShortageService's previewShortage) —
-// see Section 11 of the spec, which asked for exactly this restraint.
+// The one thing the 2026-08-19 stock-reservation spec asks be PERSISTED per
+// (customer order × material): `requiredQty` is a snapshot of the gross BOM
+// requirement across the WHOLE order (the shortage engine's shared pool),
+// taken once and locked at order-creation time — same "lock at creation,
+// never retroactively recompute" philosophy as ProductionOrder.assemblyVersionId
+// (a later BOM edit must not silently change an already-placed order's
+// numbers). `qtyFromStock`/`qtyToPurchase` are the live, editable decision —
+// auto-set to (min(required, available) / remainder) at creation, adjustable
+// afterward from the "Аналіз дефіциту" page. Everything else
+// (physical/reserved/available/ordered/received/issued) is still computed
+// live from StockReservation/PurchaseOrderItem, never stored here.
 model OrderMaterialRequirement {
-  id                  String  @id @default(uuid()) @db.Uuid
-  companyId           String  @db.Uuid
-  customerOrderId     String  @db.Uuid
-  customerOrderItemId String  @db.Uuid
-  productId           String  @db.Uuid
-  qtyFromStock        Decimal @default(0) @db.Decimal(14, 3)
-  qtyToPurchase       Decimal @default(0) @db.Decimal(14, 3)
-  createdById         String  @db.Uuid
+  id              String  @id @default(uuid()) @db.Uuid
+  companyId       String  @db.Uuid
+  customerOrderId String  @db.Uuid
+  productId       String  @db.Uuid
+  requiredQty     Decimal @default(0) @db.Decimal(14, 3)
+  qtyFromStock    Decimal @default(0) @db.Decimal(14, 3)
+  qtyToPurchase   Decimal @default(0) @db.Decimal(14, 3)
+  createdById     String  @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customerOrder      CustomerOrder       @relation(fields: [companyId, customerOrderId], references: [companyId, id]) // composite — kept Restrict (default)
-  customerOrderItem  CustomerOrderItem   @relation(fields: [companyId, customerOrderItemId], references: [companyId, id]) // composite — kept Restrict (default)
   product            Product             @relation(fields: [companyId, productId], references: [companyId, id]) // composite
   purchaseOrderItems PurchaseOrderItem[]
 
-  @@unique([customerOrderItemId, productId])
+  @@unique([customerOrderId, productId])
   @@index([companyId, customerOrderId])
   @@map("order_material_requirements")
 }
@@ -1424,14 +1424,11 @@ model CustomerOrderItem {
   plannedEndAt    DateTime? @db.Timestamptz(3)
   itemDeadline    DateTime? @db.Timestamptz(3)
 
-  company              Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  customerOrder        CustomerOrder              @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
-  assembly             Assembly                   @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrders     ProductionOrder[]          @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
-  stockReservations    StockReservation[]
-  materialRequirements OrderMaterialRequirement[]
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder    CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
+  assembly         Assembly          @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  productionOrders ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
 
-  @@unique([companyId, id]) // composite-FK target for StockReservation/OrderMaterialRequirement.customerOrderItem (stock-reservation spec)
   @@index([customerOrderId])
   @@index([companyId])
   @@index([assemblyId])

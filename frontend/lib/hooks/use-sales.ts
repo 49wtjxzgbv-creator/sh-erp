@@ -13,6 +13,7 @@ import {
   giveAllToProduction,
   getShortagePreview,
   createPurchaseOrdersFromShortage,
+  saveReservationDecisions,
   queryShipments,
   getShipment,
   createShipment,
@@ -23,6 +24,7 @@ import {
   type UpdateCustomerOrderInput,
   type GiveItemToProductionInput,
   type PurchaseOrderGroupInput,
+  type SaveReservationDecisionInput,
   type QueryShipmentsInput,
   type CreateShipmentInput,
 } from '@/lib/api-client/sales';
@@ -133,6 +135,19 @@ export function useCreatePurchaseOrdersFromShortage(orderId: string) {
   return useMutation({
     mutationFn: (groups: PurchaseOrderGroupInput[]) => createPurchaseOrdersFromShortage(orderId, groups),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+/** "Забронювати зі складу" — may 409 if a line's full requested increase isn't actually available (§16). */
+export function useSaveReservationDecisions(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (decisions: SaveReservationDecisionInput[]) => saveReservationDecisions(orderId, decisions),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: shortagePreviewKey(orderId) });
+      qc.invalidateQueries({ queryKey: ['stock-levels'] });
+      qc.invalidateQueries({ queryKey: ['stock-reservations'] });
+    },
   });
 }
 

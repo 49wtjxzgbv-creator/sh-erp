@@ -6,7 +6,6 @@ describe('PurchaseOrdersService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
-  let stockReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -25,13 +24,11 @@ describe('PurchaseOrdersService', () => {
         purchaseOrderItem: { update: jest.fn(), findMany: jest.fn() },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
         orderMaterialRequirement: { findUnique: jest.fn() },
-        stockReservation: { findUnique: jest.fn() },
       },
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
-    stockReservationService = { reserveFromReceipt: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }) };
-    service = new PurchaseOrdersService(prisma, audit, stock, stockReservationService);
+    service = new PurchaseOrdersService(prisma, audit, stock);
   });
 
   describe('create', () => {
@@ -144,7 +141,7 @@ describe('PurchaseOrdersService', () => {
       );
     });
 
-    it('§6/§8: auto-reserves the receipt for the linked order requirement, capped to its outstanding uncovered purchase need', async () => {
+    it('§ simplified spec: resolves preferredOrderId from the line\'s sourceRequirementId and passes it through to applyMovement, so that order is topped up first (StockService#applyMovement owns the actual reservation logic)', async () => {
       prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
         { id: 'item1', productId: 'p1', qtyOrdered: 15, qtyReceived: 15, sourceRequirementId: 'req1' },
         { id: 'item2', productId: null, qtyOrdered: 5, qtyReceived: 0 },
@@ -154,22 +151,18 @@ describe('PurchaseOrdersService', () => {
         items: [{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 15, qtyReceived: 0, sourceRequirementId: 'req1' }, order.items[1]],
       });
       prisma.tenant.purchaseOrder.update.mockResolvedValue({ id: 'po1', status: 'PARTIAL', items: [] });
-      // Order needs 15 to-purchase total; 10 already covered by an earlier partial receipt (still held) => 5 outstanding.
-      prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue({
-        id: 'req1', customerOrderId: 'co1', customerOrderItemId: 'item-x', qtyToPurchase: 15,
-      });
-      prisma.tenant.stockReservation.findUnique.mockResolvedValue({ qty: 10, consumedQty: 0 });
+      prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue({ id: 'req1', customerOrderId: 'co1' });
 
       await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 15 }] });
 
-      expect(stockReservationService.reserveFromReceipt).toHaveBeenCalledWith(
+      expect(prisma.tenant.orderMaterialRequirement.findUnique).toHaveBeenCalledWith({ where: { id: 'req1' } });
+      expect(stock.applyMovement).toHaveBeenCalledWith(
         user,
-        { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', customerOrderItemId: 'item-x' },
-        5, // min(15 received, 15 - 10 already covered)
+        expect.objectContaining({ productId: 'p1', warehouseId: 'wDefault', type: 'RECEIVE', qtyDelta: 15, preferredOrderId: 'co1' }),
       );
     });
 
-    it('does not touch reservations for a line with no sourceRequirementId', async () => {
+    it('passes preferredOrderId: undefined for a line with no sourceRequirementId', async () => {
       prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
         { id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 4 },
         { id: 'item2', productId: null, qtyOrdered: 5, qtyReceived: 0 },
@@ -178,7 +171,8 @@ describe('PurchaseOrdersService', () => {
 
       await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 4 }] });
 
-      expect(stockReservationService.reserveFromReceipt).not.toHaveBeenCalled();
+      expect(prisma.tenant.orderMaterialRequirement.findUnique).not.toHaveBeenCalled();
+      expect(stock.applyMovement).toHaveBeenCalledWith(user, expect.objectContaining({ preferredOrderId: undefined }));
     });
 
     it('throws if no warehouse is given and none is configured as default', async () => {

@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { StockReservationService } from '../inventory/stock-reservation.service';
 import { StockService } from '../inventory/stock.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
@@ -27,7 +26,6 @@ export class PurchaseOrdersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
-    private readonly stockReservationService: StockReservationService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
@@ -145,6 +143,16 @@ export class PurchaseOrdersService {
       });
 
       if (item.productId) {
+        // If this line was bought specifically for a customer order (via
+        // "Надіслати заявку постачальнику"), that order's outstanding need
+        // is topped up first when the movement posts below — see
+        // StockService#applyMovement's own comment for why this lives
+        // there (the single choke point every stock mutation goes through)
+        // rather than as a separate call here.
+        const preferredOrderId = item.sourceRequirementId
+          ? (await this.prisma.tenant.orderMaterialRequirement.findUnique({ where: { id: item.sourceRequirementId } }))?.customerOrderId
+          : undefined;
+
         await this.stockService.applyMovement(user, {
           productId: item.productId,
           warehouseId,
@@ -153,6 +161,7 @@ export class PurchaseOrdersService {
           sourceType: 'PurchaseOrder',
           sourceId: order.id,
           comment: `Received against PO ${order.id}, item "${item.articleSnapshot}"`,
+          preferredOrderId,
         });
 
         // An actual receive price is ground truth — it overwrites
@@ -164,18 +173,6 @@ export class PurchaseOrdersService {
             where: { id: item.productId },
             data: { sellPriceEur: line.actualPrice },
           });
-        }
-
-        // Stock-reservation spec §6/§7/§8: this line was bought specifically
-        // for a customer order — auto-reserve what just arrived for that
-        // order, capped to its still-uncovered purchase need so a supplier
-        // delivering more than needed never over-reserves (§8's example:
-        // order still needs 10, supplier delivers 15 → 10 reserved, 5
-        // becomes ordinary free stock). Runs AFTER applyMovement above so
-        // the physical qty this reservation draws against already reflects
-        // this receipt, within the same request transaction.
-        if (item.sourceRequirementId) {
-          await this.reserveReceiptForRequirement(user, item.productId, item.sourceRequirementId, warehouseId, line.qtyReceived);
         }
       }
     }
@@ -236,41 +233,6 @@ export class PurchaseOrdersService {
     });
 
     return order;
-  }
-
-  /**
-   * §8's cap: sums this requirement's PURCHASE-source reservation qty that
-   * hasn't been released (still-held `qty` + already-`consumedQty` — i.e.
-   * everything ever successfully reserved via a purchase receipt for this
-   * line that didn't later get released) to find how much of
-   * `qtyToPurchase` is already covered, then reserves only the remainder of
-   * this receipt — the rest (if any) was already accounted for or simply
-   * becomes ordinary free stock, never silently over-reserved.
-   */
-  private async reserveReceiptForRequirement(user: RequestUser, productId: string, requirementId: string, warehouseId: string, qtyReceivedThisEvent: number): Promise<void> {
-    const requirement = await this.prisma.tenant.orderMaterialRequirement.findUnique({ where: { id: requirementId } });
-    if (!requirement) return; // defensive — SetNull on delete means this can go stale
-
-    const existing = await this.prisma.tenant.stockReservation.findUnique({
-      where: {
-        customerOrderItemId_productId_warehouseId_source: {
-          customerOrderItemId: requirement.customerOrderItemId,
-          productId,
-          warehouseId,
-          source: 'PURCHASE',
-        },
-      },
-    });
-    const alreadyCovered = existing ? Number(existing.qty) + Number(existing.consumedQty) : 0;
-    const uncovered = Math.max(Number(requirement.qtyToPurchase) - alreadyCovered, 0);
-    const toReserve = Math.min(qtyReceivedThisEvent, uncovered);
-    if (toReserve <= 0) return;
-
-    await this.stockReservationService.reserveFromReceipt(
-      user,
-      { productId, warehouseId, customerOrderId: requirement.customerOrderId, customerOrderItemId: requirement.customerOrderItemId },
-      toReserve,
-    );
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {

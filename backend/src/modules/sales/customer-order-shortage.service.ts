@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StockReservationService } from '../inventory/stock-reservation.service';
 import { PurchaseOrdersService } from '../procurement/purchase-orders.service';
-import { CreatePurchaseOrdersFromGroupsDto } from './dto/shortage-analysis.dto';
+import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
 
 export interface SupplierOption {
   supplierId: string;
@@ -30,6 +31,22 @@ export interface ShortageLine {
   price: number | null;
   /** Present only when the product/assembly has more than one linked supplier (ProductSupplier/AssemblySupplier) — the caller must ask which one to order from rather than guessing. See `ambiguousLines`. */
   supplierOptions?: SupplierOption[];
+  /**
+   * PRODUCT lines only (2026-08-19 simplification pass — reservations live
+   * inline on this page now, not a separate card): `reservedQty` is how
+   * much of `neededQty` is already reserved from stock for this order
+   * (editable via the "Заброньовано" input, defaults to the maximum that
+   * was available at order-creation time); `qtyToPurchase` is the
+   * remainder (`neededQty - reservedQty`), the default "Кількість до
+   * замовлення"; `sourceRequirementId` links a PO line created from this
+   * row back to the requirement, so receiving it auto-reserves for this
+   * order. Undefined for ASSEMBLY lines (reservations don't cover
+   * purchased-whole sub-assemblies — see StockReservationService's header
+   * comment).
+   */
+  reservedQty?: number;
+  qtyToPurchase?: number;
+  sourceRequirementId?: string;
 }
 
 export interface SupplierGroup {
@@ -44,11 +61,13 @@ const NO_SUPPLIER_BUCKET_NAME = 'Без постачальника'; // preserve
  * The recursive shortage-collection engine (`collectShortageGroups_`,
  * Phase 1 §3.4/§6.3) — by the project's own documentation, "the most
  * algorithmically involved function in the codebase." Walks every line's
- * assembly tree recursively across the WHOLE order using shared, mutable
- * pools (`productPool`/`assemblyBuyPool`), NOT independent per-line totals
+ * assembly tree recursively across the WHOLE order using a shared, mutable
+ * pool (`productPool`/`assemblyBuyPool`), NOT independent per-line totals
  * — this is a deliberate, documented fix for a real historical bug: an
  * earlier per-item-only version undercounted shortages when two products
- * in the same order shared a common component.
+ * in the same order shared a common component. The same shared pool is now
+ * also what stock reservations are tracked against (2026-08-19
+ * simplification pass) — one reservation per (order, product), not per line.
  *
  * Recursion rule for an ASSEMBLY-type BOM line: if that sub-assembly has a
  * `defaultSupplierId`, it's added as a buy-line for that supplier at its
@@ -60,21 +79,49 @@ const NO_SUPPLIER_BUCKET_NAME = 'Без постачальника'; // preserve
  * fully regardless of `defaultSupplierId` — the two modules read the same
  * field for two entirely different purposes, by design (see
  * AssembliesService's own header comment).
- *
- * **Explicit, documented product decision, preserved exactly**: this never
- * subtracts current stock automatically. `previewShortage` returns the
- * full gross requirement AND the current stock/finished-goods count for
- * each line, side by side — the human compares them and adjusts the
- * quantity by hand before `createPurchaseOrdersFromGroups` commits
- * anything. Reintroducing automatic netting here would reintroduce the
- * exact bug this design avoids.
  */
 @Injectable()
 export class CustomerOrderShortageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly purchaseOrdersService: PurchaseOrdersService,
+    private readonly stockReservationService: StockReservationService,
   ) {}
+
+  /**
+   * Called once, right after a customer order is created
+   * (CustomerOrdersService#create): by default, every raw-material
+   * component gets reserved from whatever's already on hand, no manual
+   * decision required — the simplified spec's core request. Persists one
+   * OrderMaterialRequirement per (order, product) with `requiredQty` locked
+   * at this moment (same "lock at creation" philosophy as
+   * ProductionOrder.assemblyVersionId) and `qtyFromStock` set to whatever
+   * `reserveCapped` actually managed to grant (never throws — an order is
+   * always allowed to exist with some or all of its material unreserved).
+   */
+  async ensureRequirementsAndAutoReserve(user: RequestUser, orderId: string): Promise<void> {
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) return;
+    const { productPool } = await this.buildPools(order.items as any[]);
+    if (productPool.size === 0) return;
+
+    const warehouseId = await this.resolveDefaultWarehouseId();
+    for (const [productId, requiredQty] of productPool) {
+      const grant = await this.stockReservationService.reserveCapped(user, { productId, warehouseId, customerOrderId: orderId, source: 'STOCK' }, requiredQty);
+      await this.prisma.tenant.orderMaterialRequirement.upsert({
+        where: { customerOrderId_productId: { customerOrderId: orderId, productId } },
+        create: {
+          customerOrderId: orderId,
+          productId,
+          requiredQty,
+          qtyFromStock: grant.grantedQty,
+          qtyToPurchase: Math.max(requiredQty - grant.grantedQty, 0),
+          createdById: user.userId,
+        } as any,
+        update: { requiredQty, qtyFromStock: grant.grantedQty, qtyToPurchase: Math.max(requiredQty - grant.grantedQty, 0) },
+      });
+    }
+  }
 
   async previewShortage(
     user: RequestUser,
@@ -83,12 +130,7 @@ export class CustomerOrderShortageService {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
-    const productPool = new Map<string, number>();
-    const assemblyBuyPool = new Map<string, number>();
-
-    for (const item of order.items as any[]) {
-      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, new Set());
-    }
+    const { productPool, assemblyBuyPool } = await this.buildPools(order.items as any[]);
 
     const products = (await this.prisma.tenant.product.findMany({ where: { id: { in: Array.from(productPool.keys()) } } })) as any[];
     const productById = new Map<string, any>();
@@ -132,6 +174,12 @@ export class CustomerOrderShortageService {
     const supplierById = new Map<string, any>();
     for (const s of suppliers) supplierById.set(s.id, s);
 
+    // Reservation decisions (§ simplified spec) — one row per (order, product), created at order-creation time by ensureRequirementsAndAutoReserve.
+    const requirements = productPool.size
+      ? await this.prisma.tenant.orderMaterialRequirement.findMany({ where: { customerOrderId: orderId, productId: { in: Array.from(productPool.keys()) } } })
+      : [];
+    const requirementByProduct = new Map(requirements.map((r) => [r.productId, r]));
+
     const groups = new Map<string, SupplierGroup>();
     const getGroup = (supplierId: string | null): SupplierGroup => {
       const key = supplierId ?? '__NONE__';
@@ -157,6 +205,9 @@ export class CustomerOrderShortageService {
     for (const [productId, neededQty] of productPool) {
       const product = productById.get(productId);
       const links = productLinksByProductId.get(productId) ?? [];
+      const requirement = requirementByProduct.get(productId);
+      const reservedQty = requirement ? Number(requirement.qtyFromStock) : 0;
+      const qtyToPurchase = requirement ? Number(requirement.qtyToPurchase) : neededQty;
       const line: ShortageLine = {
         kind: 'PRODUCT',
         productId,
@@ -164,6 +215,9 @@ export class CustomerOrderShortageService {
         neededQty,
         currentStock: Number(product?.qty ?? 0),
         price: null,
+        reservedQty,
+        qtyToPurchase,
+        sourceRequirementId: requirement?.id,
       };
       if (links.length > 1) {
         ambiguousLines.push({ ...line, supplierOptions: toSupplierOptions(links) });
@@ -210,10 +264,47 @@ export class CustomerOrderShortageService {
   }
 
   /**
+   * The "Забронювати зі складу" button — batch-adjusts this order's
+   * STOCK-source reservation for one or more products to the given
+   * `qtyFromStock` values. Strict (throws on the first line that can't get
+   * its full increase — §16: the backend validates, doesn't just trust the
+   * frontend), rolling back the whole batch on failure since it all runs in
+   * one request transaction.
+   */
+  async saveReservationDecisions(user: RequestUser, orderId: string, dto: SaveReservationDecisionsDto) {
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
+    if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
+
+    const warehouseId = await this.resolveDefaultWarehouseId();
+    const updated = [];
+    for (const decision of dto.decisions) {
+      const existing = await this.prisma.tenant.orderMaterialRequirement.findUnique({
+        where: { customerOrderId_productId: { customerOrderId: orderId, productId: decision.productId } },
+      });
+      if (!existing) {
+        throw new CodedNotFoundException('ORDER_MATERIAL_REQUIREMENT_NOT_FOUND', `Product ${decision.productId} is not a tracked material requirement on this order.`);
+      }
+      const previous = Number(existing.qtyFromStock);
+      const delta = decision.qtyFromStock - previous;
+      if (delta > 0) {
+        await this.stockReservationService.reserveFromStock(user, { productId: decision.productId, warehouseId, customerOrderId: orderId }, delta);
+      } else if (delta < 0) {
+        await this.stockReservationService.release(user, { productId: decision.productId, warehouseId, customerOrderId: orderId, source: 'STOCK' }, -delta);
+      }
+      const row = await this.prisma.tenant.orderMaterialRequirement.update({
+        where: { id: existing.id },
+        data: { qtyFromStock: decision.qtyFromStock, qtyToPurchase: Math.max(Number(existing.requiredQty) - decision.qtyFromStock, 0) },
+      });
+      updated.push(row);
+    }
+    return updated;
+  }
+
+  /**
    * Commits the (possibly hand-edited) preview — one PurchaseOrder per
    * group, `sourceCustomerOrderId` set so the link back to this order is
-   * traceable (PurchaseOrder.sourceCustomerOrderId, wired up in the schema
-   * since Phase 3 specifically for this).
+   * traceable, and each line's `sourceRequirementId` (when present) carried
+   * through so receiving it auto-reserves for this order.
    */
   async createPurchaseOrdersFromGroups(user: RequestUser, orderId: string, dto: CreatePurchaseOrdersFromGroupsDto) {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
@@ -231,6 +322,7 @@ export class CustomerOrderShortageService {
           productNameSnapshot: line.description,
           qtyOrdered: line.qty,
           expectedPrice: line.price,
+          sourceRequirementId: line.sourceRequirementId,
         })),
       });
       created.push(po);
@@ -239,29 +331,21 @@ export class CustomerOrderShortageService {
   }
 
   /**
-   * Single-line variant of the same recursive walk `previewShortage` uses
-   * for a whole order's shared pool — reused (not duplicated) by
-   * `MaterialProvisioningService` (stock-reservation spec §11/§12), which
-   * needs the flattened raw-PRODUCT requirement for exactly ONE
-   * CustomerOrderItem's assembly tree, not the whole order's merged pool.
-   * Deliberately drops the ASSEMBLY-buy pool (purchased-whole sub-
-   * assemblies) — the reservation system is scoped to raw materials that
-   * actually live in WarehouseStock; see that service's header comment for
-   * the disclosed reason purchased-whole sub-assemblies aren't covered.
-   */
-  async getProductRequirements(assemblyId: string, qtyOfAssembly: number): Promise<Map<string, number>> {
-    const productPool = new Map<string, number>();
-    const assemblyBuyPool = new Map<string, number>();
-    await this.walkAssembly(assemblyId, qtyOfAssembly, productPool, assemblyBuyPool, new Set());
-    return productPool;
-  }
-
-  /**
    * `visited` tracks the current ancestor path only (removed on the way
    * back out — same technique as AssembliesService's cost/availability
    * recursion, Module 5), so a legitimate diamond dependency isn't mistaken
-   * for a cycle.
+   * for a cycle. Shared by `previewShortage` and `ensureRequirementsAndAutoReserve` —
+   * both need the SAME whole-order pool, never independent per-line totals.
    */
+  private async buildPools(items: Array<{ assemblyId: string; qty: unknown }>): Promise<{ productPool: Map<string, number>; assemblyBuyPool: Map<string, number> }> {
+    const productPool = new Map<string, number>();
+    const assemblyBuyPool = new Map<string, number>();
+    for (const item of items) {
+      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, new Set());
+    }
+    return { productPool, assemblyBuyPool };
+  }
+
   private async walkAssembly(
     assemblyId: string,
     qtyOfAssembly: number,
@@ -295,5 +379,13 @@ export class CustomerOrderShortageService {
     }
 
     visited.delete(assemblyId);
+  }
+
+  private async resolveDefaultWarehouseId(): Promise<string> {
+    const warehouse = await this.prisma.tenant.warehouse.findFirst({ where: { isDefault: true, deletedAt: null } });
+    if (!warehouse) {
+      throw new CodedBadRequestException('SHORTAGE_NO_DEFAULT_WAREHOUSE', 'No default warehouse configured — cannot determine where to reserve stock from.');
+    }
+    return warehouse.id;
   }
 }

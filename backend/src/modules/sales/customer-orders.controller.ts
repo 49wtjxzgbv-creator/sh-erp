@@ -6,7 +6,7 @@ import { CustomerOrderShortageService } from './customer-order-shortage.service'
 import { CustomerOrdersService } from './customer-orders.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto } from './dto/give-to-production.dto';
-import { CreatePurchaseOrdersFromGroupsDto } from './dto/shortage-analysis.dto';
+import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
 
 @ApiTags('sales')
 @Controller({ path: 'customer-orders', version: '1' })
@@ -105,5 +105,12 @@ export class CustomerOrdersController {
     @Body() dto: CreatePurchaseOrdersFromGroupsDto,
   ) {
     return this.shortageService.createPurchaseOrdersFromGroups(user, id, dto);
+  }
+
+  @Post(':id/reservations')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({ summary: '"Забронювати зі складу" — batch-adjust this order\'s stock-reserved qty for one or more products.' })
+  async saveReservationDecisions(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SaveReservationDecisionsDto) {
+    return this.shortageService.saveReservationDecisions(user, id, dto);
   }
 }

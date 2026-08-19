@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
 import { MoveStockDto, QueryStockDto, QueryStockHistoryDto, RecordStockMovementDto } from './dto/stock-movement.dto';
+import { StockReservationService } from './stock-reservation.service';
 
 export interface InternalMovementInput {
   productId: string;
@@ -15,6 +16,8 @@ export interface InternalMovementInput {
   comment?: string;
   sourceType?: string;
   sourceId?: string;
+  /** Stock-reservation spec (simplified, 2026-08-19): when this increase is traceable to a specific customer order (e.g. a purchase created via "Надіслати заявку постачальнику"), that order's outstanding need is topped up first — see `applyMovement`'s own comment. */
+  preferredOrderId?: string;
 }
 
 /**
@@ -42,6 +45,7 @@ export class StockService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly stockReservationService: StockReservationService,
   ) {}
 
   async recordMovement(user: RequestUser, dto: RecordStockMovementDto) {
@@ -157,24 +161,50 @@ export class StockService {
       after: movement,
     });
 
+    // Stock-reservation spec (simplified, 2026-08-19): "не вистачає для
+    // резервації" transitions to "зарезервовано" the moment stock actually
+    // increases — whether that's a purchase receipt or a plain manual
+    // addition, both post here with a positive qtyDelta. This is the single
+    // place every stock mutation in the app goes through (this file's own
+    // header comment), so it's also the single place this auto-fill needs
+    // to live — no separate per-caller wiring.
+    if (input.warehouseId && input.qtyDelta > 0) {
+      await this.stockReservationService.topUp(user, {
+        productId: input.productId,
+        warehouseId: input.warehouseId,
+        qtyAvailable: input.qtyDelta,
+        preferredOrderId: input.preferredOrderId,
+      });
+    }
+
     return movement;
   }
 
   /**
    * Adds a computed `availableQty` (= qty - reservedQty, stock-reservation
-   * spec §4/§17) alongside the raw stored `qty`/`reservedQty` on every row —
+   * spec §4) alongside the raw stored `qty`/`reservedQty` on every row —
    * `reservedQty` is itself a stored, atomically-maintained denormalized
    * counter (see WarehouseStock's own schema comment for why), but
    * `availableQty` is trivial arithmetic, computed fresh here rather than
-   * also stored.
+   * also stored. `globalShortageQty` ("Не вистачає для резервації", red on
+   * the warehouse page) is the company-wide sum of every active order's
+   * outstanding need for this product — attached only to the row for the
+   * actual default warehouse (where every reservation in this app lives),
+   * zero elsewhere.
    */
   async getLevels(user: RequestUser, query: QueryStockDto) {
     const where: Record<string, any> = {};
     if (query.productId) where.productId = query.productId;
     if (query.warehouseId) where.warehouseId = query.warehouseId;
+
+    const defaultWarehouseId = await this.resolveDefaultWarehouseId();
+    const shortageByProduct = defaultWarehouseId ? await this.stockReservationService.getGlobalShortageByProduct(user, defaultWarehouseId) : new Map<string, number>();
+    const shortageFor = (productId: string, warehouseId: string) => (warehouseId === defaultWarehouseId ? (shortageByProduct.get(productId) ?? 0).toString() : '0');
+
     const existing = (await this.prisma.tenant.warehouseStock.findMany({ where, orderBy: [{ productId: 'asc' }] })).map((s) => ({
       ...s,
       availableQty: (Number(s.qty) - Number(s.reservedQty)).toString(),
+      globalShortageQty: shortageFor(s.productId, s.warehouseId),
     }));
 
     // A WarehouseStock row is only ever materialized reactively, by
@@ -185,7 +215,7 @@ export class StockService {
     // every such product, attributed to whichever warehouse is being
     // browsed (the explicit filter, or the company's default warehouse
     // when browsing "all warehouses").
-    const targetWarehouseId = query.warehouseId ?? (await this.resolveDefaultWarehouseId());
+    const targetWarehouseId = query.warehouseId ?? defaultWarehouseId;
     if (!targetWarehouseId) return existing;
 
     const productWhere: Record<string, any> = { deletedAt: null };
@@ -204,6 +234,7 @@ export class StockService {
         qty: '0',
         reservedQty: '0',
         availableQty: '0',
+        globalShortageQty: shortageFor(p.id, targetWarehouseId),
         createdAt: now,
         updatedAt: now,
       }));

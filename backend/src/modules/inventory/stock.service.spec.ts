@@ -5,6 +5,7 @@ describe('StockService', () => {
   let service: StockService;
   let prisma: any;
   let audit: any;
+  let stockReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -17,7 +18,8 @@ describe('StockService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new StockService(prisma, audit);
+    stockReservationService = { topUp: jest.fn().mockResolvedValue(0), getGlobalShortageByProduct: jest.fn().mockResolvedValue(new Map()) };
+    service = new StockService(prisma, audit, stockReservationService);
   });
 
   describe('applyMovement — atomicity and ledger correctness', () => {
@@ -80,6 +82,44 @@ describe('StockService', () => {
       expect(prisma.tenant.product.update).toHaveBeenCalledWith({
         where: { id: 'p1' },
         data: { qty: { increment: 2 } },
+      });
+      expect(stockReservationService.topUp).not.toHaveBeenCalled();
+    });
+
+    it('§ simplified reservation spec: tops up outstanding order demand for any positive delta into a warehouse — a receipt or a plain manual addition', async () => {
+      prisma.tenant.warehouseStock.upsert.mockResolvedValue({ qty: 15 });
+      prisma.tenant.stockMovement.create.mockResolvedValue({ id: 'm1' });
+
+      await service.applyMovement(user, { productId: 'p1', warehouseId: 'w1', type: 'ADJUST', qtyDelta: 5 });
+
+      expect(stockReservationService.topUp).toHaveBeenCalledWith(user, {
+        productId: 'p1',
+        warehouseId: 'w1',
+        qtyAvailable: 5,
+        preferredOrderId: undefined,
+      });
+    });
+
+    it('never tops up on a negative delta (consumption/write-off, not new supply)', async () => {
+      prisma.tenant.warehouseStock.upsert.mockResolvedValue({ qty: 5 });
+      prisma.tenant.stockMovement.create.mockResolvedValue({ id: 'm1' });
+
+      await service.applyMovement(user, { productId: 'p1', warehouseId: 'w1', type: 'ISSUE', qtyDelta: -5 });
+
+      expect(stockReservationService.topUp).not.toHaveBeenCalled();
+    });
+
+    it('passes preferredOrderId through to topUp when the movement is traceable to a specific order', async () => {
+      prisma.tenant.warehouseStock.upsert.mockResolvedValue({ qty: 15 });
+      prisma.tenant.stockMovement.create.mockResolvedValue({ id: 'm1' });
+
+      await service.applyMovement(user, { productId: 'p1', warehouseId: 'w1', type: 'RECEIVE', qtyDelta: 10, preferredOrderId: 'co1' });
+
+      expect(stockReservationService.topUp).toHaveBeenCalledWith(user, {
+        productId: 'p1',
+        warehouseId: 'w1',
+        qtyAvailable: 10,
+        preferredOrderId: 'co1',
       });
     });
   });

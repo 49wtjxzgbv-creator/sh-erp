@@ -210,6 +210,16 @@ export default function StockLevelsPage() {
         header: () => <span className="block text-right">{t('availableQty')}</span>,
         cell: ({ row }) => <div className="text-right tabular-nums font-medium">{row.original.availableQty}</div>,
       },
+      {
+        accessorKey: 'globalShortageQty',
+        header: () => <span className="block text-right">{t('globalShortageQty')}</span>,
+        cell: ({ row }) =>
+          Number(row.original.globalShortageQty) > 0 ? (
+            <div className="text-right tabular-nums font-medium text-destructive">{row.original.globalShortageQty}</div>
+          ) : (
+            <div className="text-right tabular-nums text-muted-foreground">0</div>
+          ),
+      },
     ],
     [t, tCatalog, warehouseName, productsById, photosByProduct, savingCell, savingQty, canWriteProducts, canAdjustStock],
   );

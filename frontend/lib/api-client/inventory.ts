@@ -95,6 +95,8 @@ export interface WarehouseStock {
   reservedQty: DecimalString;
   /** Computed server-side as qty - reservedQty, always present alongside the two above (StockService#getLevels). */
   availableQty: DecimalString;
+  /** "Не вистачає для резервації" — company-wide sum of every active order's outstanding need for this product, attached only on the actual default-warehouse row (zero elsewhere). */
+  globalShortageQty: DecimalString;
   createdAt: string;
   updatedAt: string;
 }

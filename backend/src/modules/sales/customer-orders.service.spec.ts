@@ -8,6 +8,7 @@ describe('CustomerOrdersService', () => {
   let productionOrdersService: any;
   let assembliesService: any;
   let stockReservationService: any;
+  let shortageService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -30,8 +31,9 @@ describe('CustomerOrdersService', () => {
     audit = { record: jest.fn() };
     productionOrdersService = { create: jest.fn() };
     assembliesService = { calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }) };
-    stockReservationService = { releaseAllForOrderItem: jest.fn().mockResolvedValue(undefined) };
-    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService);
+    stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
+    shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
+    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, shortageService);
   });
 
   describe('create', () => {
@@ -55,6 +57,12 @@ describe('CustomerOrdersService', () => {
         }),
       );
     });
+
+    it('§ simplified spec: auto-reserves available raw materials by default, no manual decision required', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW', items: [] });
+      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+    });
   });
 
   describe('cancel', () => {
@@ -63,11 +71,10 @@ describe('CustomerOrdersService', () => {
       await expect(service.cancel(user, 'co1')).rejects.toThrow(BadRequestException);
     });
 
-    it('§15: releases every line\'s active reservations before flipping status to CANCELLED', async () => {
+    it('§15: releases the order\'s active reservations (shared pool, order-level) before flipping status to CANCELLED', async () => {
       prisma.tenant.customerOrder.update.mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancel(user, 'co1');
-      expect(stockReservationService.releaseAllForOrderItem).toHaveBeenCalledWith(user, 'item1');
-      expect(stockReservationService.releaseAllForOrderItem).toHaveBeenCalledWith(user, 'item2');
+      expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'CANCELLED' } });
     });
   });

@@ -200,6 +200,18 @@ export interface ShortageLine {
   price: number | null;
   /** Present only when the product/assembly has more than one linked supplier — see `ShortagePreview.ambiguousLines`. */
   supplierOptions?: ShortageSupplierOption[];
+  /**
+   * PRODUCT lines only (stock-reservation spec, simplified 2026-08-19):
+   * "Заброньовано" — how much of `neededQty` is already reserved from
+   * stock for this order, editable via `saveReservationDecisions` /
+   * "Забронювати зі складу". Defaults to the maximum that was available at
+   * order-creation time (auto-reserved with no manual decision needed).
+   */
+  reservedQty?: number;
+  /** neededQty - reservedQty — the default "Кількість до замовлення" this line's PO qty should be pre-filled with. */
+  qtyToPurchase?: number;
+  /** Links a PurchaseOrderItem created from this line back to the requirement, so receiving it auto-reserves for this order. */
+  sourceRequirementId?: string;
 }
 
 export interface SupplierGroup {
@@ -225,10 +237,12 @@ export interface ShortageGroupLineInput {
   productId?: string;
   subAssemblyId?: string;
   description: string;
-  /** The actual qty to order — pre-filled from the preview's neededQty but human-editable before committing. */
+  /** The actual qty to order — pre-filled from the preview's qtyToPurchase (neededQty minus what's already reserved) but human-editable before committing. */
   qty: number;
   /** Carried through from the preview so the created PurchaseOrderItem.expectedPrice is populated. Omitted when no price was known. */
   price?: number;
+  /** Carried through from the preview's sourceRequirementId — links the created line back to this order's requirement so receiving it auto-reserves for this order. */
+  sourceRequirementId?: string;
 }
 
 export interface PurchaseOrderGroupInput {
@@ -244,6 +258,16 @@ export function createPurchaseOrdersFromShortage(
   groups: PurchaseOrderGroupInput[],
 ): Promise<unknown[]> {
   return apiClient.post<unknown[]>(`customer-orders/${orderId}/purchase-orders-from-shortage`, { groups });
+}
+
+export interface SaveReservationDecisionInput {
+  productId: string;
+  qtyFromStock: number;
+}
+
+/** "Забронювати зі складу" — batch-adjust this order's stock-reserved qty for one or more products. May 409 if a line's full requested increase isn't actually available. */
+export function saveReservationDecisions(orderId: string, decisions: SaveReservationDecisionInput[]): Promise<unknown[]> {
+  return apiClient.post<unknown[]>(`customer-orders/${orderId}/reservations`, { decisions });
 }
 
 export type ShipmentStatus = 'SHIPPED' | 'DELIVERED';

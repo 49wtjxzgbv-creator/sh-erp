@@ -9,12 +9,11 @@ export interface ReservationTarget {
   productId: string;
   warehouseId: string;
   customerOrderId: string;
-  customerOrderItemId: string;
   source: StockReservationSource;
 }
 
 export interface ReservationGrant {
-  /** How much was actually reserved by this call — may be less than requested when capped against available stock (§8: a supplier delivering more than needed never over-reserves). */
+  /** How much was actually reserved by this call — may be less than requested when capped against available stock. */
   grantedQty: number;
   /** requested - granted. Zero for a fully-satisfied request. */
   shortfallQty: number;
@@ -28,34 +27,33 @@ export interface AvailabilitySummary {
 
 export interface ReservationBreakdownLine {
   customerOrderId: string;
-  customerOrderItemId: string;
   orderNumber: string | null;
   clientName: string;
   source: StockReservationSource;
   qty: number;
 }
 
+const ACTIVE_ORDER_STATUSES = ['NEW', 'IN_PRODUCTION'] as const;
+
 /**
- * Owns the ONE hard invariant the 2026-08-19 stock-reservation spec (§16)
- * requires under concurrency: total ACTIVE reservations against a
- * (product, warehouse) must never exceed its physical stock. Every method
- * here that grows a reservation goes through `grantReservation`'s single
- * atomic conditional UPDATE — never a "read available, compute in JS,
- * write back" round trip, which would reopen the exact lost-update race
- * `StockService#applyMovement`'s own header comment already documents
- * avoiding for physical stock. Every request already runs inside one
- * Postgres transaction (TenantScopeInterceptor), so this atomic UPDATE's
- * implicit row lock is what actually serializes two concurrent requests
- * trying to reserve the same stock — the second one simply sees the
- * first's committed `reservedQty` once it can proceed.
+ * Owns the ONE hard invariant the stock-reservation feature requires under
+ * concurrency: total ACTIVE reservations against a (product, warehouse)
+ * must never exceed its physical stock — enforced by `grantReservation`'s
+ * single atomic conditional UPDATE, never a "read available, compute in JS,
+ * write back" round trip (see WarehouseStock.reservedQty's own schema
+ * comment for why that would reopen a lost-update race).
  *
- * Deliberately lives in InventoryModule (not SalesModule, which owns the
- * order-facing orchestration in MaterialProvisioningService) because
- * ProcurementModule and ProductionModule both already depend on
- * InventoryModule for StockService — reservation mechanics needed to be
- * reachable from all three (Sales/Procurement/Production) without
- * introducing a new module-dependency cycle. See stock-reservations spec
- * report for the full module-graph reasoning.
+ * 2026-08-19 simplification pass: reservations are ORDER-level (one shared
+ * pool per product per order), not per line — matching how the shortage
+ * engine (customer-order-shortage.service.ts) has always treated a whole
+ * order as one pool, and matching the simplified UI, which now lives on the
+ * existing "Аналіз дефіциту" page. Two entry points create/grow a
+ * reservation: (1) order creation auto-reserves whatever's available
+ * (`reserveCapped`, source=STOCK), and the "Забронювати зі складу" button
+ * adjusts it; (2) ANY stock increase (a receipt or a plain manual addition)
+ * runs `topUp`, which fills outstanding order demand for that product —
+ * targeting a specific order first if the movement is linked to one, then
+ * whichever other active order has been waiting longest.
  */
 @Injectable()
 export class StockReservationService {
@@ -73,11 +71,9 @@ export class StockReservationService {
     return { physical, reserved, available: physical - reserved };
   }
 
-  /** Sum of this specific order line's own active reservations (both sources) against a product/warehouse — what §4/§12 call "Зарезервовано під це замовлення." */
-  async getReservedForOrderItem(user: RequestUser, customerOrderItemId: string, productId: string, warehouseId: string): Promise<{ fromStock: number; fromPurchase: number }> {
-    const rows = await this.prisma.tenant.stockReservation.findMany({
-      where: { customerOrderItemId, productId, warehouseId },
-    });
+  /** Sum of this order's own active reservations (both sources) against a product/warehouse — "Зарезервовано" on the shortage-analysis page. */
+  async getReservedForOrder(user: RequestUser, customerOrderId: string, productId: string, warehouseId: string): Promise<{ fromStock: number; fromPurchase: number }> {
+    const rows = await this.prisma.tenant.stockReservation.findMany({ where: { customerOrderId, productId, warehouseId } });
     let fromStock = 0;
     let fromPurchase = 0;
     for (const r of rows) {
@@ -87,7 +83,7 @@ export class StockReservationService {
     return { fromStock, fromPurchase };
   }
 
-  /** §17 drill-down: "Зарезервовано: 65" → №1001 — 20, №1002 — 30, ... — every ACTIVE reservation against this (product, warehouse), joined with the order it belongs to. */
+  /** Warehouse page drill-down: every ACTIVE reservation against this (product, warehouse), joined with the order it belongs to. */
   async getBreakdown(user: RequestUser, productId: string, warehouseId: string): Promise<ReservationBreakdownLine[]> {
     const rows = await this.prisma.tenant.stockReservation.findMany({
       where: { productId, warehouseId, qty: { gt: 0 } },
@@ -99,7 +95,6 @@ export class StockReservationService {
     const orderById = new Map(orders.map((o) => [o.id, o]));
     return rows.map((r) => ({
       customerOrderId: r.customerOrderId,
-      customerOrderItemId: r.customerOrderItemId,
       orderNumber: orderById.get(r.customerOrderId)?.orderNumber ?? null,
       clientName: orderById.get(r.customerOrderId)?.clientName ?? r.customerOrderId,
       source: r.source,
@@ -108,14 +103,50 @@ export class StockReservationService {
   }
 
   /**
+   * Company-wide, per-product outstanding demand across every active order
+   * — "Не вистачає для резервації" on the warehouse page. `requiredQty` is
+   * the locked-at-creation snapshot on OrderMaterialRequirement; "covered"
+   * is the real, live reservation state (qty still held + already
+   * consumed), so this never drifts from what's actually true even if a
+   * reservation was later edited or partially issued to production.
+   */
+  async getGlobalShortageByProduct(user: RequestUser, warehouseId: string): Promise<Map<string, number>> {
+    const requirements = await this.prisma.tenant.orderMaterialRequirement.findMany({
+      where: { customerOrder: { status: { in: [...ACTIVE_ORDER_STATUSES] } } },
+      select: { customerOrderId: true, productId: true, requiredQty: true },
+    });
+    if (requirements.length === 0) return new Map();
+
+    const orderIds = Array.from(new Set(requirements.map((r) => r.customerOrderId)));
+    const reservations = await this.prisma.tenant.stockReservation.findMany({
+      where: { customerOrderId: { in: orderIds }, warehouseId },
+      select: { customerOrderId: true, productId: true, qty: true, consumedQty: true },
+    });
+    const coveredByKey = new Map<string, number>();
+    for (const r of reservations) {
+      const key = `${r.customerOrderId}:${r.productId}`;
+      coveredByKey.set(key, (coveredByKey.get(key) ?? 0) + Number(r.qty) + Number(r.consumedQty));
+    }
+
+    const shortageByProduct = new Map<string, number>();
+    for (const req of requirements) {
+      const key = `${req.customerOrderId}:${req.productId}`;
+      const covered = coveredByKey.get(key) ?? 0;
+      const outstanding = Math.max(Number(req.requiredQty) - covered, 0);
+      if (outstanding > 0) {
+        shortageByProduct.set(req.productId, (shortageByProduct.get(req.productId) ?? 0) + outstanding);
+      }
+    }
+    return shortageByProduct;
+  }
+
+  /**
    * The one atomic primitive every reservation-growth path funnels through.
    * Grants up to `requestedQty` against whatever is currently available
-   * (physical - already-reserved), in a single conditional UPDATE — never
-   * more than that, and never blocks: a request for more than what's
-   * available simply comes back with a smaller `grantedQty` and a nonzero
-   * `shortfallQty` for the caller to act on (throw for a strict caller,
-   * silently accept the cap for a receiving caller — see `reserveFromStock`
-   * vs `reserveFromReceipt` below).
+   * (physical - already-reserved), in a single conditional UPDATE — a
+   * request for more than what's available simply comes back with a
+   * smaller `grantedQty` and a nonzero `shortfallQty` for the caller to act
+   * on (throw for a strict caller, silently accept the cap otherwise).
    */
   private async grantReservation(user: RequestUser, target: ReservationTarget, requestedQty: number): Promise<ReservationGrant> {
     if (requestedQty <= 0) return { grantedQty: 0, shortfallQty: 0 };
@@ -143,8 +174,8 @@ export class StockReservationService {
 
     await this.prisma.tenant.stockReservation.upsert({
       where: {
-        customerOrderItemId_productId_warehouseId_source: {
-          customerOrderItemId: target.customerOrderItemId,
+        customerOrderId_productId_warehouseId_source: {
+          customerOrderId: target.customerOrderId,
           productId: target.productId,
           warehouseId: target.warehouseId,
           source: target.source,
@@ -154,7 +185,6 @@ export class StockReservationService {
         productId: target.productId,
         warehouseId: target.warehouseId,
         customerOrderId: target.customerOrderId,
-        customerOrderItemId: target.customerOrderItemId,
         source: target.source,
         qty: grantedQty,
         createdById: user.userId,
@@ -167,20 +197,14 @@ export class StockReservationService {
       actorUserId: user.userId,
       action: 'stock_reservation.granted',
       entityType: 'StockReservation',
-      entityId: target.customerOrderItemId,
+      entityId: target.customerOrderId,
       after: { ...target, requestedQty, grantedQty, shortfallQty },
     });
 
     return { grantedQty, shortfallQty };
   }
 
-  /**
-   * §2/§3: the user explicitly chose to take `qty` from existing physical
-   * stock for this order line — strict, throws if the full amount isn't
-   * available (§16: the backend must validate, not just trust the
-   * frontend). `extra.available` lets the caller show the real number in
-   * the error rather than a generic message.
-   */
+  /** Strict — throws if the full amount isn't available. Used by the explicit "Забронювати зі складу" action, where the user gets immediate feedback on a shortfall. */
   async reserveFromStock(user: RequestUser, target: Omit<ReservationTarget, 'source'>, qty: number): Promise<ReservationGrant> {
     const grant = await this.grantReservation(user, { ...target, source: 'STOCK' }, qty);
     if (grant.shortfallQty > 0) {
@@ -194,36 +218,83 @@ export class StockReservationService {
     return grant;
   }
 
-  /**
-   * §6/§7/§8: a receipt landed against a purchase line linked to this order
-   * requirement. Never throws — capped to whatever is actually available
-   * right now (in practice always the full `qty` just received, since
-   * receiving physically increases stock in the same request just before
-   * this call), and the caller (PurchaseOrdersService#receive) is expected
-   * to have ALSO capped `qty` to the requirement's own outstanding
-   * uncovered need before calling this — this method only enforces the
-   * physical-stock invariant, not the "don't over-reserve past what this
-   * order actually still needs" business rule, which is a different,
-   * requirement-level concern.
-   */
-  async reserveFromReceipt(user: RequestUser, target: Omit<ReservationTarget, 'source'>, qty: number): Promise<ReservationGrant> {
-    return this.grantReservation(user, { ...target, source: 'PURCHASE' }, qty);
+  /** Capped, never throws — used for order-creation's automatic default reservation (§ simplified spec: reserve whatever's on hand, no user decision required). */
+  async reserveCapped(user: RequestUser, target: ReservationTarget, qty: number): Promise<ReservationGrant> {
+    return this.grantReservation(user, target, qty);
   }
 
   /**
-   * §15: an order was cancelled, or otherwise no longer needs material it
-   * had reserved — release `qty` back to general availability. Physical
-   * stock is untouched (§3: reserved material never left the warehouse).
-   * Clamped to whatever this reservation still actively holds — releasing
-   * more than that is a caller bug, not a state this method should ever
-   * silently invent negative numbers for.
+   * A physical stock increase (receipt or manual addition) landed — fill
+   * outstanding order demand for this product. `preferredOrderId` (set when
+   * the movement is traceable to a specific order, e.g. a purchase created
+   * via "Надіслати заявку постачальнику") is topped up FIRST; any remainder
+   * (or the whole amount, if there's no preferred order) fills whichever
+   * other active order has been waiting longest — never more than each
+   * order's own outstanding need, so a delivery larger than what's owed
+   * simply leaves the rest as ordinary free stock.
    */
+  async topUp(user: RequestUser, input: { productId: string; warehouseId: string; qtyAvailable: number; preferredOrderId?: string }): Promise<number> {
+    let remaining = input.qtyAvailable;
+    if (remaining <= 0) return 0;
+
+    if (input.preferredOrderId) {
+      const outstanding = await this.getOutstandingForOrder(user, input.preferredOrderId, input.productId, input.warehouseId);
+      if (outstanding > 0) {
+        const grant = await this.reserveCapped(
+          user,
+          { productId: input.productId, warehouseId: input.warehouseId, customerOrderId: input.preferredOrderId, source: 'PURCHASE' },
+          Math.min(remaining, outstanding),
+        );
+        remaining -= grant.grantedQty;
+      }
+    }
+    if (remaining <= 0) return 0;
+
+    const requirements = await this.prisma.tenant.orderMaterialRequirement.findMany({
+      where: {
+        productId: input.productId,
+        customerOrderId: input.preferredOrderId ? { not: input.preferredOrderId } : undefined,
+        customerOrder: { status: { in: [...ACTIVE_ORDER_STATUSES] } },
+      },
+      include: { customerOrder: { select: { createdAt: true } } },
+    });
+    requirements.sort((a, b) => a.customerOrder.createdAt.getTime() - b.customerOrder.createdAt.getTime());
+
+    for (const req of requirements) {
+      if (remaining <= 0) break;
+      const outstanding = await this.getOutstandingForOrder(user, req.customerOrderId, input.productId, input.warehouseId);
+      if (outstanding <= 0) continue;
+      const grant = await this.reserveCapped(
+        user,
+        { productId: input.productId, warehouseId: input.warehouseId, customerOrderId: req.customerOrderId, source: 'PURCHASE' },
+        Math.min(remaining, outstanding),
+      );
+      remaining -= grant.grantedQty;
+    }
+    return remaining;
+  }
+
+  private async getOutstandingForOrder(user: RequestUser, customerOrderId: string, productId: string, warehouseId: string): Promise<number> {
+    const requirement = await this.prisma.tenant.orderMaterialRequirement.findUnique({
+      where: { customerOrderId_productId: { customerOrderId, productId } },
+    });
+    if (!requirement) return 0;
+    const { fromStock, fromPurchase } = await this.getReservedForOrder(user, customerOrderId, productId, warehouseId);
+    const consumed = await this.prisma.tenant.stockReservation.aggregate({
+      where: { customerOrderId, productId, warehouseId },
+      _sum: { consumedQty: true },
+    });
+    const covered = fromStock + fromPurchase + Number(consumed._sum.consumedQty ?? 0);
+    return Math.max(Number(requirement.requiredQty) - covered, 0);
+  }
+
+  /** §15-equivalent: release `qty` back to general availability. Physical stock is untouched. Clamped to what this order's reservation still actively holds. */
   async release(user: RequestUser, target: ReservationTarget, qty: number): Promise<number> {
     if (qty <= 0) return 0;
     const reservation = await this.prisma.tenant.stockReservation.findUnique({
       where: {
-        customerOrderItemId_productId_warehouseId_source: {
-          customerOrderItemId: target.customerOrderItemId,
+        customerOrderId_productId_warehouseId_source: {
+          customerOrderId: target.customerOrderId,
           productId: target.productId,
           warehouseId: target.warehouseId,
           source: target.source,
@@ -258,35 +329,26 @@ export class StockReservationService {
     return actualQty;
   }
 
-  /** Every active (qty > 0) reservation on this order line, both sources — used by CustomerOrdersService#cancel (§15). */
-  async releaseAllForOrderItem(user: RequestUser, customerOrderItemId: string): Promise<void> {
-    const rows = await this.prisma.tenant.stockReservation.findMany({
-      where: { customerOrderItemId, qty: { gt: 0 } },
-    });
+  /** Every active (qty > 0) reservation on this order, both sources — used by CustomerOrdersService#cancel. */
+  async releaseAllForOrder(user: RequestUser, customerOrderId: string): Promise<void> {
+    const rows = await this.prisma.tenant.stockReservation.findMany({ where: { customerOrderId, qty: { gt: 0 } } });
     for (const r of rows) {
-      await this.release(
-        user,
-        { productId: r.productId, warehouseId: r.warehouseId, customerOrderId: r.customerOrderId, customerOrderItemId: r.customerOrderItemId, source: r.source },
-        Number(r.qty),
-      );
+      await this.release(user, { productId: r.productId, warehouseId: r.warehouseId, customerOrderId: r.customerOrderId, source: r.source }, Number(r.qty));
     }
   }
 
   /**
-   * §14: material actually leaves the warehouse for production. This ONLY
-   * closes out the hold (reservedQty/StockReservation.qty) — the physical
-   * decrement is a separate, already-existing StockMovement
-   * (PRODUCTION_CONSUMPTION) posted by the caller
-   * (ProductionOrdersService#start) through StockService, same ledger every
-   * other stock mutation goes through. Clamped to what's actually held,
-   * same reasoning as `release`.
+   * Material actually leaves the warehouse for production. This ONLY
+   * closes out the hold — the physical decrement is a separate,
+   * already-existing StockMovement (PRODUCTION_CONSUMPTION) posted by the
+   * caller through StockService. Clamped to what's actually held.
    */
   async consume(user: RequestUser, target: ReservationTarget, qty: number): Promise<number> {
     if (qty <= 0) return 0;
     const reservation = await this.prisma.tenant.stockReservation.findUnique({
       where: {
-        customerOrderItemId_productId_warehouseId_source: {
-          customerOrderItemId: target.customerOrderItemId,
+        customerOrderId_productId_warehouseId_source: {
+          customerOrderId: target.customerOrderId,
           productId: target.productId,
           warehouseId: target.warehouseId,
           source: target.source,

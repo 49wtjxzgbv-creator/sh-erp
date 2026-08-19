@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useShortagePreview, useCreatePurchaseOrdersFromShortage } from '@/lib/hooks/use-sales';
+import { useShortagePreview, useCreatePurchaseOrdersFromShortage, useSaveReservationDecisions } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
@@ -24,6 +24,8 @@ interface EditableLine extends Omit<ShortageGroupLineInput, 'price'> {
   currentStock: number;
   /** The resolved supplier's price, null when unknown — read-only display here, mapped to `ShortageGroupLineInput.price` (undefined instead of null) when submitting. */
   price: number | null;
+  /** PRODUCT lines only — "Заброньовано": how much of neededQty to reserve from stock. Defaults to whatever was already auto-reserved. Editing this live-recomputes `qty` ("Кількість до замовлення") to the remainder. */
+  reservedQty?: number;
 }
 
 interface EditableGroup {
@@ -65,12 +67,16 @@ function parseQtyParam(raw: string): Map<string, number> {
 
 /**
  * The recursive, whole-order shortage analysis (Phase 1 §6.3) — grouped by
- * supplier, gross requirement shown next to current stock, never netted
- * automatically ("no hidden arithmetic" rule, confirmed from
- * customer-order-shortage.service.ts's own header comment). Every line's
- * "qty to order" is pre-filled from the preview's neededQty but is a plain
- * editable input — the human is expected to look at currentStock and adjust
- * before committing, not have it computed for them.
+ * supplier, gross requirement shown next to current stock and next to it
+ * "Заброньовано" (stock-reservation spec, simplified 2026-08-19): a
+ * customer order auto-reserves whatever's available the moment it's
+ * created, so this page shows the RESULT of that (editable — the human can
+ * take more or less from stock), not a from-scratch decision. "Кількість до
+ * замовлення" is the remainder, live-recomputed as "Заброньовано" changes,
+ * still independently editable. Two actions live under each supplier:
+ * "Забронювати зі складу" (commits any changed reserved qty) and
+ * "Надіслати заявку постачальнику" (creates the PurchaseOrder for that
+ * group alone).
  */
 function ShortagePreviewPageInner() {
   const params = useParams<{ id: string }>();
@@ -82,11 +88,13 @@ function ShortagePreviewPageInner() {
 
   const { data: preview, isLoading } = useShortagePreview(params.id);
   const createPOs = useCreatePurchaseOrdersFromShortage(params.id);
+  const saveReservations = useSaveReservationDecisions(params.id);
 
   const [groups, setGroups] = useState<EditableGroup[]>([]);
   const [ambiguousLines, setAmbiguousLines] = useState<AmbiguousLine[]>([]);
   const hydrated = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [reservedGroupIdx, setReservedGroupIdx] = useState<number | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
   const [printSupplierId, setPrintSupplierId] = useState<string>(ALL_SUPPLIERS);
 
@@ -139,10 +147,12 @@ function ShortagePreviewPageInner() {
           productId: line.productId,
           subAssemblyId: line.subAssemblyId,
           description: line.description,
-          qty: previewQtyOverrides?.get(lineId(line)) ?? line.neededQty,
+          qty: previewQtyOverrides?.get(lineId(line)) ?? line.qtyToPurchase ?? line.neededQty,
           neededQty: line.neededQty,
           currentStock: line.currentStock,
           price: line.price,
+          reservedQty: line.reservedQty,
+          sourceRequirementId: line.sourceRequirementId,
         })),
       })),
     );
@@ -152,10 +162,12 @@ function ShortagePreviewPageInner() {
         productId: line.productId,
         subAssemblyId: line.subAssemblyId,
         description: line.description,
-        qty: line.neededQty,
+        qty: line.qtyToPurchase ?? line.neededQty,
         neededQty: line.neededQty,
         currentStock: line.currentStock,
         price: null,
+        reservedQty: line.reservedQty,
+        sourceRequirementId: line.sourceRequirementId,
         supplierOptions: line.supplierOptions ?? [],
       })),
     );
@@ -189,35 +201,57 @@ function ShortagePreviewPageInner() {
     );
   }
 
-  async function handleCreate() {
+  /** Editing "Заброньовано" live-recomputes "Кількість до замовлення" to the remainder — still independently editable afterward. */
+  function updateLineReserved(groupIdx: number, lineIdx: number, reservedQty: number) {
+    setGroups((prev) =>
+      prev.map((g, gi) =>
+        gi !== groupIdx
+          ? g
+          : {
+              ...g,
+              lines: g.lines.map((l, li) => (li !== lineIdx ? l : { ...l, reservedQty, qty: Math.max(l.neededQty - reservedQty, 0) })),
+            },
+      ),
+    );
+  }
+
+  async function handleReserveFromStock(groupIdx: number) {
+    setError(null);
+    setReservedGroupIdx(null);
+    const group = groups[groupIdx];
+    const decisions = group.lines
+      .filter((l) => l.kind === 'PRODUCT' && l.productId)
+      .map((l) => ({ productId: l.productId as string, qtyFromStock: l.reservedQty ?? 0 }));
+    if (decisions.length === 0) return;
+    try {
+      await saveReservations.mutateAsync(decisions);
+      setReservedGroupIdx(groupIdx);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleSendToSupplier(groupIdx: number) {
     setError(null);
     setCreatedCount(null);
-    if (ambiguousLines.length > 0) {
-      setError(t('resolveSupplierChoiceFirst'));
-      return;
-    }
-    const payload: PurchaseOrderGroupInput[] = groups
-      .filter((g) => g.lines.some((l) => l.qty > 0))
-      .map((g) => ({
-        supplierId: g.supplierId,
-        supplierName: g.supplierName,
-        items: g.lines
-          .filter((l) => l.qty > 0)
-          .map(({ kind, productId, subAssemblyId, description, qty, price }) => ({
-            kind,
-            productId,
-            subAssemblyId,
-            description,
-            qty,
-            price: price ?? undefined,
-          })),
+    const group = groups[groupIdx];
+    const items = group.lines
+      .filter((l) => l.qty > 0)
+      .map(({ kind, productId, subAssemblyId, description, qty, price, sourceRequirementId }) => ({
+        kind,
+        productId,
+        subAssemblyId,
+        description,
+        qty,
+        price: price ?? undefined,
+        sourceRequirementId,
       }));
-    if (payload.length === 0) {
+    if (items.length === 0) {
       setError(t('invalidRow'));
       return;
     }
     try {
-      const created = await createPOs.mutateAsync(payload);
+      const created = await createPOs.mutateAsync([{ supplierId: group.supplierId, supplierName: group.supplierName, items }]);
       setCreatedCount(created.length);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
@@ -267,6 +301,9 @@ function ShortagePreviewPageInner() {
           </div>
         )}
       </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {createdCount !== null && <p className="text-sm text-success">{t('purchaseOrdersCreated', { count: createdCount })}</p>}
 
       {groups.length === 0 && ambiguousLines.length === 0 && <p className="text-sm text-muted-foreground">{t('noShortage')}</p>}
 
@@ -331,6 +368,7 @@ function ShortagePreviewPageInner() {
                   <TableHead>{t('description')}</TableHead>
                   <TableHead>{t('neededQty')}</TableHead>
                   <TableHead>{t('currentStock')}</TableHead>
+                  <TableHead className="w-28">{t('reservedQty')}</TableHead>
                   <TableHead className="w-32">{t('qtyToOrder')}</TableHead>
                   <TableHead>{t('unitPrice')}</TableHead>
                   <TableHead>{t('expectedPrice')}</TableHead>
@@ -346,6 +384,20 @@ function ShortagePreviewPageInner() {
                     <TableCell>{line.neededQty}</TableCell>
                     <TableCell>{line.currentStock}</TableCell>
                     <TableCell>
+                      {line.kind === 'PRODUCT' ? (
+                        <Input
+                          type="number"
+                          step="any"
+                          min={0}
+                          max={line.neededQty}
+                          value={line.reservedQty ?? 0}
+                          onChange={(e) => updateLineReserved(gi, li, Number(e.target.value))}
+                        />
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Input
                         type="number"
                         step="any"
@@ -360,22 +412,23 @@ function ShortagePreviewPageInner() {
                 ))}
               </TableBody>
             </Table>
-            <p className="mt-3 text-right text-sm font-semibold">
-              {tp('supplierRequestTotal')}: {formatEur(groupTotal(group))}
-            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" loading={saveReservations.isPending} onClick={() => handleReserveFromStock(gi)}>
+                  {t('reserveFromStock')}
+                </Button>
+                <Button loading={createPOs.isPending} onClick={() => handleSendToSupplier(gi)}>
+                  {t('sendSupplierRequest')}
+                </Button>
+                {reservedGroupIdx === gi && <span className="text-sm text-success">{t('reservedSuccessfully')}</span>}
+              </div>
+              <p className="text-right text-sm font-semibold">
+                {tp('supplierRequestTotal')}: {formatEur(groupTotal(group))}
+              </p>
+            </div>
           </CardContent>
         </Card>
       ))}
-
-      {(groups.length > 0 || ambiguousLines.length > 0) && (
-        <>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {createdCount !== null && <p className="text-sm text-success">{t('purchaseOrdersCreated', { count: createdCount })}</p>}
-          <Button onClick={handleCreate} loading={createPOs.isPending}>
-            {t('createPurchaseOrders')}
-          </Button>
-        </>
-      )}
     </div>
   );
 }

@@ -40,7 +40,7 @@ describe('ProductionOrdersService', () => {
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
     stockReservationService = {
-      getReservedForOrderItem: jest.fn().mockResolvedValue({ fromStock: 0, fromPurchase: 0 }),
+      getReservedForOrder: jest.fn().mockResolvedValue({ fromStock: 0, fromPurchase: 0 }),
       consume: jest.fn().mockResolvedValue(0),
     };
     finishedGoodsService = { generateSerialNumbers: jest.fn().mockResolvedValue(['SN-000001', 'SN-000002']) };
@@ -276,6 +276,26 @@ describe('ProductionOrdersService', () => {
     it('creates no payroll entries when no workers are assigned', async () => {
       await service.start(user, 'po1', {});
       expect(prisma.tenant.payrollEntry.createMany).not.toHaveBeenCalled();
+    });
+
+    it('§14/§16: a batch linked to a customer order closes out THAT ORDER\'s own reservation (shared pool, order-level not line-level) as material is consumed', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, customerOrderItemId: 'item1' });
+      prisma.tenant.customerOrderItem.findUnique.mockResolvedValue({ id: 'item1', customerOrderId: 'co1' });
+      // needed = 6 (unitsPlanned 2 * qtyPerUnit 3); order had reserved 4 from stock, 0 from purchase
+      stockReservationService.getReservedForOrder.mockResolvedValue({ fromStock: 4, fromPurchase: 0 });
+
+      await service.start(user, 'po1', {});
+
+      expect(stockReservationService.getReservedForOrder).toHaveBeenCalledWith(user, 'co1', 'p1', 'wDefault');
+      expect(stockReservationService.consume).toHaveBeenCalledWith(user, { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', source: 'STOCK' }, 4);
+      // remaining 2 of the 6 needed comes from ordinary available stock — no PURCHASE-source consume call since fromPurchase was 0
+      expect(stockReservationService.consume).not.toHaveBeenCalledWith(user, expect.objectContaining({ source: 'PURCHASE' }), expect.anything());
+    });
+
+    it('an ad-hoc batch with no linked customer order never touches any reservation', async () => {
+      await service.start(user, 'po1', {}); // baseOrder has no customerOrderItemId
+      expect(stockReservationService.getReservedForOrder).not.toHaveBeenCalled();
+      expect(stockReservationService.consume).not.toHaveBeenCalled();
     });
   });
 

@@ -7,6 +7,7 @@ import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
+import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto } from './dto/give-to-production.dto';
 
@@ -29,8 +30,17 @@ export class CustomerOrdersService {
     private readonly productionOrdersService: ProductionOrdersService,
     private readonly assembliesService: AssembliesService,
     private readonly stockReservationService: StockReservationService,
+    private readonly shortageService: CustomerOrderShortageService,
   ) {}
 
+  /**
+   * §ensureRequirementsAndAutoReserve (simplified spec, 2026-08-19): by
+   * default, every raw material this order needs gets reserved from
+   * whatever's already on hand — no manual per-line decision required. Runs
+   * after the order (and its items) are committed, in the same request
+   * transaction, so a failure here rolls back the whole creation rather
+   * than leaving an order with no requirements tracked at all.
+   */
   async create(user: RequestUser, dto: CreateCustomerOrderDto) {
     const order = await this.prisma.tenant.customerOrder.create({
       data: {
@@ -70,6 +80,9 @@ export class CustomerOrdersService {
       entityId: order.id,
       after: order,
     });
+
+    await this.shortageService.ensureRequirementsAndAutoReserve(user, order.id);
+
     return order;
   }
 
@@ -236,23 +249,23 @@ export class CustomerOrdersService {
   }
 
   /**
-   * §15: cancelling an order releases every active reservation its lines
-   * were holding — unused reserved stock becomes available to other orders
-   * again, physical stock is unchanged (nothing was ever written off just
-   * by reserving it). Item-quantity CHANGE (the other half of §15) has no
-   * real analog in this system to hook into: CustomerOrderItem lines are
-   * immutable once created (UpdateCustomerOrderDto's own header comment —
-   * "cancel and recreate for a genuine line change"), so that specific
-   * sub-scenario is out of scope here, not silently unhandled.
+   * §15: cancelling an order releases every active reservation it was
+   * holding (one shared pool per product for the whole order — see
+   * CustomerOrderShortageService's header comment) — unused reserved stock
+   * becomes available to other orders again, physical stock is unchanged
+   * (nothing was ever written off just by reserving it). Item-quantity
+   * CHANGE (the other half of §15) has no real analog in this system to
+   * hook into: CustomerOrderItem lines are immutable once created
+   * (UpdateCustomerOrderDto's own header comment — "cancel and recreate for
+   * a genuine line change"), so that specific sub-scenario is out of scope
+   * here, not silently unhandled.
    */
   async cancel(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
       throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_CANCEL_TERMINAL', `Cannot cancel a ${order.status} order.`);
     }
-    for (const item of order.items as any[]) {
-      await this.stockReservationService.releaseAllForOrderItem(user, item.id);
-    }
+    await this.stockReservationService.releaseAllForOrder(user, id);
     const updated = await this.prisma.tenant.customerOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
     await this.auditService.record({
       companyId: user.companyId,

@@ -54,6 +54,11 @@ export class ShortageGroupLineInputDto {
   @IsNumber()
   @Min(0)
   price?: number;
+
+  @ApiPropertyOptional({ description: 'Carried through from the preview\'s sourceRequirementId — links the created PurchaseOrderItem back to this order\'s material requirement, so receiving it auto-reserves for this order.' })
+  @IsOptional()
+  @IsUUID()
+  sourceRequirementId?: string;
 }
 
 export class PurchaseOrderGroupInputDto {
@@ -85,4 +90,26 @@ export class CreatePurchaseOrdersFromGroupsDto {
   @ValidateNested({ each: true })
   @Type(() => PurchaseOrderGroupInputDto)
   groups!: PurchaseOrderGroupInputDto[];
+}
+
+/** The "Забронювати зі складу" button's payload — one entry per PRODUCT line the user wants to (re)set the stock-reserved qty for. */
+export class SaveReservationDecisionInputDto {
+  @ApiProperty()
+  @IsUUID()
+  productId!: string;
+
+  @ApiProperty({ description: 'The new "Заброньовано" (reserved from stock) qty for this product on this order — defaults to the maximum available at order creation, editable here.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  qtyFromStock!: number;
+}
+
+export class SaveReservationDecisionsDto {
+  @ApiProperty({ type: [SaveReservationDecisionInputDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SaveReservationDecisionInputDto)
+  decisions!: SaveReservationDecisionInputDto[];
 }
