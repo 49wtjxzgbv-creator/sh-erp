@@ -344,12 +344,28 @@
  * per-page repetition isn't needed at all.
  */
 .pdf-header {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
   margin-bottom: 8mm;
 }
 .pdf-header-logo {
-  height: 19mm;
-  width: auto;
+  height: 14mm;
+  width: 14mm;
   display: block;
+}
+.pdf-header-divider {
+  width: 0.3mm;
+  height: 8mm;
+  background: #ccc;
+  display: inline-block;
+}
+.pdf-header-brand {
+  font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 13pt;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #222222;
 }
 .pdf-footer {
   margin-top: 8mm;

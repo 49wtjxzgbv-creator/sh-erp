@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { useMobileNav } from '@/components/domain/shell/mobile-nav-context';
 import { useMyPermissions } from '@/lib/hooks/use-roles';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Logo } from '@/components/domain/shell/logo';
 
 /**
  * One entry per backend module (Phase 2 §26 roadmap order). Routes not yet
@@ -159,7 +160,7 @@ export function Sidebar() {
         )}
       >
         <div className={cn('flex h-14 items-center gap-2 border-b border-border', collapsed ? 'justify-center px-2' : 'px-4')}>
-          <div className="h-6 w-6 shrink-0 rounded-md bg-primary" aria-hidden="true" />
+          <Logo size={24} className="shrink-0" />
           {!collapsed && <span className="truncate text-sm font-semibold">SH ERP</span>}
         </div>
         <SidebarNav collapsed={collapsed} />
@@ -186,7 +187,7 @@ export function Sidebar() {
           <aside className="absolute inset-y-0 left-0 flex w-64 flex-col border-r border-border bg-surface shadow-lg">
             <div className="flex h-14 items-center justify-between gap-2 border-b border-border px-4">
               <div className="flex items-center gap-2">
-                <div className="h-6 w-6 rounded-md bg-primary" aria-hidden="true" />
+                <Logo size={24} />
                 <span className="text-sm font-semibold">SH ERP</span>
               </div>
               <button

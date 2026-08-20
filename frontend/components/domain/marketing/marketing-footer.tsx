@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { Logo } from '@/components/domain/shell/logo';
 
 /** Nav labels are static UI chrome translated via next-intl's `marketing` namespace — same scoping note as marketing-header.tsx. `pricingVisible` hides the "Pricing" link when that section is hidden (see page.tsx). */
 export function MarketingFooter({ tagline, pricingVisible = true }: { tagline: string; pricingVisible?: boolean }) {
@@ -30,9 +31,7 @@ export function MarketingFooter({ tagline, pricingVisible = true }: { tagline: s
         <div className="flex flex-col justify-between gap-12 sm:flex-row">
           <div className="max-w-xs">
             <Link href="/" className="flex items-center gap-2 font-semibold">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs">
-                S
-              </span>
+              <Logo size={24} />
               SH ERP
             </Link>
             <p className="mt-3.5 text-sm leading-relaxed text-muted-foreground">{tagline}</p>
@@ -58,7 +57,7 @@ export function MarketingFooter({ tagline, pricingVisible = true }: { tagline: s
 
         <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-border pt-7 text-xs text-muted-foreground sm:flex-row">
           <p>&copy; {new Date().getFullYear()} Shyring. {t('footerRights')}.</p>
-          <p>SH ERP by Shyring</p>
+          <p>SH ERP by Shyryng</p>
         </div>
       </div>
     </footer>

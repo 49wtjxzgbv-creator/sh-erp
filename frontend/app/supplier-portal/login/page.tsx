@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
+import { Logo } from '@/components/domain/shell/logo';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useSupplierPortalSessionStore } from '@/lib/supplier-portal/session-store';
 
@@ -50,11 +51,9 @@ export default function SupplierPortalLoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex flex-col items-center text-center">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-            S
-          </span>
+          <Logo size={56} />
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">SH ERP</h1>
-          <p className="text-sm text-muted-foreground">by Shyring</p>
+          <p className="text-sm text-muted-foreground">by Shyryng</p>
         </Link>
         <Tabs value="/supplier-portal/login" className="mb-4">
           <TabsList className="w-full justify-center">

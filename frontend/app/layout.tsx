@@ -40,11 +40,19 @@ export const metadata: Metadata = {
     'ERP система',
     'SH ERP',
   ],
-  authors: [{ name: 'Shyring' }],
+  authors: [{ name: 'Shyryng' }],
   applicationName: 'SH ERP',
-  icons: {
-    icon: '/icon.svg',
-    shortcut: '/icon.svg',
+  // No manual `icons` field: app/icon.png and app/apple-icon.png (Next.js
+  // file conventions) are auto-detected and auto-linked; public/favicon.ico
+  // additionally covers the legacy direct-request path some browsers still
+  // use. Listing any of these here too would just emit duplicate <link> tags.
+  // Apple's own "Add to Home Screen" name (defaults to <title>, which is
+  // far too long for a home-screen label) plus the standalone-app meta
+  // tags Safari/iOS looks for.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'SH ERP',
   },
   openGraph: {
     type: 'website',

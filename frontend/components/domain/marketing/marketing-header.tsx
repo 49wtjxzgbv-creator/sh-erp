@@ -7,6 +7,7 @@ import { Menu, X } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
+import { Logo } from '@/components/domain/shell/logo';
 import { cn } from '@/lib/utils';
 
 /**
@@ -54,16 +55,7 @@ export function MarketingHeader({ pricingVisible = true }: { pricingVisible?: bo
     >
       <div className="container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
-              <path
-                d="M7 15.5c0 1.5 1.3 2.6 3.4 2.6h.8c1.8 0 3-1 3-2.4 0-1.6-1.4-2.1-3.2-2.5l-.8-.2c-1.8-.4-4-1.2-4-3.4C6.2 7.5 8.1 6 11 6c2.6 0 4.3 1.3 4.4 3.4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
+          <Logo size={28} />
           SH ERP
         </Link>
 

@@ -35,7 +35,9 @@ export function PdfBranding({ children }: { children: ReactNode }) {
     <>
       <div className="pdf-header" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-sh-erp.svg" alt="" className="pdf-header-logo" />
+        <img src="/brand/logo-1024.png" alt="" className="pdf-header-logo" />
+        <span className="pdf-header-divider" />
+        <span className="pdf-header-brand">SH-ERP.PRO</span>
       </div>
       {children}
       <div className="pdf-footer" aria-hidden="true">
