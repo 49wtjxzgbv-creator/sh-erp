@@ -41,7 +41,10 @@
     "footerProductColumn": "Produkt",
     "footerCompanyColumn": "Unternehmen",
     "footerRegister": "Registrieren",
-    "footerRights": "Alle Rechte vorbehalten"
+    "footerRights": "Alle Rechte vorbehalten",
+    "heroFactModules": "8 echte Module",
+    "heroFactLocales": "4 Oberflächensprachen",
+    "heroFactRls": "PostgreSQL Row-Level Security"
   },
   "nav": {
     "dashboard": "Dashboard",

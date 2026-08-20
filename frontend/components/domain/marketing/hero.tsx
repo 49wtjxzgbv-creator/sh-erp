@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { ArrowRight, MessageCircle, Boxes, Globe, ShieldCheck } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { Reveal } from '@/components/domain/marketing/reveal';
@@ -6,22 +7,22 @@ import { HeroScreenshot } from '@/components/domain/marketing/hero-screenshot';
 import { landingMediaUrl } from '@/lib/landing-page/media-url';
 import type { FlatLandingPageContent } from '@/lib/landing-page/flatten-content';
 
-/**
- * Real, verifiable facts, not invented business metrics ("128 active
- * orders" etc. are exactly what the ТЗ forbids) — module count and locale
- * count are structural facts about this codebase itself, RLS is a real
- * architecture decision already stated in the Benefits section's own copy.
- * Fills the space under the CTA with something true rather than empty air
- * while heroImageId is still unset (Phase 3).
- */
-const TRUST_FACTS = [
-  { icon: Boxes, label: '8 реальних модулів' },
-  { icon: Globe, label: '4 мови інтерфейсу' },
-  { icon: ShieldCheck, label: 'PostgreSQL Row-Level Security' },
-];
-
 export function Hero({ content }: { content: FlatLandingPageContent['hero'] }) {
+  const t = useTranslations('marketing');
   const imageUrl = landingMediaUrl(content.heroImageId);
+
+  // Real, verifiable facts, not invented business metrics ("128 active
+  // orders" etc. are exactly what the ТЗ forbids) — module count and
+  // locale count are structural facts about this codebase itself, RLS is a
+  // real architecture decision already stated in the Benefits section's
+  // own copy. Fills the space under the CTA with something true rather
+  // than empty air while heroImageId is still unset (Phase 3). Static UI
+  // chrome translated via next-intl, same as header/footer nav.
+  const trustFacts = [
+    { icon: Boxes, label: t('heroFactModules') },
+    { icon: Globe, label: t('heroFactLocales') },
+    { icon: ShieldCheck, label: t('heroFactRls') },
+  ];
 
   return (
     <section id="product" className="relative overflow-hidden pb-24 pt-20 sm:pb-32 sm:pt-28 lg:pt-40">
@@ -75,7 +76,7 @@ export function Hero({ content }: { content: FlatLandingPageContent['hero'] }) {
           <p className="mt-5 text-xs text-muted-foreground">{content.microcopy}</p>
 
           <div className="mt-10 flex flex-wrap items-center justify-center gap-x-7 gap-y-3 border-t border-border pt-7">
-            {TRUST_FACTS.map(({ icon: Icon, label }) => (
+            {trustFacts.map(({ icon: Icon, label }) => (
               <span key={label} className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Icon className="h-3.5 w-3.5 text-primary/70" />
                 {label}

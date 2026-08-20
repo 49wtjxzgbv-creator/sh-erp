@@ -41,7 +41,10 @@
     "footerProductColumn": "Продукт",
     "footerCompanyColumn": "Компанія",
     "footerRegister": "Реєстрація",
-    "footerRights": "Усі права захищено"
+    "footerRights": "Усі права захищено",
+    "heroFactModules": "8 реальних модулів",
+    "heroFactLocales": "4 мови інтерфейсу",
+    "heroFactRls": "PostgreSQL Row-Level Security"
   },
   "nav": {
     "dashboard": "Дашборд",
