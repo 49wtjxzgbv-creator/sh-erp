@@ -2,10 +2,14 @@
 
 import { Fragment, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { ArrowLeft } from 'lucide-react';
 import { Sidebar } from '@/components/domain/shell/sidebar';
 import { Topbar } from '@/components/domain/shell/topbar';
+import { ImpersonationBanner } from '@/components/domain/shell/impersonation-banner';
 import { TrainingOverlay } from '@/components/domain/training/training-overlay';
 import { TrainingWelcomeBanner } from '@/components/domain/training/training-welcome-banner';
+import { Button } from '@/components/ui/button';
 
 /**
  * `?print=1` on any page opens a bare version of that SAME route — no
@@ -24,7 +28,12 @@ export function AppShellOrPrintPreview({ children }: { children: ReactNode }) {
   const isPrintPreview = searchParams.get('print') === '1';
 
   if (isPrintPreview) {
-    return <main className="print-preview-mode min-h-screen bg-white p-6 text-black">{children}</main>;
+    return (
+      <main className="print-preview-mode min-h-screen bg-white text-black">
+        <PrintPreviewToolbar />
+        <div className="overflow-x-auto p-6">{children}</div>
+      </main>
+    );
   }
 
   return (
@@ -33,11 +42,46 @@ export function AppShellOrPrintPreview({ children }: { children: ReactNode }) {
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
+          <ImpersonationBanner />
           <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
         </div>
       </div>
       <TrainingOverlay />
       <TrainingWelcomeBanner />
     </Fragment>
+  );
+}
+
+/**
+ * P0 fix (2026-08-21): `?print=1` opens in a brand-new tab (PreviewButton's
+ * `window.open(..., '_blank', 'noopener')`) with no app chrome at all — on
+ * desktop the browser's own tab bar is enough to switch back, but on mobile
+ * (no visible tab bar) that tab was a dead end with no way back into the
+ * app. `window.close()` works here despite `noopener` — that flag only
+ * hides `window.opener` from the new tab, it doesn't revoke the tab's own
+ * "opened by script" permission to close itself. Some mobile browsers still
+ * refuse it anyway (e.g. if the user later navigated within the tab), so
+ * the fallback strips `?print=1` and turns this same tab into a normal,
+ * fully-chromed in-app page instead of leaving a dead end.
+ */
+function PrintPreviewToolbar() {
+  const t = useTranslations('print');
+
+  function goBack() {
+    window.close();
+    setTimeout(() => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('print');
+      window.location.href = url.toString();
+    }, 300);
+  }
+
+  return (
+    <div className="no-print sticky top-0 z-50 flex justify-end border-b border-gray-200 bg-gray-100 p-2">
+      <Button type="button" variant="outline" size="sm" onClick={goBack}>
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        {t('backToAppAction')}
+      </Button>
+    </div>
   );
 }

@@ -171,10 +171,54 @@
     background: #fff;
     color: #000;
     padding: 12mm;
+    /* Real incident: Avatar/other themed components use bg-muted /
+     * text-muted-foreground etc. (Tailwind classes reading these CSS custom
+     * properties), and those aren't touched by the plain background/color
+     * override above. With the dark theme active, `.dark`'s near-black
+     * --muted made every printed photo placeholder a dark square on an
+     * otherwise white page. Re-declaring the full light-mode variable set
+     * here (values copied from :root above) makes every themed class
+     * resolve to its light value inside print output regardless of which
+     * theme is active on screen — printed output should never depend on
+     * the viewer's OS/browser theme preference.
+     */
+    --background: 240 20% 99%;
+    --foreground: 240 10% 9%;
+    --surface: 240 14% 96%;
+    --surface-foreground: 240 10% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 9%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 10% 95%;
+    --secondary-foreground: 240 10% 14%;
+    --muted: 240 10% 95%;
+    --muted-foreground: 240 5% 42%;
+    --accent: 262 90% 96%;
+    --accent-foreground: 262 60% 30%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 42%;
+    --warning-foreground: 0 0% 10%;
+    --border: 240 8% 91%;
+    --input: 240 8% 89%;
+    --ring: 262 83% 58%;
   }
   .print-area table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
+  }
+  .print-area thead {
+    display: table-header-group;
+  }
+  .print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .print-area th,
   .print-area td {
@@ -182,6 +226,8 @@
     padding: 4px 6px;
     text-align: left;
     font-size: 11px;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
   .print-area .print-page-break {
     page-break-after: always;
@@ -267,10 +313,46 @@
   background: #fff;
   color: #000;
   padding: 12mm;
+  /* Same light-mode variable override as the @media print block above —
+   * keeps the on-screen preview visually identical to the real printed
+   * output regardless of the viewer's active theme. */
+  --background: 240 20% 99%;
+  --foreground: 240 10% 9%;
+  --surface: 240 14% 96%;
+  --surface-foreground: 240 10% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 9%;
+  --primary: 262 83% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 10% 95%;
+  --secondary-foreground: 240 10% 14%;
+  --muted: 240 10% 95%;
+  --muted-foreground: 240 5% 42%;
+  --accent: 262 90% 96%;
+  --accent-foreground: 262 60% 30%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 71% 38%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 42%;
+  --warning-foreground: 0 0% 10%;
+  --border: 240 8% 91%;
+  --input: 240 8% 89%;
+  --ring: 262 83% 58%;
 }
 .print-preview-mode .print-area table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
+}
+.print-preview-mode .print-area thead {
+  display: table-header-group;
+}
+.print-preview-mode .print-area tr {
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
 .print-preview-mode .print-area th,
 .print-preview-mode .print-area td {
@@ -278,6 +360,8 @@
   padding: 4px 6px;
   text-align: left;
   font-size: 11px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;
