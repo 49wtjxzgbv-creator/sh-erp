@@ -117,6 +117,18 @@ export function getStockReservationBreakdown(productId: string, warehouseId: str
   return apiClient.get<StockReservationBreakdownLine[]>('stock/reservations', { query: { productId, warehouseId } });
 }
 
+/** Click-through drill-down for the RED "Не вистачає для резервації" number — which orders are short and by how much. Orders that are fully covered are simply absent, not zeroed. */
+export interface StockShortageBreakdownLine {
+  customerOrderId: string;
+  orderNumber: string | null;
+  clientName: string;
+  outstandingQty: number;
+}
+
+export function getStockShortageBreakdown(productId: string, warehouseId: string): Promise<StockShortageBreakdownLine[]> {
+  return apiClient.get<StockShortageBreakdownLine[]>('stock/shortage', { query: { productId, warehouseId } });
+}
+
 export interface QueryStockInput {
   productId?: string;
   warehouseId?: string;

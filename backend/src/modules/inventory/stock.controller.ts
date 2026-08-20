@@ -48,4 +48,11 @@ export class StockController {
   async reservations(@CurrentUser() user: RequestUser, @Query() query: QueryStockReservationsDto) {
     return this.stockReservationService.getBreakdown(user, query.productId, query.warehouseId);
   }
+
+  @Get('shortage')
+  @RequirePermissions('stock:read')
+  @ApiOperation({ summary: 'Drill-down for the "Не вистачає для резервації" number: which orders are short on one (product, warehouse) and by how much.' })
+  async shortage(@CurrentUser() user: RequestUser, @Query() query: QueryStockReservationsDto) {
+    return this.stockReservationService.getShortageBreakdown(user, query.productId, query.warehouseId);
+  }
 }

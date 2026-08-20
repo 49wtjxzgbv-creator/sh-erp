@@ -9,6 +9,7 @@ import {
   getStockLevels,
   getStockHistory,
   getStockReservationBreakdown,
+  getStockShortageBreakdown,
   recordStockMovement,
   moveStock,
   listInventorySessions,
@@ -30,6 +31,7 @@ const warehousesKey = ['warehouses'] as const;
 const stockLevelsKey = (q: QueryStockInput) => ['stock-levels', q] as const;
 const stockHistoryKey = (q: QueryStockHistoryInput) => ['stock-history', q] as const;
 const stockReservationsKey = (productId: string, warehouseId: string) => ['stock-reservations', productId, warehouseId] as const;
+const stockShortageKey = (productId: string, warehouseId: string) => ['stock-shortage', productId, warehouseId] as const;
 const sessionsKey = ['inventory-sessions'] as const;
 const sessionItemsKey = (id: string) => ['inventory-sessions', id, 'items'] as const;
 
@@ -70,6 +72,15 @@ export function useStockReservationBreakdown(productId: string | undefined, ware
   return useQuery({
     queryKey: stockReservationsKey(productId ?? '', warehouseId ?? ''),
     queryFn: () => getStockReservationBreakdown(productId as string, warehouseId as string),
+    enabled: Boolean(productId && warehouseId && enabled),
+  });
+}
+
+/** Click-through for the RED "Не вистачає для резервації" number — same lazy-fetch-on-open pattern as the reservation drill-down above. */
+export function useStockShortageBreakdown(productId: string | undefined, warehouseId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: stockShortageKey(productId ?? '', warehouseId ?? ''),
+    queryFn: () => getStockShortageBreakdown(productId as string, warehouseId as string),
     enabled: Boolean(productId && warehouseId && enabled),
   });
 }

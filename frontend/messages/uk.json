@@ -216,6 +216,7 @@
     "reservedQty": "Зарезервовано",
     "availableQty": "Доступно",
     "reservedByBreakdown": "Зарезервовано під замовлення",
+    "shortageByBreakdown": "Не вистачає для замовлень",
     "globalShortageQty": "Не вистачає для резервації",
     "loadingShort": "Завантаження…",
     "comment": "Коментар",

@@ -33,6 +33,14 @@ export interface ReservationBreakdownLine {
   qty: number;
 }
 
+export interface ShortageBreakdownLine {
+  customerOrderId: string;
+  orderNumber: string | null;
+  clientName: string;
+  /** requiredQty - covered for this order+product, always > 0 (fully-covered orders are omitted). */
+  outstandingQty: number;
+}
+
 const ACTIVE_ORDER_STATUSES = ['NEW', 'IN_PRODUCTION'] as const;
 
 /**
@@ -138,6 +146,48 @@ export class StockReservationService {
       }
     }
     return shortageByProduct;
+  }
+
+  /**
+   * §17-style drill-down for the RED "Не вистачає для резервації" number —
+   * clicking it shows exactly which orders are short and by how much, same
+   * shape as `getBreakdown`'s "Зарезервовано" drill-down but for
+   * uncovered demand instead of held reservations. Scoped to ONE product
+   * (unlike `getGlobalShortageByProduct`, which aggregates across every
+   * product for the whole warehouse page in one query) — this runs only
+   * when a user actually opens the popover for one cell.
+   */
+  async getShortageBreakdown(user: RequestUser, productId: string, warehouseId: string): Promise<ShortageBreakdownLine[]> {
+    const requirements = await this.prisma.tenant.orderMaterialRequirement.findMany({
+      where: { productId, customerOrder: { status: { in: [...ACTIVE_ORDER_STATUSES] } } },
+    });
+    if (requirements.length === 0) return [];
+
+    const orderIds = Array.from(new Set(requirements.map((r) => r.customerOrderId)));
+    const [reservations, orders] = await Promise.all([
+      this.prisma.tenant.stockReservation.findMany({ where: { customerOrderId: { in: orderIds }, productId, warehouseId } }),
+      this.prisma.tenant.customerOrder.findMany({ where: { id: { in: orderIds } } }),
+    ]);
+    const coveredByOrder = new Map<string, number>();
+    for (const r of reservations) {
+      coveredByOrder.set(r.customerOrderId, (coveredByOrder.get(r.customerOrderId) ?? 0) + Number(r.qty) + Number(r.consumedQty));
+    }
+    const orderById = new Map(orders.map((o) => [o.id, o]));
+
+    const lines: ShortageBreakdownLine[] = [];
+    for (const req of requirements) {
+      const covered = coveredByOrder.get(req.customerOrderId) ?? 0;
+      const outstandingQty = Math.max(Number(req.requiredQty) - covered, 0);
+      if (outstandingQty > 0) {
+        lines.push({
+          customerOrderId: req.customerOrderId,
+          orderNumber: orderById.get(req.customerOrderId)?.orderNumber ?? null,
+          clientName: orderById.get(req.customerOrderId)?.clientName ?? req.customerOrderId,
+          outstandingQty,
+        });
+      }
+    }
+    return lines;
   }
 
   /**

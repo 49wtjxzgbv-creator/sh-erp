@@ -266,4 +266,33 @@ describe('StockReservationService', () => {
       expect(prisma.tenant.stockReservation.findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('getShortageBreakdown — click-through drill-down for one product', () => {
+    it('lists only the orders still short, with how much each one is missing', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([
+        { customerOrderId: 'co-1001', productId: 'p1', requiredQty: 20 },
+        { customerOrderId: 'co-1002', productId: 'p1', requiredQty: 10 },
+      ]);
+      prisma.tenant.stockReservation.findMany.mockResolvedValue([
+        { customerOrderId: 'co-1001', productId: 'p1', qty: 8, consumedQty: 0 },
+        { customerOrderId: 'co-1002', productId: 'p1', qty: 10, consumedQty: 0 }, // fully covered -> omitted
+      ]);
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([
+        { id: 'co-1001', orderNumber: '1001', clientName: 'Client A' },
+        { id: 'co-1002', orderNumber: '1002', clientName: 'Client B' },
+      ]);
+
+      const breakdown = await service.getShortageBreakdown(user, 'p1', 'w1');
+
+      expect(breakdown).toEqual([{ customerOrderId: 'co-1001', orderNumber: '1001', clientName: 'Client A', outstandingQty: 12 }]);
+    });
+
+    it('returns an empty list, without querying reservations/orders, when this product has no active requirements', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([]);
+      const breakdown = await service.getShortageBreakdown(user, 'p1', 'w1');
+      expect(breakdown).toEqual([]);
+      expect(prisma.tenant.stockReservation.findMany).not.toHaveBeenCalled();
+      expect(prisma.tenant.customerOrder.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -216,6 +216,7 @@
     "reservedQty": "Reserved",
     "availableQty": "Available",
     "reservedByBreakdown": "Reserved for orders",
+    "shortageByBreakdown": "Missing for orders",
     "globalShortageQty": "Missing for reservation",
     "loadingShort": "Loading…",
     "comment": "Comment",

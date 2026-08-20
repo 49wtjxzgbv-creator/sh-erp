@@ -19,6 +19,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { RecordMovementDialog } from '@/components/domain/inventory/record-movement-dialog';
 import { MoveStockDialog } from '@/components/domain/inventory/move-stock-dialog';
 import { ReservationBreakdownPopover } from '@/components/domain/inventory/reservation-breakdown-popover';
+import { ShortageBreakdownPopover } from '@/components/domain/inventory/shortage-breakdown-popover';
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { cn } from '@/lib/utils';
@@ -215,7 +216,11 @@ export default function StockLevelsPage() {
         header: () => <span className="block text-right">{t('globalShortageQty')}</span>,
         cell: ({ row }) =>
           Number(row.original.globalShortageQty) > 0 ? (
-            <div className="text-right tabular-nums font-medium text-destructive">{row.original.globalShortageQty}</div>
+            <div className="text-right tabular-nums font-medium text-destructive">
+              <ShortageBreakdownPopover productId={row.original.productId} warehouseId={row.original.warehouseId} qty={Number(row.original.globalShortageQty)}>
+                {row.original.globalShortageQty}
+              </ShortageBreakdownPopover>
+            </div>
           ) : (
             <div className="text-right tabular-nums text-muted-foreground">0</div>
           ),
