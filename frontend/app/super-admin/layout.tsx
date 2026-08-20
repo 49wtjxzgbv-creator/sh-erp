@@ -48,6 +48,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
               <Link href="/super-admin" className="hover:text-white">{t('navCompanies')}</Link>
               <Link href="/super-admin/users" className="hover:text-white">{t('navUsers')}</Link>
               <Link href="/super-admin/plans" className="hover:text-white">{t('navPlans')}</Link>
+              <Link href="/super-admin/landing" className="hover:text-white">Головна сторінка</Link>
               <Link href="/super-admin/audit" className="hover:text-white">{t('navAudit')}</Link>
             </nav>
           </div>

@@ -42,6 +42,9 @@ class SuperAdminApiClient {
   post<T>(path: string, body?: unknown) {
     return this.request<T>('POST', path, body);
   }
+  put<T>(path: string, body?: unknown) {
+    return this.request<T>('PUT', path, body);
+  }
   patch<T>(path: string, body?: unknown) {
     return this.request<T>('PATCH', path, body);
   }

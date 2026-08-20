@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
   { href: '#modules', label: 'Модулі' },
-  { href: '#product', label: 'Продукт' },
+  { href: '#how-it-works', label: 'Як це працює' },
   { href: '#pricing', label: 'Тарифи' },
   { href: '#faq', label: 'FAQ' },
   { href: '#contact', label: 'Контакти' },

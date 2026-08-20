@@ -13,6 +13,9 @@ import { UsersAdminController } from './users-admin.controller';
 import { PlansAdminService } from './plans-admin.service';
 import { PlansAdminController } from './plans-admin.controller';
 import { AuditAdminController } from './audit-admin.controller';
+import { LandingPageAdminService } from './landing-page-admin.service';
+import { LandingPageMediaService } from './landing-page-media.service';
+import { LandingPageAdminController } from './landing-page-admin.controller';
 
 /**
  * Global System Administration — added during the 2026-08-05
@@ -43,6 +46,7 @@ import { AuditAdminController } from './audit-admin.controller';
     UsersAdminController,
     PlansAdminController,
     AuditAdminController,
+    LandingPageAdminController,
   ],
   providers: [
     SuperAdminPrismaService,
@@ -52,6 +56,8 @@ import { AuditAdminController } from './audit-admin.controller';
     CompaniesAdminService,
     UsersAdminService,
     PlansAdminService,
+    LandingPageAdminService,
+    LandingPageMediaService,
   ],
 })
 export class SuperAdminModule {}

@@ -18,6 +18,12 @@
 //    same audit) — idempotent upsert by email, so re-running this seed on
 //    every deploy never creates duplicates or fights with a password
 //    already changed through the Super Admin panel itself (see below).
+//  - the initial PUBLISHED landing-page content (2026-08-20 spec) — a
+//    create-ONLY-IF-NONE-EXISTS guard, deliberately NOT the upsert pattern
+//    Plan/Permission use above: once a Super Admin has published real
+//    edits through the Landing Page Editor, that content is real,
+//    admin-owned mutable data, and this seed already runs on every deploy
+//    (ops/deploy.sh) — upserting would silently clobber it.
 //
 // Per-company seeding (default roles, warehouse, units, production stages,
 // QC checklist, VAT rate, subscription) happens at signup time in
@@ -32,6 +38,7 @@
 import { PrismaClient } from '../backend/node_modules/@prisma/client';
 import * as argon2 from 'argon2';
 import { PERMISSIONS_CATALOGUE } from '../backend/src/modules/authorization/permissions.catalogue';
+import { INITIAL_LANDING_PAGE_CONTENT } from '../backend/src/modules/landing-page/landing-page-content.types';
 
 const prisma = new PrismaClient();
 
@@ -64,7 +71,8 @@ async function main() {
   }
   console.log(`Seeded ${PLANS.length} plans.`);
 
-  await seedSuperAdmin();
+  const superAdminId = await seedSuperAdmin();
+  await seedLandingPage(superAdminId);
 }
 
 /**
@@ -81,7 +89,7 @@ async function main() {
  * `SUPER_ADMIN_BOOTSTRAP_FORCE_PASSWORD_RESET=true` for exactly one
  * deploy (see docs/deployment.md's env-var checklist).
  */
-async function seedSuperAdmin() {
+async function seedSuperAdmin(): Promise<string | null> {
   const email = process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL;
   const password = process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD;
 
@@ -90,7 +98,7 @@ async function seedSuperAdmin() {
       'SUPER_ADMIN_BOOTSTRAP_EMAIL/SUPER_ADMIN_BOOTSTRAP_PASSWORD not set — skipping Super Admin bootstrap. ' +
         'Set both to create the initial Super Admin account automatically on next `prisma db seed`.',
     );
-    return;
+    return null;
   }
 
   const existing = await prisma.superAdmin.findUnique({ where: { email } });
@@ -99,11 +107,11 @@ async function seedSuperAdmin() {
   if (existing && !forceReset) {
     await prisma.superAdmin.update({ where: { email }, data: { active: true } });
     console.log(`Super Admin "${email}" already exists — left password untouched (active: true confirmed).`);
-    return;
+    return existing.id;
   }
 
   const passwordHash = await argon2.hash(password);
-  await prisma.superAdmin.upsert({
+  const superAdmin = await prisma.superAdmin.upsert({
     where: { email },
     update: { passwordHash, active: true },
     create: { email, passwordHash, fullName: 'System Administrator', active: true },
@@ -113,6 +121,43 @@ async function seedSuperAdmin() {
       ? `Super Admin "${email}" password reset from SUPER_ADMIN_BOOTSTRAP_PASSWORD (forced).`
       : `Super Admin "${email}" created from SUPER_ADMIN_BOOTSTRAP_EMAIL/PASSWORD.`,
   );
+  return superAdmin.id;
+}
+
+/**
+ * Create-ONLY-IF-NONE-EXISTS (see this file's header comment for why this
+ * is deliberately not an upsert). Skipped entirely if no Super Admin exists
+ * yet (bootstrap env vars unset) — `landing_page_versions.createdById` is a
+ * required FK, so there's genuinely no valid author to attribute this row
+ * to yet. That's a safe no-op: landing-page-public.service.ts already
+ * degrades to the same INITIAL_LANDING_PAGE_CONTENT as a built-in fallback
+ * when no PUBLISHED row exists, so the public homepage never breaks either
+ * way — this just means the DB copy lags until the first real Super Admin
+ * bootstrap runs (which then re-runs this seed and creates it).
+ */
+async function seedLandingPage(superAdminId: string | null) {
+  if (!superAdminId) {
+    console.log('No Super Admin available yet — skipping initial landing-page content seed (public homepage still works via its built-in fallback).');
+    return;
+  }
+
+  const existingPublished = await prisma.landingPageVersion.findFirst({ where: { status: 'PUBLISHED' } });
+  if (existingPublished) {
+    console.log('A PUBLISHED landing-page version already exists — leaving it untouched.');
+    return;
+  }
+
+  await prisma.landingPageVersion.create({
+    data: {
+      status: 'PUBLISHED',
+      versionNumber: 1,
+      publishedAt: new Date(),
+      createdById: superAdminId,
+      publishedById: superAdminId,
+      content: INITIAL_LANDING_PAGE_CONTENT as any,
+    },
+  });
+  console.log('Seeded initial PUBLISHED landing-page content (version 1).');
 }
 
 main()

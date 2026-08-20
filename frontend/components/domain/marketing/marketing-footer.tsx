@@ -19,7 +19,7 @@ const COLUMNS = [
   },
 ];
 
-export function MarketingFooter() {
+export function MarketingFooter({ tagline }: { tagline: string }) {
   return (
     <footer className="border-t border-border py-12">
       <div className="container">
@@ -31,9 +31,7 @@ export function MarketingFooter() {
               </span>
               SH ERP
             </Link>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Мультитенантна ERP-система для виробництва, складу та продажів. Продукт компанії Shyring.
-            </p>
+            <p className="mt-3 text-sm text-muted-foreground">{tagline}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:gap-16">

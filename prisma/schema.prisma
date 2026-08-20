@@ -333,6 +333,10 @@ model SuperAdmin {
 
   auditLogs SuperAdminAuditLog[]
 
+  landingPageVersionsCreated   LandingPageVersion[] @relation("LandingPageVersionCreatedBy")
+  landingPageVersionsPublished LandingPageVersion[] @relation("LandingPageVersionPublishedBy")
+  landingMediaAssets           LandingMediaAsset[]
+
   @@map("super_admins")
 }
 
@@ -1780,6 +1784,82 @@ enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELLED
+}
+
+// ============================================================================
+// SECTION: Marketing — Landing Page  (module: LandingPageModule +
+// SuperAdminModule's landing-page-admin.* files) — the public homepage's
+// content, entirely Super-Admin-editable, no code deploy required to change
+// a headline/FAQ/screenshot. Global model, no companyId — same reasoning as
+// Plan above: this content belongs to the platform, not to any one tenant.
+//
+// Versioning mirrors AssemblyVersion's immutable, append-only snapshot
+// philosophy (see BOM section) rather than a live "isDraft flag on one
+// row" design: every row that has ever been PUBLISHED stays exactly as it
+// was published, forever, as its own row — publishing again archives the
+// old PUBLISHED row and inserts a brand new one, never an in-place update.
+// The single DRAFT row is the deliberate exception (it IS mutated in place
+// while an admin is actively editing) — enforced, along with "at most one
+// PUBLISHED row", by two hand-written partial unique indexes in this
+// model's migration (Prisma has no declarative attribute for a partial
+// unique index, so this is raw SQL bolted onto the generated migration,
+// same "Prisma limitation, hand-written SQL" pattern already used for
+// AssemblyComponent's CHECK constraint elsewhere in this schema).
+//
+// `content` is deliberately one Json blob covering all 4 locales at once
+// (e.g. `headline: { uk, en, pl, de }`) rather than 4 separate rows or a
+// relational per-section/per-locale table set — the whole page is read
+// wholesale on every homepage request and edited wholesale in the admin
+// editor, so normalizing it into a dozen small tables would add real
+// complexity (their own ordering/visibility columns, their own migrations)
+// for no query this feature actually needs to run.
+// ============================================================================
+
+enum LandingPageStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model LandingPageVersion {
+  id            String            @id @default(uuid()) @db.Uuid
+  status        LandingPageStatus @default(DRAFT)
+  versionNumber Int? // null for the DRAFT row; assigned sequentially (1, 2, 3...) only at publish time, never reused
+  content       Json // LandingPageContent shape (backend/src/modules/landing-page/landing-page-content.types.ts) — hero/modules/showcase/benefits/pricing/faq/contact/footer/seo, each field keyed by locale
+  createdById   String            @db.Uuid
+  publishedById String?           @db.Uuid // who actually clicked Publish; null until this row is promoted from draft
+
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3) // only ever changes while status = DRAFT
+  publishedAt DateTime? @db.Timestamptz(3)
+
+  createdBy   SuperAdmin  @relation("LandingPageVersionCreatedBy", fields: [createdById], references: [id])
+  publishedBy SuperAdmin? @relation("LandingPageVersionPublishedBy", fields: [publishedById], references: [id])
+
+  @@index([status])
+  @@map("landing_page_versions")
+}
+
+// Marketing images (hero screenshot, the 8-step showcase's screenshots, OG
+// image) — a small dedicated model rather than reusing FileAsset:
+// FileAsset.companyId is required/tenant-scoped (files module, see its own
+// header comment), and this content is company-independent, so it needs its
+// own tiny presigned-upload flow (landing-page-media.service.ts) reusing
+// the same r2-client.ts primitives directly instead.
+model LandingMediaAsset {
+  id           String    @id @default(uuid()) @db.Uuid
+  storageKey   String // R2 key: marketing/landing/{uuid}-{filename} — no companyId segment, genuinely global
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  altText      Json? // { uk, en, pl, de } — optional per-locale alt text
+  uploadedById String    @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt    DateTime? @db.Timestamptz(3) // soft delete, same convention as FileAsset
+
+  uploadedBy SuperAdmin @relation(fields: [uploadedById], references: [id])
+
+  @@map("landing_media_assets")
 }
 
 // ============================================================================
