@@ -59,7 +59,7 @@ export function AvailabilityPrint({ assemblyId, result }: { assemblyId: string; 
             <thead>
               <tr>
                 <th>#</th>
-                {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+                {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
                 {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
                 {printOptions.isColumnVisible('needed') && <th>{t('needed')}</th>}
                 {printOptions.isColumnVisible('available') && <th>{t('available')}</th>}

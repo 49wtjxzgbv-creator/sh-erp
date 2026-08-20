@@ -8,6 +8,7 @@ import { uploadFile, getFileDownloadUrl, type FileAsset, type FileDomain } from 
 import { readImageFromClipboard, readImageFromDrop } from '@/lib/clipboard-image';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 /**
@@ -42,11 +43,13 @@ export function FileUploadField({
   preview = accept.startsWith('image/'),
 }: FileUploadFieldProps) {
   const tc = useTranslations('common');
+  const tf = useTranslations('files');
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUploaded, setLastUploaded] = useState<FileAsset | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   // 1hr presigned URL TTL server-side (files.service.ts's DOWNLOAD_URL_TTL_SECONDS)
   // — refetch a little before that so a long-open form never shows a broken image.
@@ -129,7 +132,7 @@ export function FileUploadField({
             </div>
             <p className="text-xs text-muted-foreground">{tc('dropImageHere')}</p>
             {value && (
-              <button type="button" onClick={clear} className="text-left text-xs text-muted-foreground hover:text-foreground">
+              <button type="button" onClick={() => setConfirmClearOpen(true)} className="text-left text-xs text-muted-foreground hover:text-foreground">
                 {tc('delete')}
               </button>
             )}
@@ -139,7 +142,7 @@ export function FileUploadField({
         <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2 text-sm">
           <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{lastUploaded?.originalName ?? value}</span>
-          <button type="button" onClick={clear} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
+          <button type="button" onClick={() => setConfirmClearOpen(true)} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -150,6 +153,32 @@ export function FileUploadField({
         </Button>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tf('deleteFileConfirmTitle')}</DialogTitle>
+            <DialogDescription>{tf('deleteFileConfirmDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                {tc('cancel')}
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                clear();
+                setConfirmClearOpen(false);
+              }}
+            >
+              {tc('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

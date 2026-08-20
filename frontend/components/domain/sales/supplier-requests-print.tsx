@@ -117,7 +117,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
               <thead>
                 <tr>
                   <th>#</th>
-                  {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+                  {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
                   {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}

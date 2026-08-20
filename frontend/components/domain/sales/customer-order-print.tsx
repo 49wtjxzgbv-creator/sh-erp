@@ -154,7 +154,7 @@ function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { ass
       <table>
         <thead>
           <tr>
-            <th>{tp('photoColumn')}</th>
+            <th className="print-photo-col">{tp('photoColumn')}</th>
             <th>{t('article')}</th>
             <th>{t('component')}</th>
             <th>{t('componentType')}</th>
@@ -256,7 +256,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           <thead>
             <tr>
               <th>#</th>
-              {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
               {printOptions.isColumnVisible('assembly') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('assembly') && <th>{t('assembly')}</th>}
               {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}

@@ -229,6 +229,14 @@
     overflow-wrap: break-word;
     word-break: break-word;
   }
+  /* table-layout: fixed above needs an explicit width for the one column
+   * that doesn't need much (a 64px photo thumbnail) — without it, a fixed
+   * layout gives every column an equal share, squeezing text-heavy columns
+   * (article/name/component) down to the same width as the photo column
+   * instead of letting them use the space the photo doesn't need. */
+  .print-area .print-photo-col {
+    width: 80px;
+  }
   .print-area .print-page-break {
     page-break-after: always;
   }
@@ -362,6 +370,9 @@
   font-size: 11px;
   overflow-wrap: break-word;
   word-break: break-word;
+}
+.print-preview-mode .print-area .print-photo-col {
+  width: 80px;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;

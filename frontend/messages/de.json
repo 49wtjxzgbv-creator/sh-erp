@@ -1070,6 +1070,8 @@
     "documents": "Documents",
     "addDocument": "Add document",
     "noDocuments": "No documents yet",
+    "deleteFileConfirmTitle": "Delete file?",
+    "deleteFileConfirmDescription": "The file will be marked deleted and removed from the list. This cannot be undone from the UI.",
     "download": "Download",
     "view": "View",
     "loadingModel": "Loading 3D model… Large files can take several minutes.",

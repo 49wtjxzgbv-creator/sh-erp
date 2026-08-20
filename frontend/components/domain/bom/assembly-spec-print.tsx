@@ -148,7 +148,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
           <thead>
             <tr>
               <th>#</th>
-              {printOptions.includePhotos && <th>{tp('photoColumn')}</th>}
+              {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
               {printOptions.isColumnVisible('component') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
               {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}

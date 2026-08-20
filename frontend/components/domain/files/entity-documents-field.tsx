@@ -9,7 +9,7 @@ import { uploadFile, deleteFile, type FileDomain, type FileAssetWithUrl } from '
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Button } from '@/components/ui/button';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 
 const Step3DViewer = dynamic(() => import('./step-3d-viewer').then((m) => m.Step3DViewer), {
   ssr: false,
@@ -94,6 +94,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   const [dxfDoc, setDxfDoc] = useState<FileAssetWithUrl | null>(null);
   const [pdfDoc, setPdfDoc] = useState<FileAssetWithUrl | null>(null);
   const [textDoc, setTextDoc] = useState<{ file: FileAssetWithUrl; content: string | null; error: string | null } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FileAssetWithUrl | null>(null);
 
   const { data: byEntity, isLoading } = useFilesForEntities(entityType, [entityId], domain);
   const files = byEntity?.[entityId] ?? [];
@@ -199,7 +200,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 </a>
                 <button
                   type="button"
-                  onClick={() => handleDelete(file)}
+                  onClick={() => setDeleteTarget(file)}
                   className="shrink-0 text-muted-foreground hover:text-destructive"
                   aria-label={tc('delete')}
                 >
@@ -260,6 +261,32 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
             {!textDoc?.error && textDoc?.content === null && <p className="text-sm text-muted-foreground">{tc('loading')}</p>}
             {textDoc?.content != null && <pre className="whitespace-pre-wrap break-words font-mono text-xs">{textDoc.content}</pre>}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteFileConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('deleteFileConfirmDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                {tc('cancel')}
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (deleteTarget) handleDelete(deleteTarget);
+                setDeleteTarget(null);
+              }}
+            >
+              {tc('delete')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
