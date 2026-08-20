@@ -62,7 +62,7 @@ export default function LandingPagePreview() {
       </div>
       <div className="bg-background text-foreground">
         <div className="flex min-h-screen flex-col">
-          <MarketingHeader />
+          <MarketingHeader pricingVisible={c.pricing.visible} />
           <main className="flex-1">
             <Hero content={c.hero} mediaUrls={mediaUrls} />
             <ModulesGrid modules={c.modules} />
@@ -72,7 +72,7 @@ export default function LandingPagePreview() {
             <Faq faq={c.faq} />
             <ContactSection content={c.contact} />
           </main>
-          <MarketingFooter tagline={c.footer.tagline} />
+          <MarketingFooter tagline={c.footer.tagline} pricingVisible={c.pricing.visible} />
         </div>
       </div>
     </div>

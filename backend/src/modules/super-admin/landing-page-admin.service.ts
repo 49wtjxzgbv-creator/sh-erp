@@ -116,4 +116,28 @@ export class LandingPageAdminService {
     if (!version) throw new CodedNotFoundException('LANDING_PAGE_VERSION_NOT_FOUND', 'Version not found.');
     return version;
   }
+
+  /**
+   * Copies an old (PUBLISHED or ARCHIVED) version's content into the DRAFT
+   * row — does NOT publish it directly. Restoring still goes through the
+   * normal Preview -> Publish flow, same as any other draft edit, rather
+   * than silently making an old version live again without a chance to
+   * review it first.
+   */
+  async restoreVersion(actor: RequestSuperAdmin, versionId: string) {
+    const version = await this.getVersion(versionId);
+    const draft = await this.getDraft(actor);
+    const updated = await this.prisma.landingPageVersion.update({
+      where: { id: draft.id },
+      data: { content: version.content as any },
+    });
+    await this.superAdminAudit.record({
+      superAdminId: actor.superAdminId,
+      action: 'landing_page.version_restored_to_draft',
+      targetType: 'LandingPageVersion',
+      targetId: updated.id,
+      metadata: { restoredFromVersionId: versionId, restoredFromVersionNumber: version.versionNumber },
+    });
+    return updated;
+  }
 }

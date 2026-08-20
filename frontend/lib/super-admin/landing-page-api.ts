@@ -31,6 +31,7 @@ export const landingPageAdminApi = {
   listVersions: () =>
     superAdminApi.get<Array<Pick<LandingPageVersionRow, 'id' | 'versionNumber' | 'status' | 'publishedAt' | 'createdAt'>>>(`${BASE}/versions`),
   getVersion: (id: string) => superAdminApi.get<LandingPageVersionRow>(`${BASE}/versions/${id}`),
+  restoreVersion: (id: string) => superAdminApi.post<LandingPageVersionRow>(`${BASE}/versions/${id}/restore`),
 
   listMedia: () => superAdminApi.get<LandingMediaAssetRow[]>(`${BASE}/media`),
   deleteMedia: (id: string) => superAdminApi.delete<{ ok: boolean }>(`${BASE}/media/${id}`),

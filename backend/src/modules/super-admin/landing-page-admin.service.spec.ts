@@ -133,4 +133,22 @@ describe('LandingPageAdminService', () => {
       await expect(service.getVersion('missing')).rejects.toThrow();
     });
   });
+
+  describe('restoreVersion', () => {
+    it('copies the old version content into the DRAFT row without publishing it', async () => {
+      const oldVersion = { id: 'v1', versionNumber: 2, content: { hero: { headline: { uk: 'old copy' } } } };
+      prisma.landingPageVersion.findUnique.mockResolvedValueOnce(oldVersion); // getVersion
+      prisma.landingPageVersion.findFirst.mockResolvedValueOnce({ id: 'd1', status: 'DRAFT', content: {} }); // getDraft
+      const updated = { id: 'd1', status: 'DRAFT', content: oldVersion.content };
+      prisma.landingPageVersion.update.mockResolvedValueOnce(updated);
+
+      const result = await service.restoreVersion(actor, 'v1');
+
+      expect(prisma.landingPageVersion.update).toHaveBeenCalledWith({ where: { id: 'd1' }, data: { content: oldVersion.content } });
+      expect(result).toBe(updated);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'landing_page.version_restored_to_draft', targetId: 'd1', metadata: expect.objectContaining({ restoredFromVersionId: 'v1' }) }),
+      );
+    });
+  });
 });

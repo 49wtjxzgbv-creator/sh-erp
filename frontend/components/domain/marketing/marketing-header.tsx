@@ -2,29 +2,39 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Menu, X } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 import { cn } from '@/lib/utils';
 
-const NAV_LINKS = [
-  { href: '#modules', label: 'Модулі' },
-  { href: '#how-it-works', label: 'Як це працює' },
-  { href: '#pricing', label: 'Тарифи' },
-  { href: '#faq', label: 'FAQ' },
-  { href: '#contact', label: 'Контакти' },
-];
-
 /**
  * Sticky marketing header, shown only on "/" (the Landing Page) — the
  * authenticated app has its own Topbar (components/domain/shell/topbar.tsx),
  * deliberately not shared with this one since the two audiences and nav
  * needs are completely different.
+ *
+ * Nav labels are static UI chrome translated via next-intl's `marketing`
+ * namespace (not versioned CMS content, per the implementation plan's own
+ * scoping note) — unlike hero/modules/etc. below, which come from the
+ * Landing Page Editor. `pricingVisible` hides the "Pricing" nav link when
+ * the Super Admin has hidden that whole section (page.tsx passes this
+ * down) — a dead anchor to a section that isn't rendered is worse than no
+ * link at all.
  */
-export function MarketingHeader() {
+export function MarketingHeader({ pricingVisible = true }: { pricingVisible?: boolean }) {
+  const t = useTranslations('marketing');
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const NAV_LINKS = [
+    { href: '#modules', label: t('navModules') },
+    { href: '#how-it-works', label: t('navHowItWorks') },
+    ...(pricingVisible ? [{ href: '#pricing', label: t('navPricing') }] : []),
+    { href: '#faq', label: t('navFaq') },
+    { href: '#contact', label: t('navContact') },
+  ];
 
   useEffect(() => {
     function onScroll() {
@@ -70,10 +80,10 @@ export function MarketingHeader() {
           <ThemeToggle />
           {/* Plain Link + buttonVariants(), not Button asChild — see hero.tsx's comment for why. */}
           <Link href="/login" className={buttonVariants({ variant: 'ghost' })}>
-            Увійти
+            {t('login')}
           </Link>
           <Link href="/register" className={buttonVariants({})}>
-            Почати безкоштовно
+            {t('getStarted')}
           </Link>
         </div>
 
@@ -101,10 +111,10 @@ export function MarketingHeader() {
             ))}
             <div className="mt-2 flex flex-col gap-2 px-2">
               <Link href="/login" className={buttonVariants({ variant: 'outline' })}>
-                Увійти
+                {t('login')}
               </Link>
               <Link href="/register" className={buttonVariants({})}>
-                Почати безкоштовно
+                {t('getStarted')}
               </Link>
             </div>
           </nav>

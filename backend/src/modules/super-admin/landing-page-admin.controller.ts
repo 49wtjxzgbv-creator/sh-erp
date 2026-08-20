@@ -54,6 +54,12 @@ export class LandingPageAdminController {
     return this.landingPageAdminService.getVersion(id);
   }
 
+  @Post('versions/:id/restore')
+  @ApiOperation({ summary: '[Super Admin] Copy an old version into the draft (still requires Publish to go live).' })
+  async restoreVersion(@CurrentSuperAdmin() actor: RequestSuperAdmin, @Param('id') id: string) {
+    return this.landingPageAdminService.restoreVersion(actor, id);
+  }
+
   @Post('media/presigned-upload')
   @ApiOperation({ summary: '[Super Admin] Step 1 of uploading a marketing image — create the row + get a presigned PUT URL.' })
   async createMediaUpload(@CurrentSuperAdmin() actor: RequestSuperAdmin, @Body() dto: CreateLandingMediaUploadDto) {

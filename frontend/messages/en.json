@@ -30,6 +30,19 @@
     "rowNumber": "№",
     "columns": "Columns"
   },
+  "marketing": {
+    "navModules": "Modules",
+    "navHowItWorks": "How it works",
+    "navPricing": "Pricing",
+    "navFaq": "FAQ",
+    "navContact": "Contact",
+    "login": "Log in",
+    "getStarted": "Start for free",
+    "footerProductColumn": "Product",
+    "footerCompanyColumn": "Company",
+    "footerRegister": "Sign up",
+    "footerRights": "All rights reserved"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "catalog": "Catalog",

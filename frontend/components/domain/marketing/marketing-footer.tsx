@@ -1,25 +1,29 @@
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 
-const COLUMNS = [
-  {
-    title: 'Продукт',
-    links: [
-      { label: 'Модулі', href: '#modules' },
-      { label: 'Тарифи', href: '#pricing' },
-      { label: 'FAQ', href: '#faq' },
-    ],
-  },
-  {
-    title: 'Компанія',
-    links: [
-      { label: 'Контакти', href: '#contact' },
-      { label: 'Увійти', href: '/login' },
-      { label: 'Реєстрація', href: '/register' },
-    ],
-  },
-];
+/** Nav labels are static UI chrome translated via next-intl's `marketing` namespace — same scoping note as marketing-header.tsx. `pricingVisible` hides the "Pricing" link when that section is hidden (see page.tsx). */
+export function MarketingFooter({ tagline, pricingVisible = true }: { tagline: string; pricingVisible?: boolean }) {
+  const t = useTranslations('marketing');
 
-export function MarketingFooter({ tagline }: { tagline: string }) {
+  const columns = [
+    {
+      title: t('footerProductColumn'),
+      links: [
+        { label: t('navModules'), href: '#modules' },
+        ...(pricingVisible ? [{ label: t('navPricing'), href: '#pricing' }] : []),
+        { label: t('navFaq'), href: '#faq' },
+      ],
+    },
+    {
+      title: t('footerCompanyColumn'),
+      links: [
+        { label: t('navContact'), href: '#contact' },
+        { label: t('login'), href: '/login' },
+        { label: t('footerRegister'), href: '/register' },
+      ],
+    },
+  ];
+
   return (
     <footer className="border-t border-border py-16">
       <div className="container">
@@ -35,7 +39,7 @@ export function MarketingFooter({ tagline }: { tagline: string }) {
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:gap-20">
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <div key={col.title}>
                 <h3 className="text-sm font-semibold">{col.title}</h3>
                 <ul className="mt-3.5 space-y-2.5">
@@ -53,7 +57,7 @@ export function MarketingFooter({ tagline }: { tagline: string }) {
         </div>
 
         <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-border pt-7 text-xs text-muted-foreground sm:flex-row">
-          <p>&copy; {new Date().getFullYear()} Shyring. Усі права захищено.</p>
+          <p>&copy; {new Date().getFullYear()} Shyring. {t('footerRights')}.</p>
           <p>SH ERP by Shyring</p>
         </div>
       </div>

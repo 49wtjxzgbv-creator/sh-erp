@@ -30,6 +30,19 @@
     "rowNumber": "№",
     "columns": "Стовпці"
   },
+  "marketing": {
+    "navModules": "Модулі",
+    "navHowItWorks": "Як це працює",
+    "navPricing": "Тарифи",
+    "navFaq": "FAQ",
+    "navContact": "Контакти",
+    "login": "Увійти",
+    "getStarted": "Почати безкоштовно",
+    "footerProductColumn": "Продукт",
+    "footerCompanyColumn": "Компанія",
+    "footerRegister": "Реєстрація",
+    "footerRights": "Усі права захищено"
+  },
   "nav": {
     "dashboard": "Дашборд",
     "catalog": "Каталог",

@@ -57,7 +57,7 @@ export function Hero({ content, mediaUrls }: { content: FlatLandingPageContent['
         {/* No fabricated mockup here even while heroImageId is unset (Phase 3 — real screenshots — is a separate, disclosed follow-up): honest absence over a fake dashboard. */}
         {imageUrl && (
           <Reveal delayMs={150} className="mt-20 sm:mt-24">
-            <HeroScreenshot src={imageUrl} />
+            <HeroScreenshot src={imageUrl} alt={content.headline} />
           </Reveal>
         )}
       </div>

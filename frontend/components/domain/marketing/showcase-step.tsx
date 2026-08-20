@@ -26,7 +26,7 @@ export function ShowcaseStep({
 
       <div className={cn('overflow-hidden rounded-2xl border border-border bg-card shadow-xl shadow-primary/[0.06]', reverse && 'lg:[direction:ltr]')}>
         {imageUrl ? (
-          <Image src={imageUrl} alt="" width={1200} height={750} className="h-auto w-full" loading="lazy" />
+          <Image src={imageUrl} alt={title} width={1200} height={750} className="h-auto w-full" loading="lazy" />
         ) : (
           // Honest placeholder, not a fabricated screenshot — real screenshots
           // are a separate, disclosed follow-up (Phase 3 of the
