@@ -38,6 +38,7 @@ export interface LandingPageContent {
     items: Array<{ id: string; icon: string; title: LocalizedText; description: LocalizedText; sortOrder: number; visible: boolean }>;
   };
   pricing: {
+    visible: boolean;
     heading: LocalizedText;
     subheading: LocalizedText;
     highlightedPlanKey: string | null;

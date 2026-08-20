@@ -62,7 +62,7 @@ export default async function LandingPage() {
         <ModulesGrid modules={c.modules} />
         <ShowcaseScenario showcase={c.showcase} mediaUrls={mediaUrls} />
         <Benefits content={c.benefits} />
-        <Pricing content={c.pricing} plans={plans} />
+        {c.pricing.visible && <Pricing content={c.pricing} plans={plans} />}
         <Faq faq={c.faq} />
         <ContactSection content={c.contact} />
       </main>

@@ -18,10 +18,19 @@ import { SortableList } from '@/components/domain/super-admin/landing-editor/sor
 import { MediaPicker } from '@/components/domain/super-admin/landing-editor/media-picker';
 import { getLandingIcon, LANDING_ICON_REGISTRY } from '@/lib/landing-page/icon-registry';
 import { landingPageAdminApi } from '@/lib/super-admin/landing-page-api';
+import { superAdminApi } from '@/lib/super-admin/api';
 import type { Locale } from '@/lib/i18n-locales';
 import type { LandingPageContent, LocalizedText } from '@/lib/landing-page/types';
 
 const EMPTY_LOCALIZED: LocalizedText = { uk: '', en: '', pl: '', de: '' };
+
+interface PlanRow {
+  id: string;
+  key: string;
+  name: string;
+  monthlyPriceEur: string;
+  limits: Record<string, unknown>;
+}
 
 function newId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
@@ -31,6 +40,7 @@ export default function LandingPageEditorPage() {
   const router = useRouter();
   const [locale, setLocale] = useState<Locale>('uk');
   const [content, setContent] = useState<LandingPageContent | null>(null);
+  const [plans, setPlans] = useState<PlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -45,7 +55,12 @@ export default function LandingPageEditorPage() {
       .then((row) => setContent(row.content))
       .catch((err) => setError(err instanceof Error ? err.message : 'Не вдалося завантажити чернетку'))
       .finally(() => setLoading(false));
+    superAdminApi.get<PlanRow[]>('super-admin/plans').then(setPlans);
   }, []);
+
+  async function refreshPlans() {
+    setPlans(await superAdminApi.get<PlanRow[]>('super-admin/plans'));
+  }
 
   async function handleSave() {
     if (!content) return;
@@ -169,7 +184,7 @@ export default function LandingPageEditorPage() {
           <BenefitsEditor value={content.benefits} locale={locale} onChange={(benefits) => set('benefits', benefits)} />
         </TabsContent>
         <TabsContent value="pricing">
-          <PricingEditor value={content.pricing} locale={locale} onChange={(pricing) => set('pricing', pricing)} />
+          <PricingEditor value={content.pricing} locale={locale} onChange={(pricing) => set('pricing', pricing)} plans={plans} onPlansChange={refreshPlans} />
         </TabsContent>
         <TabsContent value="faq">
           <FaqEditor value={content.faq} locale={locale} onChange={(faq) => set('faq', faq)} />
@@ -391,7 +406,22 @@ function BenefitsEditor({ value, locale, onChange }: { value: LandingPageContent
   );
 }
 
-function PricingEditor({ value, locale, onChange }: { value: LandingPageContent['pricing']; locale: Locale; onChange: (v: LandingPageContent['pricing']) => void }) {
+function PricingEditor({
+  value,
+  locale,
+  onChange,
+  plans,
+  onPlansChange,
+}: {
+  value: LandingPageContent['pricing'];
+  locale: Locale;
+  onChange: (v: LandingPageContent['pricing']) => void;
+  plans: PlanRow[];
+  onPlansChange: () => void;
+}) {
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [savingPlanKey, setSavingPlanKey] = useState<string | null>(null);
+
   function updateOverride(planKey: string, patch: Partial<LandingPageContent['pricing']['tierCopyOverrides'][number]>) {
     onChange({ ...value, tierCopyOverrides: value.tierCopyOverrides.map((o) => (o.planKey === planKey ? { ...o, ...patch } : o)) });
   }
@@ -401,9 +431,38 @@ function PricingEditor({ value, locale, onChange }: { value: LandingPageContent[
     const features = override.features.map((f, i) => (i === index ? text : f));
     updateOverride(planKey, { features });
   }
+  async function savePrice(plan: PlanRow) {
+    const draft = priceDrafts[plan.key];
+    if (draft === undefined) return;
+    setSavingPlanKey(plan.key);
+    try {
+      // Price ALWAYS comes from the real Plan row (billing module) — this
+      // writes straight to it via the existing Super Admin Plans endpoint
+      // (super-admin/plans, upsert-by-key) so the landing page can never
+      // show a price the real, billed plan doesn't back. Re-sends the
+      // plan's own name/limits unchanged since that endpoint is a full
+      // upsert, not a partial patch.
+      await superAdminApi.post('super-admin/plans', { key: plan.key, name: plan.name, monthlyPriceEur: Number(draft), limits: plan.limits });
+      await onPlansChange();
+      setPriceDrafts((prev) => {
+        const next = { ...prev };
+        delete next[plan.key];
+        return next;
+      });
+    } finally {
+      setSavingPlanKey(null);
+    }
+  }
+
   return (
     <Section title="Секція «Тарифи»">
-      <p className="text-xs text-slate-500">Ціни й ліміти завжди беруться напряму з реальних тарифних планів (розділ Тарифи) — тут редагується лише опис і текст кнопки для кожного тарифу.</p>
+      <div className="flex items-center justify-between rounded-md border border-slate-800 p-3">
+        <div>
+          <p className="text-sm text-slate-200">Показувати секцію тарифів на сайті</p>
+          <p className="text-xs text-slate-500">Вимкни, якщо ціни ще не готові до публікації — секція повністю зникає з публічної сторінки.</p>
+        </div>
+        <VisibilitySwitch visible={value.visible} onChange={(visible) => onChange({ ...value, visible })} />
+      </div>
       <LocalizedTextField label="Заголовок секції" value={value.heading} locale={locale} onChange={(heading) => onChange({ ...value, heading })} />
       <LocalizedTextareaField label="Підзаголовок секції" value={value.subheading} locale={locale} onChange={(subheading) => onChange({ ...value, subheading })} />
       <div className="space-y-1.5">
@@ -414,19 +473,39 @@ function PricingEditor({ value, locale, onChange }: { value: LandingPageContent[
           className="border-slate-700 bg-slate-800 text-slate-100"
         />
       </div>
-      {value.tierCopyOverrides.map((override) => (
-        <div key={override.planKey} className="space-y-2 rounded-md border border-slate-800 p-3">
-          <p className="text-xs font-medium text-slate-500">Тариф: {override.planKey}</p>
-          <LocalizedTextField label="Опис" value={override.description} locale={locale} onChange={(description) => updateOverride(override.planKey, { description })} />
-          <LocalizedTextField label="Текст кнопки" value={override.ctaLabel} locale={locale} onChange={(ctaLabel) => updateOverride(override.planKey, { ctaLabel })} />
-          <div className="space-y-1.5">
-            <Label className="text-slate-300">Пункти списку можливостей</Label>
-            {override.features.map((f, i) => (
-              <LocalizedTextField key={i} label={`Пункт ${i + 1}`} value={f} locale={locale} onChange={(text) => updateFeature(override.planKey, i, text)} />
-            ))}
+      {value.tierCopyOverrides.map((override) => {
+        const plan = plans.find((p) => p.key === override.planKey);
+        return (
+          <div key={override.planKey} className="space-y-2 rounded-md border border-slate-800 p-3">
+            <p className="text-xs font-medium text-slate-500">Тариф: {override.planKey}</p>
+            {plan && (
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Ціна, €/міс (реальний тариф — впливає на біллінг)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={priceDrafts[plan.key] ?? plan.monthlyPriceEur}
+                    onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [plan.key]: e.target.value }))}
+                    className="w-32 border-slate-700 bg-slate-800 text-slate-100"
+                  />
+                  <Button type="button" variant="outline" size="sm" loading={savingPlanKey === plan.key} onClick={() => savePrice(plan)}>
+                    Зберегти ціну
+                  </Button>
+                </div>
+              </div>
+            )}
+            <LocalizedTextField label="Опис" value={override.description} locale={locale} onChange={(description) => updateOverride(override.planKey, { description })} />
+            <LocalizedTextField label="Текст кнопки" value={override.ctaLabel} locale={locale} onChange={(ctaLabel) => updateOverride(override.planKey, { ctaLabel })} />
+            <div className="space-y-1.5">
+              <Label className="text-slate-300">Пункти списку можливостей</Label>
+              {override.features.map((f, i) => (
+                <LocalizedTextField key={i} label={`Пункт ${i + 1}`} value={f} locale={locale} onChange={(text) => updateFeature(override.planKey, i, text)} />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </Section>
   );
 }

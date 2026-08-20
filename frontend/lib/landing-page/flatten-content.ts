@@ -31,6 +31,7 @@ export interface FlatLandingPageContent {
     items: Array<{ id: string; icon: string; title: string; description: string; sortOrder: number; visible: boolean }>;
   };
   pricing: {
+    visible: boolean;
     heading: string;
     subheading: string;
     highlightedPlanKey: string | null;
@@ -78,6 +79,10 @@ export function flattenLandingPageContent(content: LandingPageContent, locale: L
         .map((b) => ({ id: b.id, icon: b.icon, title: t(b.title, locale), description: t(b.description, locale), sortOrder: b.sortOrder, visible: b.visible })),
     },
     pricing: {
+      // Defensive default: existing rows saved before `visible` existed have
+      // no such key in their JSON at all — treat that as "visible" (the
+      // prior, only behavior) rather than silently hiding pricing everywhere.
+      visible: content.pricing.visible !== false,
       heading: t(content.pricing.heading, locale),
       subheading: t(content.pricing.subheading, locale),
       highlightedPlanKey: content.pricing.highlightedPlanKey,

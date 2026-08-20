@@ -63,6 +63,7 @@ export interface LandingPageContent {
     }>;
   };
   pricing: {
+    visible: boolean;
     heading: LocalizedText;
     subheading: LocalizedText;
     highlightedPlanKey: string | null;
@@ -300,6 +301,7 @@ export const INITIAL_LANDING_PAGE_CONTENT: LandingPageContent = {
     ],
   },
   pricing: {
+    visible: true,
     heading: uk('Прозорі тарифи, без прихованих умов'),
     subheading: uk('Почніть безкоштовно на плані Starter і переходьте на вищий тариф лише тоді, коли бізнес дійсно виросте.'),
     highlightedPlanKey: 'growth',
