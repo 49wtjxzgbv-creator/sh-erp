@@ -13,6 +13,13 @@ describe('AuditService', () => {
           count: jest.fn().mockResolvedValue(1),
         },
       },
+      // record() now opens its own transaction and sets
+      // app.current_company_id itself (real RLS enforcement on
+      // audit_events means an insert with no company context set at all
+      // is rejected) — the tx client reuses the same `auditEvent` mock
+      // above so assertions on `prisma.auditEvent.create` keep working
+      // unchanged.
+      $transaction: jest.fn((cb: (tx: any) => Promise<void>) => cb({ $executeRawUnsafe: jest.fn(), auditEvent: prisma.auditEvent })),
     };
     service = new AuditService(prisma);
   });

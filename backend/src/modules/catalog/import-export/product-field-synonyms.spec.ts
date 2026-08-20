@@ -51,10 +51,10 @@ describe('mapRowToProduct', () => {
     expect(row.name).toBe('Гвинт M6');
   });
 
-  it('drops photoUrl — Product has no photo column, see the file header comment', () => {
+  it('keeps photoUrl in the mapped row (though not as a Product column) — ProductsImportExportService reads it to fetch and attach a PRODUCT_PHOTO, see the file header comment', () => {
     const headerMap = buildHeaderMap(['Фото URL']);
     const row = mapRowToProduct({ 'Фото URL': 'https://example.com/x.jpg' }, headerMap);
-    expect(row.photoUrl).toBeUndefined();
+    expect(row.photoUrl).toBe('https://example.com/x.jpg');
   });
 
   it('skips columns with no recognized header', () => {

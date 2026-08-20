@@ -19,11 +19,22 @@ describe('WarehousesService', () => {
   });
 
   it('seedDefault() creates one isDefault=true warehouse named per the legacy convention', async () => {
-    const tx = { warehouse: { create: jest.fn() } };
+    // seedDefault() checks for an already-existing default first (idempotent
+    // reseed) before creating one — findFirst must resolve `null` here so
+    // the create() branch is the one under test.
+    const tx = { warehouse: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() } };
     await service.seedDefault(tx as any, 'c1');
     expect(tx.warehouse.create).toHaveBeenCalledWith({
       data: { companyId: 'c1', name: DEFAULT_WAREHOUSE_NAME, isDefault: true },
     });
+  });
+
+  it('seedDefault() is idempotent — returns the existing default instead of creating a duplicate', async () => {
+    const existing = { id: 'w1', companyId: 'c1', isDefault: true };
+    const tx = { warehouse: { findFirst: jest.fn().mockResolvedValue(existing), create: jest.fn() } };
+    const result = await service.seedDefault(tx as any, 'c1');
+    expect(result).toBe(existing);
+    expect(tx.warehouse.create).not.toHaveBeenCalled();
   });
 
   it('create() with isDefault=true clears any existing default first', async () => {

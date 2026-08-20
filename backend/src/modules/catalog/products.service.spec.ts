@@ -3,12 +3,16 @@ import { Prisma } from '@prisma/client';
 import { ProductsService } from './products.service';
 
 function prismaKnownError(code: string) {
-  return Object.assign(new Error('prisma error'), {
-    code,
-    clientVersion: '5.20.0',
-    name: 'PrismaClientKnownRequestError',
-    __proto__: Prisma.PrismaClientKnownRequestError.prototype,
-  });
+  // `{ __proto__: X }` as an OBJECT-LITERAL key sets the new object's own
+  // prototype at creation time — it is not copied as an own property, so
+  // Object.assign(target, { __proto__: X }) never actually changes
+  // `target`'s prototype (this previously left the thrown error as a plain
+  // Error, so `instanceof PrismaClientKnownRequestError` in the real
+  // service silently failed and the P2002/P2003 branches never ran).
+  // Explicit Object.setPrototypeOf is what's actually needed here.
+  const err = Object.assign(new Error('prisma error'), { code, clientVersion: '5.20.0', name: 'PrismaClientKnownRequestError' });
+  Object.setPrototypeOf(err, Prisma.PrismaClientKnownRequestError.prototype);
+  return err;
 }
 
 describe('ProductsService', () => {
@@ -27,6 +31,10 @@ describe('ProductsService', () => {
           findMany: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
         },
+        // query() also fans each returned product out to its per-supplier
+        // price rows (Phase 3 multi-supplier pricing) — empty by default,
+        // no test in this file asserts on supplier pricing specifically.
+        productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -80,9 +88,13 @@ describe('ProductsService', () => {
   it('query() builds a case-insensitive OR search across article and name', async () => {
     await service.query(user, { search: 'widg' });
     const where = prisma.tenant.product.findMany.mock.calls[0][0].where;
-    expect(where.OR).toEqual([
-      { article: { contains: 'widg', mode: 'insensitive' } },
-      { name: { contains: 'widg', mode: 'insensitive' } },
+    // Nested under `where.AND`, not a bare top-level `where.OR` — a
+    // supplier-match OR-group and a search-match OR-group are combined
+    // with AND so "matches supplier AND matches search" isn't wrongly
+    // flattened into "matches supplier OR matches search" (see query()'s
+    // own header comment).
+    expect(where.AND).toEqual([
+      { OR: [{ article: { contains: 'widg', mode: 'insensitive' } }, { name: { contains: 'widg', mode: 'insensitive' } }] },
     ]);
   });
 

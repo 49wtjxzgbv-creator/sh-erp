@@ -164,7 +164,13 @@ describe('ProductionOrdersService', () => {
         ],
       });
       prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 100, reservedQty: 0 });
-      prisma.tenant.product.findUniqueOrThrow.mockResolvedValue({ localPriceExclVat: 5, germanPriceExclVat: 8, article: 'ABC', name: 'Widget part' });
+      // Product pricing consolidated to one field, sellPriceEur (see
+      // purchase-orders.service.ts#receive's own actualPrice-writeback
+      // comment) — the real cost-freezing code reads that single field for
+      // both materialsLocalCost and materialsGermanCost on a PRODUCT line
+      // (there is no separate per-line German product price), not the
+      // legacy localPriceExclVat/germanPriceExclVat pair.
+      prisma.tenant.product.findUniqueOrThrow.mockResolvedValue({ sellPriceEur: 5, article: 'ABC', name: 'Widget part' });
       prisma.tenant.finishedGood.count.mockResolvedValue(5); // enough sub1 units in stock (need 2)
       prisma.tenant.finishedGood.findMany.mockResolvedValue([
         { id: 'fg-old-1', unitCostLocalEur: 20, unitCostGermanEur: 25, manufactureDate: new Date('2026-01-01') },

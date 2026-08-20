@@ -77,7 +77,12 @@ describe('ProductsImportExportService', () => {
       prisma.tenant.product.findFirst.mockResolvedValue({ id: 'p-existing', article: 'ABC-1', qty: 5, unitId: 'unit-pcs' });
       const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Залишок'], [['ABC-1', 'Гвинт M6', 12]]);
 
-      const result = await service.importProducts(user, buffer);
+      // updateQuantities is a real opt-in (default false) — a plain
+      // re-import must never silently touch physical stock counts just
+      // because a supplier price-list refresh happened to include a
+      // quantity column (real incident this guards against, see
+      // applyImportedQty's own header comment).
+      const result = await service.importProducts(user, buffer, true);
 
       expect(result.updated).toBe(1);
       expect(prisma.tenant.product.update).toHaveBeenCalled();
@@ -85,12 +90,22 @@ describe('ProductsImportExportService', () => {
       expect(stock.applyMovement).toHaveBeenCalledWith(user, expect.objectContaining({ qtyDelta: 7 }));
     });
 
+    it('does NOT touch stock on an update when updateQuantities is left at its default (false)', async () => {
+      prisma.tenant.product.findFirst.mockResolvedValue({ id: 'p-existing', article: 'ABC-1', qty: 5, unitId: 'unit-pcs' });
+      const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Залишок'], [['ABC-1', 'Гвинт M6', 12]]);
+
+      const result = await service.importProducts(user, buffer);
+
+      expect(result.updated).toBe(1);
+      expect(stock.applyMovement).not.toHaveBeenCalled();
+    });
+
     it('skips a fully blank row silently (section separator), not as an error', async () => {
       const buffer = await buildWorkbookBuffer(
-        ['Артикул', 'Назва'],
+        ['Артикул', 'Назва', 'Одиниця'],
         [
-          ['ABC-1', 'Гвинт M6'],
-          ['', ''],
+          ['ABC-1', 'Гвинт M6', 'шт'],
+          ['', '', ''],
         ],
       );
       const result = await service.importProducts(user, buffer);
@@ -100,10 +115,10 @@ describe('ProductsImportExportService', () => {
 
     it('records a row-level error (not a thrown exception for the whole import) when article or name is missing', async () => {
       const buffer = await buildWorkbookBuffer(
-        ['Артикул', 'Назва'],
+        ['Артикул', 'Назва', 'Одиниця'],
         [
-          ['ABC-1', 'Гвинт M6'],
-          ['', 'Без артикулу'],
+          ['ABC-1', 'Гвинт M6', 'шт'],
+          ['', 'Без артикулу', 'шт'],
         ],
       );
       const result = await service.importProducts(user, buffer);
@@ -114,15 +129,23 @@ describe('ProductsImportExportService', () => {
 
     it('records a row-level error, not a whole-import failure, when a qty is given but no default warehouse exists', async () => {
       prisma.tenant.warehouse.findFirst.mockResolvedValue(null);
-      const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Залишок'], [['ABC-1', 'Гвинт M6', 10]]);
+      const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Одиниця', 'Залишок'], [['ABC-1', 'Гвинт M6', 'шт', 10]]);
       const result = await service.importProducts(user, buffer);
       expect(result.created).toBe(0);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].message).toMatch(/default warehouse/);
     });
 
-    it('never sets Product.qty directly on create — only via StockService', async () => {
+    it('records a row-level error, not a whole-import failure, when a brand-new row has no recognizable unit column', async () => {
       const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Залишок'], [['ABC-1', 'Гвинт M6', 10]]);
+      const result = await service.importProducts(user, buffer);
+      expect(result.created).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].message).toMatch(/no recognized unit/);
+    });
+
+    it('never sets Product.qty directly on create — only via StockService', async () => {
+      const buffer = await buildWorkbookBuffer(['Артикул', 'Назва', 'Одиниця', 'Залишок'], [['ABC-1', 'Гвинт M6', 'шт', 10]]);
       await service.importProducts(user, buffer);
       const createCallData = prisma.tenant.product.create.mock.calls[0][0].data;
       expect(createCallData.qty).toBeUndefined();

@@ -33,6 +33,14 @@ describe('RolesService — custom-roles CRUD (production-readiness addition)', (
   });
 
   it('create() rejects an unknown permission key rather than silently dropping it', async () => {
+    // The default beforeEach mock always resolves the same single
+    // `products:read` row regardless of the `where.key.in` filter — fine
+    // for the "known key" tests, but this test needs `findMany` to
+    // actually behave like a real lookup that finds nothing for a key that
+    // doesn't exist, otherwise resolvePermissionIds's `permissions.length
+    // !== keys.length` check can't distinguish "1 unknown key requested"
+    // from "1 known key requested" by count alone.
+    prisma.permission.findMany.mockResolvedValue([]);
     prisma.tenant.role.findUnique.mockResolvedValue(null);
     await expect(
       service.create(user, { name: 'Custom', permissionKeys: ['nonexistent:key'] }),

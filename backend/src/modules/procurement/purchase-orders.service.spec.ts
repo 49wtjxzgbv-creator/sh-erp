@@ -24,6 +24,9 @@ describe('PurchaseOrdersService', () => {
         purchaseOrderItem: { update: jest.fn(), findMany: jest.fn() },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
         orderMaterialRequirement: { findUnique: jest.fn() },
+        // receive() writes actualPrice back onto Product.sellPriceEur when
+        // given (ProductsService#setSuppliers's default-supplier price).
+        product: { update: jest.fn() },
       },
     };
     audit = { record: jest.fn() };

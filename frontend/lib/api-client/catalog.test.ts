@@ -18,14 +18,23 @@ const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>;
 afterEach(() => jest.resetAllMocks());
 
 describe('importProducts', () => {
-  it('uploads via postFile — a real multipart request, not JSON — to products/import', async () => {
+  it('uploads via postFile — a real multipart request, not JSON — to products/import, with updateQuantities defaulting to false', async () => {
     const file = new File(['x'], 'products.xlsx');
     (mockedApiClient.postFile as jest.Mock).mockResolvedValue({ created: 1, updated: 0, errors: [] });
 
     const result = await importProducts(file);
 
-    expect(mockedApiClient.postFile).toHaveBeenCalledWith('products/import', file);
+    expect(mockedApiClient.postFile).toHaveBeenCalledWith('products/import?updateQuantities=false', file);
     expect(result).toEqual({ created: 1, updated: 0, errors: [] });
+  });
+
+  it('passes updateQuantities=true through to the query string when explicitly opted in', async () => {
+    const file = new File(['x'], 'products.xlsx');
+    (mockedApiClient.postFile as jest.Mock).mockResolvedValue({ created: 0, updated: 1, errors: [] });
+
+    await importProducts(file, true);
+
+    expect(mockedApiClient.postFile).toHaveBeenCalledWith('products/import?updateQuantities=true', file);
   });
 });
 

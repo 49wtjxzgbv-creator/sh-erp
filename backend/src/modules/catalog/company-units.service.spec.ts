@@ -3,10 +3,16 @@ import { Prisma } from '@prisma/client';
 import { CompanyUnitsService, DEFAULT_COMPANY_UNITS } from './company-units.service';
 
 function prismaKnownError(code: string) {
-  return Object.assign(new Error('prisma error'), {
-    code,
-    __proto__: Prisma.PrismaClientKnownRequestError.prototype,
-  });
+  // `{ __proto__: X }` as an OBJECT-LITERAL key sets the new object's own
+  // prototype at creation time — it is not copied as an own property, so
+  // Object.assign(target, { __proto__: X }) never actually changes
+  // `target`'s prototype (this previously left the thrown error as a plain
+  // Error, so `instanceof PrismaClientKnownRequestError` in the real
+  // service silently failed and the P2002 branch never ran). Explicit
+  // Object.setPrototypeOf is what's actually needed to fake this shape.
+  const err = Object.assign(new Error('prisma error'), { code });
+  Object.setPrototypeOf(err, Prisma.PrismaClientKnownRequestError.prototype);
+  return err;
 }
 
 describe('CompanyUnitsService', () => {

@@ -15,17 +15,39 @@ describe('CustomerOrdersService', () => {
     id: 'co1',
     status: 'NEW',
     items: [
-      { id: 'item1', assemblyId: 'a1', qty: 3, productionOrderId: null },
-      { id: 'item2', assemblyId: 'a2', qty: 2, productionOrderId: 'po-existing' },
+      { id: 'item1', assemblyId: 'a1', qty: 3 },
+      { id: 'item2', assemblyId: 'a2', qty: 2 },
     ],
   };
+
+  /**
+   * findOne()/query() no longer read a direct `productionOrderId` FK off
+   * CustomerOrderItem — batching support (План-графік §1) replaced that
+   * 1:1 link with an indirect one: `getItemQuantitySummary`/`withPriceTotals`
+   * both query `ProductionOrder.findMany({ where: { customerOrderItemId... } })`
+   * and derive "remaining"/actual cost from THAT. The default `jest.fn()`
+   * mock can't filter by its call arguments, so this makes the mock
+   * actually behave like a real query, filtering `rows` by whichever shape
+   * of `where.customerOrderItemId` the real code passes (a bare string from
+   * getItemQuantitySummary, or `{ in: [...] }` from withPriceTotals).
+   */
+  function mockProductionOrdersFindMany(rows: any[]) {
+    prisma.tenant.productionOrder.findMany.mockImplementation(({ where }: any) => {
+      const filter = where?.customerOrderItemId;
+      if (filter && typeof filter === 'object' && 'in' in filter) {
+        return Promise.resolve(rows.filter((r) => filter.in.includes(r.customerOrderItemId)));
+      }
+      return Promise.resolve(rows.filter((r) => r.customerOrderItemId === filter));
+    });
+  }
 
   beforeEach(() => {
     prisma = {
       tenant: {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
         customerOrderItem: { update: jest.fn() },
-        productionOrder: { findMany: jest.fn().mockResolvedValue([]) },
+        productionOrder: { findMany: jest.fn() },
+        finishedGood: { count: jest.fn().mockResolvedValue(0) },
       },
     };
     audit = { record: jest.fn() };
@@ -34,6 +56,11 @@ describe('CustomerOrdersService', () => {
     stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
     service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, shortageService);
+
+    // Default baseline matching `order` above: item2 already has its full
+    // qty (2) given to production via one batch, item1 has none yet — the
+    // scenario most tests in this file assume.
+    mockProductionOrdersFindMany([{ id: 'po-existing', customerOrderItemId: 'item2', unitsPlanned: 2, status: 'PLANNED' }]);
   });
 
   describe('create', () => {
@@ -102,16 +129,15 @@ describe('CustomerOrdersService', () => {
       await expect(service.giveItemToProduction(user, 'co1', 'not-an-item', {})).rejects.toThrow(NotFoundException);
     });
 
-    it('creates a ProductionOrder and locks it onto the item, moving the order to IN_PRODUCTION', async () => {
+    it('creates a ProductionOrder locked onto the item (via ProductionOrder.customerOrderItemId, batching support — no direct FK on the item anymore), moving the order to IN_PRODUCTION', async () => {
       productionOrdersService.create.mockResolvedValue({ id: 'po-new', status: 'PLANNED' });
 
       const result = await service.giveItemToProduction(user, 'co1', 'item1', {});
 
-      expect(productionOrdersService.create).toHaveBeenCalledWith(user, expect.objectContaining({ assemblyId: 'a1', unitsPlanned: 3 }));
-      expect(prisma.tenant.customerOrderItem.update).toHaveBeenCalledWith({
-        where: { id: 'item1' },
-        data: { productionOrderId: 'po-new' },
-      });
+      expect(productionOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ assemblyId: 'a1', unitsPlanned: 3, customerOrderItemId: 'item1' }),
+      );
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
       expect(result.productionOrder.id).toBe('po-new');
     });
@@ -132,9 +158,9 @@ describe('CustomerOrdersService', () => {
         {
           id: 'co1',
           items: [
-            { assemblyId: 'a1', qty: 3, productionOrderId: null },
-            { assemblyId: 'a1', qty: 2, productionOrderId: 'po-started' }, // same assembly as line 1 — calculateCost should only be called once for a1
-            { assemblyId: 'a2', qty: 1, productionOrderId: 'po-not-started' },
+            { id: 'line1', assemblyId: 'a1', qty: 3 },
+            { id: 'line2', assemblyId: 'a1', qty: 2 }, // same assembly as line 1 — calculateCost should only be called once for a1
+            { id: 'line3', assemblyId: 'a2', qty: 1 },
           ],
         },
       ]);
@@ -142,9 +168,13 @@ describe('CustomerOrdersService', () => {
       assembliesService.calculateCost.mockImplementation(async (_u: unknown, assemblyId: string) =>
         assemblyId === 'a1' ? { costPerUnit: 10, breakdown: [] } : { costPerUnit: 5, breakdown: [] },
       );
-      prisma.tenant.productionOrder.findMany.mockResolvedValue([
-        { id: 'po-started', totalLocalCostEur: 25 },
-        { id: 'po-not-started', totalLocalCostEur: null },
+      // Actual cost is looked up via ProductionOrder.customerOrderItemId
+      // (batching support, §14/§16) — line2's batch has started (frozen
+      // cost 25), line3's has not (totalLocalCostEur still null), line1
+      // has no batch at all yet.
+      mockProductionOrdersFindMany([
+        { id: 'po-started', customerOrderItemId: 'line2', totalLocalCostEur: 25 },
+        { id: 'po-not-started', customerOrderItemId: 'line3', totalLocalCostEur: null },
       ]);
 
       const { items } = await service.query(user, {});
