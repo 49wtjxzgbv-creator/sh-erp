@@ -30,15 +30,15 @@ export function ContactSection({ content }: { content: FlatLandingPageContent['c
   }
 
   return (
-    <section id="contact" className="border-t border-border py-20 sm:py-28">
+    <section id="contact" className="border-t border-border py-24 sm:py-32">
       <div className="container">
-        <div className="mx-auto grid max-w-4xl grid-cols-1 gap-12 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-4xl grid-cols-1 gap-14 lg:grid-cols-2">
           <Reveal>
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{content.heading}</h2>
-            <p className="mt-4 text-lg text-muted-foreground">{content.subheading}</p>
+            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{content.heading}</h2>
+            <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{content.subheading}</p>
 
-            <div className="mt-8 space-y-4">
-              <a href={`mailto:${content.salesEmail}`} className="flex items-center gap-3 text-sm hover:text-primary">
+            <div className="mt-9 space-y-4">
+              <a href={`mailto:${content.salesEmail}`} className="flex items-center gap-3 text-sm transition-colors hover:text-primary">
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 {content.salesEmail}
               </a>
@@ -50,7 +50,7 @@ export function ContactSection({ content }: { content: FlatLandingPageContent['c
           </Reveal>
 
           <Reveal delayMs={100}>
-            <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border bg-card p-6">
+            <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-border bg-card p-7">
               <div className="space-y-1.5">
                 <Label htmlFor="contact-name">Ім&rsquo;я</Label>
                 <Input id="contact-name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -69,7 +69,7 @@ export function ContactSection({ content }: { content: FlatLandingPageContent['c
                   onChange={(e) => setMessage(e.target.value)}
                 />
               </div>
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="h-11 w-full">
                 {content.formSubmitLabel}
               </Button>
             </form>

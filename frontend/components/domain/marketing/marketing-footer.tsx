@@ -21,9 +21,9 @@ const COLUMNS = [
 
 export function MarketingFooter({ tagline }: { tagline: string }) {
   return (
-    <footer className="border-t border-border py-12">
+    <footer className="border-t border-border py-16">
       <div className="container">
-        <div className="flex flex-col justify-between gap-10 sm:flex-row">
+        <div className="flex flex-col justify-between gap-12 sm:flex-row">
           <div className="max-w-xs">
             <Link href="/" className="flex items-center gap-2 font-semibold">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs">
@@ -31,17 +31,17 @@ export function MarketingFooter({ tagline }: { tagline: string }) {
               </span>
               SH ERP
             </Link>
-            <p className="mt-3 text-sm text-muted-foreground">{tagline}</p>
+            <p className="mt-3.5 text-sm leading-relaxed text-muted-foreground">{tagline}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 sm:gap-16">
+          <div className="grid grid-cols-2 gap-8 sm:gap-20">
             {COLUMNS.map((col) => (
               <div key={col.title}>
                 <h3 className="text-sm font-semibold">{col.title}</h3>
-                <ul className="mt-3 space-y-2">
+                <ul className="mt-3.5 space-y-2.5">
                   {col.links.map((link) => (
                     <li key={link.label}>
-                      <Link href={link.href} className="text-sm text-muted-foreground hover:text-foreground">
+                      <Link href={link.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                         {link.label}
                       </Link>
                     </li>
@@ -52,7 +52,7 @@ export function MarketingFooter({ tagline }: { tagline: string }) {
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row">
+        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-border pt-7 text-xs text-muted-foreground sm:flex-row">
           <p>&copy; {new Date().getFullYear()} Shyring. Усі права захищено.</p>
           <p>SH ERP by Shyring</p>
         </div>

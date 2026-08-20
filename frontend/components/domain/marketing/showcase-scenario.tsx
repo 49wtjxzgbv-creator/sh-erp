@@ -16,14 +16,14 @@ import type { FlatLandingPageContent } from '@/lib/landing-page/flatten-content'
  */
 export function ShowcaseScenario({ showcase, mediaUrls }: { showcase: FlatLandingPageContent['showcase']; mediaUrls: Record<string, string> }) {
   return (
-    <section id="how-it-works" className="border-y border-border bg-secondary/20 py-20 sm:py-28">
+    <section id="how-it-works" className="border-y border-border bg-secondary/20 py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{showcase.heading}</h2>
-          <p className="mt-4 text-lg text-muted-foreground">{showcase.subheading}</p>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{showcase.heading}</h2>
+          <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{showcase.subheading}</p>
         </Reveal>
 
-        <div className="mx-auto mt-16 flex max-w-5xl flex-col gap-20">
+        <div className="mx-auto mt-24 flex max-w-5xl flex-col gap-24">
           {showcase.steps.map((step, i) => (
             <ShowcaseStep
               key={step.id}
