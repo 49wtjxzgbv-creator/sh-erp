@@ -19,7 +19,7 @@ describe('CustomerOrderShortageService', () => {
         assemblySupplier: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
         supplier: { findMany: jest.fn().mockResolvedValue([]) },
         finishedGood: { count: jest.fn().mockResolvedValue(0) },
-        orderMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() },
+        orderMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), create: jest.fn() },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
       },
     };
@@ -28,6 +28,7 @@ describe('CustomerOrderShortageService', () => {
       reserveCapped: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }),
       reserveFromStock: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }),
       release: jest.fn().mockResolvedValue(0),
+      getAvailability: jest.fn().mockResolvedValue({ physical: 0, reserved: 0, available: 0 }),
     };
     service = new CustomerOrderShortageService(prisma, purchaseOrdersService, stockReservationService);
   });
@@ -61,6 +62,34 @@ describe('CustomerOrderShortageService', () => {
       const line = bucket.lines.find((l) => l.productId === 'p1')!;
       expect(line.neededQty).toBe(8);
       expect(line.currentStock).toBe(4); // shown separately, never subtracted
+    });
+
+    it('§ real bug fixed live: suggests min(needed, available) for "Заброньовано" — computed live, not persisted — when no requirement row exists yet, instead of a flat 0', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }]); // needed = 10
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 100 }]);
+      // no orderMaterialRequirement row (beforeEach default: findMany -> [])
+      stockReservationService.getAvailability.mockResolvedValue({ physical: 100, reserved: 40, available: 60 });
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const line = result.groups.flatMap((g) => g.lines).find((l) => l.productId === 'p1')!;
+      expect(line.reservedQty).toBe(10); // min(needed=10, available=60) — full need is coverable
+      expect(line.qtyToPurchase).toBe(0);
+      expect(line.sourceRequirementId).toBeUndefined(); // suggestion only, nothing persisted
+    });
+
+    it('caps the suggested "Заброньовано" at what is actually available, leaving the remainder as "Кількість до замовлення"', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }]); // needed = 10
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 5 }]);
+      stockReservationService.getAvailability.mockResolvedValue({ physical: 5, reserved: 0, available: 5 });
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const line = result.groups.flatMap((g) => g.lines).find((l) => l.productId === 'p1')!;
+      expect(line.reservedQty).toBe(5); // capped at available, not the full 10 needed
+      expect(line.qtyToPurchase).toBe(5);
     });
 
     it('stops recursion at a sub-assembly with a defaultSupplierId and adds it as its own buy-line', async () => {
@@ -205,6 +234,35 @@ describe('CustomerOrderShortageService', () => {
 
       expect(stockReservationService.release).toHaveBeenCalledWith(user, { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', source: 'STOCK' }, 5);
       expect(stockReservationService.reserveFromStock).not.toHaveBeenCalled();
+    });
+
+    it('§ real bug fixed live: lazily creates the requirement (requiredQty recomputed from the current BOM) instead of 404ing when no row exists yet — orders created before this feature, or whose BOM changed since', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 2 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 5 }]); // needed = 10
+      prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue(null); // no row yet
+      prisma.tenant.orderMaterialRequirement.create.mockResolvedValue({ id: 'req-new', requiredQty: 10, qtyFromStock: 0, qtyToPurchase: 10 });
+      stockReservationService.reserveFromStock.mockResolvedValue({ grantedQty: 6, shortfallQty: 0 });
+      prisma.tenant.orderMaterialRequirement.update.mockResolvedValue({ id: 'req-new' });
+
+      await service.saveReservationDecisions(user, 'co1', { decisions: [{ productId: 'p1', qtyFromStock: 6 }] });
+
+      expect(prisma.tenant.orderMaterialRequirement.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ customerOrderId: 'co1', productId: 'p1', requiredQty: 10, qtyFromStock: 0, qtyToPurchase: 10 }) }),
+      );
+      expect(stockReservationService.reserveFromStock).toHaveBeenCalledWith(user, { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1' }, 6);
+      expect(prisma.tenant.orderMaterialRequirement.update).toHaveBeenCalledWith({
+        where: { id: 'req-new' },
+        data: { qtyFromStock: 6, qtyToPurchase: 4 },
+      });
+    });
+
+    it('rejects a productId that is not actually a component of this order\'s assembly tree, when no existing row exists to fall back on', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 2 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 5 }]);
+      prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue(null);
+
+      await expect(service.saveReservationDecisions(user, 'co1', { decisions: [{ productId: 'not-a-component', qtyFromStock: 6 }] })).rejects.toThrow();
+      expect(prisma.tenant.orderMaterialRequirement.create).not.toHaveBeenCalled();
     });
   });
 });

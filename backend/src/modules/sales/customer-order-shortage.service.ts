@@ -131,6 +131,7 @@ export class CustomerOrderShortageService {
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
     const { productPool, assemblyBuyPool } = await this.buildPools(order.items as any[]);
+    const warehouseId = await this.resolveDefaultWarehouseId();
 
     const products = (await this.prisma.tenant.product.findMany({ where: { id: { in: Array.from(productPool.keys()) } } })) as any[];
     const productById = new Map<string, any>();
@@ -206,8 +207,27 @@ export class CustomerOrderShortageService {
       const product = productById.get(productId);
       const links = productLinksByProductId.get(productId) ?? [];
       const requirement = requirementByProduct.get(productId);
-      const reservedQty = requirement ? Number(requirement.qtyFromStock) : 0;
-      const qtyToPurchase = requirement ? Number(requirement.qtyToPurchase) : neededQty;
+      // No persisted decision yet — happens for any order created before
+      // this feature existed, or whose assembly's BOM gained a new
+      // component after the order was placed (buildPools recomputes live
+      // from the CURRENT BOM every time, so a later-added component simply
+      // has no requirement row from the one-time auto-reserve at creation).
+      // Rather than show a flat 0 (which reads as "nothing available" and
+      // was the actual bug reported live — saving would then 404 since
+      // there was really nothing to update), suggest the same default a
+      // fresh order would have gotten: the maximum currently available,
+      // computed live, not yet persisted or reserved until the user
+      // actually saves it.
+      let reservedQty: number;
+      let qtyToPurchase: number;
+      if (requirement) {
+        reservedQty = Number(requirement.qtyFromStock);
+        qtyToPurchase = Number(requirement.qtyToPurchase);
+      } else {
+        const availability = await this.stockReservationService.getAvailability(user, productId, warehouseId);
+        reservedQty = Math.max(Math.min(neededQty, availability.available), 0);
+        qtyToPurchase = Math.max(neededQty - reservedQty, 0);
+      }
       const line: ShortageLine = {
         kind: 'PRODUCT',
         productId,
@@ -270,19 +290,37 @@ export class CustomerOrderShortageService {
    * its full increase — §16: the backend validates, doesn't just trust the
    * frontend), rolling back the whole batch on failure since it all runs in
    * one request transaction.
+   *
+   * Lazily creates the OrderMaterialRequirement row when it doesn't exist
+   * yet (real gap found live: any order created before this feature
+   * existed, or whose assembly gained a new BOM component afterward, has
+   * no such row — `previewShortage` shows a live-computed suggestion for
+   * that case but persists nothing, so saving it here previously 404'd).
+   * `requiredQty` for a fresh row is recomputed from the CURRENT BOM, same
+   * live walk `previewShortage` itself uses.
    */
   async saveReservationDecisions(user: RequestUser, orderId: string, dto: SaveReservationDecisionsDto) {
-    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
     const warehouseId = await this.resolveDefaultWarehouseId();
+    let productPool: Map<string, number> | null = null;
     const updated = [];
     for (const decision of dto.decisions) {
-      const existing = await this.prisma.tenant.orderMaterialRequirement.findUnique({
+      let existing = await this.prisma.tenant.orderMaterialRequirement.findUnique({
         where: { customerOrderId_productId: { customerOrderId: orderId, productId: decision.productId } },
       });
       if (!existing) {
-        throw new CodedNotFoundException('ORDER_MATERIAL_REQUIREMENT_NOT_FOUND', `Product ${decision.productId} is not a tracked material requirement on this order.`);
+        if (!productPool) {
+          productPool = (await this.buildPools(order.items as any[])).productPool;
+        }
+        const requiredQty = productPool.get(decision.productId);
+        if (requiredQty === undefined) {
+          throw new CodedBadRequestException('MATERIAL_REQUIREMENT_NOT_A_COMPONENT', `Product ${decision.productId} is not a component of this order's assembly tree.`);
+        }
+        existing = await this.prisma.tenant.orderMaterialRequirement.create({
+          data: { customerOrderId: orderId, productId: decision.productId, requiredQty, qtyFromStock: 0, qtyToPurchase: requiredQty, createdById: user.userId } as any,
+        });
       }
       const previous = Number(existing.qtyFromStock);
       const delta = decision.qtyFromStock - previous;
