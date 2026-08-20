@@ -79,7 +79,9 @@
     "noAccount": "Don't have an account?",
     "invalidCredentials": "Invalid email, password, or company",
     "logout": "Sign out",
-    "sessionExpired": "Session expired. Please sign in again."
+    "sessionExpired": "Session expired. Please sign in again.",
+    "tabCompany": "Company",
+    "tabSupplier": "Supplier portal"
   },
   "dashboard": {
     "welcome": "Welcome",

@@ -79,7 +79,9 @@
     "noAccount": "Noch kein Konto?",
     "invalidCredentials": "Ungültige E-Mail, Passwort oder Unternehmen",
     "logout": "Abmelden",
-    "sessionExpired": "Sitzung abgelaufen. Bitte erneut anmelden."
+    "sessionExpired": "Sitzung abgelaufen. Bitte erneut anmelden.",
+    "tabCompany": "Unternehmen",
+    "tabSupplier": "Lieferantenportal"
   },
   "dashboard": {
     "welcome": "Willkommen",

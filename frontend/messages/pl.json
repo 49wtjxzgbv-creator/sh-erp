@@ -79,7 +79,9 @@
     "noAccount": "Nie masz konta?",
     "invalidCredentials": "Nieprawidłowy e-mail, hasło lub firma",
     "logout": "Wyloguj się",
-    "sessionExpired": "Sesja wygasła. Zaloguj się ponownie."
+    "sessionExpired": "Sesja wygasła. Zaloguj się ponownie.",
+    "tabCompany": "Firma",
+    "tabSupplier": "Portal dostawcy"
   },
   "dashboard": {
     "welcome": "Witamy",

@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { login } from '@/lib/auth/actions';
 import { ApiError } from '@/lib/api-client/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -47,40 +48,52 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('loginTitle')}</CardTitle>
-        <CardDescription>{t('loginSubtitle')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
-          <div className="space-y-1.5">
-            <Label htmlFor="companySlug">{t('companySlug')}</Label>
-            <Input id="companySlug" autoComplete="organization" {...register('companySlug')} />
-            {errors.companySlug && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="email">{t('email')}</Label>
-            <Input id="email" type="email" autoComplete="username" {...register('email')} />
-            {errors.email && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="password">{t('password')}</Label>
-            <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
-            {errors.password && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
-          </div>
-          {formError && <p className="text-sm text-destructive">{formError}</p>}
-          <Button type="submit" className="w-full" loading={isSubmitting}>
-            {t('loginButton')}
-          </Button>
-        </form>
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          {t('noAccount')}{' '}
-          <Link href="/register" className="text-primary underline-offset-4 hover:underline">
-            {t('registerButton')}
-          </Link>
-        </p>
-      </CardContent>
-    </Card>
+    <>
+      <Tabs value="/login" className="mb-4">
+        <TabsList className="w-full justify-center">
+          <TabsTrigger value="/login" asChild>
+            <Link href="/login">{t('tabCompany')}</Link>
+          </TabsTrigger>
+          <TabsTrigger value="/supplier-portal/login" asChild>
+            <Link href="/supplier-portal/login">{t('tabSupplier')}</Link>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('loginTitle')}</CardTitle>
+          <CardDescription>{t('loginSubtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+            <div className="space-y-1.5">
+              <Label htmlFor="companySlug">{t('companySlug')}</Label>
+              <Input id="companySlug" autoComplete="organization" {...register('companySlug')} />
+              {errors.companySlug && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">{t('email')}</Label>
+              <Input id="email" type="email" autoComplete="username" {...register('email')} />
+              {errors.email && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">{t('password')}</Label>
+              <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
+              {errors.password && <p className="text-xs text-destructive">{tc('requiredField')}</p>}
+            </div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
+            <Button type="submit" className="w-full" loading={isSubmitting}>
+              {t('loginButton')}
+            </Button>
+          </form>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            {t('noAccount')}{' '}
+            <Link href="/register" className="text-primary underline-offset-4 hover:underline">
+              {t('registerButton')}
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
+    </>
   );
 }
