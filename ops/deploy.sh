@@ -112,15 +112,15 @@ npm ci
 # deploys): `next build`'s static-page generation workers intermittently
 # throw "Cannot read properties of null (reading 'useContext')" on nearly
 # every page — not a code bug (the exact same commit builds cleanly
-# elsewhere, and a plain retry with a clean .next succeeds every time this
-# was tried). Root cause not fully pinned down (this box is 1 vCPU/3.8GB —
-# raising Node's old-space ceiling alone did NOT reliably prevent it on a
-# later deploy), so rather than chase it further, the build gets a few
-# clean-retry attempts here — cheap, and turns an intermittent failure that
-# needed manual SSH intervention into a self-healing step.
+# elsewhere). Across this window: every automated attempt WITH
+# NODE_OPTIONS=--max-old-space-size=3072 failed (12/12 across two deploys),
+# while every manual retry WITHOUT that flag succeeded (3/3, across three
+# separate deploys) — capping the old-space size looks like the trigger, not
+# a mitigation, so it's dropped here. Kept: a few clean-retry attempts as a
+# cheap self-healing step in case the flakiness has another cause too.
 for attempt in 1 2 3 4 5 6; do
   rm -rf .next
-  if NODE_OPTIONS='--max-old-space-size=3072' npm run build; then
+  if npm run build; then
     break
   fi
   if [ "$attempt" -eq 6 ]; then
