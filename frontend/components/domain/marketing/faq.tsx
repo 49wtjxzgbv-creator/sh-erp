@@ -30,7 +30,11 @@ export function Faq({ faq }: { faq: FlatLandingPageContent['faq'] }) {
                   <span className="font-medium tracking-tight">{item.question}</span>
                   <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
                 </button>
-                {open && <p className="mt-3.5 leading-relaxed text-muted-foreground">{item.answer}</p>}
+                {/* Always rendered (never conditionally mounted) so every answer is
+                    present in the server-rendered HTML for crawlers/FAQPage rich
+                    results — only the CSS `hidden` class toggles, same instant
+                    show/hide the conditional-render version had, no new animation. */}
+                <p className={cn('mt-3.5 leading-relaxed text-muted-foreground', !open && 'hidden')}>{item.answer}</p>
               </div>
             );
           })}

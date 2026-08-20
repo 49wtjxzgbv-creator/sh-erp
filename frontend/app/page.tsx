@@ -33,19 +33,108 @@ import { landingMediaUrl } from '@/lib/landing-page/media-url';
  * (components/domain/marketing/*) rather than one large page file, per the
  * same module-per-file convention the rest of this app already follows.
  */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sh-erp.com';
+
 export async function generateMetadata(): Promise<Metadata> {
   const locale = resolveLocale();
   const { content } = await getPublishedLandingPage();
   const seo = content.seo;
+  const title = seo.title[locale] || seo.title.uk;
+  const description = seo.description[locale] || seo.description.uk;
   const ogImageUrl = landingMediaUrl(seo.ogImageId);
   return {
-    title: seo.title[locale] || seo.title.uk,
-    description: seo.description[locale] || seo.description.uk,
+    title,
+    description,
+    // Explicit self-canonical: "/" is the one real, indexable URL for this
+    // content (locale is a cookie, not a path segment — see resolveLocale's
+    // own comment — so there's no distinct localized URL to point away
+    // from). Guards against ?query-param variants or any future proxy
+    // rewrite being crawled as a separate duplicate URL.
+    alternates: { canonical: SITE_URL },
     openGraph: {
-      title: seo.title[locale] || seo.title.uk,
-      description: seo.description[locale] || seo.description.uk,
+      type: 'website',
+      url: SITE_URL,
+      siteName: 'SH ERP',
+      title,
+      description,
       images: ogImageUrl ? [{ url: ogImageUrl }] : [],
     },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: ogImageUrl ? [ogImageUrl] : undefined,
+    },
+  };
+}
+
+/**
+ * JSON-LD, built only from data already fetched for the real page render —
+ * no invented reviews/ratings/customer counts/features. `Offer` entries are
+ * included only when `pricing.visible` is true and only from the real
+ * `Plan` rows the pricing section itself renders (same source, same
+ * numbers) — never duplicated/invented here.
+ */
+function buildJsonLd(
+  c: ReturnType<typeof flattenLandingPageContent>,
+  plans: Awaited<ReturnType<typeof getPublishedLandingPage>>['plans'],
+) {
+  const logoUrl = `${SITE_URL}/brand/logo-1024.png`;
+
+  const organization = {
+    '@type': 'Organization',
+    '@id': `${SITE_URL}/#organization`,
+    name: 'SH ERP',
+    url: SITE_URL,
+    logo: logoUrl,
+  };
+
+  const website = {
+    '@type': 'WebSite',
+    '@id': `${SITE_URL}/#website`,
+    url: SITE_URL,
+    name: 'SH ERP',
+    publisher: { '@id': `${SITE_URL}/#organization` },
+  };
+
+  const softwareApplication = {
+    '@type': 'SoftwareApplication',
+    '@id': `${SITE_URL}/#software`,
+    name: 'SH ERP',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    url: SITE_URL,
+    description: c.seo.description,
+    publisher: { '@id': `${SITE_URL}/#organization` },
+    ...(c.pricing.visible && plans.length > 0
+      ? {
+          offers: plans.map((p) => ({
+            '@type': 'Offer',
+            name: p.name,
+            price: p.monthlyPriceEur,
+            priceCurrency: 'EUR',
+            url: SITE_URL,
+          })),
+        }
+      : {}),
+  };
+
+  const faqPage =
+    c.faq.items.length > 0
+      ? {
+          '@type': 'FAQPage',
+          '@id': `${SITE_URL}/#faq`,
+          mainEntity: c.faq.items.map((item) => ({
+            '@type': 'Question',
+            name: item.question,
+            acceptedAnswer: { '@type': 'Answer', text: item.answer },
+          })),
+        }
+      : null;
+
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [organization, website, softwareApplication, faqPage].filter(Boolean),
   };
 }
 
@@ -53,9 +142,13 @@ export default async function LandingPage() {
   const locale = resolveLocale();
   const { content, plans } = await getPublishedLandingPage();
   const c = flattenLandingPageContent(content, locale);
+  const jsonLd = buildJsonLd(c, plans);
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* `<` escaped so Super-Admin-edited copy (e.g. an FAQ answer) can never contain a literal "</script>" and break out of this tag. */}
+      {/* eslint-disable-next-line react/no-danger */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
       <MarketingHeader pricingVisible={c.pricing.visible} />
       <main className="flex-1">
         <Hero content={c.hero} />

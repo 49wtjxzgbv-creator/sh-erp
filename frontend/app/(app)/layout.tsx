@@ -1,9 +1,15 @@
+import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { SessionBoundary } from '@/components/domain/shell/session-boundary';
 import { MobileNavProvider } from '@/components/domain/shell/mobile-nav-context';
 import { TrainingProvider } from '@/components/domain/training/training-provider';
 import { COURSES } from '@/components/domain/training/courses';
 import { AppShellOrPrintPreview } from '@/components/domain/shell/app-shell-or-print-preview';
+
+/** Real customer data behind auth — never indexable, regardless of whether a crawler somehow gets past the sign-in redirect. */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Authenticated shell (Phase 2 §3.1). Every route under app/(app)/ renders
