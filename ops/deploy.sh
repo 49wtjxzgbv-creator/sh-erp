@@ -8,12 +8,17 @@
 # What it does, in order: loads env centrally (fixes the exact
 # "DATABASE_URL not visible to prisma db seed" incident this rewrite was
 # triggered by — see docs/deployment.md's "post-mortem" section), backend
-# npm install + prisma generate + migrate deploy + db seed + build,
-# frontend npm install + build (which self-copies its own static assets —
-# see frontend/scripts/copy-standalone-static.js), restarts both systemd
+# npm install + prisma generate + migrate deploy + db seed + build, verifies
+# a pre-built frontend standalone bundle is present, restarts both systemd
 # services, then verifies the whole stack is actually healthy before
 # declaring success. Any failure at any step aborts the script (set -e) —
 # this deliberately does NOT try to leave a half-deployed state running.
+#
+# 2026-08-20: the frontend is no longer BUILT here — real, repeated `next
+# build` flakiness on this single-vCPU VPS (see ops/build-frontend-local.sh's
+# header for the full story and why a bigger VPS plan wasn't the fix). Run
+# `./ops/build-frontend-local.sh` from a workstation FIRST — it builds off-box
+# and ships `.next/standalone` here via rsync — then run this script as usual.
 #
 # Real architecture change (2026-08-05 audit): backend/frontend used to be
 # Docker containers here. That's retired in favor of native systemd
@@ -88,54 +93,29 @@ echo "--- Build ---"
 npm run build
 cd "$REPO_ROOT"
 
-echo "=== 4. Loading frontend env + validating build-time config ==="
+echo "=== 4. Verifying pre-built frontend standalone bundle is present ==="
+# Sanity-check the env file's shape even though this script no longer builds
+# against it (systemd's own EnvironmentFile= still loads it at runtime for
+# INTERNAL_API_BASE_URL/JWT_REFRESH_TTL_DAYS) — catches a corrupted/missing
+# file early rather than as a confusing runtime failure later.
 set -a
 # shellcheck disable=SC1090
 source "$FRONTEND_ENV"
 set +a
 : "${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL is empty in $FRONTEND_ENV}"
-case "$NEXT_PUBLIC_API_BASE_URL" in
-  */api/v1)
-    ;;
-  *)
-    echo "ERROR: NEXT_PUBLIC_API_BASE_URL must end in exactly '/api/v1' (got: '$NEXT_PUBLIC_API_BASE_URL')." >&2
-    echo "This is a REAL past incident (2026-08-05): a value ending in '/api' instead of '/api/v1' built" >&2
-    echo "successfully and 404'd on every single API call in production. Fix $FRONTEND_ENV and re-run." >&2
-    exit 1
-    ;;
-esac
 
-echo "=== 5. Frontend: install, build (postbuild copies static automatically — see frontend/scripts/copy-standalone-static.js) ==="
-cd "$REPO_ROOT/frontend"
-npm ci
-# Real, reproducible flakiness on this VPS (2026-08-19, hit on two separate
-# deploys): `next build`'s static-page generation workers intermittently
-# throw "Cannot read properties of null (reading 'useContext')" on nearly
-# every page — not a code bug (the exact same commit builds cleanly
-# elsewhere). Across this window: every automated attempt WITH
-# NODE_OPTIONS=--max-old-space-size=3072 failed (12/12 across two deploys),
-# while every manual retry WITHOUT that flag succeeded (3/3, across three
-# separate deploys) — capping the old-space size looks like the trigger, not
-# a mitigation, so it's dropped here. Kept: a few clean-retry attempts as a
-# cheap self-healing step in case the flakiness has another cause too.
-for attempt in 1 2 3 4 5 6; do
-  rm -rf .next
-  if npm run build; then
-    break
-  fi
-  if [ "$attempt" -eq 6 ]; then
-    echo "ERROR: frontend build failed $attempt times in a row — this looks like more than the known flakiness. Aborting." >&2
-    exit 1
-  fi
-  echo "Frontend build failed (attempt $attempt/6) — retrying with a clean .next..." >&2
-done
-cd "$REPO_ROOT"
+if [ ! -f "$REPO_ROOT/frontend/.next/standalone/server.js" ]; then
+  echo "ERROR: $REPO_ROOT/frontend/.next/standalone/server.js not found." >&2
+  echo "Run ./ops/build-frontend-local.sh from your workstation first — it builds the frontend" >&2
+  echo "off-box (see that script's header for why) and ships the result here via rsync." >&2
+  exit 1
+fi
 
-echo "=== 6. Restarting services ==="
+echo "=== 5. Restarting services ==="
 sudo systemctl restart sh-erp-backend
 sudo systemctl restart sh-erp-frontend
 
-echo "=== 7. Verifying ==="
+echo "=== 6. Verifying ==="
 echo "--- Waiting for backend /health ---"
 for i in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1; then

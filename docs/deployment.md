@@ -47,9 +47,10 @@ Postgres, backend, and frontend are **never exposed on the VPS's public interfac
    docker compose -f docker-compose.prod.yml exec postgres psql -U postgres -d sh_erp -c \
      "GRANT CREATE, USAGE ON SCHEMA public TO app_user;"
    ```
-8. **Run the first deploy** — this is the one command that does everything else (install, generate, migrate, seed, build both apps, start both services, verify):
+8. **Build the frontend off-box, then run the first deploy.** The frontend is built on your workstation (or any machine with real CPU/RAM), not on the VPS — see [Frontend builds off-box](#frontend-builds-off-box-not-on-the-vps) below for why — then `ops/deploy.sh` does everything else on the VPS (install, generate, migrate, seed, build the backend, start both services, verify):
    ```bash
-   ./ops/deploy.sh
+   ./ops/build-frontend-local.sh   # from your workstation
+   ssh root@<vps> 'cd /opt/sh-erp && git pull && ./ops/deploy.sh'
    ```
 9. **Verify `app_user` really is unprivileged** (the single easiest thing to get wrong under deployment pressure):
    ```bash
@@ -81,21 +82,35 @@ Unchanged in substance from the Docker-based path — only *how* migrations run 
 
 **Real incident this section exists because of**: company registration failed in production with `Default plan "starter" not found — run prisma db seed before allowing signups.` Investigation found `prisma db seed` had never actually run — `DATABASE_URL` existed in an interactive SSH shell's exported environment but not in whatever context `npx prisma db seed` was actually invoked from, and `ts-node` (needed by `package.json`'s `"prisma":{"seed": "ts-node ../prisma/seed.ts"}`) wasn't reliably available either, because a prior deploy attempt had run `npm ci --omit=dev` for a smaller Docker image — a concern that doesn't even apply once this app runs natively.
 
-The fix, structural, not a one-off `export`: **`/etc/sh-erp/backend.env` and `/etc/sh-erp/frontend.env` are the ONE place application configuration lives.** systemd's `EnvironmentFile=` (`ops/systemd/*.service`) reads them directly for the running services; `ops/deploy.sh` explicitly `source`s the same files into its own shell (`set -a; source ...; set +a`) before running `npm ci`/`prisma generate`/`prisma migrate deploy`/`prisma db seed`/`npm run build` — so the exact same values the service runs with are what every one-off command during a deploy sees too. There is no longer a scenario where `echo $DATABASE_URL` in some other shell is empty and that silently breaks anything, because nothing in the actual deploy path depends on an ambient shell export anymore. `ops/deploy.sh` also refuses to proceed at all if either env file is missing, or if `DATABASE_URL`/`NEXT_PUBLIC_API_BASE_URL` come out empty after loading them.
+The fix, structural, not a one-off `export`: **`/etc/sh-erp/backend.env` and `/etc/sh-erp/frontend.env` are the ONE place application configuration lives.** systemd's `EnvironmentFile=` (`ops/systemd/*.service`) reads them directly for the running services; `ops/deploy.sh` explicitly `source`s `backend.env` into its own shell (`set -a; source ...; set +a`) before running `npm ci`/`prisma generate`/`prisma migrate deploy`/`prisma db seed`/`npm run build` — so the exact same values the service runs with are what every one-off command during a deploy sees too. `frontend.env` is sourced too, but (since [Frontend builds off-box](#frontend-builds-off-box-not-on-the-vps)) only for a sanity check, not a build — `ops/build-frontend-local.sh` sources its own SSH-fetched copy of the same file for the actual build. There is no longer a scenario where `echo $DATABASE_URL` in some other shell is empty and that silently breaks anything, because nothing in the actual deploy path depends on an ambient shell export anymore. `ops/deploy.sh` also refuses to proceed at all if either env file is missing, or if `DATABASE_URL`/`NEXT_PUBLIC_API_BASE_URL` come out empty after loading them.
+
+### Frontend builds off-box, not on the VPS
+
+**Real, repeated incident (2026-08-19/20)**: `next build`'s static-page generation intermittently threw `TypeError: Cannot read properties of null (reading 'useContext')` on nearly every page when run directly on the VPS — never reproduced locally, same commit builds cleanly elsewhere. Root-cause investigation (2026-08-20) ruled out OOM (no `oom-kill` in `dmesg`/`journalctl` across 14 days uptime), cron/apt contention (one 22-second `unattended-upgrades` run overlapped at most the first of six failed attempts, not all six), and duplicate React versions (dependency tree confirmed clean, single `react@18.3.1`). It landed on a known, still-open upstream Next.js bug class (multiple unresolved `vercel/next.js` GitHub issues, no clean fix short of a major-version jump) that this VPS's single **shared** vCPU triggers more easily than a dedicated one would.
+
+Checked against Hostinger's own usage graphs before deciding what to do about it: real day-to-day CPU load on this box (outside of a build) stays under ~25% — the VPS isn't undersized for *running* the app, only for *building* it. Paying for a permanently bigger VPS plan (roughly +450–560 грн/month) to survive a five-minute build window a few times a month wasn't worth it, so the frontend is now built off-box and shipped as a finished artifact instead:
+
+```bash
+./ops/build-frontend-local.sh   # from your workstation — builds, then rsyncs .next/standalone to the VPS
+ssh root@<vps> 'cd /opt/sh-erp && git pull && ./ops/deploy.sh'
+```
+
+`ops/build-frontend-local.sh` fetches `/etc/sh-erp/frontend.env` from the VPS over SSH first (build-time `NEXT_PUBLIC_*` values must match exactly, same `/api/v1` validation as before), builds locally, then `rsync --delete`s `.next/standalone/` to `/opt/sh-erp/frontend/.next/standalone/` on the VPS. `ops/deploy.sh` no longer runs `npm ci`/`npm run build` for the frontend at all — it only checks `.next/standalone/server.js` exists before restarting `sh-erp-frontend`, and fails loudly with a pointer back to this script if it's missing (e.g. on a fresh VPS before the first build has ever been shipped).
+
+The backend still builds directly on the VPS (`nest build` is fast and has never shown this flakiness).
 
 ### Steady-state releases
 
 ```bash
-cd /opt/sh-erp
-git pull
-./ops/deploy.sh
+./ops/build-frontend-local.sh   # from your workstation
+ssh root@<vps> 'cd /opt/sh-erp && git pull && ./ops/deploy.sh'
 ```
 
-One script, no manual commands — `ops/deploy.sh` loads env centrally (above), then for the backend: `npm ci`, `prisma generate`, `prisma migrate deploy` (superuser connection), `prisma db seed` (idempotent — permissions, plan tiers, Super Admin bootstrap), `npm run build`; for the frontend: validates `NEXT_PUBLIC_API_BASE_URL` ends in `/api/v1` (refuses to build otherwise — a real past incident, see the env-var checklist), `npm ci`, `npm run build` (which self-copies its own static assets via `postbuild`); then restarts both systemd services and verifies `/health`, the frontend responding, and both units reporting `active` before declaring success.
+`ops/deploy.sh` loads env centrally (above), then for the backend: `npm ci`, `prisma generate`, `prisma migrate deploy` (superuser connection), `prisma db seed` (idempotent — permissions, plan tiers, Super Admin bootstrap), `npm run build`; for the frontend: verifies the standalone bundle `build-frontend-local.sh` already shipped is present; then restarts both systemd services and verifies `/health`, the frontend responding, and both units reporting `active` before declaring success.
 
-There is no CI-triggered automatic deploy for this path — `ops/deploy.sh` is run over SSH by hand (or wired into a GitHub Actions SSH-deploy workflow later — a disclosed, not-yet-built increment).
+There is no CI-triggered automatic deploy for this path — both scripts are run by hand (or wired into a GitHub Actions SSH-deploy workflow later — a disclosed, not-yet-built increment).
 
-**Rollback**: `git checkout <previous-good-commit>` then `./ops/deploy.sh` — rebuilds and redeploys the previous known-good code through the exact same script. The [migration rollback policy](#rollback-policy-stated-as-explicit-policy-not-left-to-judgment-under-pressure) below (roll forward with a corrective migration, never revert a migration in place) applies identically here.
+**Rollback**: `git checkout <previous-good-commit>` then re-run both steps above (`build-frontend-local.sh` then `deploy.sh`) — rebuilds and redeploys the previous known-good code through the exact same path. Skipping `build-frontend-local.sh` on a rollback would leave the OLD frontend bundle running against a rolled-back backend, which is wrong whenever the rollback includes frontend changes. The [migration rollback policy](#rollback-policy-stated-as-explicit-policy-not-left-to-judgment-under-pressure) below (roll forward with a corrective migration, never revert a migration in place) applies identically here.
 
 ### Backups on this path
 
@@ -196,7 +211,7 @@ Fixed in `backend/src/main.ts` via `app.enableCors(...)`, driven by a new `FRONT
 | `AI_API_KEY_ENCRYPTION_SECRET` | Generated secret | All environments where any company sets a BYOK key |
 | `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` | Real SMTP provider credentials | Production (fails open — logs instead of sending — if unset, so staging/local can leave these blank) |
 | `R2_ENDPOINT`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET` | Cloudflare R2 dashboard | All environments (file features are unusable without these — see [R2 setup](#2-cloudflare-r2-file-storage)) |
-| `NEXT_PUBLIC_API_BASE_URL` (frontend) | The real public API URL, including `/api/v1` | All environments — **build-time value, baked into the frontend bundle.** On the Hostinger path, `ops/deploy.sh` refuses to build the frontend if this doesn't end in exactly `/api/v1` (a real past incident — see the [launch checklist](./launch-checklist.md)). |
+| `NEXT_PUBLIC_API_BASE_URL` (frontend) | The real public API URL, including `/api/v1` | All environments — **build-time value, baked into the frontend bundle.** On the Hostinger path, the frontend is built off-box (see [Frontend builds off-box](#frontend-builds-off-box-not-on-the-vps)) — `ops/build-frontend-local.sh` refuses to build if this doesn't end in exactly `/api/v1` (a real past incident — see the [launch checklist](./launch-checklist.md)). |
 | `INTERNAL_API_BASE_URL` (frontend) | Same as above, or an internal/private URL in production | All environments — **on the Hostinger VPS path (native systemd, not Docker), set this to `http://127.0.0.1:3000/api/v1`** — the backend is a systemd service on the same host, not a separate Docker network peer, so a loopback address is what avoids the unnecessary round trip out through Nginx and back in for every server-side call the Next-owned auth routes make. `NEXT_PUBLIC_API_BASE_URL` still must be the real public URL, since that one is used by the browser directly. |
 
 ### Steady-state releases

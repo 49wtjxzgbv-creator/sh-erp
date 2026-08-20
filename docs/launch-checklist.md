@@ -22,7 +22,7 @@ For the first real Hostinger VPS launch. Each item links to the document that co
 ## 3. Application configuration
 
 - [ ] `FRONTEND_URL` in `/etc/sh-erp/backend.env` set to the real `https://app.<domain>` — not left unset (CORS falls back to a permissive reflect-any-origin default otherwise, wrong for production).
-- [ ] `NEXT_PUBLIC_API_BASE_URL` in `/etc/sh-erp/frontend.env` ends in exactly `/api/v1` and is baked into the frontend build (a **build-time** value — `ops/deploy.sh` now validates this and refuses to build on a wrong value, a real past incident: it was set to end in `/api` and 404'd on every request).
+- [ ] `NEXT_PUBLIC_API_BASE_URL` in `/etc/sh-erp/frontend.env` ends in exactly `/api/v1` and is baked into the frontend build (a **build-time** value — the frontend now builds off-box via `ops/build-frontend-local.sh`, which validates this and refuses to build on a wrong value, a real past incident: it was set to end in `/api` and 404'd on every request).
 - [ ] `JWT_ACCESS_SECRET`/`AI_API_KEY_ENCRYPTION_SECRET` are real generated secrets, not the `.env.example` placeholders.
 - [ ] R2 bucket created, API token scoped to it only, `R2_*` vars set — [R2 setup](./deployment.md#2-cloudflare-r2-file-storage).
 - [ ] R2 bucket versioning enabled (recommended in [backup-restore.md](./backup-restore.md)) — one-time Cloudflare dashboard setting.
