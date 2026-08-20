@@ -106,7 +106,6 @@ export type StockReservationSource = 'STOCK' | 'PURCHASE';
 /** §17 drill-down line: one order's share of a (product, warehouse) cell's "Зарезервовано" total. */
 export interface StockReservationBreakdownLine {
   customerOrderId: string;
-  customerOrderItemId: string;
   orderNumber: string | null;
   clientName: string;
   source: StockReservationSource;
