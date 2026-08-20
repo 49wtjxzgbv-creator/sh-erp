@@ -131,8 +131,8 @@ for i in $(seq 1 30); do
 done
 
 echo "--- Checking frontend responds ---"
-if ! curl -fsS http://127.0.0.1:3001/ >/dev/null 2>&1; then
-  echo "ERROR: frontend is not responding on 127.0.0.1:3001. Recent logs:" >&2
+if ! curl -fsS http://127.0.0.1:3002/ >/dev/null 2>&1; then
+  echo "ERROR: frontend is not responding on 127.0.0.1:3002. Recent logs:" >&2
   journalctl -u sh-erp-frontend --no-pager -n 50 >&2
   exit 1
 fi
