@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ function newId(prefix: string) {
 }
 
 export default function LandingPageEditorPage() {
+  const router = useRouter();
   const [locale, setLocale] = useState<Locale>('uk');
   const [content, setContent] = useState<LandingPageContent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,7 +113,21 @@ export default function LandingPageEditorPage() {
         <Button onClick={handleSave} loading={saving}>
           Зберегти чернетку
         </Button>
-        <Button variant="outline" asChild={false} onClick={() => window.open('/super-admin/landing/preview', '_blank')}>
+        {/*
+          Deliberately a same-tab navigation (router.push), NOT window.open(url,
+          '_blank') — the Super Admin session is in-memory only, by explicit
+          design (session-store.ts's own header comment: "a reload logs the
+          super admin out"), so a new tab/window starts with zero session and
+          bounces straight to /super-admin/login. Same-tab navigation is the
+          only way Preview can carry the session across.
+        */}
+        <Button
+          variant="outline"
+          onClick={async () => {
+            await handleSaveSilent();
+            router.push('/super-admin/landing/preview');
+          }}
+        >
           <ExternalLink className="mr-2 h-4 w-4" />
           Перегляд
         </Button>

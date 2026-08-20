@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { MarketingHeader } from '@/components/domain/marketing/marketing-header';
 import { Hero } from '@/components/domain/marketing/hero';
 import { ModulesGrid } from '@/components/domain/marketing/modules-grid';
@@ -50,8 +51,13 @@ export default function LandingPagePreview() {
 
   return (
     <div className="rounded-md border border-slate-800">
-      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 p-3">
-        <p className="text-xs text-slate-400">Попередній перегляд чернетки — публічна сторінка ще НЕ оновлена.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 p-3">
+        <div className="flex items-center gap-3">
+          <Link href="/super-admin/landing" className="text-xs text-slate-400 hover:text-slate-200">
+            ← Назад до редактора
+          </Link>
+          <p className="text-xs text-slate-400">Попередній перегляд чернетки — публічна сторінка ще НЕ оновлена.</p>
+        </div>
         <LocaleSwitcher locale={locale} onChange={setLocale} />
       </div>
       <div className="bg-background text-foreground">
