@@ -7,13 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { superAdminApi } from '@/lib/super-admin/api';
-import { useSuperAdminSessionStore } from '@/lib/super-admin/session-store';
+import { login } from '@/lib/super-admin/actions';
 
 export default function SuperAdminLoginPage() {
   const t = useTranslations('superAdmin');
   const router = useRouter();
-  const setSession = useSuperAdminSessionStore((s) => s.setSession);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +22,10 @@ export default function SuperAdminLoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await superAdminApi.post<{ accessToken: string; expiresIn: string }>('super-admin/auth/login', {
-        email,
-        password,
-      });
-      setSession({ accessToken: res.accessToken, email });
+      // Same-origin route (not the backend directly) — only it can turn the
+      // returned refresh token into an httpOnly cookie for this session to
+      // survive a reload (see app/api/super-admin/auth/login/route.ts).
+      await login(email, password);
       router.replace('/super-admin');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('loginFailed'));

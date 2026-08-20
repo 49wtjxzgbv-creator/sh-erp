@@ -6,10 +6,13 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { CodedUnauthorizedException } from '../../common/api-exceptions';
+import { SuperAdminPrismaService } from './super-admin-prisma.service';
 
 export interface RequestSuperAdmin {
   superAdminId: string;
   email: string;
+  /** Permission keys granted via this admin's SuperAdminRole (super-admin-permissions.catalogue.ts). Empty if no role is assigned. */
+  permissions: string[];
 }
 
 export interface SuperAdminTokenPayload {
@@ -36,12 +39,22 @@ export interface SuperAdminTokenPayload {
  * `JwtModule` registration — `sign()`/`verify()` both accept a `secret`
  * override per call, which is all a second, fully independent secret
  * actually needs.
+ *
+ * P0 fix (2026-08-20): after verifying the token, does one extra DB lookup
+ * (role → permission keys) and attaches `permissions: string[]` to
+ * `request.superAdmin` — this is what `SuperAdminPermissionGuard` reads.
+ * Recomputed fresh on every request (not baked into the JWT) so a role
+ * change takes effect on the admin's very next request rather than staying
+ * stale for the rest of the token's lifetime.
  */
 @Injectable()
 export class SuperAdminGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: SuperAdminPrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const header = request.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
@@ -62,16 +75,24 @@ export class SuperAdminGuard implements CanActivate {
       );
     }
 
+    let payload: SuperAdminTokenPayload;
     try {
-      const payload = this.jwt.verify<SuperAdminTokenPayload>(token, { secret });
+      payload = this.jwt.verify<SuperAdminTokenPayload>(token, { secret });
       if (payload.type !== 'super_admin') {
         throw new Error('wrong token type');
       }
-      request.superAdmin = { superAdminId: payload.sub, email: payload.email } satisfies RequestSuperAdmin;
-      return true;
     } catch {
       throw new CodedUnauthorizedException('SUPER_ADMIN_TOKEN_INVALID', 'Invalid or expired super-admin access token.');
     }
+
+    const admin = await this.prisma.superAdmin.findUnique({
+      where: { id: payload.sub },
+      include: { role: { include: { permissions: { include: { permission: true } } } } },
+    });
+    const permissions = admin?.role ? admin.role.permissions.map((rp) => rp.permission.key) : [];
+
+    request.superAdmin = { superAdminId: payload.sub, email: payload.email, permissions } satisfies RequestSuperAdmin;
+    return true;
   }
 }
 

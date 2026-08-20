@@ -885,6 +885,7 @@
     "includePhotos": "Include photos",
     "printAction": "Print",
     "previewAction": "Preview",
+    "backToAppAction": "Back to app",
     "photoColumn": "Photo",
     "printAvailability": "Print availability",
     "availabilityTitle": "Availability check"
@@ -992,6 +993,9 @@
     "created": "Created",
     "actions": "Actions",
     "impersonate": "Impersonate",
+    "impersonateFailed": "Failed to impersonate a user of this company.",
+    "impersonationBannerText": "You are impersonating a user of company \"{company}\".",
+    "endImpersonation": "End",
     "block": "Block",
     "unblock": "Unblock",
     "noCompaniesFound": "No companies found.",
@@ -1257,7 +1261,6 @@
     "SUPPLIER_PORTAL_TOKEN_INVALID": "Invalid or expired supplier portal access token.",
     "SUPPLIER_PORTAL_TOKEN_MISSING": "Missing supplier portal access token.",
     "USER_NOT_FOUND": "User not found."
-
   },
   "planner": {
     "title": "Schedule",

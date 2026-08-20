@@ -38,6 +38,7 @@
 import { PrismaClient } from '../backend/node_modules/@prisma/client';
 import * as argon2 from 'argon2';
 import { PERMISSIONS_CATALOGUE } from '../backend/src/modules/authorization/permissions.catalogue';
+import { SUPER_ADMIN_PERMISSIONS_CATALOGUE } from '../backend/src/modules/super-admin/super-admin-permissions.catalogue';
 import { INITIAL_LANDING_PAGE_CONTENT } from '../backend/src/modules/landing-page/landing-page-content.types';
 
 const prisma = new PrismaClient();
@@ -71,8 +72,51 @@ async function main() {
   }
   console.log(`Seeded ${PLANS.length} plans.`);
 
-  const superAdminId = await seedSuperAdmin();
+  const superAdminRoleId = await seedSuperAdminRbac();
+  const superAdminId = await seedSuperAdmin(superAdminRoleId);
   await seedLandingPage(superAdminId);
+}
+
+/**
+ * Local-dev mirror of the grandfather-in step that also runs inside
+ * 20260820210000_super_admin_rbac's migration.sql itself (the real safety
+ * guarantee for production, since this seed script isn't guaranteed to run
+ * against production on every deploy — see that migration's header
+ * comment). Idempotent: safe to re-run on every `prisma db seed`.
+ */
+async function seedSuperAdminRbac(): Promise<string> {
+  for (const permission of SUPER_ADMIN_PERMISSIONS_CATALOGUE) {
+    await prisma.superAdminPermission.upsert({
+      where: { key: permission.key },
+      update: { resource: permission.resource, action: permission.action, description: permission.description },
+      create: permission,
+    });
+  }
+  console.log(`Seeded ${SUPER_ADMIN_PERMISSIONS_CATALOGUE.length} super-admin permissions.`);
+
+  const role = await prisma.superAdminRole.upsert({
+    where: { name: 'Super Admin' },
+    update: {},
+    create: {
+      name: 'Super Admin',
+      description: 'Full platform access — seeded system role, grandfathers in every account created before RBAC existed.',
+      isSystem: true,
+    },
+  });
+
+  const permissions = await prisma.superAdminPermission.findMany();
+  for (const permission of permissions) {
+    await prisma.superAdminRolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: permission.id },
+    });
+  }
+  console.log(`Seeded "Super Admin" role with ${permissions.length} permissions.`);
+
+  await prisma.superAdmin.updateMany({ where: { roleId: null }, data: { roleId: role.id } });
+
+  return role.id;
 }
 
 /**
@@ -89,7 +133,7 @@ async function main() {
  * `SUPER_ADMIN_BOOTSTRAP_FORCE_PASSWORD_RESET=true` for exactly one
  * deploy (see docs/deployment.md's env-var checklist).
  */
-async function seedSuperAdmin(): Promise<string | null> {
+async function seedSuperAdmin(superAdminRoleId: string): Promise<string | null> {
   const email = process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL;
   const password = process.env.SUPER_ADMIN_BOOTSTRAP_PASSWORD;
 
@@ -105,7 +149,10 @@ async function seedSuperAdmin(): Promise<string | null> {
   const forceReset = process.env.SUPER_ADMIN_BOOTSTRAP_FORCE_PASSWORD_RESET === 'true';
 
   if (existing && !forceReset) {
-    await prisma.superAdmin.update({ where: { email }, data: { active: true } });
+    await prisma.superAdmin.update({
+      where: { email },
+      data: { active: true, roleId: existing.roleId ?? superAdminRoleId },
+    });
     console.log(`Super Admin "${email}" already exists — left password untouched (active: true confirmed).`);
     return existing.id;
   }
@@ -113,8 +160,8 @@ async function seedSuperAdmin(): Promise<string | null> {
   const passwordHash = await argon2.hash(password);
   const superAdmin = await prisma.superAdmin.upsert({
     where: { email },
-    update: { passwordHash, active: true },
-    create: { email, passwordHash, fullName: 'System Administrator', active: true },
+    update: { passwordHash, active: true, roleId: existing?.roleId ?? superAdminRoleId },
+    create: { email, passwordHash, fullName: 'System Administrator', active: true, roleId: superAdminRoleId },
   });
   console.log(
     existing

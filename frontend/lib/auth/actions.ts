@@ -14,6 +14,7 @@ interface SessionResponse {
   userId: string;
   companyId: string;
   companySlug: string;
+  impersonatedBy?: string | null;
 }
 
 async function parseOrThrow(res: Response): Promise<SessionResponse> {

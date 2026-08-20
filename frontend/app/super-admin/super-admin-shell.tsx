@@ -5,6 +5,8 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useSuperAdminSessionStore } from '@/lib/super-admin/session-store';
+import { logout } from '@/lib/super-admin/actions';
+import { SuperAdminSessionBoundary } from '@/components/domain/shell/super-admin-session-boundary';
 import { Button } from '@/components/ui/button';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 
@@ -14,8 +16,9 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  * separate super-admin session store, not the regular one) and its own nav.
  * No shared layout chrome with Company Admin's UI at all, per the "окрема
  * адмін-панель" requirement. `/super-admin/login` is the one page under
- * this tree that must render without a session — everything else redirects
- * there if `accessToken` is null.
+ * this tree that must render without a session — it bypasses
+ * SuperAdminSessionBoundary entirely (no point silently trying to restore a
+ * session on the page whose whole job is establishing one).
  *
  * Split out of app/super-admin/layout.tsx (which stays a Server Component
  * so it can export `metadata` for noindex) — this file is 'use client' for
@@ -23,24 +26,38 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  * a Client Component.
  */
 export function SuperAdminShell({ children }: { children: React.ReactNode }) {
-  const t = useTranslations('superAdmin');
-  const router = useRouter();
   const pathname = usePathname();
-  const { accessToken, email, clearSession } = useSuperAdminSessionStore();
   const isLoginPage = pathname === '/super-admin/login';
-
-  useEffect(() => {
-    if (!accessToken && !isLoginPage) {
-      router.replace('/super-admin/login');
-    }
-  }, [accessToken, isLoginPage, router]);
-
-  if (!accessToken && !isLoginPage) {
-    return null; // redirecting
-  }
 
   if (isLoginPage) {
     return <div className="min-h-screen bg-slate-950 text-slate-100">{children}</div>;
+  }
+
+  return (
+    <SuperAdminSessionBoundary>
+      <AuthedSuperAdminShell>{children}</AuthedSuperAdminShell>
+    </SuperAdminSessionBoundary>
+  );
+}
+
+/**
+ * Runs only after SuperAdminSessionBoundary has resolved (isHydrated), so
+ * this is the first point it's safe to decide "no session → redirect" —
+ * P0 fix (2026-08-20): previously this same check ran on first render,
+ * before a reload's httpOnly cookie had any chance to be exchanged for a
+ * fresh access token, so every reload bounced straight to /login.
+ */
+function AuthedSuperAdminShell({ children }: { children: React.ReactNode }) {
+  const t = useTranslations('superAdmin');
+  const router = useRouter();
+  const { accessToken, email } = useSuperAdminSessionStore();
+
+  useEffect(() => {
+    if (!accessToken) router.replace('/super-admin/login');
+  }, [accessToken, router]);
+
+  if (!accessToken) {
+    return null; // redirecting
   }
 
   return (
@@ -63,8 +80,8 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                clearSession();
+              onClick={async () => {
+                await logout();
                 router.replace('/super-admin/login');
               }}
             >

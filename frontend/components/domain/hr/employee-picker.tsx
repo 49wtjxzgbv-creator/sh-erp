@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useEmployees } from '@/lib/hooks/use-hr';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
 
 /**
  * Third sibling of product-picker.tsx / assembly-picker.tsx — same
- * hand-rolled typeahead shell. Built here (Production's worker-assignment
- * UI needs it) ahead of the full HR module (Task 49), which will reuse it
- * rather than duplicating.
+ * EntityCombobox-backed typeahead shell (components/domain/shared/entity-combobox.tsx).
+ * Built here (Production's worker-assignment UI needs it) ahead of the full
+ * HR module (Task 49), which will reuse it rather than duplicating.
  */
 export interface EmployeePickerProps {
   value: string | undefined;
@@ -22,54 +21,38 @@ export function EmployeePicker({ value, onChange, placeholder }: EmployeePickerP
   const t = useTranslations('production');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const { data } = useEmployees({ search: query, limit: 20 });
+  const items = data?.items ?? [];
 
   useEffect(() => {
     if (!value) setQuery('');
   }, [value]);
 
   return (
-    <div ref={containerRef} className="relative">
-      <Input
-        placeholder={placeholder ?? t('searchEmployees')}
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-          if (!e.target.value) onChange(undefined, undefined);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 100)}
-      />
-      {open && (
-        <div className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-popover shadow-md">
-          {data?.items.length ? (
-            data.items.map((employee) => (
-              <button
-                type="button"
-                key={employee.id}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setQuery(employee.fullName);
-                  setOpen(false);
-                  onChange(employee.id, employee.fullName);
-                }}
-                className={cn(
-                  'flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary',
-                  employee.id === value && 'bg-secondary',
-                )}
-              >
-                <span className="font-medium">{employee.fullName}</span>
-                {employee.position && <span className="text-xs text-muted-foreground">{employee.position}</span>}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-sm text-muted-foreground">—</div>
-          )}
-        </div>
+    <EntityCombobox
+      query={query}
+      onQueryChange={(next) => {
+        setQuery(next);
+        if (!next) onChange(undefined, undefined);
+      }}
+      open={open}
+      onOpenChange={setOpen}
+      items={items}
+      getKey={(employee) => employee.id}
+      isSelected={(employee) => employee.id === value}
+      onSelect={(employee) => {
+        setQuery(employee.fullName);
+        setOpen(false);
+        onChange(employee.id, employee.fullName);
+      }}
+      placeholder={placeholder ?? t('searchEmployees')}
+      renderItem={(employee) => (
+        <span className="flex flex-col items-start">
+          <span className="font-medium">{employee.fullName}</span>
+          {employee.position && <span className="text-xs text-muted-foreground">{employee.position}</span>}
+        </span>
       )}
-    </div>
+    />
   );
 }

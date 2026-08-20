@@ -5,7 +5,7 @@ describe('LandingPageAdminService', () => {
   let service: LandingPageAdminService;
   let prisma: any;
   let audit: any;
-  const actor = { superAdminId: 'sa1', email: 'admin@sh-erp.pro' };
+  const actor = { superAdminId: 'sa1', email: 'admin@sh-erp.pro', permissions: [] };
 
   beforeEach(() => {
     prisma = {

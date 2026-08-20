@@ -5,7 +5,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sh-erp.com';
 /**
  * Next.js file convention — generates /robots.txt. Disallows every
  * authenticated/private route tree (mirrors app/(app)/*, app/super-admin/*,
- * app/supplier-portal/*, plus /login and /impersonate) so crawlers don't
+ * app/supplier-portal/*, plus /login) so crawlers don't
  * waste budget on pages that 404-or-redirect for a signed-out crawler
  * anyway and hold no public content. The real, indexable surface is just
  * "/" and "/register" — matches the noindex `robots` metadata each of
@@ -38,7 +38,6 @@ export default function robots(): MetadataRoute.Robots {
         '/super-admin',
         '/supplier-portal',
         '/login',
-        '/impersonate',
         '/api',
       ],
     },

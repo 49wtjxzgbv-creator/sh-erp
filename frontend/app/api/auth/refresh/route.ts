@@ -51,9 +51,19 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const { accessToken, refreshToken: newRefreshToken } = data as { accessToken: string; refreshToken: string };
+  const { accessToken, refreshToken: newRefreshToken, impersonatedBy } = data as {
+    accessToken: string;
+    refreshToken: string;
+    impersonatedBy?: string | null;
+  };
 
-  const response = NextResponse.json({ accessToken, userId, companyId, companySlug: companySlug ?? '' });
+  const response = NextResponse.json({
+    accessToken,
+    userId,
+    companyId,
+    companySlug: companySlug ?? '',
+    impersonatedBy: impersonatedBy ?? null,
+  });
   setSessionCookies(response, { refreshToken: newRefreshToken, userId, companyId, companySlug: companySlug ?? '' });
   return response;
 }

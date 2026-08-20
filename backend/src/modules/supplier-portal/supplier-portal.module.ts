@@ -4,6 +4,7 @@ import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.s
 import { SupplierPortalGuard } from './supplier-portal-context';
 import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.interceptor';
 import { SupplierPortalAuthService } from './supplier-portal-auth.service';
+import { SupplierPortalRefreshTokenService } from './supplier-portal-refresh-token.service';
 import { SupplierPortalAuthController } from './supplier-portal-auth.controller';
 import { SupplierPortalService } from './supplier-portal.service';
 import { SupplierPortalController } from './supplier-portal.controller';
@@ -31,6 +32,7 @@ import { SupplierPortalController } from './supplier-portal.controller';
     SupplierPortalGuard,
     SupplierPortalScopeInterceptor,
     SupplierPortalAuthService,
+    SupplierPortalRefreshTokenService,
     SupplierPortalService,
   ],
 })

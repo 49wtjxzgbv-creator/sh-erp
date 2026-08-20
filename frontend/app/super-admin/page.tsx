@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/domain/shell/confirm-dialog';
 import { superAdminApi } from '@/lib/super-admin/api';
+import { getSuperAdminAccessToken, useSuperAdminSessionStore } from '@/lib/super-admin/session-store';
 
 interface CompanyRow {
   id: string;
@@ -46,6 +47,10 @@ export default function SuperAdminCompaniesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
+  // UX nicety only — the real boundary is the backend guard
+  // (SuperAdminPermissionGuard on CompaniesAdminController#impersonate).
+  const canImpersonate = useSuperAdminSessionStore((s) => s.permissions.includes('companies:impersonate'));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,23 +90,30 @@ export default function SuperAdminCompaniesPage() {
 
   async function impersonate(id: string) {
     setBusyId(id);
+    setImpersonateError(null);
     try {
-      const res = await superAdminApi.post<{
-        accessToken: string;
-        userId: string;
-        companyId: string;
-        companySlug: string;
-        roleId: string;
-      }>(`super-admin/companies/${id}/impersonate`, {});
-      const params = new URLSearchParams({
-        accessToken: res.accessToken,
-        userId: res.userId,
-        companyId: res.companyId,
-        companySlug: res.companySlug,
-        roleId: res.roleId,
+      // Same-origin route (not the backend directly) — only it can turn the
+      // returned refresh token into an httpOnly cookie for the new tab's
+      // regular-app session (see app/api/auth/impersonate/route.ts).
+      const res = await fetch('/api/auth/impersonate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getSuperAdminAccessToken() ?? ''}`,
+        },
+        body: JSON.stringify({ companyId: id }),
+        credentials: 'include',
       });
-      // New tab — the Super Admin panel session stays open in this one.
-      window.open(`/impersonate?${params.toString()}`, '_blank');
+      if (!res.ok) {
+        const data = await res.json().catch(() => undefined);
+        throw new Error((data && (data.message || data.error)) || t('impersonateFailed'));
+      }
+      // New tab, no query string — its own SessionBoundary silently
+      // exchanges the httpOnly cookie this call just set for an access
+      // token. The Super Admin panel session stays open in this tab.
+      window.open('/dashboard', '_blank');
+    } catch (err) {
+      setImpersonateError(err instanceof Error ? err.message : t('impersonateFailed'));
     } finally {
       setBusyId(null);
     }
@@ -134,6 +146,7 @@ export default function SuperAdminCompaniesPage() {
               className="max-w-xs bg-slate-950"
             />
           </div>
+          {impersonateError && <p className="pt-2 text-sm text-red-400">{impersonateError}</p>}
         </CardHeader>
         <CardContent>
           <Table>
@@ -161,9 +174,11 @@ export default function SuperAdminCompaniesPage() {
                     <Button size="sm" variant="outline" onClick={() => setDetailId(c.id)}>
                       {t('details')}
                     </Button>
-                    <Button size="sm" variant="outline" loading={busyId === c.id} onClick={() => impersonate(c.id)}>
-                      {t('impersonate')}
-                    </Button>
+                    {canImpersonate && (
+                      <Button size="sm" variant="outline" loading={busyId === c.id} onClick={() => impersonate(c.id)}>
+                        {t('impersonate')}
+                      </Button>
+                    )}
                     {c.status === 'ACTIVE' ? (
                       <Button size="sm" variant="destructive" loading={busyId === c.id} onClick={() => block(c.id)}>
                         {t('block')}

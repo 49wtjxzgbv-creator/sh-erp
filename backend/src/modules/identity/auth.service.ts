@@ -10,6 +10,12 @@ export interface TokenPair {
   accessToken: string;
   refreshToken: string;
   expiresIn: string;
+  // Set only for an impersonation-flagged session (see
+  // issueImpersonationSession/refresh below) — carried through every
+  // rotation in the family so the frontend can show/hide its "you are
+  // impersonating X" banner on every silent refresh, not just the initial
+  // handoff from the Super Admin panel.
+  impersonatedBy?: string | null;
 }
 
 @Injectable()
@@ -140,6 +146,16 @@ export class AuthService {
       throw new CodedUnauthorizedException('AUTH_REFRESH_TOKEN_INVALID', 'Refresh token invalid or expired.');
     }
 
+    // Impersonation ceiling: `expiresAt` itself already reflects this (see
+    // issueTokenPair), so this check is redundant in the common case — kept
+    // as an explicit, readable guard anyway rather than relying solely on
+    // `expiresAt`'s implicit min(), since a future change to that
+    // computation should not silently reopen this specific security
+    // property.
+    if (stored.absoluteExpiresAt && stored.absoluteExpiresAt < new Date()) {
+      throw new CodedUnauthorizedException('AUTH_REFRESH_TOKEN_INVALID', 'Impersonation session has expired.');
+    }
+
     if (stored.revokedAt) {
       // Reused a token that was already rotated away — assume compromise.
       await this.prisma.refreshToken.updateMany({
@@ -173,6 +189,10 @@ export class AuthService {
       user.email,
       membership.roleId,
       stored.familyId, // same family — this is a rotation, not a new session
+      // Propagate impersonation flag/ceiling unchanged across rotation —
+      // the ceiling must never reset/extend just because the token was
+      // refreshed before it expired.
+      stored.impersonatedBy ? { impersonatedBy: stored.impersonatedBy, absoluteExpiresAt: stored.absoluteExpiresAt! } : undefined,
     );
   }
 
@@ -186,21 +206,56 @@ export class AuthService {
     });
   }
 
+  /**
+   * P0 fix (2026-08-20): Super Admin's "Увійти як" previously minted an
+   * access-token-only JWT with no refresh token, so the impersonated tab
+   * could never pass middleware's httpOnly-refresh-cookie check. This
+   * issues a REAL session through the exact same `issueTokenPair` +
+   * `RefreshToken` machinery a normal login uses — same rotation, same
+   * reuse detection — but flagged with `impersonatedBy` and capped by a
+   * short, non-extendable `absoluteExpiresAt` ceiling
+   * (IMPERSONATION_SESSION_TTL_HOURS, default 1h) so the session cannot be
+   * kept alive indefinitely just by refreshing it before it expires. A
+   * normal 30-day sliding refresh token would be a real security
+   * regression for this purpose — this is deliberately NOT that.
+   */
+  async issueImpersonationSession(
+    userId: string,
+    companyId: string,
+    email: string,
+    roleId: string,
+    impersonatedBy: string,
+  ): Promise<TokenPair> {
+    const ttlHours = Number(process.env.IMPERSONATION_SESSION_TTL_HOURS ?? 1);
+    const absoluteExpiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
+    return this.issueTokenPair(userId, companyId, email, roleId, undefined, {
+      impersonatedBy,
+      absoluteExpiresAt,
+    });
+  }
+
   private async issueTokenPair(
     userId: string,
     companyId: string,
     email: string,
     roleId: string,
     familyId: string = randomUUID(),
+    impersonation?: { impersonatedBy: string; absoluteExpiresAt: Date },
   ): Promise<TokenPair> {
     const accessTtl = process.env.JWT_ACCESS_TTL ?? '15m';
     const accessToken = this.jwt.sign(
-      { sub: userId, companyId, email, roleId },
+      { sub: userId, companyId, email, roleId, ...(impersonation ? { impersonatedBy: impersonation.impersonatedBy } : {}) },
       { expiresIn: accessTtl },
     );
 
     const rawRefreshToken = randomUUID() + randomUUID(); // 72 chars of entropy, never stored raw
-    const expiresAt = new Date(Date.now() + this.refreshTtlDays * 24 * 60 * 60 * 1000);
+    const slidingExpiresAt = new Date(Date.now() + this.refreshTtlDays * 24 * 60 * 60 * 1000);
+    // The impersonation ceiling always wins over the normal 30-day sliding
+    // window — this is what actually prevents "refresh forever" for an
+    // impersonated session.
+    const expiresAt = impersonation && impersonation.absoluteExpiresAt < slidingExpiresAt
+      ? impersonation.absoluteExpiresAt
+      : slidingExpiresAt;
 
     await this.prisma.refreshToken.create({
       data: {
@@ -209,10 +264,12 @@ export class AuthService {
         tokenHash: this.hashToken(rawRefreshToken),
         familyId,
         expiresAt,
+        impersonatedBy: impersonation?.impersonatedBy,
+        absoluteExpiresAt: impersonation?.absoluteExpiresAt,
       },
     });
 
-    return { accessToken, refreshToken: rawRefreshToken, expiresIn: accessTtl };
+    return { accessToken, refreshToken: rawRefreshToken, expiresIn: accessTtl, impersonatedBy: impersonation?.impersonatedBy ?? null };
   }
 
   private hashToken(rawToken: string): string {

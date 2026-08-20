@@ -14,6 +14,14 @@ export interface SessionState {
   companyId: string | null;
   companySlug: string | null;
   roleId: string | null;
+  /**
+   * Super Admin's `superAdminId` when this session was minted by the
+   * impersonate flow (P0 fix, 2026-08-20) — null for every regular login.
+   * Carried through on every silent refresh too (not just the initial
+   * handoff), since it's part of the access token's own claims. Drives the
+   * "you are impersonating" banner (impersonation-banner.tsx).
+   */
+  impersonatedBy: string | null;
   /** True once we've resolved whether a session exists, one way or the other — gates the initial render of the (app) shell so it doesn't flash a login redirect before restoreSession() has had a chance to run. */
   isHydrated: boolean;
   setSession: (session: {
@@ -22,6 +30,7 @@ export interface SessionState {
     companyId: string;
     companySlug?: string | null;
     roleId?: string | null;
+    impersonatedBy?: string | null;
   }) => void;
   clearSession: () => void;
   setHydrated: () => void;
@@ -33,6 +42,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   companyId: null,
   companySlug: null,
   roleId: null,
+  impersonatedBy: null,
   isHydrated: false,
   setSession: (session) =>
     set({
@@ -41,6 +51,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       companyId: session.companyId,
       companySlug: session.companySlug ?? null,
       roleId: session.roleId ?? null,
+      impersonatedBy: session.impersonatedBy ?? null,
       isHydrated: true,
     }),
   clearSession: () =>
@@ -50,6 +61,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       companyId: null,
       companySlug: null,
       roleId: null,
+      impersonatedBy: null,
       isHydrated: true,
     }),
   setHydrated: () => set({ isHydrated: true }),

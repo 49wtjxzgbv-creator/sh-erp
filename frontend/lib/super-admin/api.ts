@@ -1,18 +1,21 @@
 import { getSuperAdminAccessToken, useSuperAdminSessionStore } from './session-store';
+import { restoreSession } from './actions';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
 
 /**
  * Deliberately its own tiny client, NOT a reuse of `lib/api-client/http.ts`
  * — that client's 401 handling calls the regular app's silent-refresh flow
- * (`/api/auth/refresh`, cookie-based), which has no equivalent for a
- * super-admin session (no refresh token exists at all, see
- * session-store.ts). Reusing it would risk a super-admin 401 accidentally
- * clearing or refreshing the WRONG session. A 401 here just clears the
- * super-admin session and the layout redirects to /super-admin/login.
+ * (`/api/auth/refresh`), which is scoped to the regular-auth cookie/store,
+ * not this surface's. Reusing it would risk a super-admin 401 accidentally
+ * touching the WRONG session. Same 401-retry-via-silent-refresh shape as
+ * `http.ts`, just pointed at `/api/super-admin/auth/refresh` (P0 fix,
+ * 2026-08-20 — added alongside the refresh token itself: the access token
+ * TTL was lowered from 30m to 15m on the assumption this retry exists, so a
+ * mid-session expiry no longer forces a full re-login).
  */
 class SuperAdminApiClient {
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, skipRefreshRetry = false): Promise<T> {
     const token = getSuperAdminAccessToken();
     const res = await fetch(`${API_BASE_URL.replace(/\/?$/, '/')}${path.replace(/^\//, '')}`, {
       method,
@@ -23,7 +26,11 @@ class SuperAdminApiClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
 
-    if (res.status === 401) {
+    if (res.status === 401 && !skipRefreshRetry) {
+      const refreshed = await restoreSession();
+      if (refreshed) {
+        return this.request<T>(method, path, body, true);
+      }
       useSuperAdminSessionStore.getState().clearSession();
     }
 

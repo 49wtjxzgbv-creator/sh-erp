@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TenancyModule } from '../tenancy/tenancy.module';
+import { IdentityModule } from '../identity/identity.module';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminAuditService } from './super-admin-audit.service';
 import { SuperAdminGuard } from './super-admin-context';
+import { SuperAdminPermissionGuard } from './super-admin-permission.guard';
 import { SuperAdminAuthService } from './super-admin-auth.service';
+import { SuperAdminRefreshTokenService } from './super-admin-refresh-token.service';
 import { SuperAdminAuthController } from './super-admin-auth.controller';
 import { CompaniesAdminService } from './companies-admin.service';
 import { CompaniesAdminController } from './companies-admin.controller';
@@ -29,17 +32,19 @@ import { LandingPageAdminController } from './landing-page-admin.controller';
  *
  * `JwtModule.register({})` here is intentionally secret-less at the module
  * level: every `sign()`/`verify()` call in this module passes its own
- * explicit `secret` (either `SUPER_ADMIN_JWT_SECRET` for super-admin's own
- * tokens, or `JWT_ACCESS_SECRET` for the regular access tokens
- * `CompaniesAdminService.impersonate` mints) — a second, real
- * `JwtModule.register({ secret: ... })` registration would just be a second
- * unused default that's easy to accidentally rely on later. Depends on
- * `TenancyModule` only for `CompanyService` (manual company creation reuses
- * the exact same signup transaction as public self-service signup, not a
- * parallel implementation).
+ * explicit `secret` (`SUPER_ADMIN_JWT_SECRET` for super-admin's own tokens)
+ * — a second, real `JwtModule.register({ secret: ... })` registration would
+ * just be a second unused default that's easy to accidentally rely on
+ * later. Depends on `TenancyModule` only for `CompanyService` (manual
+ * company creation reuses the exact same signup transaction as public
+ * self-service signup, not a parallel implementation), and on
+ * `IdentityModule` for `AuthService` — `CompaniesAdminService.impersonate`
+ * mints a REAL regular-company session (access+refresh token pair) through
+ * the exact same `issueTokenPair`/rotation/reuse-detection machinery a
+ * normal login uses (P0 fix, 2026-08-20), not a hand-rolled JWT.
  */
 @Module({
-  imports: [JwtModule.register({}), TenancyModule],
+  imports: [JwtModule.register({}), TenancyModule, IdentityModule],
   controllers: [
     SuperAdminAuthController,
     CompaniesAdminController,
@@ -52,7 +57,9 @@ import { LandingPageAdminController } from './landing-page-admin.controller';
     SuperAdminPrismaService,
     SuperAdminAuditService,
     SuperAdminGuard,
+    SuperAdminPermissionGuard,
     SuperAdminAuthService,
+    SuperAdminRefreshTokenService,
     CompaniesAdminService,
     UsersAdminService,
     PlansAdminService,

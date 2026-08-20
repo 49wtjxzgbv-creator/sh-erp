@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { RequireSuperAdminPermissions } from '../../common/decorators/super-admin-permissions.decorator';
 import { SuperAdminGuard, CurrentSuperAdmin, RequestSuperAdmin } from './super-admin-context';
+import { SuperAdminPermissionGuard } from './super-admin-permission.guard';
 import { CompaniesAdminService } from './companies-admin.service';
 import { CreateCompanyDto } from '../tenancy/dto/create-company.dto';
 import { ImpersonateDto } from './dto/impersonate.dto';
@@ -76,10 +78,14 @@ export class CompaniesAdminController {
   }
 
   @Post(':id/impersonate')
+  @UseGuards(SuperAdminPermissionGuard)
+  @RequireSuperAdminPermissions('companies:impersonate')
   @ApiOperation({
     summary:
-      "[Super Admin] Mint a regular, short-lived access token for this company (defaults to the company's " +
-      'original owner if no userId given). No refresh token — re-impersonate when it expires.',
+      "[Super Admin] Mint a real, short-lived regular-company session (access + refresh token) for this company " +
+      "(defaults to the company's original owner if no userId given). Refresh token is capped by a hard, " +
+      'non-extendable ceiling (IMPERSONATION_SESSION_TTL_HOURS) — re-impersonate once it expires. Requires the ' +
+      "'companies:impersonate' Super Admin permission.",
   })
   async impersonate(
     @CurrentSuperAdmin() actor: RequestSuperAdmin,

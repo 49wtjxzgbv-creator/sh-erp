@@ -38,14 +38,21 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { accessToken, refreshToken, userId, companyId } = data as {
+  const { accessToken, refreshToken, userId, companyId, impersonatedBy } = data as {
     accessToken: string;
     refreshToken: string;
     userId: string;
     companyId: string;
+    impersonatedBy?: string | null;
   };
 
-  const response = NextResponse.json({ accessToken, userId, companyId, companySlug: body.companySlug });
+  const response = NextResponse.json({
+    accessToken,
+    userId,
+    companyId,
+    companySlug: body.companySlug,
+    impersonatedBy: impersonatedBy ?? null,
+  });
   setSessionCookies(response, { refreshToken, userId, companyId, companySlug: body.companySlug ?? '' });
   return response;
 }

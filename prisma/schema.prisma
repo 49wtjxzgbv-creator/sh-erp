@@ -288,6 +288,18 @@ model RefreshToken {
   expiresAt DateTime  @db.Timestamptz(3)
   revokedAt DateTime? @db.Timestamptz(3)
 
+  // Impersonation (2026-08-20 P0 fix — CompaniesAdminService#impersonate).
+  // Both null for every normal login. `impersonatedBy` is the acting
+  // SuperAdmin's id (no FK — SuperAdmin lives outside this table's tenant/
+  // RLS boundary, same "no cross-role FK" precedent as `companyId` itself
+  // having none back to a global table). `absoluteExpiresAt` is a hard
+  // rotation ceiling copied forward unchanged on every refresh within the
+  // family — `expiresAt` can slide with each rotation same as a normal
+  // token, but never past this value, so an impersonation session cannot
+  // be kept alive indefinitely just by refreshing it before it expires.
+  impersonatedBy    String?   @db.Uuid
+  absoluteExpiresAt DateTime? @db.Timestamptz(3)
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id]) // User is global — no composite FK
@@ -328,16 +340,100 @@ model SuperAdmin {
   active       Boolean   @default(true) // deactivate instead of delete — keeps SuperAdminAuditLog attributable
   lastLoginAt  DateTime? @db.Timestamptz(3)
 
+  // RBAC (2026-08-20 P0 fix). Nullable — the migration that adds this
+  // backfills every existing row with the seeded "Super Admin" (all-
+  // permissions) role in the same transaction, so this is never actually
+  // null in practice; kept nullable at the schema level only because
+  // Prisma migrations can't add a NOT NULL FK column and backfill it in
+  // one non-interactive step against a table that may already have rows.
+  roleId String?         @db.Uuid
+  role   SuperAdminRole? @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  auditLogs SuperAdminAuditLog[]
+  auditLogs     SuperAdminAuditLog[]
+  refreshTokens SuperAdminRefreshToken[]
 
   landingPageVersionsCreated   LandingPageVersion[] @relation("LandingPageVersionCreatedBy")
   landingPageVersionsPublished LandingPageVersion[] @relation("LandingPageVersionPublishedBy")
   landingMediaAssets           LandingMediaAsset[]
 
   @@map("super_admins")
+}
+
+// Fixed, code-defined catalogue (super-admin-permissions.catalogue.ts is
+// the source of truth) mirrored into the DB so it can be joined against —
+// same "catalogue is code, grants are data" split as the tenant-side
+// `Permission`/`RolePermission` pair below. NOT company-scoped — there is
+// only one global Super Admin org, unlike tenant `Role`.
+model SuperAdminPermission {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique
+  resource    String
+  action      String
+  description String
+
+  roles SuperAdminRolePermission[]
+
+  @@map("super_admin_permissions")
+}
+
+model SuperAdminRole {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  description String?
+  isSystem    Boolean @default(false) // true for the seeded "Super Admin" (all-permissions) role — grandfathers in every existing account, never deleted by any endpoint this task builds
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  permissions SuperAdminRolePermission[]
+  admins      SuperAdmin[]
+
+  @@map("super_admin_roles")
+}
+
+model SuperAdminRolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       SuperAdminRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission SuperAdminPermission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+  @@map("super_admin_role_permissions")
+}
+
+// Session persistence (2026-08-20 P0 fix) — same rotation/reuse-detection
+// shape as the tenant-side `RefreshToken` above, scoped to SuperAdmin
+// instead. Global, no companyId, no RLS (same as `super_admins` itself) —
+// read/written exclusively by the existing BYPASSRLS `super_admin_service`
+// role, never by `app_user`.
+model SuperAdminRefreshToken {
+  id                String    @id @default(uuid()) @db.Uuid
+  superAdminId      String    @db.Uuid
+  tokenHash         String    @unique
+  familyId          String    @db.Uuid
+  device            String?
+  ipAddress         String?
+  // Per-token sliding expiry, capped by the family's own absolute ceiling
+  // below — mirrors RefreshToken.absoluteExpiresAt's impersonation-ceiling
+  // mechanism, applied here to every Super Admin session, not just
+  // impersonated ones (SUPER_ADMIN_REFRESH_TTL_HOURS, default 12h): a
+  // Super Admin session can't be kept alive indefinitely by staying active.
+  expiresAt         DateTime  @db.Timestamptz(3)
+  absoluteExpiresAt DateTime  @db.Timestamptz(3)
+  revokedAt         DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  superAdmin SuperAdmin @relation(fields: [superAdminId], references: [id])
+
+  @@index([superAdminId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("super_admin_refresh_tokens")
 }
 
 // Append-only, mirroring AuditEvent's own "corrections are new state, never
@@ -672,8 +768,38 @@ model SupplierPortalUser {
 
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
+  refreshTokens SupplierPortalRefreshToken[]
+
   @@index([companyId])
   @@map("supplier_portal_users")
+}
+
+// Session persistence (2026-08-20 P0 fix) — same rotation/reuse-detection
+// shape as the tenant-side `RefreshToken`, scoped to SupplierPortalUser.
+// Tenant-scoped (companyId) and RLS-protected like every other real tenant
+// table — read/written through the existing BYPASSRLS
+// `supplier_portal_auth_service` role for the pre-tenant-context lookup-by-
+// hash step, same reasoning ADR-0011 already gives for why
+// `supplier_portal_users` itself needs that role.
+model SupplierPortalRefreshToken {
+  id                   String    @id @default(uuid()) @db.Uuid
+  supplierPortalUserId String    @db.Uuid
+  companyId            String    @db.Uuid
+  tokenHash            String    @unique
+  familyId             String    @db.Uuid
+  device               String?
+  ipAddress            String?
+  expiresAt            DateTime  @db.Timestamptz(3) // sliding, SUPPLIER_PORTAL_REFRESH_TTL_DAYS (default 30d) — no extra absolute ceiling, matching the existing "low-privilege external user" risk acceptance (ADR-0011)
+  revokedAt            DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  supplierPortalUser SupplierPortalUser @relation(fields: [supplierPortalUserId], references: [id])
+
+  @@index([supplierPortalUserId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("supplier_portal_refresh_tokens")
 }
 
 // ============================================================================

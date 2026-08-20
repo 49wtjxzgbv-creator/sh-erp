@@ -11,9 +11,11 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { update: jest.fn() },
+      user: { update: jest.fn(), findUniqueOrThrow: jest.fn() },
       company: { findUnique: jest.fn() },
       companyBranding: { findUnique: jest.fn() },
+      companyMembership: { findUnique: jest.fn() },
+      refreshToken: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
       // Prisma's real shapes — modeled loosely since this is a unit test of
       // AuthService's logic, not an integration test of Prisma itself
       // (that's what test:e2e against a real Postgres is for).
@@ -103,6 +105,101 @@ describe('AuthService', () => {
 
       const result = await service.getPublicCompanyInfo('acme');
       expect(Object.keys(result).sort()).toEqual(['branding', 'id', 'locale', 'name', 'slug']);
+    });
+  });
+
+  describe('issueImpersonationSession — P0 fix (2026-08-20)', () => {
+    it('persists impersonatedBy and a computed absoluteExpiresAt ceiling on the refresh token row', async () => {
+      const before = Date.now();
+      await service.issueImpersonationSession('u1', 'c1', 'user@acme.com', 'role1', 'super-admin-1');
+
+      expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
+      const data = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(data.impersonatedBy).toBe('super-admin-1');
+      expect(data.absoluteExpiresAt).toBeInstanceOf(Date);
+      // Default IMPERSONATION_SESSION_TTL_HOURS is 1h — well under the
+      // normal 30-day sliding window, confirming the short ceiling actually
+      // won the min() in issueTokenPair, not the 30-day default.
+      const hoursAhead = (data.absoluteExpiresAt.getTime() - before) / (60 * 60 * 1000);
+      expect(hoursAhead).toBeGreaterThan(0);
+      expect(hoursAhead).toBeLessThanOrEqual(1.01);
+      expect(data.expiresAt).toEqual(data.absoluteExpiresAt);
+    });
+
+    it('returns impersonatedBy in the token pair response', async () => {
+      const result = await service.issueImpersonationSession('u1', 'c1', 'user@acme.com', 'role1', 'super-admin-1');
+      expect(result.impersonatedBy).toBe('super-admin-1');
+    });
+  });
+
+  describe('refresh — impersonation ceiling + propagation (P0 fix, 2026-08-20)', () => {
+    it('rejects a refresh once the absolute ceiling has passed, even if expiresAt itself has not', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'rt1',
+        userId: 'u1',
+        companyId: 'c1',
+        familyId: 'fam1',
+        // expiresAt still in the future — only the impersonation ceiling
+        // should be what rejects this, proving the ceiling is enforced
+        // independently of the token's own sliding expiry.
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        absoluteExpiresAt: new Date(Date.now() - 1000),
+        revokedAt: null,
+        impersonatedBy: 'super-admin-1',
+      });
+
+      await expect(service.refresh('raw-token')).rejects.toThrow(UnauthorizedException);
+      // Must reject before ever touching revocation/company/membership state.
+      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+    });
+
+    it('propagates impersonatedBy/absoluteExpiresAt unchanged across a rotation within the ceiling', async () => {
+      const ceiling = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes still left
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'rt1',
+        userId: 'u1',
+        companyId: 'c1',
+        familyId: 'fam1',
+        expiresAt: ceiling,
+        absoluteExpiresAt: ceiling,
+        revokedAt: null,
+        impersonatedBy: 'super-admin-1',
+      });
+      prisma.company.findUnique.mockResolvedValue({ id: 'c1', status: 'ACTIVE' });
+      prisma.companyMembership.findUnique.mockResolvedValue({ roleId: 'role1' });
+      prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'u1', email: 'user@acme.com' });
+
+      const result = await service.refresh('raw-token');
+
+      expect(result.impersonatedBy).toBe('super-admin-1');
+      const newTokenData = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(newTokenData.familyId).toBe('fam1'); // same family — rotation, not a new session
+      expect(newTokenData.impersonatedBy).toBe('super-admin-1');
+      expect(newTokenData.absoluteExpiresAt).toEqual(ceiling); // ceiling never moves on rotation
+      expect(newTokenData.expiresAt).toEqual(ceiling); // capped by the ceiling, not a fresh 30-day window
+    });
+
+    it('a normal (non-impersonated) refresh is unaffected by the ceiling logic', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 'rt1',
+        userId: 'u1',
+        companyId: 'c1',
+        familyId: 'fam1',
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        absoluteExpiresAt: null,
+        revokedAt: null,
+        impersonatedBy: null,
+      });
+      prisma.company.findUnique.mockResolvedValue({ id: 'c1', status: 'ACTIVE' });
+      prisma.companyMembership.findUnique.mockResolvedValue({ roleId: 'role1' });
+      prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'u1', email: 'user@acme.com' });
+
+      const result = await service.refresh('raw-token');
+
+      expect(result.impersonatedBy).toBeNull();
+      const newTokenData = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(newTokenData.impersonatedBy).toBeUndefined();
+      expect(newTokenData.absoluteExpiresAt).toBeUndefined();
     });
   });
 });

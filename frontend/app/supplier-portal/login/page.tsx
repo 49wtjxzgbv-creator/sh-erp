@@ -12,14 +12,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 import { Logo } from '@/components/domain/shell/logo';
-import { supplierPortalApi } from '@/lib/supplier-portal/api';
-import { useSupplierPortalSessionStore } from '@/lib/supplier-portal/session-store';
+import { login } from '@/lib/supplier-portal/actions';
 
 export default function SupplierPortalLoginPage() {
   const t = useTranslations('supplierPortal');
   const ta = useTranslations('auth');
   const router = useRouter();
-  const setSession = useSupplierPortalSessionStore((s) => s.setSession);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,11 +28,10 @@ export default function SupplierPortalLoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await supplierPortalApi.post<{ accessToken: string; expiresIn: string }>('supplier-portal/auth/login', {
-        email,
-        password,
-      });
-      setSession({ accessToken: res.accessToken, email });
+      // Same-origin route (not the backend directly) — only it can turn the
+      // returned refresh token into an httpOnly cookie for this session to
+      // survive a reload (see app/api/supplier-portal/auth/login/route.ts).
+      await login(email, password);
       router.replace('/supplier-portal');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('loginFailed'));

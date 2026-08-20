@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { SuperAdminPrismaService } from './super-admin-prisma.service';
 import { SuperAdminAuditService } from './super-admin-audit.service';
 import { RequestSuperAdmin } from './super-admin-context';
 import { CreateCompanyDto } from '../tenancy/dto/create-company.dto';
 import { CompanyService } from '../tenancy/company.service';
+import { AuthService } from '../identity/auth.service';
 import { ImpersonateDto } from './dto/impersonate.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
@@ -21,12 +21,16 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 export class CompaniesAdminService {
   constructor(
     private readonly prisma: SuperAdminPrismaService,
-    private readonly jwt: JwtService,
     private readonly superAdminAudit: SuperAdminAuditService,
     // Reused, not reimplemented — company creation (signup transaction, all
     // per-company seeders) is exactly the same operation whether triggered
     // by public self-service signup or a Super Admin doing it manually.
     private readonly companyService: CompanyService,
+    // Reused, not reimplemented — impersonate() mints a real regular-company
+    // session through the exact same issueTokenPair/rotation/reuse-detection
+    // machinery a normal login uses (P0 fix, 2026-08-20), instead of
+    // hand-rolling a second, unaudited JWT-signing path.
+    private readonly authService: AuthService,
   ) {}
 
   async list(query: { search?: string; limit?: number; offset?: number }) {
@@ -157,13 +161,14 @@ export class CompaniesAdminService {
   }
 
   /**
-   * "Входити в будь-яку компанію" — mints a REGULAR access token (same
-   * shape, same secret, as `AuthService.issueTokenPair`), so the rest of
-   * the app needs zero special-casing to accept it. Deliberately
-   * access-token-only, no refresh token: keeps an impersonation session
-   * short-lived and auditable rather than a standing, easily-forgotten
-   * back door. Every impersonation is logged with which user it acted as,
-   * not just which company.
+   * "Входити в будь-яку компанію" — mints a REAL regular-company session
+   * (access + refresh token pair) via `AuthService.issueImpersonationSession`,
+   * so the impersonated tab passes `middleware.ts`'s httpOnly-refresh-cookie
+   * check exactly like a normal login. Not a standing back door, though:
+   * the refresh token is capped by a short, non-extendable
+   * `absoluteExpiresAt` ceiling (see `issueImpersonationSession`), unlike a
+   * normal 30-day sliding session. Every impersonation is logged with which
+   * user it acted as, not just which company.
    */
   async impersonate(actor: RequestSuperAdmin, companyId: string, dto: ImpersonateDto) {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });
@@ -188,16 +193,12 @@ export class CompaniesAdminService {
       throw new CodedNotFoundException('COMPANY_NO_MEMBERS', 'This company has no members to impersonate.');
     }
 
-    const accessTtl = process.env.JWT_ACCESS_TTL ?? '15m';
-    const accessToken = this.jwt.sign(
-      {
-        sub: membership.userId,
-        companyId,
-        email: membership.user.email,
-        roleId: membership.roleId,
-        impersonatedBy: actor.superAdminId, // present only on impersonation tokens — informational, not read by any regular guard
-      },
-      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: accessTtl },
+    const tokens = await this.authService.issueImpersonationSession(
+      membership.userId,
+      companyId,
+      membership.user.email,
+      membership.roleId,
+      actor.superAdminId,
     );
 
     await this.superAdminAudit.record({
@@ -209,8 +210,10 @@ export class CompaniesAdminService {
     });
 
     return {
-      accessToken,
-      expiresIn: accessTtl,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+      impersonatedBy: tokens.impersonatedBy,
       companyId,
       companySlug: company.slug,
       userId: membership.userId,

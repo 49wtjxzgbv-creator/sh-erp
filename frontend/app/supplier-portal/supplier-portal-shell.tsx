@@ -4,6 +4,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSupplierPortalSessionStore } from '@/lib/supplier-portal/session-store';
+import { logout } from '@/lib/supplier-portal/actions';
+import { SupplierPortalSessionBoundary } from '@/components/domain/shell/supplier-portal-session-boundary';
 import { Button } from '@/components/ui/button';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 
@@ -12,8 +14,9 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  * `(app)`/`(public)`/`super-admin`, with its own auth guard (checks the
  * separate supplier-portal session store) and no shared chrome with any of
  * them, per ADR-0011. `/supplier-portal/login` is the one page under this
- * tree that must render without a session — everything else redirects
- * there if `accessToken` is null.
+ * tree that must render without a session — it bypasses
+ * SupplierPortalSessionBoundary entirely (no point silently trying to
+ * restore a session on the page whose whole job is establishing one).
  *
  * Split out of app/supplier-portal/layout.tsx (which stays a Server
  * Component so it can export `metadata` for noindex) — this file is
@@ -21,24 +24,38 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  * be exported from a Client Component.
  */
 export function SupplierPortalShell({ children }: { children: React.ReactNode }) {
-  const t = useTranslations('supplierPortal');
-  const router = useRouter();
   const pathname = usePathname();
-  const { accessToken, email, clearSession } = useSupplierPortalSessionStore();
   const isLoginPage = pathname === '/supplier-portal/login';
-
-  useEffect(() => {
-    if (!accessToken && !isLoginPage) {
-      router.replace('/supplier-portal/login');
-    }
-  }, [accessToken, isLoginPage, router]);
-
-  if (!accessToken && !isLoginPage) {
-    return null; // redirecting
-  }
 
   if (isLoginPage) {
     return <div className="min-h-screen bg-background text-foreground">{children}</div>;
+  }
+
+  return (
+    <SupplierPortalSessionBoundary>
+      <AuthedSupplierPortalShell>{children}</AuthedSupplierPortalShell>
+    </SupplierPortalSessionBoundary>
+  );
+}
+
+/**
+ * Runs only after SupplierPortalSessionBoundary has resolved (isHydrated),
+ * so this is the first point it's safe to decide "no session → redirect" —
+ * P0 fix (2026-08-20): previously this same check ran on first render,
+ * before a reload's httpOnly cookie had any chance to be exchanged for a
+ * fresh access token, so every reload bounced straight to /login.
+ */
+function AuthedSupplierPortalShell({ children }: { children: React.ReactNode }) {
+  const t = useTranslations('supplierPortal');
+  const router = useRouter();
+  const { accessToken, email } = useSupplierPortalSessionStore();
+
+  useEffect(() => {
+    if (!accessToken) router.replace('/supplier-portal/login');
+  }, [accessToken, router]);
+
+  if (!accessToken) {
+    return null; // redirecting
   }
 
   return (
@@ -52,8 +69,8 @@ export function SupplierPortalShell({ children }: { children: React.ReactNode })
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                clearSession();
+              onClick={async () => {
+                await logout();
                 router.replace('/supplier-portal/login');
               }}
             >
