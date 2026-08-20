@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Header, Param, StreamableFile } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { LandingPagePublicService } from './landing-page-public.service';
@@ -20,5 +20,13 @@ export class LandingPagePublicController {
   @ApiOperation({ summary: 'The current PUBLISHED homepage content + live Plan rows — never DRAFT/ARCHIVED.' })
   async get() {
     return this.landingPagePublicService.getPublished();
+  }
+
+  @Get('media/:id')
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
+  @ApiOperation({ summary: 'Public streaming proxy for a marketing image — see landing-page-public.service.ts#getMediaObject for why this exists instead of a public R2 domain.' })
+  async getMedia(@Param('id') id: string) {
+    const { body, contentType, contentLength } = await this.landingPagePublicService.getMediaObject(id);
+    return new StreamableFile(body as any, { type: contentType, length: contentLength });
   }
 }

@@ -6,8 +6,8 @@ import { HeroScreenshot } from '@/components/domain/marketing/hero-screenshot';
 import { landingMediaUrl } from '@/lib/landing-page/media-url';
 import type { FlatLandingPageContent } from '@/lib/landing-page/flatten-content';
 
-export function Hero({ content, mediaUrls }: { content: FlatLandingPageContent['hero']; mediaUrls: Record<string, string> }) {
-  const imageUrl = landingMediaUrl(mediaUrls, content.heroImageId);
+export function Hero({ content }: { content: FlatLandingPageContent['hero'] }) {
+  const imageUrl = landingMediaUrl(content.heroImageId);
 
   return (
     <section id="product" className="relative overflow-hidden pb-24 pt-20 sm:pb-32 sm:pt-28 lg:pt-36">

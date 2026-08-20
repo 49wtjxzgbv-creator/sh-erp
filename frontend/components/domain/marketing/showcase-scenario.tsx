@@ -14,7 +14,7 @@ import type { FlatLandingPageContent } from '@/lib/landing-page/flatten-content'
  * this is the section meant to carry the "real product, not a template"
  * weight of the whole redesign.
  */
-export function ShowcaseScenario({ showcase, mediaUrls }: { showcase: FlatLandingPageContent['showcase']; mediaUrls: Record<string, string> }) {
+export function ShowcaseScenario({ showcase }: { showcase: FlatLandingPageContent['showcase'] }) {
   return (
     <section id="how-it-works" className="border-y border-border bg-secondary/20 py-24 sm:py-32">
       <div className="container">
@@ -30,7 +30,7 @@ export function ShowcaseScenario({ showcase, mediaUrls }: { showcase: FlatLandin
               index={i + 1}
               title={step.title}
               description={step.description}
-              imageUrl={landingMediaUrl(mediaUrls, step.imageId)}
+              imageUrl={landingMediaUrl(step.imageId)}
               reverse={i % 2 === 1}
             />
           ))}

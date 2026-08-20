@@ -1,3 +1,8 @@
+jest.mock('../files/r2-client', () => ({
+  createR2Client: () => ({ send: jest.fn() }),
+  R2_BUCKET: 'test-bucket',
+}));
+
 import { LandingPagePublicService } from './landing-page-public.service';
 import { INITIAL_LANDING_PAGE_CONTENT } from './landing-page-content.types';
 
@@ -9,6 +14,7 @@ describe('LandingPagePublicService', () => {
     prisma = {
       landingPageVersion: { findFirst: jest.fn() },
       plan: { findMany: jest.fn().mockResolvedValue([]) },
+      landingMediaAsset: { findUnique: jest.fn() },
     };
     service = new LandingPagePublicService(prisma);
   });
@@ -49,5 +55,27 @@ describe('LandingPagePublicService', () => {
     const result = await service.getPublished();
 
     expect(result.plans).toEqual([{ id: 'pl1', key: 'starter', name: 'Starter', monthlyPriceEur: '0', limits: {} }]);
+  });
+
+  describe('getMediaObject', () => {
+    it('throws NotFoundException for an unknown or soft-deleted asset', async () => {
+      prisma.landingMediaAsset.findUnique.mockResolvedValueOnce(null);
+      await expect(service.getMediaObject('missing')).rejects.toThrow();
+
+      prisma.landingMediaAsset.findUnique.mockResolvedValueOnce({ id: 'm1', deletedAt: new Date() });
+      await expect(service.getMediaObject('m1')).rejects.toThrow();
+    });
+
+    it('streams the object from R2 with the stored content type', async () => {
+      prisma.landingMediaAsset.findUnique.mockResolvedValueOnce({ id: 'm1', storageKey: 'marketing/landing/x.png', mimeType: 'image/png', deletedAt: null });
+      const fakeBody = {} as any;
+      service['r2'].send = jest.fn().mockResolvedValue({ Body: fakeBody, ContentLength: 1234 });
+
+      const result = await service.getMediaObject('m1');
+
+      expect(result.body).toBe(fakeBody);
+      expect(result.contentType).toBe('image/png');
+      expect(result.contentLength).toBe(1234);
+    });
   });
 });

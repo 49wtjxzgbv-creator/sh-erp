@@ -52,6 +52,23 @@ const nextConfig = {
         protocol: 'https',
         hostname: '*.r2.cloudflarestorage.com',
       },
+      // Landing page marketing images (hero/showcase screenshots, OG image)
+      // — served through this app's own backend as a public streaming
+      // proxy (GET /landing-page/media/:id, see lib/landing-page/media-url.ts
+      // and backend's landing-page-public.service.ts), not a public R2
+      // domain. next/image treats an absolute URL as "remote" even when it
+      // shares this app's own hostname, so it still needs allowlisting
+      // here — this repo's only real deploy target is sh-erp.pro
+      // (docs/deployment.md), plus localhost for local dev against a local
+      // backend.
+      {
+        protocol: 'https',
+        hostname: 'sh-erp.pro',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+      },
     ],
   },
 };

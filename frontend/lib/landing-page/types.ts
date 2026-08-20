@@ -71,8 +71,6 @@ export interface LandingPagePlan {
 export interface PublicLandingPageResponse {
   content: LandingPageContent;
   plans: LandingPagePlan[];
-  /** mediaId -> public URL, already resolved server-side. A missing entry means "no image", not an error. */
-  mediaUrls: Record<string, string>;
   versionId: string | null;
   publishedAt: string | null;
 }

@@ -35,9 +35,9 @@ import { landingMediaUrl } from '@/lib/landing-page/media-url';
  */
 export async function generateMetadata(): Promise<Metadata> {
   const locale = resolveLocale();
-  const { content, mediaUrls } = await getPublishedLandingPage();
+  const { content } = await getPublishedLandingPage();
   const seo = content.seo;
-  const ogImageUrl = landingMediaUrl(mediaUrls, seo.ogImageId);
+  const ogImageUrl = landingMediaUrl(seo.ogImageId);
   return {
     title: seo.title[locale] || seo.title.uk,
     description: seo.description[locale] || seo.description.uk,
@@ -51,16 +51,16 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function LandingPage() {
   const locale = resolveLocale();
-  const { content, plans, mediaUrls } = await getPublishedLandingPage();
+  const { content, plans } = await getPublishedLandingPage();
   const c = flattenLandingPageContent(content, locale);
 
   return (
     <div className="flex min-h-screen flex-col">
       <MarketingHeader pricingVisible={c.pricing.visible} />
       <main className="flex-1">
-        <Hero content={c.hero} mediaUrls={mediaUrls} />
+        <Hero content={c.hero} />
         <ModulesGrid modules={c.modules} />
-        <ShowcaseScenario showcase={c.showcase} mediaUrls={mediaUrls} />
+        <ShowcaseScenario showcase={c.showcase} />
         <Benefits content={c.benefits} />
         {c.pricing.visible && <Pricing content={c.pricing} plans={plans} />}
         <Faq faq={c.faq} />
