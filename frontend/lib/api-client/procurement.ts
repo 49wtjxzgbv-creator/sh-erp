@@ -76,9 +76,21 @@ export function deleteSupplier(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`suppliers/${id}`);
 }
 
-/** Creates (or resets) this supplier's Supplier Portal login — see ADR-0011. `tempPassword` is shown once; it isn't retrievable again after this response. */
-export function invitePortal(id: string, dto: { email?: string } = {}): Promise<{ email: string; tempPassword: string }> {
-  return apiClient.post<{ email: string; tempPassword: string }>(`suppliers/${id}/portal-invite`, dto);
+/**
+ * Creates (or resets) this supplier's Supplier Portal login — see ADR-0011.
+ * `tempPassword` is shown once; it isn't retrievable again after this
+ * response. Multi-company redesign (2026-08-21, ADR-0012): if the email
+ * already belongs to a DIFFERENT company's connected Supplier Organization,
+ * no account/password is created at all — instead a PENDING
+ * SupplierConnection is created and `requiresAcceptance: true` comes back
+ * (the supplier must accept it from their own portal before this company's
+ * data becomes visible to them).
+ */
+export function invitePortal(
+  id: string,
+  dto: { email?: string } = {},
+): Promise<{ email: string; tempPassword?: string; requiresAcceptance?: boolean }> {
+  return apiClient.post<{ email: string; tempPassword?: string; requiresAcceptance?: boolean }>(`suppliers/${id}/portal-invite`, dto);
 }
 /** Reverse view of ProductSupplierLink — the products this supplier is linked to (Supplier detail page). */
 export interface SupplierLinkedProduct {

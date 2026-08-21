@@ -137,6 +137,7 @@ model Company {
   products                     Product[]
   units                        CompanyUnit[]
   suppliers                    Supplier[]
+  supplierConnections          SupplierConnection[]
   warehouses                   Warehouse[]
   warehouseStocks              WarehouseStock[]
   stockMovements               StockMovement[]
@@ -683,7 +684,12 @@ model Supplier {
   products       Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
   assemblies     Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
   purchaseOrders PurchaseOrder[]
-  portalUser     SupplierPortalUser?
+  // Portal access for THIS company's record of this supplier now goes
+  // through SupplierConnection (2026-08-21 P0 — one real-world supplier
+  // can work with many companies through one shared login/SupplierOrganization).
+  // `Supplier` itself is unchanged: still "how this one company privately
+  // records this vendor" — the connection is what turns that into portal access.
+  connection     SupplierConnection?
   productLinks   ProductSupplier[]
   assemblyLinks  AssemblySupplier[]
 
@@ -753,38 +759,128 @@ model AssemblySupplier {
 // own purchase orders only") doesn't fit RequestUser's "member of exactly
 // one Company with a Role" model, and giving it a Role/CompanyMembership
 // would understate how narrow it actually needs to be. See ADR-0011.
+//
+// Multi-company redesign (2026-08-21 P0, ADR-0012): a real-world supplier
+// can now work with MANY companies through this ONE account — the identity
+// anchor moved from `Supplier` (which is company-scoped, "how one company
+// privately records this vendor") to `SupplierOrganization` (global, no
+// company). This table itself is now GLOBAL like `super_admins` — no
+// `companyId`, no RLS — since a portal user's identity is no longer
+// company-scoped at all; the real per-company boundary lives entirely in
+// `SupplierConnection` now (checked on every request, see
+// SupplierPortalScopeInterceptor).
 model SupplierPortalUser {
-  id           String @id @default(uuid()) @db.Uuid
-  companyId    String @db.Uuid
-  supplierId   String @unique @db.Uuid // one portal account per Supplier row (not per real-world company — a supplier serving two SH ERP tenants gets two separate Supplier rows and, if invited, two separate portal accounts)
-  email        String @unique @db.Citext // globally unique, like SuperAdmin.email — keeps login a plain by-email lookup; see ADR-0011's §Consequences for the (accepted) limitation this implies
-  passwordHash String // argon2id, same as User/SuperAdmin
+  id                     String @id @default(uuid()) @db.Uuid
+  supplierOrganizationId String @unique @db.Uuid // exactly one portal account per SupplierOrganization — preserves the "one account" cardinality that used to live on Supplier
+  email                  String @unique @db.Citext // globally unique, like SuperAdmin.email — keeps login a plain by-email lookup
+  passwordHash           String // argon2id, same as User/SuperAdmin
 
-  active      Boolean   @default(true) // deactivate instead of delete — keeps the invite/reset history intact
+  active      Boolean   @default(true) // deactivate instead of delete — keeps the invite/reset history intact. GLOBAL kill-switch (e.g. fraud) — a single company revoking access must use SupplierConnection.status instead, never this field (see SuppliersService#deactivatePortal).
   lastLoginAt DateTime? @db.Timestamptz(3)
+
+  // Convenience for "remember which company I was last working in" across
+  // logins — always re-validated against a live, still-ACTIVE
+  // SupplierConnection at login time, never trusted blindly (same "no
+  // stale claim" rule as everything else here).
+  lastActiveConnectionId String? @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierOrganization SupplierOrganization @relation(fields: [supplierOrganizationId], references: [id], onDelete: Cascade)
+
+  refreshTokens SupplierPortalRefreshToken[]
+
+  @@map("supplier_portal_users")
+}
+
+// Global identity for a real-world supplier — deliberately thin (2026-08-21
+// P0, ADR-0012). Does NOT carry a companyId: the whole point of this model
+// is that one supplier organization can be connected to many companies via
+// SupplierConnection below, each pointing at that company's OWN, unchanged
+// `Supplier` row. No RLS, same as `super_admins` — a cross-company identity
+// has no single tenant to scope by.
+model SupplierOrganization {
+  id   String @id @default(uuid()) @db.Uuid
+  name String // display name, seeded from the first connected Supplier.name; purely informational
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  portalUser  SupplierPortalUser?
+  connections SupplierConnection[]
+
+  @@map("supplier_organizations")
+}
+
+enum SupplierConnectionStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+// The real per-company authorization boundary for the Supplier Portal
+// (2026-08-21 P0, ADR-0012) — replaces the old direct
+// `SupplierPortalUser.companyId`/`.supplierId` 1:1 link. One row = "this
+// SupplierOrganization can access this Company's own Supplier record
+// through the portal." Mirrors `ImportConnection`/`ImportConnectionStatus`'s
+// existing PENDING/PAIRED/REVOKED shape (this schema's own established
+// pattern for "a connection between a company and an external thing,
+// invited then confirmed then possibly revoked") — renamed PAIRED→ACTIVE
+// here for this domain's own vocabulary.
+//
+// RLS: normal tenant_isolation on companyId, same as `suppliers` itself —
+// a Company's own staff (invitePortal/deactivatePortal) read/write this
+// through the regular `app_user`/`.tenant` path, scoped to their own
+// company exactly like any other tenant table. The Supplier Portal's OWN
+// cross-company reads (list-my-connections, accept/decline, and the
+// per-request check in SupplierPortalScopeInterceptor) go through the
+// existing BYPASSRLS `supplier_portal_auth_service` role instead (grant
+// extended in this same migration) — the identical split
+// `supplier_portal_users` already has between the two roles.
+model SupplierConnection {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  companyId              String                   @db.Uuid
+  supplierId             String                   @unique @db.Uuid // this company's own, pre-existing Supplier row — @unique: at most one connection per Supplier row, ever
+  supplierOrganizationId String                   @db.Uuid
+  status                 SupplierConnectionStatus @default(PENDING)
+
+  invitedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  respondedAt DateTime? @db.Timestamptz(3) // supplier accepted or declined the invite
+  revokedAt   DateTime? @db.Timestamptz(3) // set regardless of which side revoked — AuditEvent.action carries "who", not this field
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company              Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier             Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierOrganization SupplierOrganization @relation(fields: [supplierOrganizationId], references: [id], onDelete: Cascade)
 
   refreshTokens SupplierPortalRefreshToken[]
 
   @@index([companyId])
-  @@map("supplier_portal_users")
+  @@index([supplierOrganizationId])
+  @@map("supplier_connections")
 }
 
 // Session persistence (2026-08-20 P0 fix) — same rotation/reuse-detection
 // shape as the tenant-side `RefreshToken`, scoped to SupplierPortalUser.
-// Tenant-scoped (companyId) and RLS-protected like every other real tenant
-// table — read/written through the existing BYPASSRLS
-// `supplier_portal_auth_service` role for the pre-tenant-context lookup-by-
-// hash step, same reasoning ADR-0011 already gives for why
-// `supplier_portal_users` itself needs that role.
+//
+// Multi-company redesign (2026-08-21 P0, ADR-0012): a session's active
+// company can now change mid-life (POST .../switch-connection), so
+// `companyId` is gone — a fixed per-row company no longer makes sense.
+// `activeConnectionId` replaces it: which SupplierConnection this session
+// is currently scoped to, carried forward unchanged on a plain `/refresh`
+// (same "propagate unchanged through rotation" pattern as
+// `RefreshToken.impersonatedBy` in identity/auth.service.ts) and updated
+// only by `/switch-connection`. Now GLOBAL like `super_admin_refresh_tokens`
+// — no RLS, since there's no single company left to scope the table by;
+// read/written exclusively through the BYPASSRLS `supplier_portal_auth_service`
+// role, same as before.
 model SupplierPortalRefreshToken {
   id                   String    @id @default(uuid()) @db.Uuid
   supplierPortalUserId String    @db.Uuid
-  companyId            String    @db.Uuid
+  activeConnectionId   String    @db.Uuid
   tokenHash            String    @unique
   familyId             String    @db.Uuid
   device               String?
@@ -795,8 +891,10 @@ model SupplierPortalRefreshToken {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   supplierPortalUser SupplierPortalUser @relation(fields: [supplierPortalUserId], references: [id])
+  activeConnection   SupplierConnection @relation(fields: [activeConnectionId], references: [id])
 
   @@index([supplierPortalUserId])
+  @@index([activeConnectionId])
   @@index([familyId])
   @@index([expiresAt])
   @@map("supplier_portal_refresh_tokens")

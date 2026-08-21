@@ -17,8 +17,14 @@ import { PrismaClient } from '@prisma/client';
  * USAGE BOUNDARY (enforced structurally, not just by convention): provided
  * ONLY by `SupplierPortalModule` and NOT exported from it — no other
  * module can inject it. Must NEVER be used once a request has resolved a
- * tenant context; every method that uses it is on the `@Public()` login
- * route, before `SupplierPortalScopeInterceptor` would even apply.
+ * REGULAR (Company/app_user) tenant context.
+ *
+ * Multi-company redesign (2026-08-21 P0, ADR-0012): now also used by
+ * `SupplierPortalScopeInterceptor` itself — determining WHICH company a
+ * request is scoped to is now a pre-tenant-context lookup (the active
+ * `SupplierConnection`'s companyId), the same class of problem login
+ * already had, not a rule violation. Grants extended to `supplier_connections`
+ * (SELECT/UPDATE) and `supplier_organizations` (SELECT) in that same migration.
  */
 @Injectable()
 export class SupplierPortalAuthPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {

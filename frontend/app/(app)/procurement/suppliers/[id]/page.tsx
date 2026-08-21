@@ -47,6 +47,7 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
   const invite = useInvitePortal(supplierId);
   const deactivate = useDeactivatePortal(supplierId);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [requiresAcceptance, setRequiresAcceptance] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,10 +57,15 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
   async function handleInvite() {
     setError(null);
     setTempPassword(null);
+    setRequiresAcceptance(false);
     setCopied(false);
     try {
       const res = await invite.mutateAsync({});
-      setTempPassword(res.tempPassword);
+      if (res.requiresAcceptance) {
+        setRequiresAcceptance(true);
+      } else {
+        setTempPassword(res.tempPassword ?? null);
+      }
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
@@ -90,6 +96,8 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
         ) : (
           <p className="text-sm text-muted-foreground">{t('noPortalAccount')}</p>
         )}
+
+        {requiresAcceptance && <p className="text-sm text-muted-foreground">{t('portalInviteRequiresAcceptance')}</p>}
 
         {tempPassword && (
           <div className="space-y-1.5">

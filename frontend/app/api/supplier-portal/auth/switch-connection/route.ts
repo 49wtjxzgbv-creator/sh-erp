@@ -3,10 +3,11 @@ import { setSupplierPortalSessionCookie, clearSupplierPortalSessionCookie } from
 import { SUPPLIER_PORTAL_REFRESH_COOKIE_NAME } from '@/lib/supplier-portal/cookie-names';
 
 /**
- * Proxies to backend POST /api/v1/supplier-portal/auth/refresh. Called on
- * supplier-portal shell mount (lib/supplier-portal/actions.ts#restoreSession)
- * to silently re-derive an access token from the httpOnly cookie after a
- * reload/new tab, and by lib/supplier-portal/api.ts's 401-retry.
+ * Proxies to backend POST /api/v1/supplier-portal/auth/switch-connection
+ * (2026-08-21 P0, ADR-0012 — multi-company redesign). Mirrors refresh/route.ts:
+ * the raw refresh token never reaches the browser, only the httpOnly cookie
+ * this route reads server-side; the client only supplies which connection
+ * to switch to.
  */
 const API_BASE = (process.env.INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
@@ -19,21 +20,32 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const backendRes = await fetch(`${API_BASE}/supplier-portal/auth/refresh`, {
+  let body: { connectionId?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ statusCode: 400, message: 'Invalid JSON body.' }, { status: 400 });
+  }
+  if (!body.connectionId) {
+    return NextResponse.json({ statusCode: 400, message: 'connectionId is required.' }, { status: 400 });
+  }
+
+  const backendRes = await fetch(`${API_BASE}/supplier-portal/auth/switch-connection`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify({ refreshToken, connectionId: body.connectionId }),
     cache: 'no-store',
   });
 
   const data = await backendRes.json().catch(() => undefined);
 
   if (!backendRes.ok) {
-    const response = NextResponse.json(data ?? { statusCode: backendRes.status, message: 'Refresh failed.' }, {
+    // Deliberately does NOT clear the cookie here — a rejected switch (e.g.
+    // target connection revoked/not-yours) must not sign the caller out of
+    // their still-valid current session (see SupplierPortalRefreshTokenService#peek).
+    return NextResponse.json(data ?? { statusCode: backendRes.status, message: 'Switch failed.' }, {
       status: backendRes.status,
     });
-    clearSupplierPortalSessionCookie(response);
-    return response;
   }
 
   const { accessToken, refreshToken: newRefreshToken, expiresIn, supplierId, companyId, companyName, activeConnectionId, email } = data as {

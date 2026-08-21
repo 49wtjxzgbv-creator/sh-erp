@@ -453,6 +453,7 @@
     "portalPasswordGenerated": "Temporary password (shown once):",
     "resetPortalPassword": "Reset portal password",
     "invitePortal": "Send invite",
+    "portalInviteRequiresAcceptance": "This email already has a supplier account with a different company — a connection request has been sent. Access will appear once the supplier accepts it from their own portal.",
     "deactivatePortal": "Deactivate portal",
     "addLine": "Add line",
     "filterByStatus": "Filter by status",
@@ -1115,7 +1116,11 @@
     "confirm": "Confirm",
     "confirmSuccess": "Confirmed",
     "confirmFailed": "Failed to confirm",
-    "invalidConfirmation": "Enter a price for at least one line"
+    "invalidConfirmation": "Enter a price for at least one line",
+    "workingWith": "Working with: {company}",
+    "pendingConnectionMessage": "\"{company}\" has invited you to connect",
+    "acceptConnection": "Accept",
+    "declineConnection": "Decline"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

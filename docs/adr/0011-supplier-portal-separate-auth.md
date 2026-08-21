@@ -39,6 +39,10 @@ Live production-support testing found that "no refresh token, 7-day access token
 
 Fixed by adding a `SupplierPortalRefreshToken` table (own rotation/reuse-detection, ADR-0006 shape — sliding `SUPPLIER_PORTAL_REFRESH_TTL_DAYS`, default 30d, deliberately **no** extra absolute ceiling, unlike Super Admin's new refresh token: the "occasional, low-privilege external user" risk acceptance this ADR already argued for still applies) and shortening the access token itself (`SUPPLIER_PORTAL_JWT_TTL`, 7d → 30m) now that a silent refresh exists to renew it. The `supplierId`-scoped risk boundary this ADR's Decision section describes is unchanged — only *how long a session can survive without re-entering a password* changed, not what it can access. `SupplierPortalScopeInterceptor`/`SupplierPortalService`'s per-request `supplierId` filtering is untouched.
 
+## Update (2026-08-21) — see ADR-0012
+
+The "revisit if this actually becomes a real complaint" note directly above did get revisited: a real supplier working with several manufacturers on this platform needed one login, not one per company. **ADR-0012** replaces `SupplierPortalUser`'s direct 1:1 tie to a single `Supplier`/`Company` with a `SupplierOrganization` (global identity) connected to many companies via `SupplierConnection`. `SupplierPortalUser.email` is still globally unique — that part of this ADR's decision is unchanged — but it now identifies one organization that can hold many active company connections, not one company. Everything else in this ADR (separate JWT secret/token type, `supplier_portal_auth_service` as a narrowly-scoped `BYPASSRLS` role, the 3-endpoint portal itself, confirmation-fields-are-additive) is unchanged; see ADR-0012 for the full design.
+
 ## Alternatives considered
 
 - **A second RLS session variable (`app.current_supplier_id`) enforced by Postgres policies on `purchase_orders`/`purchase_order_items`**: more structurally rigorous, rejected for this pass as disproportionate to a module with exactly three narrow, already-reviewed endpoints — revisit if the portal's surface grows.

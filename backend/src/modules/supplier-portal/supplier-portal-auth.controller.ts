@@ -4,6 +4,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { SupplierPortalAuthService } from './supplier-portal-auth.service';
 import { SupplierPortalLoginDto } from './dto/supplier-portal-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { SwitchConnectionDto } from './dto/switch-connection.dto';
 
 @ApiTags('supplier-portal')
 @Controller({ path: 'supplier-portal/auth', version: '1' })
@@ -38,5 +39,20 @@ export class SupplierPortalAuthController {
   async logout(@Body() dto: RefreshDto) {
     await this.supplierPortalAuthService.logout(dto.refreshToken);
     return { ok: true };
+  }
+
+  // Same "identified by the refresh token itself, not a Bearer access
+  // token" shape as /refresh and /logout above — deliberately, not
+  // `@UseGuards(SupplierPortalGuard)` (2026-08-21 P0, ADR-0012): keeps this
+  // endpoint consistent with the other two session-mutating routes rather
+  // than introducing a mixed auth model for just this one.
+  @Public()
+  @Post('switch-connection')
+  @ApiOperation({ summary: 'Switch this session\'s active company (SupplierConnection) — mints a new access+refresh pair, same rotation family, without a fresh login.' })
+  @ApiResponse({ status: 200, description: 'New token pair scoped to the requested connection.' })
+  @ApiResponse({ status: 401, description: 'Refresh token invalid/expired/revoked, or account no longer active.' })
+  @ApiResponse({ status: 404, description: "The target connection doesn't exist, isn't ACTIVE, or doesn't belong to this organization — never distinguished from each other." })
+  async switchConnection(@Body() dto: SwitchConnectionDto) {
+    return this.supplierPortalAuthService.switchConnection(dto.refreshToken, dto.connectionId);
   }
 }

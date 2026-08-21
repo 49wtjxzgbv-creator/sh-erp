@@ -453,6 +453,7 @@
     "portalPasswordGenerated": "Тимчасовий пароль (покажеться лише зараз):",
     "resetPortalPassword": "Скинути пароль порталу",
     "invitePortal": "Надіслати запрошення",
+    "portalInviteRequiresAcceptance": "Цей email вже має обліковий запис постачальника в іншій компанії — надіслано запит на підключення. Доступ з'явиться, щойно постачальник прийме його зі свого порталу.",
     "deactivatePortal": "Деактивувати портал",
     "addLine": "Додати рядок",
     "filterByStatus": "Фільтр за статусом",
@@ -1115,7 +1116,11 @@
     "confirm": "Підтвердити",
     "confirmSuccess": "Підтверджено",
     "confirmFailed": "Не вдалося підтвердити",
-    "invalidConfirmation": "Вкажіть ціну хоча б для однієї позиції"
+    "invalidConfirmation": "Вкажіть ціну хоча б для однієї позиції",
+    "workingWith": "Ви працюєте з: {company}",
+    "pendingConnectionMessage": "Виробник «{company}» запросив вас підключитись",
+    "acceptConnection": "Прийняти",
+    "declineConnection": "Відхилити"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

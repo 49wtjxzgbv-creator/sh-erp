@@ -4,26 +4,35 @@ import * as argon2 from 'argon2';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
 import { SupplierPortalLoginDto } from './dto/supplier-portal-login.dto';
 import { SupplierPortalRefreshTokenService } from './supplier-portal-refresh-token.service';
-import { CodedUnauthorizedException } from '../../common/api-exceptions';
+import { CodedNotFoundException, CodedUnauthorizedException } from '../../common/api-exceptions';
+
+export interface SupplierPortalSession {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: string;
+  email: string;
+  /** Display-only — the frontend shows this, but it is NEVER a trust boundary; every real request re-derives it from a live SupplierConnection row (SupplierPortalScopeInterceptor). */
+  companyId: string;
+  companyName: string;
+  supplierId: string;
+  activeConnectionId: string;
+}
 
 /**
  * Genuinely separate login flow from both `AuthService` (Company Admin /
  * regular users) and `SuperAdminAuthService` — own table
  * (`SupplierPortalUser`), own token secret (`SUPPLIER_PORTAL_JWT_SECRET`).
  *
- * Refresh token added as a P0 fix (2026-08-20): originally stateless
- * (7-day access token, no refresh) on the rationale that a supplier is an
- * occasional, low-privilege external user — but that meant a reload still
- * logged them out mid-session, real friction observed in this session's
- * live testing. Now issues a `SupplierPortalRefreshToken` via
- * `SupplierPortalRefreshTokenService` (same rotation/reuse-detection shape
- * as the tenant side, ADR-0006) and shortens the access token itself
- * (`SUPPLIER_PORTAL_JWT_TTL`, 7d → 30m) since the refresh token now carries
- * the session's real length — the "occasional, low-privilege" risk
- * rationale is unchanged, just moved from "long-lived access token" to
- * "long-lived, rotating, revocable refresh token" (ADR-0011 still applies:
- * no absolute ceiling on the refresh token itself, see
- * SupplierPortalRefreshTokenService's own header comment).
+ * Multi-company redesign (2026-08-21 P0, ADR-0012): `SupplierPortalUser` is
+ * no longer 1:1 with one `Supplier`/`Company` — it belongs to a
+ * `SupplierOrganization`, which can have many ACTIVE `SupplierConnection`s.
+ * The access token now carries `supplierOrganizationId` + `activeConnectionId`
+ * only — NOT `companyId`/`supplierId` as trusted claims (a company could
+ * revoke the connection mid-session; see `SupplierPortalScopeInterceptor`'s
+ * own header comment for why every request re-derives those from a live
+ * row instead). `companyId`/`companyName`/`supplierId` are still returned
+ * in the response body here, purely for the frontend to display — never
+ * read back as an authorization claim.
  */
 @Injectable()
 export class SupplierPortalAuthService {
@@ -33,10 +42,21 @@ export class SupplierPortalAuthService {
     private readonly refreshTokens: SupplierPortalRefreshTokenService,
   ) {}
 
-  async login(
-    dto: SupplierPortalLoginDto,
-  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: string; supplierId: string; companyId: string; email: string }> {
-    const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { email: dto.email } });
+  async login(dto: SupplierPortalLoginDto): Promise<SupplierPortalSession> {
+    const portalUser = await this.prisma.supplierPortalUser.findUnique({
+      where: { email: dto.email },
+      include: {
+        supplierOrganization: {
+          include: {
+            connections: {
+              where: { status: 'ACTIVE' },
+              orderBy: { createdAt: 'asc' },
+              include: { company: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
     if (!portalUser || !portalUser.active) {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
@@ -46,6 +66,19 @@ export class SupplierPortalAuthService {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
+    // Remembers which company they were last working in (re-validated
+    // against the live ACTIVE list every login, never trusted blindly) —
+    // falls back to the oldest ACTIVE connection if that one is gone or
+    // this is the first login.
+    const activeConnections = portalUser.supplierOrganization.connections;
+    if (activeConnections.length === 0) {
+      throw new CodedUnauthorizedException(
+        'SUPPLIER_PORTAL_NO_ACTIVE_CONNECTIONS',
+        'This account has no active company connections. Contact the company that invited you.',
+      );
+    }
+    const chosen = activeConnections.find((c) => c.id === portalUser.lastActiveConnectionId) ?? activeConnections[0];
+
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
     if (!secret) {
       throw new CodedUnauthorizedException(
@@ -56,32 +89,86 @@ export class SupplierPortalAuthService {
     const expiresIn = process.env.SUPPLIER_PORTAL_JWT_TTL ?? '30m';
 
     const accessToken = this.jwt.sign(
-      { sub: portalUser.id, supplierId: portalUser.supplierId, companyId: portalUser.companyId, type: 'supplier_portal' },
+      { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: chosen.id, type: 'supplier_portal' },
       { secret, expiresIn },
     );
-    const refreshToken = await this.refreshTokens.issue(portalUser.id, portalUser.companyId);
+    const refreshToken = await this.refreshTokens.issue(portalUser.id, chosen.id);
 
-    await this.prisma.supplierPortalUser.update({ where: { id: portalUser.id }, data: { lastLoginAt: new Date() } });
+    await this.prisma.supplierPortalUser.update({
+      where: { id: portalUser.id },
+      data: { lastLoginAt: new Date(), lastActiveConnectionId: chosen.id },
+    });
 
     return {
       accessToken,
       refreshToken,
       expiresIn,
-      supplierId: portalUser.supplierId,
-      companyId: portalUser.companyId,
       email: portalUser.email,
+      companyId: chosen.companyId,
+      companyName: chosen.company.name,
+      supplierId: chosen.supplierId,
+      activeConnectionId: chosen.id,
     };
   }
 
-  /** Rotates a refresh token for a new access+refresh pair (mirrors `AuthService#refresh`). */
-  async refresh(
-    rawRefreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: string; supplierId: string; companyId: string; email: string }> {
+  /** Rotates a refresh token for a new access+refresh pair, carrying the active connection forward unchanged (mirrors `AuthService#refresh`). */
+  async refresh(rawRefreshToken: string): Promise<SupplierPortalSession> {
     const rotated = await this.refreshTokens.rotate(rawRefreshToken);
+    return this.reissueAccessToken(rotated.supplierPortalUserId, rotated.activeConnectionId, rotated.rawToken);
+  }
 
-    const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { id: rotated.supplierPortalUserId } });
+  /**
+   * Switches this session's active company — mints a new access+refresh
+   * pair (same family) scoped to a DIFFERENT connection, without requiring
+   * a fresh login. Re-verifies the target connection belongs to the SAME
+   * organization and is ACTIVE before switching — never trusts the
+   * frontend's own selector; this is the actual authorization boundary for
+   * "which companies can this session ever reach."
+   */
+  async switchConnection(rawRefreshToken: string, targetConnectionId: string): Promise<SupplierPortalSession> {
+    // Peek at the current token's owner WITHOUT consuming it yet — if the
+    // target connection turns out to be invalid, the original token must
+    // stay usable (don't burn a valid session on a rejected switch attempt).
+    const stored = await this.refreshTokens.peek(rawRefreshToken);
+
+    const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { id: stored.supplierPortalUserId } });
     if (!portalUser || !portalUser.active) {
       throw new CodedUnauthorizedException('AUTH_ACCOUNT_BLOCKED', 'This supplier portal account is no longer active.');
+    }
+
+    const target = await this.prisma.supplierConnection.findUnique({ where: { id: targetConnectionId } });
+    // Same "never distinguish not-yours from doesn't-exist/revoked" rule
+    // SupplierPortalService#getPurchaseOrder already uses — a connection
+    // belonging to someone else's organization, or not ACTIVE, looks
+    // identical to a nonexistent id from the caller's point of view.
+    if (!target || target.supplierOrganizationId !== portalUser.supplierOrganizationId || target.status !== 'ACTIVE') {
+      throw new CodedNotFoundException('SUPPLIER_PORTAL_CONNECTION_NOT_FOUND', 'This connection is not available to switch to.');
+    }
+
+    const rotated = await this.refreshTokens.switchConnection(rawRefreshToken, target.id);
+
+    await this.prisma.supplierPortalUser.update({ where: { id: portalUser.id }, data: { lastActiveConnectionId: target.id } });
+
+    return this.reissueAccessToken(rotated.supplierPortalUserId, rotated.activeConnectionId, rotated.rawToken);
+  }
+
+  /** Revokes the refresh token's entire rotation family — signs out every tab/device that shared this session. */
+  async logout(rawRefreshToken: string): Promise<void> {
+    await this.refreshTokens.revokeFamily(rawRefreshToken);
+  }
+
+  private async reissueAccessToken(supplierPortalUserId: string, activeConnectionId: string, freshRawRefreshToken: string): Promise<SupplierPortalSession> {
+    const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { id: supplierPortalUserId } });
+    if (!portalUser || !portalUser.active) {
+      throw new CodedUnauthorizedException('AUTH_ACCOUNT_BLOCKED', 'This supplier portal account is no longer active.');
+    }
+
+    const connection = await this.prisma.supplierConnection.findUnique({
+      where: { id: activeConnectionId },
+      include: { company: { select: { name: true } } },
+    });
+    if (!connection || connection.status !== 'ACTIVE') {
+      throw new CodedNotFoundException('SUPPLIER_PORTAL_CONNECTION_NOT_FOUND', 'This connection is no longer active.');
     }
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
@@ -93,22 +180,19 @@ export class SupplierPortalAuthService {
     }
     const expiresIn = process.env.SUPPLIER_PORTAL_JWT_TTL ?? '30m';
     const accessToken = this.jwt.sign(
-      { sub: portalUser.id, supplierId: portalUser.supplierId, companyId: portalUser.companyId, type: 'supplier_portal' },
+      { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: connection.id, type: 'supplier_portal' },
       { secret, expiresIn },
     );
 
     return {
       accessToken,
-      refreshToken: rotated.rawToken,
+      refreshToken: freshRawRefreshToken,
       expiresIn,
-      supplierId: portalUser.supplierId,
-      companyId: portalUser.companyId,
       email: portalUser.email,
+      companyId: connection.companyId,
+      companyName: connection.company.name,
+      supplierId: connection.supplierId,
+      activeConnectionId: connection.id,
     };
-  }
-
-  /** Revokes the refresh token's entire rotation family — signs out every tab/device that shared this session. */
-  async logout(rawRefreshToken: string): Promise<void> {
-    await this.refreshTokens.revokeFamily(rawRefreshToken);
   }
 }

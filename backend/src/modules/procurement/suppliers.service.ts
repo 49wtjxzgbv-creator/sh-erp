@@ -44,13 +44,13 @@ export class SuppliersService {
   }
 
   async findOne(user: RequestUser, id: string) {
-    const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { portalUser: true } });
+    const supplier = await this.prisma.tenant.supplier.findUnique({
+      where: { id },
+      include: { connection: { include: { supplierOrganization: { include: { portalUser: true } } } } },
+    });
     if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Supplier not found.');
-    const { portalUser, ...rest } = supplier as any;
-    return {
-      ...rest,
-      portalUser: portalUser ? { email: portalUser.email, active: portalUser.active, createdAt: portalUser.createdAt } : null,
-    };
+    const { connection, ...rest } = supplier as any;
+    return { ...rest, portalUser: this.toPortalUserStatus(connection) };
   }
 
   /** Reverse view of ProductSupplier — "which products is this supplier linked to, and at what price" (Suppliers detail page). */
@@ -97,7 +97,13 @@ export class SuppliersService {
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
     const [rows, total] = await Promise.all([
-      this.prisma.tenant.supplier.findMany({ where, orderBy: { name: 'asc' }, take, skip, include: { portalUser: true } }),
+      this.prisma.tenant.supplier.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        take,
+        skip,
+        include: { connection: { include: { supplierOrganization: { include: { portalUser: true } } } } },
+      }),
       this.prisma.tenant.supplier.count({ where }),
     ]);
 
@@ -105,9 +111,9 @@ export class SuppliersService {
     // an N+1 per-row lookup) so list consumers (e.g. Склад's "Очікується
     // від постачальника" tab, which needs to know per-order whether that
     // order's supplier even has a portal) don't need a second round-trip.
-    const items = rows.map(({ portalUser, ...rest }: any) => ({
+    const items = rows.map(({ connection, ...rest }: any) => ({
       ...rest,
-      portalUser: portalUser ? { email: portalUser.email, active: portalUser.active, createdAt: portalUser.createdAt } : null,
+      portalUser: this.toPortalUserStatus(connection),
     }));
 
     return { items, total, limit: take, offset: skip };
@@ -149,17 +155,30 @@ export class SuppliersService {
   }
 
   /**
-   * Creates (or resets, for a supplier that already has a portal account)
-   * a Supplier Portal login — same temp-password/email pattern as
-   * `UsersService.invite()`, deliberately: generate, hash with argon2,
-   * email it, and also return it once in the response since
-   * `EmailService.send` can silently not-deliver (its own header comment).
-   * `SupplierPortalUser.email` is globally unique (see its schema comment)
-   * — checked explicitly here first, rather than letting a Prisma unique-
-   * constraint violation surface as a raw 500.
+   * Creates (or resets, or requests) Supplier Portal access for this
+   * company's own Supplier row.
+   *
+   * Multi-company redesign (2026-08-21 P0, ADR-0012) — three distinct
+   * cases, in order:
+   *  1. This company already has a `SupplierConnection` for this Supplier
+   *     row (any status, including REVOKED) — reset the SAME organization's
+   *     password (same temp-password/email pattern as `UsersService.invite()`
+   *     always used) and re-ACTIVATE the connection if it had been revoked.
+   *     Never creates a new account — this is a "re-invite/reset," not a
+   *     new relationship.
+   *  2. No connection yet for this company, but the email already belongs
+   *     to an existing `SupplierOrganization` (connected to some OTHER
+   *     company already) — this used to be a hard `409
+   *     SUPPLIER_PORTAL_EMAIL_IN_USE` rejection. Now creates a PENDING
+   *     `SupplierConnection` instead and notifies the existing account by
+   *     email; no new account/password, the supplier accepts or declines
+   *     it via the portal (`POST supplier-portal/connections/:id/accept`).
+   *  3. Genuinely new supplier — today's exact temp-password/email flow,
+   *     wrapped in one new `SupplierOrganization` + one ACTIVE
+   *     `SupplierConnection` created together.
    */
   async invitePortal(user: RequestUser, id: string, dto: SupplierPortalInviteDto) {
-    const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { portalUser: true } });
+    const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { connection: true } });
     if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Supplier not found.');
 
     const email = dto.email ?? supplier.email;
@@ -167,29 +186,88 @@ export class SuppliersService {
       throw new CodedBadRequestException('SUPPLIER_NO_EMAIL', 'This supplier has no email on file — provide one in the request body.');
     }
 
-    const existingByEmail = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { email } });
-    if (existingByEmail && existingByEmail.supplierId !== id) {
-      throw new CodedConflictException('SUPPLIER_PORTAL_EMAIL_IN_USE', 'This email is already used by a different supplier’s portal account.');
+    // Case 1: re-invite/reset for a company that already has a connection
+    // to this exact Supplier row.
+    if (supplier.connection) {
+      const tempPassword = this.generateTempPassword();
+      const passwordHash = await argon2.hash(tempPassword);
+
+      const portalUser = await this.prisma.tenant.supplierPortalUser.update({
+        where: { supplierOrganizationId: supplier.connection.supplierOrganizationId },
+        data: { email, passwordHash, active: true },
+      });
+      if (supplier.connection.status !== 'ACTIVE') {
+        await this.prisma.tenant.supplierConnection.update({
+          where: { id: supplier.connection.id },
+          data: { status: 'ACTIVE', respondedAt: new Date(), revokedAt: null },
+        });
+      }
+
+      await this.auditService.record({
+        companyId: user.companyId,
+        actorUserId: user.userId,
+        action: 'supplier.portal_reset',
+        entityType: 'Supplier',
+        entityId: id,
+        after: { email: portalUser.email },
+      });
+      await this.emailService.send(
+        email,
+        'Доступ до порталу постачальника SH ERP',
+        `Вам надано доступ до порталу постачальника SH ERP.\nЕл. пошта: ${email}\nТимчасовий пароль: ${tempPassword}\nУвійдіть на сторінці порталу постачальника.`,
+      );
+      return { email: portalUser.email, tempPassword };
     }
 
+    // Case 2: this email already belongs to an org connected elsewhere —
+    // request a new connection instead of erroring or duplicating the account.
+    const existingPortalUser = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { email } });
+    if (existingPortalUser) {
+      const connection = await this.prisma.tenant.supplierConnection.create({
+        data: {
+          companyId: user.companyId,
+          supplierId: id,
+          supplierOrganizationId: existingPortalUser.supplierOrganizationId,
+          status: 'PENDING',
+        },
+      });
+      await this.auditService.record({
+        companyId: user.companyId,
+        actorUserId: user.userId,
+        action: 'supplier.portal_connection_requested',
+        entityType: 'Supplier',
+        entityId: id,
+        after: { email, connectionId: connection.id },
+      });
+      await this.emailService.send(
+        email,
+        'Новий запит на підключення — SH ERP',
+        `Ще одна компанія на SH ERP запросила підключити ваш існуючий акаунт порталу постачальника до себе.\nУвійдіть у портал постачальника і прийміть або відхиліть цей запит.`,
+      );
+      return { email, requiresAcceptance: true };
+    }
+
+    // Case 3: genuinely new supplier — unchanged temp-password/email flow,
+    // wrapped in a new SupplierOrganization + one ACTIVE SupplierConnection.
     const tempPassword = this.generateTempPassword();
     const passwordHash = await argon2.hash(tempPassword);
 
-    const portalUser = await this.prisma.tenant.supplierPortalUser.upsert({
-      where: { supplierId: id },
-      create: { companyId: user.companyId, supplierId: id, email, passwordHash, active: true },
-      update: { email, passwordHash, active: true },
+    const organization = await this.prisma.tenant.supplierOrganization.create({ data: { name: supplier.name } });
+    const portalUser = await this.prisma.tenant.supplierPortalUser.create({
+      data: { supplierOrganizationId: organization.id, email, passwordHash, active: true },
+    });
+    await this.prisma.tenant.supplierConnection.create({
+      data: { companyId: user.companyId, supplierId: id, supplierOrganizationId: organization.id, status: 'ACTIVE', respondedAt: new Date() },
     });
 
     await this.auditService.record({
       companyId: user.companyId,
       actorUserId: user.userId,
-      action: (supplier as any).portalUser ? 'supplier.portal_reset' : 'supplier.portal_invited',
+      action: 'supplier.portal_invited',
       entityType: 'Supplier',
       entityId: id,
       after: { email: portalUser.email },
     });
-
     await this.emailService.send(
       email,
       'Доступ до порталу постачальника SH ERP',
@@ -199,13 +277,22 @@ export class SuppliersService {
     return { email: portalUser.email, tempPassword };
   }
 
+  /**
+   * Revokes THIS company's own connection to this supplier — never the
+   * global account. Real bug fixed here (2026-08-21 P0, ADR-0012): before
+   * the multi-company redesign there was only ever one company per
+   * account, so flipping `SupplierPortalUser.active` and "this company's
+   * access" were the same thing; now a supplier can be connected to many
+   * companies, and one company deactivating it must not silently lock the
+   * supplier out of every other company it works with.
+   */
   async deactivatePortal(user: RequestUser, id: string) {
-    const portalUser = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { supplierId: id } });
-    if (!portalUser) throw new CodedNotFoundException('SUPPLIER_PORTAL_NOT_FOUND', 'This supplier has no portal account.');
+    const connection = await this.prisma.tenant.supplierConnection.findUnique({ where: { supplierId: id } });
+    if (!connection) throw new CodedNotFoundException('SUPPLIER_PORTAL_NOT_FOUND', 'This supplier has no portal connection.');
 
-    const updated = await this.prisma.tenant.supplierPortalUser.update({
-      where: { supplierId: id },
-      data: { active: false },
+    const updated = await this.prisma.tenant.supplierConnection.update({
+      where: { id: connection.id },
+      data: { status: 'REVOKED', revokedAt: new Date() },
     });
 
     await this.auditService.record({
@@ -216,7 +303,17 @@ export class SuppliersService {
       entityId: id,
     });
 
-    return { email: updated.email, active: updated.active };
+    return { active: updated.status === ('ACTIVE' as typeof updated.status) };
+  }
+
+  /** Shared connection -> {email, active, createdAt} shape for findOne/query — `active` is THIS company's own connection status, not the global account flag (see deactivatePortal's own comment for why that distinction matters now). */
+  private toPortalUserStatus(connection: { status: string; invitedAt: Date; supplierOrganization: { portalUser: { email: string } | null } } | null) {
+    if (!connection || !connection.supplierOrganization.portalUser) return null;
+    return {
+      email: connection.supplierOrganization.portalUser.email,
+      active: connection.status === 'ACTIVE',
+      createdAt: connection.invitedAt,
+    };
   }
 
   private generateTempPassword(): string {

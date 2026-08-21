@@ -8,6 +8,8 @@ import { SupplierPortalRefreshTokenService } from './supplier-portal-refresh-tok
 import { SupplierPortalAuthController } from './supplier-portal-auth.controller';
 import { SupplierPortalService } from './supplier-portal.service';
 import { SupplierPortalController } from './supplier-portal.controller';
+import { SupplierPortalConnectionsService } from './supplier-portal-connections.service';
+import { SupplierPortalConnectionsController } from './supplier-portal-connections.controller';
 
 /**
  * Portal for external suppliers — completely separate from Company Admin
@@ -26,7 +28,7 @@ import { SupplierPortalController } from './supplier-portal.controller';
  */
 @Module({
   imports: [JwtModule.register({})],
-  controllers: [SupplierPortalAuthController, SupplierPortalController],
+  controllers: [SupplierPortalAuthController, SupplierPortalController, SupplierPortalConnectionsController],
   providers: [
     SupplierPortalAuthPrismaService,
     SupplierPortalGuard,
@@ -34,6 +36,7 @@ import { SupplierPortalController } from './supplier-portal.controller';
     SupplierPortalAuthService,
     SupplierPortalRefreshTokenService,
     SupplierPortalService,
+    SupplierPortalConnectionsService,
   ],
 })
 export class SupplierPortalModule {}

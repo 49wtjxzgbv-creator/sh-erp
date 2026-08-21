@@ -13,6 +13,8 @@ interface SupplierPortalSessionResponse {
   email: string;
   supplierId: string;
   companyId: string;
+  companyName: string;
+  activeConnectionId: string;
 }
 
 async function parseOrThrow(res: Response): Promise<SupplierPortalSessionResponse> {
@@ -65,4 +67,24 @@ export async function restoreSession(): Promise<boolean> {
     useSupplierPortalSessionStore.getState().clearSession();
     return false;
   }
+}
+
+/**
+ * Switches this session's active company (2026-08-21 P0, ADR-0012) — mints
+ * a new access+refresh pair scoped to a different SupplierConnection, via
+ * the same-origin proxy so the httpOnly refresh cookie stays server-side.
+ * The backend re-verifies the target connection belongs to this supplier's
+ * own organization and is ACTIVE — this call can never itself grant access
+ * to a company the caller isn't actually connected to.
+ */
+export async function switchConnection(connectionId: string): Promise<SupplierPortalSessionResponse> {
+  const res = await fetch('/api/supplier-portal/auth/switch-connection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connectionId }),
+    credentials: 'include',
+  });
+  const session = await parseOrThrow(res);
+  useSupplierPortalSessionStore.getState().setSession(session);
+  return session;
 }

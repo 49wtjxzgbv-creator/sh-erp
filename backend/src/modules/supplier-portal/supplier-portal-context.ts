@@ -7,16 +7,32 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { CodedUnauthorizedException } from '../../common/api-exceptions';
 
+/**
+ * Populated in TWO phases (2026-08-21 P0, ADR-0012 — multi-company
+ * redesign): `SupplierPortalGuard` sets only the identity fields
+ * (`supplierPortalUserId`, `supplierOrganizationId`, `activeConnectionId`)
+ * straight from the JWT; `companyId`/`supplierId` are deliberately NOT
+ * trusted from the token anymore (a company could revoke the connection
+ * mid-session) — `SupplierPortalScopeInterceptor` fills those in from a
+ * LIVE `SupplierConnection` row it re-checks on every single request,
+ * before this object is considered complete. Every service in this module
+ * reads `companyId`/`supplierId` off this object exactly as before — they
+ * just now come from a fresher, re-verified source.
+ */
 export interface RequestSupplierPortalUser {
   supplierPortalUserId: string;
-  supplierId: string;
+  supplierOrganizationId: string;
+  activeConnectionId: string;
+  /** Set by SupplierPortalScopeInterceptor from the live SupplierConnection row — not present until after that interceptor runs. */
   companyId: string;
+  /** Set by SupplierPortalScopeInterceptor from the live SupplierConnection row — not present until after that interceptor runs. */
+  supplierId: string;
 }
 
 export interface SupplierPortalTokenPayload {
   sub: string;
-  supplierId: string;
-  companyId: string;
+  supplierOrganizationId: string;
+  activeConnectionId: string;
   type: 'supplier_portal'; // distinguishes this token from a regular access token or a super-admin token at a glance
 }
 
@@ -29,13 +45,12 @@ export interface SupplierPortalTokenPayload {
  * `JWT_ACCESS_SECRET` or `SUPER_ADMIN_JWT_SECRET`), own token `type`, fails
  * closed if the secret is unset.
  *
- * Unlike SuperAdmin, this does NOT bypass RLS — it reuses the regular
- * `.tenant` client, scoped to `companyId` from the token. That scoping is
- * activated by `SupplierPortalScopeInterceptor` (which needs `request.
- * supplierPortalUser` set by THIS guard to run first), not by this guard
- * itself — a Guard can't keep a transaction open across the rest of the
- * pipeline (see TenantScopeInterceptor's own header comment for why that's
- * an Interceptor, not a Guard, in this codebase).
+ * Multi-company redesign (2026-08-21 P0, ADR-0012): this Guard verifies
+ * the token's signature/shape ONLY — it deliberately does NOT resolve
+ * `companyId`/`supplierId` (the token no longer carries them as trusted
+ * claims at all). That's `SupplierPortalScopeInterceptor`'s job, via a live
+ * DB re-check on every request — see its own header comment for why a
+ * signed claim isn't good enough here.
  */
 @Injectable()
 export class SupplierPortalGuard implements CanActivate {
@@ -62,11 +77,13 @@ export class SupplierPortalGuard implements CanActivate {
       if (payload.type !== 'supplier_portal') {
         throw new Error('wrong token type');
       }
+      // companyId/supplierId are intentionally absent here — set later by
+      // SupplierPortalScopeInterceptor from a live, re-verified row.
       request.supplierPortalUser = {
         supplierPortalUserId: payload.sub,
-        supplierId: payload.supplierId,
-        companyId: payload.companyId,
-      } satisfies RequestSupplierPortalUser;
+        supplierOrganizationId: payload.supplierOrganizationId,
+        activeConnectionId: payload.activeConnectionId,
+      } as Partial<RequestSupplierPortalUser>;
       return true;
     } catch {
       throw new CodedUnauthorizedException('SUPPLIER_PORTAL_TOKEN_INVALID', 'Invalid or expired supplier portal access token.');
@@ -74,7 +91,7 @@ export class SupplierPortalGuard implements CanActivate {
   }
 }
 
-/** Pulls the authenticated supplier portal user off the request, set by SupplierPortalGuard. */
+/** Pulls the authenticated supplier portal user off the request, set by SupplierPortalGuard + SupplierPortalScopeInterceptor. */
 export const CurrentSupplierPortalUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): RequestSupplierPortalUser => {
     const request = ctx.switchToHttp().getRequest();

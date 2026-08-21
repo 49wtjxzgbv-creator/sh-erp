@@ -33,16 +33,18 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { accessToken, refreshToken, expiresIn, supplierId, companyId, email } = data as {
+  const { accessToken, refreshToken, expiresIn, supplierId, companyId, companyName, activeConnectionId, email } = data as {
     accessToken: string;
     refreshToken: string;
     expiresIn: string;
     supplierId: string;
     companyId: string;
+    companyName: string;
+    activeConnectionId: string;
     email: string;
   };
 
-  const response = NextResponse.json({ accessToken, expiresIn, email, supplierId, companyId });
+  const response = NextResponse.json({ accessToken, expiresIn, email, supplierId, companyId, companyName, activeConnectionId });
   setSupplierPortalSessionCookie(response, refreshToken);
   return response;
 }
