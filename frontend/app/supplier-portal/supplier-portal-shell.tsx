@@ -15,10 +15,13 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  * Root of the Supplier Portal — a genuinely separate route tree from
  * `(app)`/`(public)`/`super-admin`, with its own auth guard (checks the
  * separate supplier-portal session store) and no shared chrome with any of
- * them, per ADR-0011. `/supplier-portal/login` is the one page under this
- * tree that must render without a session — it bypasses
+ * them, per ADR-0011. `/supplier-portal/login` and `/supplier-portal/register`
+ * (2026-08-21 P1, ADR-0013 — self-service registration) are the two pages
+ * under this tree that must render without a session — both bypass
  * SupplierPortalSessionBoundary entirely (no point silently trying to
- * restore a session on the page whose whole job is establishing one).
+ * restore a session on a page whose whole job is establishing one; without
+ * this, an anonymous visitor hitting /register would be redirected straight
+ * to /login before the registration form ever rendered).
  *
  * Split out of app/supplier-portal/layout.tsx (which stays a Server
  * Component so it can export `metadata` for noindex) — this file is
@@ -27,9 +30,9 @@ import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
  */
 export function SupplierPortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLoginPage = pathname === '/supplier-portal/login';
+  const isPublicPage = pathname === '/supplier-portal/login' || pathname === '/supplier-portal/register';
 
-  if (isLoginPage) {
+  if (isPublicPage) {
     return <div className="min-h-screen bg-background text-foreground">{children}</div>;
   }
 
