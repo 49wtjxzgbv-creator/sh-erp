@@ -1,0 +1,23 @@
+-- Migration: supplier_portal_grant_companies_name (HOTFIX, 2026-08-21)
+--
+-- Real production incident: SupplierPortalAuthService.login()/
+-- reissueAccessToken()/switchConnection() have ALWAYS joined through
+-- SupplierConnection to `company: { select: { name: true } }` (since the
+-- ADR-0012 multi-company redesign introduced this shape) — but
+-- supplier_portal_auth_service was never granted any access to `companies`
+-- at all. Every supplier login with at least one real connection has been
+-- failing with a raw Postgres "permission denied for table companies"
+-- (42501) since that deploy. It went unnoticed because every prior live
+-- smoke test happened to only exercise either a zero-connection session
+-- (skips the join entirely) or a mocked unit test (bypasses real grants).
+--
+-- Column-level grant, not table-level: this role only ever needs the
+-- company's `name` for display (never a trust boundary) and `id` for the
+-- join key itself — nothing else about `companies` (slug, status,
+-- settings) should be reachable through this BYPASSRLS role.
+--
+-- Verified via pglast (real libpg_query grammar parsing), not a live
+-- database — same standing verification method used for every hand-
+-- authored migration in this project.
+
+GRANT SELECT (id, name) ON TABLE "companies" TO supplier_portal_auth_service;
