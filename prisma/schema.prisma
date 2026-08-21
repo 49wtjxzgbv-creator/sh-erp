@@ -138,6 +138,7 @@ model Company {
   units                        CompanyUnit[]
   suppliers                    Supplier[]
   supplierConnections          SupplierConnection[]
+  supplierInviteTokens         SupplierInviteToken[]
   warehouses                   Warehouse[]
   warehouseStocks              WarehouseStock[]
   stockMovements               StockMovement[]
@@ -680,7 +681,7 @@ model Supplier {
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
-  company        Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   products       Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
   assemblies     Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
   purchaseOrders PurchaseOrder[]
@@ -690,6 +691,7 @@ model Supplier {
   // `Supplier` itself is unchanged: still "how this one company privately
   // records this vendor" — the connection is what turns that into portal access.
   connection     SupplierConnection?
+  inviteTokens   SupplierInviteToken[]
   productLinks   ProductSupplier[]
   assemblyLinks  AssemblySupplier[]
 
@@ -861,6 +863,41 @@ model SupplierConnection {
   @@index([companyId])
   @@index([supplierOrganizationId])
   @@map("supplier_connections")
+}
+
+// Self-service supplier registration (2026-08-21 P1, ADR-0013): closes the
+// gap that `SuppliersService.invitePortal()` requires staff to already know
+// the supplier's exact portal email. Staff generate this for an EXISTING
+// `Supplier` row that has no `SupplierConnection` yet, share the raw token
+// out-of-band (email/phone/messenger — never in-app discovery), and the
+// supplier redeems it themselves at `/supplier-portal/register?token=...`.
+// Same hash-at-rest shape as `SupplierPortalRefreshToken`
+// (`randomUUID()+randomUUID()` raw token, sha256 hex in `tokenHash`), plus
+// single-use (`consumedAt`) and manual invalidation (`revokedAt`, kept
+// separate from `consumedAt` so an audit trail can tell "someone redeemed
+// it" from "staff invalidated it / superseded it with a new one" apart).
+// RLS-scoped on `companyId` exactly like `supplier_connections` — staff
+// manage it through the normal `app_user` path; the public redemption
+// lookup goes through the BYPASSRLS `supplier_portal_auth_service` role,
+// the same pre-tenant-context problem login/scope-check already solve.
+model SupplierInviteToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  companyId   String    @db.Uuid
+  supplierId  String    @db.Uuid
+  tokenHash   String    @unique
+  createdById String    @db.Uuid
+  expiresAt   DateTime  @db.Timestamptz(3)
+  consumedAt  DateTime? @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([supplierId])
+  @@map("supplier_invite_tokens")
 }
 
 // Session persistence (2026-08-20 P0 fix) — same rotation/reuse-detection

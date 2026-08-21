@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -24,6 +24,8 @@ import { SupplierPortalInviteDto } from './dto/supplier-portal-invite.dto';
  */
 @Injectable()
 export class SuppliersService {
+  private readonly inviteLinkTtlDays = Number(process.env.SUPPLIER_INVITE_LINK_TTL_DAYS ?? 14);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
@@ -304,6 +306,95 @@ export class SuppliersService {
     });
 
     return { active: updated.status === ('ACTIVE' as typeof updated.status) };
+  }
+
+  /**
+   * Self-service registration (2026-08-21 P1, ADR-0013): generates a
+   * single-use, expiring token for a Supplier row that has no portal
+   * connection yet, so staff don't need to already know the supplier's
+   * exact portal email — the supplier redeems it themselves at
+   * `/supplier-portal/register?token=...`. Only makes sense pre-connection
+   * (a supplier who already has a connection should use invite/reset
+   * instead, which resets a known email's password). At most one live
+   * (unconsumed, unrevoked) token per supplier at a time — generating a new
+   * one supersedes any outstanding one, so an old link sent to the wrong
+   * place can't keep working after a fresh one is issued.
+   */
+  async createInviteLink(user: RequestUser, id: string) {
+    const supplier = await this.prisma.tenant.supplier.findUnique({ where: { id }, include: { connection: true } });
+    if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Supplier not found.');
+    if (supplier.connection) {
+      throw new CodedConflictException(
+        'SUPPLIER_PORTAL_ALREADY_CONNECTED',
+        'This supplier already has a portal connection — use invite/reset instead of an invite link.',
+      );
+    }
+
+    await this.prisma.tenant.supplierInviteToken.updateMany({
+      where: { supplierId: id, consumedAt: null, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const rawToken = randomUUID() + randomUUID();
+    const expiresAt = new Date(Date.now() + this.inviteLinkTtlDays * 24 * 60 * 60 * 1000);
+    const token = await this.prisma.tenant.supplierInviteToken.create({
+      data: {
+        companyId: user.companyId,
+        supplierId: id,
+        tokenHash: this.hashInviteToken(rawToken),
+        createdById: user.userId,
+        expiresAt,
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'supplier.invite_link_created',
+      entityType: 'Supplier',
+      entityId: id,
+      after: { inviteTokenId: token.id, expiresAt },
+    });
+
+    return { token: rawToken, expiresAt };
+  }
+
+  async listInviteLinks(user: RequestUser, id: string) {
+    return this.prisma.tenant.supplierInviteToken.findMany({
+      where: { supplierId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, expiresAt: true, consumedAt: true, revokedAt: true, createdAt: true },
+    });
+  }
+
+  async revokeInviteLink(user: RequestUser, id: string, linkId: string) {
+    const link = await this.prisma.tenant.supplierInviteToken.findUnique({ where: { id: linkId } });
+    if (!link || link.supplierId !== id) {
+      throw new CodedNotFoundException('SUPPLIER_INVITE_LINK_NOT_FOUND', 'Invite link not found.');
+    }
+    if (link.consumedAt || link.revokedAt) {
+      throw new CodedConflictException('SUPPLIER_INVITE_LINK_ALREADY_INVALID', 'This invite link has already been used or revoked.');
+    }
+
+    const updated = await this.prisma.tenant.supplierInviteToken.update({
+      where: { id: linkId },
+      data: { revokedAt: new Date() },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'supplier.invite_link_revoked',
+      entityType: 'Supplier',
+      entityId: id,
+      after: { inviteTokenId: updated.id },
+    });
+
+    return { id: updated.id, revokedAt: updated.revokedAt };
+  }
+
+  private hashInviteToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
   }
 
   /** Shared connection -> {email, active, createdAt} shape for findOne/query — `active` is THIS company's own connection status, not the global account flag (see deactivatePortal's own comment for why that distinction matters now). */

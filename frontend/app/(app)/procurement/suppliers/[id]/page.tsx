@@ -11,6 +11,7 @@ import {
   useDeleteSupplier,
   useInvitePortal,
   useDeactivatePortal,
+  useCreateSupplierInviteLink,
   useSupplierLinkedProducts,
   useSupplierLinkedAssemblies,
 } from '@/lib/hooks/use-procurement';
@@ -46,9 +47,12 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
   const { data: supplier } = useSupplier(supplierId);
   const invite = useInvitePortal(supplierId);
   const deactivate = useDeactivatePortal(supplierId);
+  const createInviteLink = useCreateSupplierInviteLink(supplierId);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [requiresAcceptance, setRequiresAcceptance] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!supplier) return null;
@@ -75,6 +79,18 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
     setError(null);
     try {
       await deactivate.mutateAsync();
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleCreateInviteLink() {
+    setError(null);
+    setInviteLink(null);
+    setLinkCopied(false);
+    try {
+      const res = await createInviteLink.mutateAsync();
+      setInviteLink(`${window.location.origin}/supplier-portal/register?token=${res.token}`);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
@@ -120,12 +136,39 @@ function SupplierPortalCard({ supplierId }: { supplierId: string }) {
             </div>
           </div>
         )}
+        {inviteLink && (
+          <div className="space-y-1.5">
+            <p className="text-sm text-muted-foreground">{t('inviteLinkGenerated')}</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm">
+                {inviteLink}
+              </code>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(inviteLink);
+                  setLinkCopied(true);
+                }}
+              >
+                {linkCopied ? tc('copied') : tc('copy')}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" loading={invite.isPending} onClick={handleInvite}>
             {portalUser ? t('resetPortalPassword') : t('invitePortal')}
           </Button>
+          {!portalUser && (
+            <Button size="sm" variant="outline" loading={createInviteLink.isPending} onClick={handleCreateInviteLink}>
+              {t('createInviteLink')}
+            </Button>
+          )}
           {portalUser?.active && (
             <Button size="sm" variant="destructive" loading={deactivate.isPending} onClick={handleDeactivate}>
               {t('deactivatePortal')}

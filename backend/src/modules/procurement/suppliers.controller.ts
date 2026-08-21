@@ -74,4 +74,25 @@ export class SuppliersController {
   async deactivatePortal(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.suppliersService.deactivatePortal(user, id);
   }
+
+  @Post(':id/invite-links')
+  @RequirePermissions('suppliers:write')
+  @ApiOperation({ summary: 'Generate a single-use invite link for a supplier that has no portal connection yet, for self-service registration — see ADR-0013.' })
+  async createInviteLink(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.suppliersService.createInviteLink(user, id);
+  }
+
+  @Get(':id/invite-links')
+  @RequirePermissions('suppliers:read')
+  @ApiOperation({ summary: 'List invite links generated for this supplier (raw token never returned again after creation).' })
+  async listInviteLinks(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.suppliersService.listInviteLinks(user, id);
+  }
+
+  @Post(':id/invite-links/:linkId/revoke')
+  @RequirePermissions('suppliers:write')
+  @ApiOperation({ summary: 'Revoke an invite link before it is redeemed.' })
+  async revokeInviteLink(@CurrentUser() user: RequestUser, @Param('id') id: string, @Param('linkId') linkId: string) {
+    return this.suppliersService.revokeInviteLink(user, id, linkId);
+  }
 }

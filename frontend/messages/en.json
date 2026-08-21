@@ -454,6 +454,8 @@
     "resetPortalPassword": "Reset portal password",
     "invitePortal": "Send invite",
     "portalInviteRequiresAcceptance": "This email already has a supplier account with a different company — a connection request has been sent. Access will appear once the supplier accepts it from their own portal.",
+    "createInviteLink": "Create invite link",
+    "inviteLinkGenerated": "Invite link (shown only now):",
     "deactivatePortal": "Deactivate portal",
     "addLine": "Add line",
     "filterByStatus": "Filter by status",
@@ -1120,7 +1122,16 @@
     "workingWith": "Working with: {company}",
     "pendingConnectionMessage": "\"{company}\" has invited you to connect",
     "acceptConnection": "Accept",
-    "declineConnection": "Decline"
+    "declineConnection": "Decline",
+    "registerTitle": "Supplier registration",
+    "registerInvitedBy": "\u201c{company}\u201d invites you to connect",
+    "registerModeNew": "I'm a new supplier",
+    "registerModeExisting": "I already have an account",
+    "registerOrganizationName": "Your company name",
+    "registerSubmitNew": "Register",
+    "registerSubmitExisting": "Connect this company",
+    "inviteInvalid": "This invite is invalid or has already been used",
+    "inviteAcceptFailed": "Could not complete the connection"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

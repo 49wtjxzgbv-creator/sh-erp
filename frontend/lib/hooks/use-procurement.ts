@@ -9,6 +9,7 @@ import {
   deleteSupplier,
   invitePortal,
   deactivatePortal,
+  createSupplierInviteLink,
   getSupplierLinkedProducts,
   getSupplierLinkedAssemblies,
   queryPurchaseOrders,
@@ -99,6 +100,12 @@ export function useDeactivatePortal(id: string) {
   return useMutation({
     mutationFn: () => deactivatePortal(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: supplierKey(id) }),
+  });
+}
+
+export function useCreateSupplierInviteLink(id: string) {
+  return useMutation({
+    mutationFn: () => createSupplierInviteLink(id),
   });
 }
 

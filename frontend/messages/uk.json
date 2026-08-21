@@ -454,6 +454,8 @@
     "resetPortalPassword": "Скинути пароль порталу",
     "invitePortal": "Надіслати запрошення",
     "portalInviteRequiresAcceptance": "Цей email вже має обліковий запис постачальника в іншій компанії — надіслано запит на підключення. Доступ з'явиться, щойно постачальник прийме його зі свого порталу.",
+    "createInviteLink": "Створити посилання-запрошення",
+    "inviteLinkGenerated": "Посилання-запрошення (показується лише зараз):",
     "deactivatePortal": "Деактивувати портал",
     "addLine": "Додати рядок",
     "filterByStatus": "Фільтр за статусом",
@@ -1120,7 +1122,16 @@
     "workingWith": "Ви працюєте з: {company}",
     "pendingConnectionMessage": "Виробник «{company}» запросив вас підключитись",
     "acceptConnection": "Прийняти",
-    "declineConnection": "Відхилити"
+    "declineConnection": "Відхилити",
+    "registerTitle": "Реєстрація постачальника",
+    "registerInvitedBy": "Виробник «{company}» запрошує вас підключитися",
+    "registerModeNew": "Я новий постачальник",
+    "registerModeExisting": "У мене вже є акаунт",
+    "registerOrganizationName": "Назва вашої компанії",
+    "registerSubmitNew": "Зареєструватися",
+    "registerSubmitExisting": "Підключити цю компанію",
+    "inviteInvalid": "Це запрошення недійсне або вже використане",
+    "inviteAcceptFailed": "Не вдалося завершити підключення"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

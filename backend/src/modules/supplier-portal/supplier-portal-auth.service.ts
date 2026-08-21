@@ -157,6 +157,22 @@ export class SupplierPortalAuthService {
     await this.refreshTokens.revokeFamily(rawRefreshToken);
   }
 
+  /**
+   * Mints a brand-new session (access+refresh pair) for an already-verified
+   * supplierPortalUserId+activeConnectionId — used by
+   * `SupplierPortalRegistrationService` after a successful invite-link
+   * redemption, where identity was already established by other means
+   * (password verification against an existing account, or a
+   * freshly-created one) rather than through `login()`'s own credential
+   * check. Reuses `reissueAccessToken`, which re-fetches and re-verifies
+   * both rows fresh from the database — the same safety net every other
+   * session-minting path in this service already gets for free.
+   */
+  async issueSession(supplierPortalUserId: string, activeConnectionId: string): Promise<SupplierPortalSession> {
+    const rawRefreshToken = await this.refreshTokens.issue(supplierPortalUserId, activeConnectionId);
+    return this.reissueAccessToken(supplierPortalUserId, activeConnectionId, rawRefreshToken);
+  }
+
   private async reissueAccessToken(supplierPortalUserId: string, activeConnectionId: string, freshRawRefreshToken: string): Promise<SupplierPortalSession> {
     const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { id: supplierPortalUserId } });
     if (!portalUser || !portalUser.active) {

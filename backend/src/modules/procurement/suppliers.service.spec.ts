@@ -31,6 +31,13 @@ describe('SuppliersService', () => {
           create: jest.fn(),
           update: jest.fn(),
         },
+        supplierInviteToken: {
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
       },
     };
     audit = { record: jest.fn() };
@@ -201,5 +208,57 @@ describe('SuppliersService', () => {
     expect(prisma.tenant.supplier.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { deletedAt: null } }),
     );
+  });
+
+  describe('createInviteLink — self-service registration (ADR-0013)', () => {
+    it('rejects a supplier that already has a portal connection', async () => {
+      prisma.tenant.supplier.findUnique.mockResolvedValue({ id: 's1', connection: { id: 'conn1' } });
+      await expect(service.createInviteLink(user, 's1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.supplierInviteToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing supplier', async () => {
+      prisma.tenant.supplier.findUnique.mockResolvedValue(null);
+      await expect(service.createInviteLink(user, 's1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('supersedes any previously outstanding (unconsumed, unrevoked) token for this supplier, then creates a new one', async () => {
+      prisma.tenant.supplier.findUnique.mockResolvedValue({ id: 's1', connection: null });
+      prisma.tenant.supplierInviteToken.create.mockResolvedValue({ id: 'tok2' });
+
+      const result = await service.createInviteLink(user, 's1');
+
+      expect(prisma.tenant.supplierInviteToken.updateMany).toHaveBeenCalledWith({
+        where: { supplierId: 's1', consumedAt: null, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prisma.tenant.supplierInviteToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ companyId: 'c1', supplierId: 's1', createdById: 'u1' }),
+      });
+      expect(result.token).toEqual(expect.any(String));
+      expect(result.expiresAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('revokeInviteLink', () => {
+    it('rejects a link belonging to a different supplier', async () => {
+      prisma.tenant.supplierInviteToken.findUnique.mockResolvedValue({ id: 'link1', supplierId: 'other-supplier' });
+      await expect(service.revokeInviteLink(user, 's1', 'link1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a link that is already consumed or revoked', async () => {
+      prisma.tenant.supplierInviteToken.findUnique.mockResolvedValue({ id: 'link1', supplierId: 's1', consumedAt: new Date(), revokedAt: null });
+      await expect(service.revokeInviteLink(user, 's1', 'link1')).rejects.toThrow(ConflictException);
+    });
+
+    it('revokes a live link belonging to this supplier', async () => {
+      prisma.tenant.supplierInviteToken.findUnique.mockResolvedValue({ id: 'link1', supplierId: 's1', consumedAt: null, revokedAt: null });
+      prisma.tenant.supplierInviteToken.update.mockResolvedValue({ id: 'link1', revokedAt: new Date() });
+
+      const result = await service.revokeInviteLink(user, 's1', 'link1');
+
+      expect(prisma.tenant.supplierInviteToken.update).toHaveBeenCalledWith({ where: { id: 'link1' }, data: { revokedAt: expect.any(Date) } });
+      expect(result.id).toBe('link1');
+    });
   });
 });

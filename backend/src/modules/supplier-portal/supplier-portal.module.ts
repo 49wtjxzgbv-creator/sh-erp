@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
 import { SupplierPortalGuard } from './supplier-portal-context';
 import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.interceptor';
@@ -10,6 +11,8 @@ import { SupplierPortalService } from './supplier-portal.service';
 import { SupplierPortalController } from './supplier-portal.controller';
 import { SupplierPortalConnectionsService } from './supplier-portal-connections.service';
 import { SupplierPortalConnectionsController } from './supplier-portal-connections.controller';
+import { SupplierPortalRegistrationService } from './supplier-portal-registration.service';
+import { SupplierPortalRegistrationController } from './supplier-portal-registration.controller';
 
 /**
  * Portal for external suppliers — completely separate from Company Admin
@@ -27,8 +30,13 @@ import { SupplierPortalConnectionsController } from './supplier-portal-connectio
  * identical setup.
  */
 @Module({
-  imports: [JwtModule.register({})],
-  controllers: [SupplierPortalAuthController, SupplierPortalController, SupplierPortalConnectionsController],
+  imports: [JwtModule.register({}), NotificationsModule],
+  controllers: [
+    SupplierPortalAuthController,
+    SupplierPortalController,
+    SupplierPortalConnectionsController,
+    SupplierPortalRegistrationController,
+  ],
   providers: [
     SupplierPortalAuthPrismaService,
     SupplierPortalGuard,
@@ -37,6 +45,7 @@ import { SupplierPortalConnectionsController } from './supplier-portal-connectio
     SupplierPortalRefreshTokenService,
     SupplierPortalService,
     SupplierPortalConnectionsService,
+    SupplierPortalRegistrationService,
   ],
 })
 export class SupplierPortalModule {}

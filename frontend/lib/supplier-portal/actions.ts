@@ -88,3 +88,47 @@ export async function switchConnection(connectionId: string): Promise<SupplierPo
   useSupplierPortalSessionStore.getState().setSession(session);
   return session;
 }
+
+export interface SupplierInvitePreview {
+  companyName: string;
+  supplierName: string;
+}
+
+/**
+ * Self-service registration (2026-08-21 P1, ADR-0013) — read-only, no
+ * cookie side effect, so it hits the backend's public endpoint directly
+ * rather than going through a same-origin proxy (unlike login/refresh/
+ * switch-connection, which all mint a session and need one).
+ */
+export async function previewInvite(token: string): Promise<SupplierInvitePreview> {
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+  const res = await fetch(`${API_BASE.replace(/\/?$/, '/')}supplier-portal/auth/invite/${encodeURIComponent(token)}`);
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    const message = (data && (data.message || data.error)) || res.statusText;
+    throw new Error(Array.isArray(message) ? message.join(', ') : String(message));
+  }
+  return data as SupplierInvitePreview;
+}
+
+/**
+ * Redeems an invite link — creates a new Supplier Portal account or
+ * connects an existing one to the inviting company. Goes through a
+ * same-origin proxy (mirrors login/switch-connection) because success
+ * mints a session and needs to set the httpOnly refresh cookie.
+ */
+export async function acceptInvite(
+  token: string,
+  dto: { email: string; password: string; organizationName?: string },
+): Promise<SupplierPortalSessionResponse> {
+  const res = await fetch(`/api/supplier-portal/auth/accept-invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, ...dto }),
+    credentials: 'include',
+  });
+  const session = await parseOrThrow(res);
+  useSupplierPortalSessionStore.getState().setSession(session);
+  return session;
+}

@@ -124,6 +124,16 @@ export function deactivatePortal(id: string): Promise<{ email: string; active: b
   return apiClient.post<{ email: string; active: boolean }>(`suppliers/${id}/portal-deactivate`, {});
 }
 
+/**
+ * Self-service registration (2026-08-21 P1, ADR-0013) — generates a
+ * single-use invite link for a supplier that has no portal connection yet,
+ * for when staff don't already know their exact portal email. The raw
+ * `token` is shown once; it isn't retrievable again after this response.
+ */
+export function createSupplierInviteLink(id: string): Promise<{ token: string; expiresAt: string }> {
+  return apiClient.post<{ token: string; expiresAt: string }>(`suppliers/${id}/invite-links`, {});
+}
+
 export type PurchaseOrderStatus = 'ORDERED' | 'PARTIAL' | 'DELIVERED';
 
 export interface PurchaseOrderItem {
