@@ -70,6 +70,39 @@ describe('DeliverySchedulesService', () => {
       expect(result.id).toBe('sched1');
     });
 
+    // Regression test for a real production bug: DeliveryScheduleLine's FK to
+    // DeliverySchedule is a plain single-column FK (unlike PurchaseOrderItem's
+    // composite FK to PurchaseOrder), so Prisma cannot infer companyId for a
+    // nested `lines.create` entry — tenantScopingExtension only stamps the
+    // top-level `data`, never nested relation creates. Without an explicit
+    // companyId on each line, a real (unmocked) Prisma client throws
+    // `PrismaClientValidationError: Argument 'company' is missing` — this
+    // mock-based test can't reproduce that runtime error, but it does pin the
+    // call shape so the explicit companyId can never silently regress.
+    it('stamps companyId explicitly onto every nested delivery-schedule-line create', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue({ id: 'item1', qtyOrdered: 5000, currentDeliveryScheduleId: null });
+      prisma.tenant.deliverySchedule.create.mockResolvedValue({ id: 'sched1', versionNumber: 1, status: 'PENDING', lines: [] });
+      prisma.tenant.purchaseOrderItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.createFirstVersion('c1', 'u1', 'item1', [
+        { date: new Date('2026-08-25'), qty: 2000 },
+        { date: new Date('2026-08-28'), qty: 3000 },
+      ]);
+
+      expect(prisma.tenant.deliverySchedule.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            lines: {
+              create: [
+                { date: new Date('2026-08-25'), qty: 2000, companyId: 'c1' },
+                { date: new Date('2026-08-28'), qty: 3000, companyId: 'c1' },
+              ],
+            },
+          }),
+        }),
+      );
+    });
+
     it('translates a P2002 on create (two concurrent first-version creates) into a conflict', async () => {
       prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue({ id: 'item1', qtyOrdered: 100, currentDeliveryScheduleId: null });
       prisma.tenant.deliverySchedule.create.mockRejectedValue(p2002());
@@ -148,6 +181,33 @@ describe('DeliverySchedulesService', () => {
       );
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order.schedule_proposed', entityId: 's2' }));
       expect(result.id).toBe('s2');
+    });
+
+    // Same regression coverage as createFirstVersion's own test — propose()
+    // has the identical nested lines.create pattern and the identical bug.
+    it('stamps companyId explicitly onto every nested delivery-schedule-line create', async () => {
+      prisma.tenant.deliverySchedule.findFirst.mockResolvedValue(null);
+      prisma.tenant.deliverySchedule.create.mockResolvedValue({ id: 's2', versionNumber: 2, status: 'PROPOSED', lines: [] });
+
+      await service.propose('c1', 'sp1', pendingSchedule, [
+        { date: new Date('2026-08-25'), qty: 2000 },
+        { date: new Date('2026-08-28'), qty: 1500 },
+        { date: new Date('2026-09-01'), qty: 1500 },
+      ]);
+
+      expect(prisma.tenant.deliverySchedule.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            lines: {
+              create: [
+                { date: new Date('2026-08-25'), qty: 2000, companyId: 'c1' },
+                { date: new Date('2026-08-28'), qty: 1500, companyId: 'c1' },
+                { date: new Date('2026-09-01'), qty: 1500, companyId: 'c1' },
+              ],
+            },
+          }),
+        }),
+      );
     });
 
     it('translates a P2002 on create (two concurrent proposals, partial unique index) into a conflict', async () => {

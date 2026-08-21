@@ -54,12 +54,17 @@ export class DeliverySchedulesService {
           versionNumber: 1,
           status: 'PENDING',
           createdById: actorId,
-          // `as any` — companyId on the nested line creates is stamped by
-          // the tenantScopingExtension at runtime (DeliveryScheduleLine is
-          // in TENANT_SCOPED_MODELS); the static Prisma type for a nested
-          // create otherwise demands it be present here, same as
-          // PurchaseOrdersService#create's own nested items.create cast.
-          lines: { create: lines.map((l) => ({ date: l.date, qty: l.qty })) },
+          // `as any` — the static Prisma type for a nested create demands
+          // companyId here too. Unlike PurchaseOrdersService#create's own
+          // nested items.create (which inherits companyId for free because
+          // PurchaseOrderItem.purchaseOrder is a COMPOSITE FK
+          // [companyId, purchaseOrderId] on PurchaseOrder), DeliveryScheduleLine's
+          // FK to DeliverySchedule is a plain single-column FK — Prisma has
+          // no relation-based way to infer companyId for the child, so it
+          // must be stamped explicitly here rather than relying on
+          // tenantScopingExtension (which only stamps the top-level `data`,
+          // never nested relation creates).
+          lines: { create: lines.map((l) => ({ date: l.date, qty: l.qty, companyId })) },
         } as any,
         include: { lines: true },
       });
@@ -162,7 +167,7 @@ export class DeliverySchedulesService {
           status: 'PROPOSED',
           previousVersionId: schedule.id,
           createdById: respondedById, // supplier portal user id — bare column, no FK, same "external actor" shape as AuditEvent.actorUserId
-          lines: { create: lines.map((l) => ({ date: l.date, qty: l.qty })) }, // companyId stamped by the extension, see createFirstVersion's own comment
+          lines: { create: lines.map((l) => ({ date: l.date, qty: l.qty, companyId })) }, // explicit companyId — see createFirstVersion's comment for why the extension can't stamp this nested create
         } as any,
         include: { lines: true },
       });
