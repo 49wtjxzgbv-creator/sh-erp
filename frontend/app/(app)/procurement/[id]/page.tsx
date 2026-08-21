@@ -3,12 +3,20 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { usePurchaseOrder, useReceivePurchaseOrder, useDeletePurchaseOrder, useSupplierLinkedProducts } from '@/lib/hooks/use-procurement';
+import {
+  usePurchaseOrder,
+  useReceivePurchaseOrder,
+  useDeletePurchaseOrder,
+  useSupplierLinkedProducts,
+  useCreateDeliverySchedule,
+  useAcceptDeliverySchedule,
+  useRejectDeliverySchedule,
+} from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
-import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput } from '@/lib/api-client/procurement';
+import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +43,184 @@ const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'suc
   PARTIAL: 'warning',
   DELIVERED: 'success',
 };
+
+const SCHEDULE_STATUS_VARIANT: Record<DeliveryScheduleStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
+  PENDING: 'secondary',
+  PROPOSED: 'warning',
+  CONFIRMED: 'success',
+  REJECTED: 'destructive',
+  SUPERSEDED: 'secondary',
+};
+
+/**
+ * Delivery Schedule (Phase 1, 2026-08-21) — additive per-item block, only
+ * shown for items where staff have created one; an item with none keeps
+ * showing exactly as before (no visual change). `item.currentDeliveryScheduleId`
+ * marks the operative version; a PROPOSED version (supplier's counter-offer)
+ * is shown separately with Accept/Reject, never merged into the current one.
+ */
+function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; item: PurchaseOrderItem; canManage: boolean }) {
+  const t = useTranslations('procurement');
+  const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
+  const createSchedule = useCreateDeliverySchedule(orderId);
+  const acceptSchedule = useAcceptDeliverySchedule(orderId);
+  const rejectSchedule = useRejectDeliverySchedule(orderId);
+
+  const [creating, setCreating] = useState(false);
+  const [lines, setLines] = useState<{ date: string; qty: string }[]>([{ date: '', qty: '' }]);
+  const [error, setError] = useState<string | null>(null);
+
+  const schedules = item.deliverySchedules ?? [];
+  const current = schedules.find((s) => s.id === item.currentDeliveryScheduleId);
+  const proposed = schedules.find((s) => s.status === 'PROPOSED');
+  const history = schedules.filter((s) => s.id !== current?.id && s.id !== proposed?.id);
+
+  async function handleCreate() {
+    setError(null);
+    const parsed = lines
+      .filter((l) => l.date && l.qty)
+      .map((l) => ({ date: l.date, qty: Number(l.qty) }));
+    if (parsed.length === 0) {
+      setError(t('invalidRow'));
+      return;
+    }
+    try {
+      await createSchedule.mutateAsync({ itemId: item.id, lines: parsed });
+      setCreating(false);
+      setLines([{ date: '', qty: '' }]);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleAccept(scheduleId: string) {
+    setError(null);
+    try {
+      await acceptSchedule.mutateAsync(scheduleId);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleReject(scheduleId: string) {
+    setError(null);
+    try {
+      await rejectSchedule.mutateAsync(scheduleId);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  if (!current && !canManage) return null;
+
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <p className="text-xs font-medium text-muted-foreground">{t('deliverySchedule')}</p>
+
+      {current && (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge variant={SCHEDULE_STATUS_VARIANT[current.status]}>{t(`scheduleStatus${current.status}`)}</Badge>
+            <span className="text-muted-foreground">
+              {t('scheduled')}: {current.lines.reduce((s, l) => s + Number(l.qty), 0)}
+              {current.status === 'CONFIRMED' && ` · ${t('confirmed')}: ${current.lines.reduce((s, l) => s + Number(l.qty), 0)}`}
+            </span>
+          </div>
+          <ul className="space-y-0.5 text-sm">
+            {current.lines.map((l) => (
+              <li key={l.id}>
+                {new Date(l.date).toLocaleDateString()} — {l.qty}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {proposed && (
+        <div className="space-y-1 rounded-md border border-warning/40 bg-warning/5 p-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Badge variant="warning">{t('supplierProposed')}</Badge>
+            {canManage && (
+              <div className="flex gap-2">
+                <Button size="sm" loading={acceptSchedule.isPending} onClick={() => handleAccept(proposed.id)}>
+                  {t('acceptProposal')}
+                </Button>
+                <Button size="sm" variant="outline" loading={rejectSchedule.isPending} onClick={() => handleReject(proposed.id)}>
+                  {t('rejectProposal')}
+                </Button>
+              </div>
+            )}
+          </div>
+          <ul className="space-y-0.5 text-sm">
+            {proposed.lines.map((l) => (
+              <li key={l.id}>
+                {new Date(l.date).toLocaleDateString()} — {l.qty}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{t('scheduleHistory')}</summary>
+          <ul className="mt-1 space-y-1">
+            {history.map((s) => (
+              <li key={s.id}>
+                v{s.versionNumber} — <Badge variant={SCHEDULE_STATUS_VARIANT[s.status]}>{t(`scheduleStatus${s.status}`)}</Badge>{' '}
+                {s.lines.map((l) => `${new Date(l.date).toLocaleDateString()}: ${l.qty}`).join(', ')}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {!current && canManage && (
+        <div className="space-y-2">
+          {!creating ? (
+            <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+              {t('createSchedule')}
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              {lines.map((line, idx) => (
+                <div key={idx} className="flex gap-2">
+                  <Input
+                    type="date"
+                    value={line.date}
+                    onChange={(e) => setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, date: e.target.value } : l)))}
+                  />
+                  <Input
+                    type="number"
+                    step="any"
+                    min={0}
+                    placeholder={t('scheduleQty')}
+                    value={line.qty}
+                    onChange={(e) => setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, qty: e.target.value } : l)))}
+                  />
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setLines((prev) => [...prev, { date: '', qty: '' }])}>
+                  {t('addLine')}
+                </Button>
+                <Button size="sm" loading={createSchedule.isPending} onClick={handleCreate}>
+                  {tc('save')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
+                  {tc('cancel')}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 export default function PurchaseOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -237,6 +423,22 @@ export default function PurchaseOrderDetailPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('deliverySchedule')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(order.items ?? []).map((item) => (
+            <div key={item.id}>
+              <p className="text-sm font-medium">
+                {item.articleSnapshot} — <span className="text-muted-foreground">{item.productNameSnapshot}</span>
+              </p>
+              <DeliveryScheduleBlock orderId={order.id} item={item} canManage={canManage} />
+            </div>
+          ))}
         </CardContent>
       </Card>
 

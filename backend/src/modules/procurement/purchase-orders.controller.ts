@@ -6,6 +6,7 @@ import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-o
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
+import { DeliveryScheduleLinesDto } from './dto/delivery-schedule.dto';
 
 @ApiTags('procurement')
 @Controller({ path: 'purchase-orders', version: '1' })
@@ -68,5 +69,31 @@ export class PurchaseOrdersController {
     @Body() dto: UpdatePurchaseOrderMilestonesDto,
   ) {
     return this.purchaseOrdersService.updateMilestones(user, id, dto);
+  }
+
+  @Post(':orderId/items/:itemId/delivery-schedule')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: 'Create the first Delivery Schedule version for this item (Phase 1) — multi-date plan, additive to the existing order-level supplier confirmation.' })
+  async createDeliverySchedule(
+    @CurrentUser() user: RequestUser,
+    @Param('orderId') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: DeliveryScheduleLinesDto,
+  ) {
+    return this.purchaseOrdersService.createDeliverySchedule(user, orderId, itemId, dto);
+  }
+
+  @Post(':orderId/delivery-schedule/:scheduleId/accept')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: "Accept a supplier's proposed delivery schedule — becomes the item's confirmed current version; the previous one is kept for history." })
+  async acceptDeliverySchedule(@CurrentUser() user: RequestUser, @Param('orderId') orderId: string, @Param('scheduleId') scheduleId: string) {
+    return this.purchaseOrdersService.acceptDeliverySchedule(user, orderId, scheduleId);
+  }
+
+  @Post(':orderId/delivery-schedule/:scheduleId/reject')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: "Reject a supplier's proposed delivery schedule — the item's current version is left untouched." })
+  async rejectDeliverySchedule(@CurrentUser() user: RequestUser, @Param('orderId') orderId: string, @Param('scheduleId') scheduleId: string) {
+    return this.purchaseOrdersService.rejectDeliverySchedule(user, orderId, scheduleId);
   }
 }

@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { DeliverySchedulesService } from '../procurement/delivery-schedules.service';
 import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
+import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 import { CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
@@ -18,6 +20,7 @@ export class SupplierPortalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly deliverySchedulesService: DeliverySchedulesService,
   ) {}
 
   async listPurchaseOrders(actor: RequestSupplierPortalUser) {
@@ -32,7 +35,13 @@ export class SupplierPortalService {
   async getPurchaseOrder(actor: RequestSupplierPortalUser, id: string) {
     const order = await this.prisma.tenant.purchaseOrder.findFirst({
       where: { id, supplierId: actor.supplierId },
-      include: { items: true },
+      include: {
+        items: {
+          include: {
+            deliverySchedules: { include: { lines: true }, orderBy: { versionNumber: 'asc' } },
+          },
+        },
+      },
     });
     // Same id but a different supplier's order (or a nonexistent id) both
     // 404 identically — never distinguish "not yours" from "doesn't exist".
@@ -79,5 +88,33 @@ export class SupplierPortalService {
     });
 
     return updated;
+  }
+
+  /** Confirms the current PENDING delivery schedule as-is (Phase 1). */
+  async confirmDeliverySchedule(actor: RequestSupplierPortalUser, orderId: string, scheduleId: string) {
+    const schedule = await this.findScheduleForOrder(actor, orderId, scheduleId);
+    return this.deliverySchedulesService.confirmAsIs(actor.companyId, actor.supplierPortalUserId, schedule);
+  }
+
+  /** Proposes a different split for the current PENDING delivery schedule (Phase 1) — creates a new PROPOSED version alongside it. */
+  async proposeDeliverySchedule(actor: RequestSupplierPortalUser, orderId: string, scheduleId: string, dto: DeliveryScheduleLinesDto) {
+    const schedule = await this.findScheduleForOrder(actor, orderId, scheduleId);
+    return this.deliverySchedulesService.propose(actor.companyId, actor.supplierPortalUserId, schedule, dto.lines);
+  }
+
+  /**
+   * Full ownership chain for a delivery-schedule action: this supplier's
+   * order (`getPurchaseOrder`, already 404s for anyone else's) must contain
+   * an item whose schedule history includes `scheduleId` — a scheduleId
+   * that exists but belongs to a different order (even within the same
+   * company) 404s identically, never confirming it exists elsewhere.
+   */
+  private async findScheduleForOrder(actor: RequestSupplierPortalUser, orderId: string, scheduleId: string) {
+    const order = await this.getPurchaseOrder(actor, orderId);
+    for (const item of order.items as any[]) {
+      const schedule = (item.deliverySchedules as any[]).find((s) => s.id === scheduleId);
+      if (schedule) return schedule;
+    }
+    throw new CodedNotFoundException('DELIVERY_SCHEDULE_NOT_FOUND', 'Delivery schedule not found.');
   }
 }

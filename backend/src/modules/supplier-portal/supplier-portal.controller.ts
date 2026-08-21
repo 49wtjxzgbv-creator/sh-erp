@@ -5,6 +5,7 @@ import { CurrentSupplierPortalUser, RequestSupplierPortalUser, SupplierPortalGua
 import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.interceptor';
 import { SupplierPortalService } from './supplier-portal.service';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
+import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -47,5 +48,26 @@ export class SupplierPortalController {
     @Body() dto: ConfirmPurchaseOrderDto,
   ) {
     return this.supplierPortalService.confirmPurchaseOrder(actor, id, dto);
+  }
+
+  @Post('purchase-orders/:orderId/delivery-schedule/:scheduleId/confirm')
+  @ApiOperation({ summary: 'Confirm this delivery schedule as-is (Phase 1) — no split, accept the requested dates/quantities.' })
+  async confirmDeliverySchedule(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('orderId') orderId: string,
+    @Param('scheduleId') scheduleId: string,
+  ) {
+    return this.supplierPortalService.confirmDeliverySchedule(actor, orderId, scheduleId);
+  }
+
+  @Post('purchase-orders/:orderId/delivery-schedule/:scheduleId/propose')
+  @ApiOperation({ summary: 'Propose a different split for this delivery schedule (Phase 1) — creates a new version awaiting the manufacturer\'s decision; the current schedule stays in effect until then.' })
+  async proposeDeliverySchedule(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('orderId') orderId: string,
+    @Param('scheduleId') scheduleId: string,
+    @Body() dto: DeliveryScheduleLinesDto,
+  ) {
+    return this.supplierPortalService.proposeDeliverySchedule(actor, orderId, scheduleId, dto);
   }
 }

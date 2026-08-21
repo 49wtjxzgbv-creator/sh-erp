@@ -5,9 +5,11 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
+import { DeliverySchedulesService } from './delivery-schedules.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
+import { DeliveryScheduleLinesDto } from './dto/delivery-schedule.dto';
 
 /**
  * Multi-line purchase orders with a receiving workflow (PurchaseOrders.gs,
@@ -26,6 +28,7 @@ export class PurchaseOrdersService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
+    private readonly deliverySchedulesService: DeliverySchedulesService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
@@ -64,7 +67,20 @@ export class PurchaseOrdersService {
   }
 
   async findOne(user: RequestUser, id: string) {
-    const order = await this.prisma.tenant.purchaseOrder.findUnique({ where: { id }, include: { items: true } });
+    const order = await this.prisma.tenant.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            // Full version history (Phase 1) — includes SUPERSEDED/REJECTED
+            // rows on purpose, for a transparent audit trail in the UI;
+            // `currentDeliveryScheduleId` on the item itself is what marks
+            // which one is operative.
+            deliverySchedules: { include: { lines: true }, orderBy: { versionNumber: 'asc' } },
+          },
+        },
+      },
+    });
     if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
     return order;
   }
@@ -233,6 +249,45 @@ export class PurchaseOrdersService {
     });
 
     return order;
+  }
+
+  /**
+   * Delivery Schedule (Phase 1, 2026-08-21) — creates the first (and only,
+   * until a proposal is accepted) version for an item that has none yet.
+   * Additive: an item with no schedule keeps using the existing order-level
+   * `supplierConfirmedDeliveryDate` mechanism untouched.
+   */
+  async createDeliverySchedule(user: RequestUser, orderId: string, itemId: string, dto: DeliveryScheduleLinesDto) {
+    const order = await this.findOne(user, orderId);
+    const item = (order.items as any[]).find((i) => i.id === itemId);
+    if (!item) {
+      throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', `Purchase order item ${itemId} does not belong to this order.`);
+    }
+    return this.deliverySchedulesService.createFirstVersion(user.companyId, user.userId, itemId, dto.lines);
+  }
+
+  /** Accepts a supplier's PROPOSED delivery schedule — becomes the item's CONFIRMED current version. */
+  async acceptDeliverySchedule(user: RequestUser, orderId: string, scheduleId: string) {
+    const schedule = await this.findScheduleForOrder(orderId, scheduleId);
+    return this.deliverySchedulesService.accept(user.companyId, user.userId, schedule, schedule.purchaseOrderItem.currentDeliveryScheduleId);
+  }
+
+  /** Rejects a supplier's PROPOSED delivery schedule — the current version is left untouched. */
+  async rejectDeliverySchedule(user: RequestUser, orderId: string, scheduleId: string) {
+    const schedule = await this.findScheduleForOrder(orderId, scheduleId);
+    return this.deliverySchedulesService.reject(user.companyId, user.userId, schedule);
+  }
+
+  /** Verifies scheduleId genuinely belongs to an item on THIS order — RLS already keeps it within this company, this closes the rest of the ownership chain. 404s for a schedule that exists but belongs to a different order, same as everywhere else in this module. */
+  private async findScheduleForOrder(orderId: string, scheduleId: string) {
+    const schedule = await this.prisma.tenant.deliverySchedule.findUnique({
+      where: { id: scheduleId },
+      include: { purchaseOrderItem: true },
+    });
+    if (!schedule || schedule.purchaseOrderItem.purchaseOrderId !== orderId) {
+      throw new CodedNotFoundException('DELIVERY_SCHEDULE_NOT_FOUND', 'Delivery schedule not found.');
+    }
+    return schedule;
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {

@@ -56,4 +56,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'AssemblySupplier',
   'StockReservation',
   'OrderMaterialRequirement',
+  'DeliverySchedule',
+  'DeliveryScheduleLine',
 ]);

@@ -31,7 +31,8 @@ describe('PurchaseOrdersService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
-    service = new PurchaseOrdersService(prisma, audit, stock);
+    const deliverySchedules = {} as any;
+    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules);
   });
 
   describe('create', () => {

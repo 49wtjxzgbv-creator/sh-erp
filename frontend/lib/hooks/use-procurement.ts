@@ -19,6 +19,9 @@ import {
   deletePurchaseOrder,
   receivePurchaseOrder,
   updatePurchaseOrderMilestones,
+  createDeliverySchedule,
+  acceptDeliverySchedule,
+  rejectDeliverySchedule,
   type QuerySuppliersInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
@@ -26,6 +29,7 @@ import {
   type CreatePurchaseOrderInput,
   type ReceivePurchaseOrderInput,
   type UpdatePurchaseOrderMilestonesInput,
+  type DeliveryScheduleLineInput,
 } from '@/lib/api-client/procurement';
 
 const suppliersKey = (query: QuerySuppliersInput) => ['suppliers', query] as const;
@@ -170,5 +174,29 @@ export function useUpdatePurchaseOrderMilestones() {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
       qc.invalidateQueries({ queryKey: purchaseOrderKey(id) });
     },
+  });
+}
+
+export function useCreateDeliverySchedule(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, lines }: { itemId: string; lines: DeliveryScheduleLineInput[] }) => createDeliverySchedule(orderId, itemId, lines),
+    onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(orderId) }),
+  });
+}
+
+export function useAcceptDeliverySchedule(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scheduleId: string) => acceptDeliverySchedule(orderId, scheduleId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(orderId) }),
+  });
+}
+
+export function useRejectDeliverySchedule(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scheduleId: string) => rejectDeliverySchedule(orderId, scheduleId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(orderId) }),
   });
 }

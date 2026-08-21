@@ -158,6 +158,8 @@ model Company {
   shipmentItems                ShipmentItem[]
   purchaseOrders               PurchaseOrder[]
   purchaseOrderItems           PurchaseOrderItem[]
+  deliverySchedules            DeliverySchedule[]
+  deliveryScheduleLines        DeliveryScheduleLine[]
   employees                    Employee[]
   payrollEntries               PayrollEntry[]
   fileAssets                   FileAsset[]
@@ -1834,15 +1836,106 @@ model PurchaseOrderItem {
   // (§8) — see StockReservationService#reserve's PURCHASE-source path.
   sourceRequirementId String? @db.Uuid
 
-  company           Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  purchaseOrder     PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
-  product           Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sourceRequirement OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
+  // Delivery Schedule (Phase 1, 2026-08-21) — a multi-date delivery plan
+  // for THIS line, additive and independent of the order-level
+  // `PurchaseOrder.supplierConfirmedDeliveryDate`/`supplierConfirmedAt`
+  // (which stays the source of truth for items with no schedule at all).
+  // Points at whichever `DeliverySchedule` VERSION is currently the
+  // operative one — never a PROPOSED version awaiting a decision. NULL
+  // until someone explicitly creates the first version.
+  //
+  // Deliberate circular FK with `DeliverySchedule.purchaseOrderItemId`
+  // (that one `onDelete: Cascade`s back here) — `onDelete: SetNull` here
+  // specifically so a hard-delete of this item (PurchaseOrdersService
+  // #remove already cascades PurchaseOrder → PurchaseOrderItem) can
+  // resolve cleanly: Postgres nulls this pointer first, then completes
+  // the cascade into `delivery_schedules`, with no same-statement FK
+  // conflict between the two opposite-direction constraints.
+  currentDeliveryScheduleId String? @db.Uuid
+
+  company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder           PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
+  product                 Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sourceRequirement       OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
+  currentDeliverySchedule DeliverySchedule?         @relation("CurrentSchedule", fields: [currentDeliveryScheduleId], references: [id], onDelete: SetNull)
+  deliverySchedules       DeliverySchedule[] // every version ever created for this line, oldest first by versionNumber
 
   @@index([purchaseOrderId])
   @@index([companyId])
   @@index([sourceRequirementId])
   @@map("purchase_order_items")
+}
+
+// Delivery Schedule (Phase 1, 2026-08-21) — versioned multi-date delivery
+// plan for one PurchaseOrderItem. Exactly one version is ever "current"
+// (PurchaseOrderItem.currentDeliveryScheduleId) at a time; that pointer only
+// ever moves via an atomic conditional update (mirrors the invite-token
+// consume pattern already used in SupplierPortalRegistrationService), never
+// a bare write — so a race between two concurrent accept/create calls can
+// never leave two versions both looking "current".
+//
+// A PROPOSED version (the supplier's counter-proposal) exists ALONGSIDE the
+// current version without replacing it — `currentDeliveryScheduleId` never
+// points at a PROPOSED row. Only becomes current the moment staff ACCEPTs
+// it (old current -> SUPERSEDED, new -> CONFIRMED, pointer moves — all in
+// one transaction). REJECT only flips the PROPOSED row to REJECTED; the
+// still-current version is never touched, so "reject" needs no repair step.
+//
+// Nothing is ever deleted — SUPERSEDED/REJECTED rows stay forever as history.
+enum DeliveryScheduleStatus {
+  PENDING // manufacturer's ask, awaiting the supplier's response — this IS the current version already
+  PROPOSED // supplier's counter-proposal, awaiting the manufacturer's decision — NOT current
+  CONFIRMED // agreed — supplier confirmed as-is, or manufacturer accepted a proposal
+  REJECTED // manufacturer rejected a PROPOSED version; the previous current version is untouched
+  SUPERSEDED // was current, replaced by a newly-ACCEPTed version
+}
+
+model DeliverySchedule {
+  id                  String @id @default(uuid()) @db.Uuid
+  companyId           String @db.Uuid
+  purchaseOrderItemId String @db.Uuid
+  versionNumber       Int // sequential per purchaseOrderItemId, computed inside the same transaction as the insert; @@unique below is the race backstop
+
+  status            DeliveryScheduleStatus @default(PENDING)
+  previousVersionId String?                @db.Uuid // self-relation: which version this one is a counter-proposal to (history chain for the UI, not used for authorization)
+
+  createdById   String    @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  respondedById String?   @db.Uuid // staff User.id (accept/reject) or SupplierPortalUser.id (confirm) — deliberately untyped/no FK, mirrors AuditEvent.actorUserId's own "external actor" precedent
+  respondedAt   DateTime? @db.Timestamptz(3)
+
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrderItem PurchaseOrderItem      @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Cascade)
+  previousVersion   DeliverySchedule?      @relation("ScheduleVersionHistory", fields: [previousVersionId], references: [id])
+  supersededBy      DeliverySchedule[]     @relation("ScheduleVersionHistory")
+  currentForItems   PurchaseOrderItem[]    @relation("CurrentSchedule") // back-relation for the pointer above — normally at most one row
+  lines             DeliveryScheduleLine[]
+
+  @@unique([purchaseOrderItemId, versionNumber])
+  @@index([companyId])
+  @@map("delivery_schedules")
+}
+
+model DeliveryScheduleLine {
+  id                 String   @id @default(uuid()) @db.Uuid
+  companyId          String   @db.Uuid
+  deliveryScheduleId String   @db.Uuid
+  // One field, not requestedDate/confirmedDate: this row's meaning comes
+  // from its parent DeliverySchedule.status, not a second column — a line
+  // under a PENDING/PROPOSED version IS "requested"; a line under a
+  // CONFIRMED version IS "confirmed". Never both on the same row, so
+  // there's nothing to duplicate or let drift out of sync.
+  date               DateTime @db.Timestamptz(3)
+  qty                Decimal  @db.Decimal(14, 3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  deliverySchedule DeliverySchedule @relation(fields: [deliveryScheduleId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryScheduleId])
+  @@index([companyId])
+  @@map("delivery_schedule_lines")
 }
 
 // ============================================================================

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ProcurementModule } from '../procurement/procurement.module';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
 import { SupplierPortalGuard } from './supplier-portal-context';
 import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.interceptor';
@@ -30,7 +31,7 @@ import { SupplierPortalRegistrationController } from './supplier-portal-registra
  * identical setup.
  */
 @Module({
-  imports: [JwtModule.register({}), NotificationsModule],
+  imports: [JwtModule.register({}), NotificationsModule, ProcurementModule], // ProcurementModule exports DeliverySchedulesService — Phase 1 shares the same accept/reject/confirm/propose state machine, not a duplicate
   controllers: [
     SupplierPortalAuthController,
     SupplierPortalController,

@@ -160,6 +160,30 @@ export interface PurchaseOrderItem {
   supplierConfirmedPrice: DecimalString | null;
   /** Stock-reservation spec §5/§9: links this line to the customer-order material requirement it's covering — receiving it auto-reserves for that order. */
   sourceRequirementId: string | null;
+  /** Which DeliverySchedule version is currently operative for this line — null until someone creates the first one. Never points at a PROPOSED version. */
+  currentDeliveryScheduleId: string | null;
+  /** Full version history (Phase 1) — includes SUPERSEDED/REJECTED rows on purpose, for a transparent history in the UI. */
+  deliverySchedules?: DeliverySchedule[];
+}
+
+export type DeliveryScheduleStatus = 'PENDING' | 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED';
+
+export interface DeliveryScheduleLine {
+  id: string;
+  date: string;
+  qty: DecimalString;
+}
+
+export interface DeliverySchedule {
+  id: string;
+  versionNumber: number;
+  status: DeliveryScheduleStatus;
+  previousVersionId: string | null;
+  createdById: string;
+  createdAt: string;
+  respondedById: string | null;
+  respondedAt: string | null;
+  lines: DeliveryScheduleLine[];
 }
 
 export interface PurchaseOrder {
@@ -269,4 +293,24 @@ export function updatePurchaseOrderMilestones(
   dto: UpdatePurchaseOrderMilestonesInput,
 ): Promise<PurchaseOrder> {
   return apiClient.patch<PurchaseOrder>(`purchase-orders/${id}/milestones`, dto);
+}
+
+export interface DeliveryScheduleLineInput {
+  date: string;
+  qty: number;
+}
+
+/** Staff-side: creates the first Delivery Schedule version for an item (Phase 1) — only allowed while the item has none yet. */
+export function createDeliverySchedule(orderId: string, itemId: string, lines: DeliveryScheduleLineInput[]): Promise<DeliverySchedule> {
+  return apiClient.post<DeliverySchedule>(`purchase-orders/${orderId}/items/${itemId}/delivery-schedule`, { lines });
+}
+
+/** Staff-side: accepts a supplier's proposed delivery schedule — becomes the item's confirmed current version. */
+export function acceptDeliverySchedule(orderId: string, scheduleId: string): Promise<DeliverySchedule> {
+  return apiClient.post<DeliverySchedule>(`purchase-orders/${orderId}/delivery-schedule/${scheduleId}/accept`, {});
+}
+
+/** Staff-side: rejects a supplier's proposed delivery schedule — the current version is left untouched. */
+export function rejectDeliverySchedule(orderId: string, scheduleId: string): Promise<DeliverySchedule> {
+  return apiClient.post<DeliverySchedule>(`purchase-orders/${orderId}/delivery-schedule/${scheduleId}/reject`, {});
 }
