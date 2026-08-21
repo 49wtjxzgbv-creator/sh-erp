@@ -37,10 +37,10 @@ export async function POST(request: NextRequest) {
     accessToken: string;
     refreshToken: string;
     expiresIn: string;
-    supplierId: string;
-    companyId: string;
-    companyName: string;
-    activeConnectionId: string;
+    supplierId: string | null;
+    companyId: string | null;
+    companyName: string | null;
+    activeConnectionId: string | null;
     email: string;
   };
 

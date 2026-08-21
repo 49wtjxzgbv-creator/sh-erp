@@ -11,10 +11,11 @@ import { useSupplierPortalSessionStore } from './session-store';
 interface SupplierPortalSessionResponse {
   accessToken: string;
   email: string;
-  supplierId: string;
-  companyId: string;
-  companyName: string;
-  activeConnectionId: string;
+  /** Null for a standalone self-registered account with zero connections yet (2026-08-21 P3). */
+  supplierId: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  activeConnectionId: string | null;
 }
 
 async function parseOrThrow(res: Response): Promise<SupplierPortalSessionResponse> {

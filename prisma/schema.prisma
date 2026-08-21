@@ -917,7 +917,14 @@ model SupplierInviteToken {
 model SupplierPortalRefreshToken {
   id                   String    @id @default(uuid()) @db.Uuid
   supplierPortalUserId String    @db.Uuid
-  activeConnectionId   String    @db.Uuid
+  // Nullable (2026-08-21 P3): a standalone self-registered account (no
+  // invite token, zero SupplierConnections yet) can still log in and hold a
+  // session — there's simply no connection yet for this to point at.
+  // SupplierPortalScopeInterceptor already 404s any tenant-scoped request
+  // when this is null, so nothing that needs a real company scope is
+  // reachable in that state; only the connections list/accept/decline
+  // surface (which never reads this field) works.
+  activeConnectionId   String?   @db.Uuid
   tokenHash            String    @unique
   familyId             String    @db.Uuid
   device               String?
@@ -927,8 +934,8 @@ model SupplierPortalRefreshToken {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  supplierPortalUser SupplierPortalUser @relation(fields: [supplierPortalUserId], references: [id])
-  activeConnection   SupplierConnection @relation(fields: [activeConnectionId], references: [id])
+  supplierPortalUser SupplierPortalUser  @relation(fields: [supplierPortalUserId], references: [id])
+  activeConnection   SupplierConnection? @relation(fields: [activeConnectionId], references: [id])
 
   @@index([supplierPortalUserId])
   @@index([activeConnectionId])

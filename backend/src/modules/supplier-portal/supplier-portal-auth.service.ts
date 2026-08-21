@@ -11,11 +11,17 @@ export interface SupplierPortalSession {
   refreshToken: string;
   expiresIn: string;
   email: string;
-  /** Display-only — the frontend shows this, but it is NEVER a trust boundary; every real request re-derives it from a live SupplierConnection row (SupplierPortalScopeInterceptor). */
-  companyId: string;
-  companyName: string;
-  supplierId: string;
-  activeConnectionId: string;
+  /**
+   * Display-only — the frontend shows this, but it is NEVER a trust
+   * boundary; every real request re-derives it from a live
+   * SupplierConnection row (SupplierPortalScopeInterceptor). All four are
+   * null for a standalone self-registered account with zero connections
+   * yet (2026-08-21 P3) — there's simply no company to display.
+   */
+  companyId: string | null;
+  companyName: string | null;
+  supplierId: string | null;
+  activeConnectionId: string | null;
 }
 
 /**
@@ -75,24 +81,20 @@ export class SupplierPortalAuthService {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
+    // A standalone self-registered account (2026-08-21 P3) can have zero
+    // connections of any status — that's an expected, loggable-into state,
+    // not a rejection: the whole point is being able to see an empty
+    // portal while waiting for a company to find you. Remembers which
+    // company they were last working in (re-validated against the live
+    // list every login, never trusted blindly) — prefers an ACTIVE
+    // connection (lastActiveConnectionId if it's still ACTIVE, else the
+    // oldest ACTIVE one); with zero ACTIVE connections, falls back to the
+    // oldest PENDING one (`connections` is already ordered by createdAt
+    // asc, and every entry left is PENDING once activeConnections is
+    // empty); with zero connections of any kind, `chosen` is null.
     const connections = portalUser.supplierOrganization.connections;
-    if (connections.length === 0) {
-      throw new CodedUnauthorizedException(
-        'SUPPLIER_PORTAL_NO_ACTIVE_CONNECTIONS',
-        'This account has no company connections yet — wait for a company to find you and send a connection request, or contact the company that invited you.',
-      );
-    }
-    // Remembers which company they were last working in (re-validated
-    // against the live list every login, never trusted blindly) — prefers
-    // an ACTIVE connection (lastActiveConnectionId if it's still ACTIVE,
-    // else the oldest ACTIVE one); with zero ACTIVE connections, falls back
-    // to the oldest PENDING one (`connections` is already ordered by
-    // createdAt asc, and every entry left is PENDING once activeConnections
-    // is empty) purely so there's a real connection id for the token to
-    // carry — the interceptor's own ACTIVE check is what actually keeps
-    // purchase-order data locked until this gets accepted.
     const activeConnections = connections.filter((c) => c.status === 'ACTIVE');
-    const chosen = activeConnections.find((c) => c.id === portalUser.lastActiveConnectionId) ?? activeConnections[0] ?? connections[0];
+    const chosen = activeConnections.find((c) => c.id === portalUser.lastActiveConnectionId) ?? activeConnections[0] ?? connections[0] ?? null;
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
     if (!secret) {
@@ -104,14 +106,14 @@ export class SupplierPortalAuthService {
     const expiresIn = process.env.SUPPLIER_PORTAL_JWT_TTL ?? '30m';
 
     const accessToken = this.jwt.sign(
-      { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: chosen.id, type: 'supplier_portal' },
+      { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: chosen?.id ?? null, type: 'supplier_portal' },
       { secret, expiresIn },
     );
-    const refreshToken = await this.refreshTokens.issue(portalUser.id, chosen.id);
+    const refreshToken = await this.refreshTokens.issue(portalUser.id, chosen?.id ?? null);
 
     await this.prisma.supplierPortalUser.update({
       where: { id: portalUser.id },
-      data: { lastLoginAt: new Date(), lastActiveConnectionId: chosen.id },
+      data: { lastLoginAt: new Date(), lastActiveConnectionId: chosen?.id ?? null },
     });
 
     return {
@@ -119,10 +121,10 @@ export class SupplierPortalAuthService {
       refreshToken,
       expiresIn,
       email: portalUser.email,
-      companyId: chosen.companyId,
-      companyName: chosen.company.name,
-      supplierId: chosen.supplierId,
-      activeConnectionId: chosen.id,
+      companyId: chosen?.companyId ?? null,
+      companyName: chosen?.company.name ?? null,
+      supplierId: chosen?.supplierId ?? null,
+      activeConnectionId: chosen?.id ?? null,
     };
   }
 
@@ -188,18 +190,22 @@ export class SupplierPortalAuthService {
     return this.reissueAccessToken(supplierPortalUserId, activeConnectionId, rawRefreshToken);
   }
 
-  private async reissueAccessToken(supplierPortalUserId: string, activeConnectionId: string, freshRawRefreshToken: string): Promise<SupplierPortalSession> {
+  /**
+   * When `activeConnectionId` is null (2026-08-21 P3 — a standalone
+   * self-registered account with zero connections, or a session that was
+   * always null), skips the connection lookup entirely and returns a
+   * session with null company fields — there's nothing to look up. Every
+   * other caller passes a real id and gets the existing behavior
+   * unchanged: re-fetch and re-verify the connection is still ACTIVE.
+   */
+  private async reissueAccessToken(
+    supplierPortalUserId: string,
+    activeConnectionId: string | null,
+    freshRawRefreshToken: string,
+  ): Promise<SupplierPortalSession> {
     const portalUser = await this.prisma.supplierPortalUser.findUnique({ where: { id: supplierPortalUserId } });
     if (!portalUser || !portalUser.active) {
       throw new CodedUnauthorizedException('AUTH_ACCOUNT_BLOCKED', 'This supplier portal account is no longer active.');
-    }
-
-    const connection = await this.prisma.supplierConnection.findUnique({
-      where: { id: activeConnectionId },
-      include: { company: { select: { name: true } } },
-    });
-    if (!connection || connection.status !== 'ACTIVE') {
-      throw new CodedNotFoundException('SUPPLIER_PORTAL_CONNECTION_NOT_FOUND', 'This connection is no longer active.');
     }
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
@@ -210,6 +216,32 @@ export class SupplierPortalAuthService {
       );
     }
     const expiresIn = process.env.SUPPLIER_PORTAL_JWT_TTL ?? '30m';
+
+    if (!activeConnectionId) {
+      const accessToken = this.jwt.sign(
+        { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: null, type: 'supplier_portal' },
+        { secret, expiresIn },
+      );
+      return {
+        accessToken,
+        refreshToken: freshRawRefreshToken,
+        expiresIn,
+        email: portalUser.email,
+        companyId: null,
+        companyName: null,
+        supplierId: null,
+        activeConnectionId: null,
+      };
+    }
+
+    const connection = await this.prisma.supplierConnection.findUnique({
+      where: { id: activeConnectionId },
+      include: { company: { select: { name: true } } },
+    });
+    if (!connection || connection.status !== 'ACTIVE') {
+      throw new CodedNotFoundException('SUPPLIER_PORTAL_CONNECTION_NOT_FOUND', 'This connection is no longer active.');
+    }
+
     const accessToken = this.jwt.sign(
       { sub: portalUser.id, supplierOrganizationId: portalUser.supplierOrganizationId, activeConnectionId: connection.id, type: 'supplier_portal' },
       { secret, expiresIn },

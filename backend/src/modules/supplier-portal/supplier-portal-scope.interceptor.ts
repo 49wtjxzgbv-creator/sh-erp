@@ -56,6 +56,19 @@ export class SupplierPortalScopeInterceptor implements NestInterceptor {
 
     return from(
       (async () => {
+        // Standalone self-registered account with zero connections yet
+        // (2026-08-21 P3) — nothing this interceptor guards makes sense
+        // without a real company scope, so this 404s immediately, with no
+        // DB round-trip. The connections list/accept/decline surface
+        // doesn't go through this interceptor at all (guarded by
+        // SupplierPortalGuard alone), so that's unaffected.
+        if (!supplierPortalUser.activeConnectionId) {
+          throw new CodedNotFoundException(
+            'SUPPLIER_PORTAL_CONNECTION_NOT_FOUND',
+            'This connection no longer exists or is not active.',
+          );
+        }
+
         const connection = await this.authPrisma.supplierConnection.findUnique({
           where: { id: supplierPortalUser.activeConnectionId },
           include: { supplierOrganization: { include: { portalUser: true } } },

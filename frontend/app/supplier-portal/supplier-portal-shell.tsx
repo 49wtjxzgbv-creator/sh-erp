@@ -123,6 +123,20 @@ function CompanyConnectionsBar({ companyName, activeConnectionId }: { companyNam
   const active = connections.filter((c) => c.status === 'ACTIVE');
   const pending = connections.filter((c) => c.status === 'PENDING');
 
+  // Standalone self-registered account (2026-08-21 P3) — genuinely zero
+  // connections of any kind yet, distinct from the "exactly one ACTIVE,
+  // hide the bar entirely" case below: here the supplier needs to know
+  // *why* their portal looks empty, not have the bar silently vanish.
+  if (active.length === 0 && pending.length === 0) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 pb-3 sm:px-6">
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          {t('noConnectionsYet')}
+        </div>
+      </div>
+    );
+  }
+
   if (active.length <= 1 && pending.length === 0) {
     return null;
   }

@@ -67,15 +67,19 @@ describe('SupplierPortalAuthService', () => {
       await expect(service.login({ email: 'supplier@example.com', password: 'wrong' })).rejects.toThrow(UnauthorizedException);
     });
 
-    it('rejects an account with zero connections of any status (all revoked, none ever accepted, or a standalone-registered account nobody has found yet)', async () => {
-      await expect(
-        loginWith({
-          id: 'u1',
-          supplierOrganizationId: 'org1',
-          lastActiveConnectionId: null,
-          supplierOrganization: { connections: [] },
-        }),
-      ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'SUPPLIER_PORTAL_NO_ACTIVE_CONNECTIONS' }) });
+    it('succeeds with zero connections of any status (2026-08-21 P3 — a standalone self-registered account nobody has found yet), returning null company fields and a null activeConnectionId rather than rejecting', async () => {
+      const result = await loginWith({
+        id: 'u1',
+        supplierOrganizationId: 'org1',
+        lastActiveConnectionId: null,
+        supplierOrganization: { connections: [] },
+      });
+      expect(result.activeConnectionId).toBeNull();
+      expect(result.companyId).toBeNull();
+      expect(result.companyName).toBeNull();
+      expect(result.supplierId).toBeNull();
+      expect(result.accessToken).toEqual(expect.any(String));
+      expect(result.refreshToken).toEqual(expect.any(String));
     });
 
     it("defaults to lastActiveConnectionId's connection when it's still ACTIVE", async () => {
@@ -200,6 +204,27 @@ describe('SupplierPortalAuthService', () => {
       expect(prisma.supplierPortalUser.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { lastActiveConnectionId: 'conn-b' } });
       expect(result.activeConnectionId).toBe('conn-b');
       expect(result.refreshToken).toBe('new-raw-token');
+    });
+  });
+
+  describe('refresh — null activeConnectionId (2026-08-21 P3, standalone self-registered account)', () => {
+    it('succeeds without ever looking up a connection, returning null company fields', async () => {
+      refreshTokens.rotate.mockResolvedValue({ rawToken: 'new-raw-token', supplierPortalUserId: 'u1', activeConnectionId: null });
+      prisma.supplierPortalUser.findUnique.mockResolvedValue({ id: 'u1', active: true, email: 'standalone@example.com' });
+
+      const result = await service.refresh('raw-token');
+
+      expect(prisma.supplierConnection.findUnique).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        accessToken: 'signed.jwt.token',
+        refreshToken: 'new-raw-token',
+        expiresIn: '30m',
+        email: 'standalone@example.com',
+        companyId: null,
+        companyName: null,
+        supplierId: null,
+        activeConnectionId: null,
+      });
     });
   });
 });

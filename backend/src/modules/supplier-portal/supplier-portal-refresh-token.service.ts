@@ -6,7 +6,7 @@ import { CodedUnauthorizedException } from '../../common/api-exceptions';
 export interface RotatedSupplierPortalToken {
   rawToken: string;
   supplierPortalUserId: string;
-  activeConnectionId: string;
+  activeConnectionId: string | null;
 }
 
 /**
@@ -40,7 +40,7 @@ export class SupplierPortalRefreshTokenService {
 
   constructor(private readonly prisma: SupplierPortalAuthPrismaService) {}
 
-  async issue(supplierPortalUserId: string, activeConnectionId: string, familyId: string = randomUUID()): Promise<string> {
+  async issue(supplierPortalUserId: string, activeConnectionId: string | null, familyId: string = randomUUID()): Promise<string> {
     const rawToken = randomUUID() + randomUUID();
     const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
 
@@ -83,7 +83,7 @@ export class SupplierPortalRefreshTokenService {
    * target connection turns out to be invalid, the original token must
    * stay usable (a rejected switch attempt must not burn a valid session).
    */
-  async peek(rawToken: string): Promise<{ supplierPortalUserId: string; activeConnectionId: string }> {
+  async peek(rawToken: string): Promise<{ supplierPortalUserId: string; activeConnectionId: string | null }> {
     const tokenHash = this.hashToken(rawToken);
     const stored = await this.prisma.supplierPortalRefreshToken.findUnique({ where: { tokenHash } });
     if (!stored || stored.expiresAt < new Date() || stored.revokedAt) {
@@ -112,7 +112,7 @@ export class SupplierPortalRefreshTokenService {
     return stored;
   }
 
-  private async issueNext(supplierPortalUserId: string, familyId: string, activeConnectionId: string): Promise<RotatedSupplierPortalToken> {
+  private async issueNext(supplierPortalUserId: string, familyId: string, activeConnectionId: string | null): Promise<RotatedSupplierPortalToken> {
     const rawNewToken = randomUUID() + randomUUID();
     const expiresAt = new Date(Date.now() + this.ttlDays * 24 * 60 * 60 * 1000);
 

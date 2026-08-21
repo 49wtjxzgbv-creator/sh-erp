@@ -1135,6 +1135,7 @@
     "registerSubmitExisting": "Connect this company",
     "inviteInvalid": "This invite is invalid or has already been used",
     "inviteAcceptFailed": "Could not complete the connection",
+    "noConnectionsYet": "You have no connected companies yet — wait for a company to find you by email and send a connection request.",
     "noAccountHint": "No account?",
     "registerLinkText": "Register",
     "registerStandaloneDone": "Registration complete. Once a company finds you by email and sends a connection request, you'll be able to log in and accept it."

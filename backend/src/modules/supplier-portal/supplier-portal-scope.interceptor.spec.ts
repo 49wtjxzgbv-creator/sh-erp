@@ -41,6 +41,16 @@ describe('SupplierPortalScopeInterceptor', () => {
     expect(authPrisma.supplierConnection.findUnique).not.toHaveBeenCalled();
   });
 
+  it('rejects (404, no DB lookup) a standalone self-registered account with a null activeConnectionId — nothing this interceptor guards makes sense without a real company scope (2026-08-21 P3)', async () => {
+    const actor = { supplierPortalUserId: 'u1', supplierOrganizationId: 'org1', activeConnectionId: null };
+
+    await expect(firstValueFrom(interceptor.intercept(makeContext(actor), makeNext()))).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'SUPPLIER_PORTAL_CONNECTION_NOT_FOUND' }),
+    });
+    expect(authPrisma.supplierConnection.findUnique).not.toHaveBeenCalled();
+    expect(prisma.runInTenantTransaction).not.toHaveBeenCalled();
+  });
+
   it('resolves companyId/supplierId from the live connection and opens the tenant transaction for a valid, ACTIVE, own-organization connection', async () => {
     const actor = { supplierPortalUserId: 'u1', supplierOrganizationId: 'org1', activeConnectionId: 'conn1' };
     authPrisma.supplierConnection.findUnique.mockResolvedValue({

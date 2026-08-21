@@ -22,7 +22,8 @@ import { CodedUnauthorizedException } from '../../common/api-exceptions';
 export interface RequestSupplierPortalUser {
   supplierPortalUserId: string;
   supplierOrganizationId: string;
-  activeConnectionId: string;
+  /** Null for a standalone self-registered account with zero SupplierConnections yet (2026-08-21 P3) — SupplierPortalScopeInterceptor 404s any tenant-scoped request in that state without a DB lookup. */
+  activeConnectionId: string | null;
   /** Set by SupplierPortalScopeInterceptor from the live SupplierConnection row — not present until after that interceptor runs. */
   companyId: string;
   /** Set by SupplierPortalScopeInterceptor from the live SupplierConnection row — not present until after that interceptor runs. */
@@ -32,7 +33,7 @@ export interface RequestSupplierPortalUser {
 export interface SupplierPortalTokenPayload {
   sub: string;
   supplierOrganizationId: string;
-  activeConnectionId: string;
+  activeConnectionId: string | null;
   type: 'supplier_portal'; // distinguishes this token from a regular access token or a super-admin token at a glance
 }
 

@@ -30,9 +30,9 @@ export interface SupplierPortalSessionState {
   setSession: (session: {
     accessToken: string;
     email: string;
-    companyId?: string;
-    companyName?: string;
-    activeConnectionId?: string;
+    companyId?: string | null;
+    companyName?: string | null;
+    activeConnectionId?: string | null;
   }) => void;
   clearSession: () => void;
   setHydrated: () => void;
