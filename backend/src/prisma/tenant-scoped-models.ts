@@ -50,7 +50,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'FileAsset',
   'ImportJob',
   'ImportConnection',
-  'SupplierPortalUser',
   'ProductionScheduleSlot',
   'ProductionOrderStagePlan',
   'ProductSupplier',
