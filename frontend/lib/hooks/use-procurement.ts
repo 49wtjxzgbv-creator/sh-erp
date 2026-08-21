@@ -10,6 +10,7 @@ import {
   invitePortal,
   deactivatePortal,
   createSupplierInviteLink,
+  connectExistingSupplier,
   getSupplierLinkedProducts,
   getSupplierLinkedAssemblies,
   queryPurchaseOrders,
@@ -106,6 +107,14 @@ export function useDeactivatePortal(id: string) {
 export function useCreateSupplierInviteLink(id: string) {
   return useMutation({
     mutationFn: () => createSupplierInviteLink(id),
+  });
+}
+
+export function useConnectExistingSupplier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { email: string; name: string }) => connectExistingSupplier(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
   });
 }
 

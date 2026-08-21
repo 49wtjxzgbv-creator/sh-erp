@@ -48,8 +48,17 @@ export class SupplierPortalAuthService {
       include: {
         supplierOrganization: {
           include: {
+            // Standalone self-registration (2026-08-21 P2) means this
+            // account can exist with zero connections of any status —
+            // PENDING ones are included here (not just ACTIVE) so a
+            // freshly-found-but-not-yet-accepted account can still log in
+            // and see/accept the request. `SupplierPortalScopeInterceptor`
+            // still 404s purchase-orders for a non-ACTIVE activeConnectionId
+            // (unchanged) — only the connections list/accept/decline
+            // surface (guarded by SupplierPortalGuard alone) needs to work
+            // pre-acceptance, and it only reads supplierOrganizationId.
             connections: {
-              where: { status: 'ACTIVE' },
+              where: { status: { in: ['ACTIVE', 'PENDING'] } },
               orderBy: { createdAt: 'asc' },
               include: { company: { select: { name: true } } },
             },
@@ -66,18 +75,24 @@ export class SupplierPortalAuthService {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
     }
 
-    // Remembers which company they were last working in (re-validated
-    // against the live ACTIVE list every login, never trusted blindly) —
-    // falls back to the oldest ACTIVE connection if that one is gone or
-    // this is the first login.
-    const activeConnections = portalUser.supplierOrganization.connections;
-    if (activeConnections.length === 0) {
+    const connections = portalUser.supplierOrganization.connections;
+    if (connections.length === 0) {
       throw new CodedUnauthorizedException(
         'SUPPLIER_PORTAL_NO_ACTIVE_CONNECTIONS',
-        'This account has no active company connections. Contact the company that invited you.',
+        'This account has no company connections yet — wait for a company to find you and send a connection request, or contact the company that invited you.',
       );
     }
-    const chosen = activeConnections.find((c) => c.id === portalUser.lastActiveConnectionId) ?? activeConnections[0];
+    // Remembers which company they were last working in (re-validated
+    // against the live list every login, never trusted blindly) — prefers
+    // an ACTIVE connection (lastActiveConnectionId if it's still ACTIVE,
+    // else the oldest ACTIVE one); with zero ACTIVE connections, falls back
+    // to the oldest PENDING one (`connections` is already ordered by
+    // createdAt asc, and every entry left is PENDING once activeConnections
+    // is empty) purely so there's a real connection id for the token to
+    // carry — the interceptor's own ACTIVE check is what actually keeps
+    // purchase-order data locked until this gets accepted.
+    const activeConnections = connections.filter((c) => c.status === 'ACTIVE');
+    const chosen = activeConnections.find((c) => c.id === portalUser.lastActiveConnectionId) ?? activeConnections[0] ?? connections[0];
 
     const secret = process.env.SUPPLIER_PORTAL_JWT_SECRET;
     if (!secret) {

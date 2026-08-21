@@ -67,7 +67,7 @@ describe('SupplierPortalAuthService', () => {
       await expect(service.login({ email: 'supplier@example.com', password: 'wrong' })).rejects.toThrow(UnauthorizedException);
     });
 
-    it('rejects an account with zero ACTIVE connections (all revoked, or none ever accepted)', async () => {
+    it('rejects an account with zero connections of any status (all revoked, none ever accepted, or a standalone-registered account nobody has found yet)', async () => {
       await expect(
         loginWith({
           id: 'u1',
@@ -85,8 +85,8 @@ describe('SupplierPortalAuthService', () => {
         lastActiveConnectionId: 'conn-b',
         supplierOrganization: {
           connections: [
-            { id: 'conn-a', companyId: 'co-a', supplierId: 's-a', company: { name: 'Company A' } },
-            { id: 'conn-b', companyId: 'co-b', supplierId: 's-b', company: { name: 'Company B' } },
+            { id: 'conn-a', companyId: 'co-a', supplierId: 's-a', status: 'ACTIVE', company: { name: 'Company A' } },
+            { id: 'conn-b', companyId: 'co-b', supplierId: 's-b', status: 'ACTIVE', company: { name: 'Company B' } },
           ],
         },
       });
@@ -100,11 +100,39 @@ describe('SupplierPortalAuthService', () => {
         supplierOrganizationId: 'org1',
         lastActiveConnectionId: null,
         supplierOrganization: {
-          connections: [{ id: 'conn-only', companyId: 'co-only', supplierId: 's-only', company: { name: 'Only Co' } }],
+          connections: [{ id: 'conn-only', companyId: 'co-only', supplierId: 's-only', status: 'ACTIVE', company: { name: 'Only Co' } }],
         },
       });
       expect(result.activeConnectionId).toBe('conn-only');
       expect(result.companyId).toBe('co-only');
+    });
+
+    it('standalone self-registration (2026-08-21 P2): logs in successfully with only a PENDING connection, choosing it as activeConnectionId so the account can see/accept it', async () => {
+      const result = await loginWith({
+        id: 'u1',
+        supplierOrganizationId: 'org1',
+        lastActiveConnectionId: null,
+        supplierOrganization: {
+          connections: [{ id: 'conn-pending', companyId: 'co-p', supplierId: 's-p', status: 'PENDING', company: { name: 'Pending Co' } }],
+        },
+      });
+      expect(result.activeConnectionId).toBe('conn-pending');
+      expect(result.companyId).toBe('co-p');
+    });
+
+    it('prefers an ACTIVE connection over a PENDING one even when the PENDING one is older', async () => {
+      const result = await loginWith({
+        id: 'u1',
+        supplierOrganizationId: 'org1',
+        lastActiveConnectionId: null,
+        supplierOrganization: {
+          connections: [
+            { id: 'conn-pending-older', companyId: 'co-p', supplierId: 's-p', status: 'PENDING', company: { name: 'Pending Co' } },
+            { id: 'conn-active-newer', companyId: 'co-a', supplierId: 's-a', status: 'ACTIVE', company: { name: 'Active Co' } },
+          ],
+        },
+      });
+      expect(result.activeConnectionId).toBe('conn-active-newer');
     });
 
     it('falls back to the oldest ACTIVE connection when lastActiveConnectionId points at a connection that is no longer ACTIVE (revoked since last login)', async () => {

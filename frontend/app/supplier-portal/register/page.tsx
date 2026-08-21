@@ -11,13 +11,21 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
 import { Logo } from '@/components/domain/shell/logo';
-import { previewInvite, acceptInvite, type SupplierInvitePreview } from '@/lib/supplier-portal/actions';
+import { previewInvite, acceptInvite, registerStandalone, type SupplierInvitePreview } from '@/lib/supplier-portal/actions';
 
 /**
- * Self-service registration (2026-08-21 P1, ADR-0013) —
- * `/supplier-portal/register?token=...`. No new design: mirrors the
- * existing login page's card/layout exactly, per the same "don't redesign
- * the portal" requirement the whole Supplier Portal has followed so far.
+ * Self-service registration — `/supplier-portal/register`. No new design:
+ * mirrors the existing login page's card/layout exactly, per the "don't
+ * redesign the portal" requirement the whole Supplier Portal has followed
+ * so far. Two distinct flows share this one page/route:
+ *
+ * - **With `?token=...`** (ADR-0013): a company-generated invite link for a
+ *   `Supplier` row that already exists in their ERP. Shows a company-name
+ *   banner and a new/existing-account toggle.
+ * - **Without a token** (2026-08-21 P2): fully standalone — no company
+ *   involved yet. Simplified form (always "new account"); on success there
+ *   is no session to redirect into (nothing connected yet) — just a
+ *   confirmation to wait for a company to find them by email.
  */
 export default function SupplierPortalRegisterPage() {
   const t = useTranslations('supplierPortal');
@@ -27,7 +35,7 @@ export default function SupplierPortalRegisterPage() {
 
   const [preview, setPreview] = useState<SupplierInvitePreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [loadingPreview, setLoadingPreview] = useState(Boolean(token));
 
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [organizationName, setOrganizationName] = useState('');
@@ -35,13 +43,10 @@ export default function SupplierPortalRegisterPage() {
   const [password, setPassword] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [standaloneDone, setStandaloneDone] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      setPreviewError(t('inviteInvalid'));
-      setLoadingPreview(false);
-      return;
-    }
+    if (!token) return;
     previewInvite(token)
       .then((p) => setPreview(p))
       .catch(() => setPreviewError(t('inviteInvalid')))
@@ -53,12 +58,17 @@ export default function SupplierPortalRegisterPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      await acceptInvite(token, {
-        email,
-        password,
-        organizationName: mode === 'new' ? organizationName : undefined,
-      });
-      router.replace('/supplier-portal');
+      if (token) {
+        await acceptInvite(token, {
+          email,
+          password,
+          organizationName: mode === 'new' ? organizationName : undefined,
+        });
+        router.replace('/supplier-portal');
+      } else {
+        await registerStandalone({ organizationName, email, password });
+        setStandaloneDone(true);
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : t('inviteAcceptFailed'));
     } finally {
@@ -84,34 +94,43 @@ export default function SupplierPortalRegisterPage() {
             {preview && <CardDescription>{t('registerInvitedBy', { company: preview.companyName })}</CardDescription>}
           </CardHeader>
           <CardContent>
-            {loadingPreview ? (
+            {standaloneDone ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{t('registerStandaloneDone')}</p>
+                <Link href="/supplier-portal/login" className="text-sm text-primary underline underline-offset-4">
+                  {t('signIn')}
+                </Link>
+              </div>
+            ) : loadingPreview ? (
               <p className="text-sm text-muted-foreground">{t('loading')}</p>
             ) : previewError ? (
               <p className="text-sm text-destructive">{previewError}</p>
             ) : (
               <div className="space-y-4">
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={mode === 'new' ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => setMode('new')}
-                  >
-                    {t('registerModeNew')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={mode === 'existing' ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => setMode('existing')}
-                  >
-                    {t('registerModeExisting')}
-                  </Button>
-                </div>
+                {token && (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={mode === 'new' ? 'default' : 'outline'}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setMode('new')}
+                    >
+                      {t('registerModeNew')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'existing' ? 'default' : 'outline'}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setMode('existing')}
+                    >
+                      {t('registerModeExisting')}
+                    </Button>
+                  </div>
+                )}
                 <form onSubmit={onSubmit} className="space-y-4">
-                  {mode === 'new' && (
+                  {(mode === 'new' || !token) && (
                     <div className="space-y-1.5">
                       <Label htmlFor="organizationName">{t('registerOrganizationName')}</Label>
                       <Input
@@ -139,7 +158,7 @@ export default function SupplierPortalRegisterPage() {
                   </div>
                   {submitError && <p className="text-sm text-destructive">{submitError}</p>}
                   <Button type="submit" className="w-full" loading={submitting}>
-                    {mode === 'new' ? t('registerSubmitNew') : t('registerSubmitExisting')}
+                    {token && mode === 'existing' ? t('registerSubmitExisting') : t('registerSubmitNew')}
                   </Button>
                 </form>
               </div>

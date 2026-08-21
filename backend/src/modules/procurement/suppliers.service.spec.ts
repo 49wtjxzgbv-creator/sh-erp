@@ -28,6 +28,7 @@ describe('SuppliersService', () => {
         },
         supplierConnection: {
           findUnique: jest.fn(),
+          findFirst: jest.fn(),
           create: jest.fn(),
           update: jest.fn(),
         },
@@ -259,6 +260,41 @@ describe('SuppliersService', () => {
 
       expect(prisma.tenant.supplierInviteToken.update).toHaveBeenCalledWith({ where: { id: 'link1' }, data: { revokedAt: expect.any(Date) } });
       expect(result.id).toBe('link1');
+    });
+  });
+
+  describe('connectExisting — search-and-connect a standalone-registered supplier by exact email (2026-08-21 P2)', () => {
+    it('rejects (404) when no Supplier Portal account exists with that email — a deliberate exception to "never distinguish exists from not", since this is a staff-initiated search, not a redemption boundary', async () => {
+      prisma.tenant.supplierPortalUser.findUnique.mockResolvedValue(null);
+      await expect(service.connectExisting(user, { email: 'nobody@example.com', name: 'X' })).rejects.toThrow(NotFoundException);
+      expect(prisma.tenant.supplier.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when this company is already connected to that organization (through any Supplier row)', async () => {
+      prisma.tenant.supplierPortalUser.findUnique.mockResolvedValue({ supplierOrganizationId: 'org1' });
+      prisma.tenant.supplierConnection.findFirst.mockResolvedValue({ id: 'existing-conn' });
+
+      await expect(service.connectExisting(user, { email: 'supplier@example.com', name: 'X' })).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.supplier.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a new Supplier row for this company plus a PENDING connection, records an audit event, and notifies the existing account', async () => {
+      prisma.tenant.supplierPortalUser.findUnique.mockResolvedValue({ supplierOrganizationId: 'org1' });
+      prisma.tenant.supplierConnection.findFirst.mockResolvedValue(null);
+      prisma.tenant.supplier.create.mockResolvedValue({ id: 'supplier-new' });
+      prisma.tenant.supplierConnection.create.mockResolvedValue({ id: 'conn-new' });
+
+      const result = await service.connectExisting(user, { email: 'supplier@example.com', name: 'ТОВ Ромашка' });
+
+      expect(prisma.tenant.supplier.create).toHaveBeenCalledWith({
+        data: { companyId: 'c1', name: 'ТОВ Ромашка', email: 'supplier@example.com' },
+      });
+      expect(prisma.tenant.supplierConnection.create).toHaveBeenCalledWith({
+        data: { companyId: 'c1', supplierId: 'supplier-new', supplierOrganizationId: 'org1', status: 'PENDING' },
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'supplier.portal_connection_requested', entityId: 'supplier-new' }));
+      expect(email.send).toHaveBeenCalledWith('supplier@example.com', expect.any(String), expect.any(String));
+      expect(result).toEqual({ supplierId: 'supplier-new', requiresAcceptance: true });
     });
   });
 });

@@ -32,9 +32,20 @@ export default function SupplierPortalOrdersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await supplierPortalApi.get<{ items: PortalPurchaseOrderRow[] }>('supplier-portal/purchase-orders');
-    setOrders(res.items);
-    setLoading(false);
+    try {
+      // Deliberately swallows the error rather than surfacing it — the one
+      // expected case (2026-08-21 P2) is a supplier who logged in with only
+      // a PENDING connection (self-registered, found by a company, not yet
+      // accepted): SupplierPortalScopeInterceptor 404s this endpoint until
+      // acceptance, which is indistinguishable here from "no orders yet" —
+      // the same empty state already covers it correctly.
+      const res = await supplierPortalApi.get<{ items: PortalPurchaseOrderRow[] }>('supplier-portal/purchase-orders');
+      setOrders(res.items);
+    } catch {
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

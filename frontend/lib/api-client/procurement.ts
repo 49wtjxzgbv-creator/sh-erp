@@ -134,6 +134,15 @@ export function createSupplierInviteLink(id: string): Promise<{ token: string; e
   return apiClient.post<{ token: string; expiresAt: string }>(`suppliers/${id}/invite-links`, {});
 }
 
+/**
+ * Search-and-connect (2026-08-21 P2) — for a supplier who already
+ * self-registered a Supplier Portal account independently. Creates a new
+ * Supplier row for this company plus a PENDING connection request.
+ */
+export function connectExistingSupplier(dto: { email: string; name: string }): Promise<{ supplierId: string; requiresAcceptance: boolean }> {
+  return apiClient.post<{ supplierId: string; requiresAcceptance: boolean }>('suppliers/connect-existing', dto);
+}
+
 export type PurchaseOrderStatus = 'ORDERED' | 'PARTIAL' | 'DELIVERED';
 
 export interface PurchaseOrderItem {

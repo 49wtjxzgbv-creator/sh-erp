@@ -5,6 +5,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { QuerySuppliersDto } from './dto/query-suppliers.dto';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
 import { SupplierPortalInviteDto } from './dto/supplier-portal-invite.dto';
+import { ConnectExistingSupplierDto } from './dto/connect-existing-supplier.dto';
 import { SuppliersService } from './suppliers.service';
 
 @ApiTags('procurement')
@@ -59,6 +60,13 @@ export class SuppliersController {
   @ApiOperation({ summary: 'Soft-delete a supplier. No in-use guard, by design — matches the legacy behavior (Phase 1 §3.4).' })
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.suppliersService.remove(user, id);
+  }
+
+  @Post('connect-existing')
+  @RequirePermissions('suppliers:write')
+  @ApiOperation({ summary: 'Find a supplier who already self-registered a Supplier Portal account (by exact email) and send them a PENDING connection request — creates a new Supplier row for this company.' })
+  async connectExisting(@CurrentUser() user: RequestUser, @Body() dto: ConnectExistingSupplierDto) {
+    return this.suppliersService.connectExisting(user, dto);
   }
 
   @Post(':id/portal-invite')

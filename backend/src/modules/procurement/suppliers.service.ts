@@ -10,6 +10,7 @@ import { EmailService } from '../notifications/email.service';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
 import { QuerySuppliersDto } from './dto/query-suppliers.dto';
 import { SupplierPortalInviteDto } from './dto/supplier-portal-invite.dto';
+import { ConnectExistingSupplierDto } from './dto/connect-existing-supplier.dto';
 
 /**
  * Simple CRUD (Suppliers.gs, Phase 1 §3.4). Deliberately NO delete-protection
@@ -277,6 +278,61 @@ export class SuppliersService {
     );
 
     return { email: portalUser.email, tempPassword };
+  }
+
+  /**
+   * Search-and-connect (2026-08-21 P2) — for a supplier who already
+   * self-registered a Supplier Portal account independently (no invite
+   * link, no `Supplier` row in this company yet). Staff supply the exact
+   * email the supplier registered with; this creates a NEW `Supplier` row
+   * for this company plus a PENDING `SupplierConnection`, mirroring
+   * `invitePortal`'s own case 2 (same PENDING-connection/audit/notify
+   * shape) — the difference is this path doesn't require a pre-existing
+   * `Supplier` row at all, since the whole point is staff didn't have one.
+   *
+   * Deliberately breaks this module's usual "never distinguish exists from
+   * doesn't-exist" convention: this is a staff-initiated SEARCH action they
+   * chose to run, not a redemption/authorization boundary, so a clear
+   * "no such account" 404 is the correct, expected UX here — not a leak.
+   */
+  async connectExisting(user: RequestUser, dto: ConnectExistingSupplierDto) {
+    const existingPortalUser = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { email: dto.email } });
+    if (!existingPortalUser) {
+      throw new CodedNotFoundException('SUPPLIER_PORTAL_ACCOUNT_NOT_FOUND', 'No Supplier Portal account exists with that email.');
+    }
+
+    const alreadyConnected = await this.prisma.tenant.supplierConnection.findFirst({
+      where: { companyId: user.companyId, supplierOrganizationId: existingPortalUser.supplierOrganizationId },
+    });
+    if (alreadyConnected) {
+      throw new CodedConflictException('SUPPLIER_ALREADY_CONNECTED', 'This company is already connected to that Supplier Portal account.');
+    }
+
+    const supplier = await this.prisma.tenant.supplier.create({ data: { companyId: user.companyId, name: dto.name, email: dto.email } });
+    const connection = await this.prisma.tenant.supplierConnection.create({
+      data: {
+        companyId: user.companyId,
+        supplierId: supplier.id,
+        supplierOrganizationId: existingPortalUser.supplierOrganizationId,
+        status: 'PENDING',
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'supplier.portal_connection_requested',
+      entityType: 'Supplier',
+      entityId: supplier.id,
+      after: { email: dto.email, connectionId: connection.id },
+    });
+    await this.emailService.send(
+      dto.email,
+      'Новий запит на підключення — SH ERP',
+      `Компанія на SH ERP запросила підключити ваш існуючий акаунт порталу постачальника до себе.\nУвійдіть у портал постачальника і прийміть або відхиліть цей запит.`,
+    );
+
+    return { supplierId: supplier.id, requiresAcceptance: true };
   }
 
   /**

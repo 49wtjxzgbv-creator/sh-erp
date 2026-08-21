@@ -476,6 +476,9 @@
     "invalidOrder": "Вкажіть назву постачальника",
     "invalidRow": "Заповніть усі поля позиції коректно",
     "newSupplier": "Новий постачальник",
+    "connectExistingSupplier": "Підключити існуючого постачальника",
+    "connectExistingSupplierDescription": "Для постачальника, який уже самостійно зареєстрував акаунт порталу постачальника — вкажіть його email, і ми надішлемо запит на підключення.",
+    "connectExistingSupplierSubmit": "Надіслати запит",
     "supplierHeader": "Постачальник",
     "supplierName": "Назва",
     "contactPerson": "Контактна особа",
@@ -1131,7 +1134,10 @@
     "registerSubmitNew": "Зареєструватися",
     "registerSubmitExisting": "Підключити цю компанію",
     "inviteInvalid": "Це запрошення недійсне або вже використане",
-    "inviteAcceptFailed": "Не вдалося завершити підключення"
+    "inviteAcceptFailed": "Не вдалося завершити підключення",
+    "noAccountHint": "Немає акаунта?",
+    "registerLinkText": "Зареєструватися",
+    "registerStandaloneDone": "Реєстрацію завершено. Коли компанія знайде вас за email і надішле запит на підключення, ви зможете увійти та прийняти його."
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

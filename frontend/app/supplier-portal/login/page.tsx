@@ -88,6 +88,16 @@ export default function SupplierPortalLoginPage() {
                 {t('signIn')}
               </Button>
             </form>
+            {/* Standalone self-registration (2026-08-21 P2): a supplier with
+                no invite link yet can also register on their own — the
+                account starts with zero connections until a company finds
+                it by exact email (SuppliersService#connectExisting). */}
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              {t('noAccountHint')}{' '}
+              <Link href="/supplier-portal/register" className="text-primary underline underline-offset-4">
+                {t('registerLinkText')}
+              </Link>
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -165,4 +165,35 @@ describe('SupplierPortalRegistrationService', () => {
       ).rejects.toThrow(ConflictException);
     });
   });
+
+  describe('registerStandalone — fully self-service, no invite token, zero connections (2026-08-21 P2)', () => {
+    it('creates an organization+portalUser and returns just the email, no session (nothing to scope one to yet)', async () => {
+      prisma.supplierOrganization.create.mockResolvedValue({ id: 'org-standalone' });
+      prisma.supplierPortalUser.create.mockResolvedValue({ id: 'pu-standalone' });
+
+      const result = await service.registerStandalone({
+        organizationName: 'Самостійний Постачальник',
+        email: 'standalone@example.com',
+        password: 'a-strong-password',
+      });
+
+      expect(prisma.supplierOrganization.create).toHaveBeenCalledWith({ data: { name: 'Самостійний Постачальник' } });
+      expect(prisma.supplierPortalUser.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ supplierOrganizationId: 'org-standalone', email: 'standalone@example.com', active: true }),
+      });
+      expect(result).toEqual({ email: 'standalone@example.com' });
+      expect(authService.issueSession).not.toHaveBeenCalled();
+    });
+
+    it('translates a P2002 unique-violation on email into a conflict, not a 500 (same as the invite-accept new-org branch)', async () => {
+      prisma.supplierOrganization.create.mockResolvedValue({ id: 'org-standalone' });
+      prisma.supplierPortalUser.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }),
+      );
+
+      await expect(
+        service.registerStandalone({ organizationName: 'X', email: 'taken@example.com', password: 'a-strong-password' }),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
 });

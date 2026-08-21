@@ -1,15 +1,21 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { SupplierPortalAuthService } from './supplier-portal-auth.service';
+import { SupplierPortalRegistrationService } from './supplier-portal-registration.service';
 import { SupplierPortalLoginDto } from './dto/supplier-portal-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { SwitchConnectionDto } from './dto/switch-connection.dto';
+import { RegisterSupplierOrganizationDto } from './dto/register-supplier-organization.dto';
 
 @ApiTags('supplier-portal')
 @Controller({ path: 'supplier-portal/auth', version: '1' })
 export class SupplierPortalAuthController {
-  constructor(private readonly supplierPortalAuthService: SupplierPortalAuthService) {}
+  constructor(
+    private readonly supplierPortalAuthService: SupplierPortalAuthService,
+    private readonly registrationService: SupplierPortalRegistrationService,
+  ) {}
 
   // @Public() means "skip the regular JwtAuthGuard/TenantScopeInterceptor
   // pipeline" — this route has no tenant context yet. It is NOT actually
@@ -54,5 +60,21 @@ export class SupplierPortalAuthController {
   @ApiResponse({ status: 404, description: "The target connection doesn't exist, isn't ACTIVE, or doesn't belong to this organization — never distinguished from each other." })
   async switchConnection(@Body() dto: SwitchConnectionDto) {
     return this.supplierPortalAuthService.switchConnection(dto.refreshToken, dto.connectionId);
+  }
+
+  // Genuinely open — no invite token gates this one (2026-08-21 P2). A
+  // company finds the resulting account afterward by exact email
+  // (SuppliersService#connectExisting) and sends a PENDING connection
+  // request; the account accepts it once logged in. Throttled the same as
+  // invite/:token/accept — same risk class (unauthenticated account
+  // creation), arguably worse since there's no token to bound exposure.
+  @Public()
+  @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Register a new Supplier Portal account with zero connections — a company finds it later by exact email.' })
+  @ApiResponse({ status: 200, description: '{ email } — no session, nothing to scope one to yet.' })
+  @ApiResponse({ status: 409, description: 'This email already has an account — log in instead.' })
+  async register(@Body() dto: RegisterSupplierOrganizationDto) {
+    return this.registrationService.registerStandalone(dto);
   }
 }

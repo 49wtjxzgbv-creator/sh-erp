@@ -132,3 +132,29 @@ export async function acceptInvite(
   useSupplierPortalSessionStore.getState().setSession(session);
   return session;
 }
+
+/**
+ * Fully standalone registration (2026-08-21 P2) — no invite token, zero
+ * connections created. Hits the backend directly (no same-origin proxy
+ * needed): unlike login/acceptInvite, success never mints a session, so
+ * there's no cookie to set server-side.
+ */
+export async function registerStandalone(dto: {
+  organizationName: string;
+  email: string;
+  password: string;
+}): Promise<{ email: string }> {
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+  const res = await fetch(`${API_BASE.replace(/\/?$/, '/')}supplier-portal/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dto),
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    const message = (data && (data.message || data.error)) || res.statusText;
+    throw new Error(Array.isArray(message) ? message.join(', ') : String(message));
+  }
+  return data as { email: string };
+}

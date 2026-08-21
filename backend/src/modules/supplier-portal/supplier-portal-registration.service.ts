@@ -72,26 +72,9 @@ export class SupplierPortalRegistrationService {
           'organizationName is required when this email has no existing Supplier Portal account.',
         );
       }
-      const passwordHash = await argon2.hash(dto.password);
-      try {
-        const created = await this.prisma.$transaction(async (tx) => {
-          const organization = await tx.supplierOrganization.create({ data: { name: dto.organizationName! } });
-          const portalUser = await tx.supplierPortalUser.create({
-            data: { supplierOrganizationId: organization.id, email: dto.email, passwordHash, active: true },
-          });
-          return { organizationId: organization.id, portalUserId: portalUser.id };
-        });
-        supplierOrganizationId = created.organizationId;
-        supplierPortalUserId = created.portalUserId;
-      } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-          throw new CodedConflictException(
-            'SUPPLIER_PORTAL_EMAIL_ALREADY_REGISTERED',
-            'This email already has a Supplier Portal account — leave organizationName blank and use its password instead.',
-          );
-        }
-        throw err;
-      }
+      const created = await this.createOrganizationAndUser(dto.organizationName, dto.email, dto.password);
+      supplierOrganizationId = created.organizationId;
+      supplierPortalUserId = created.portalUserId;
     }
 
     // Atomic consume-then-create: two concurrent redemptions of the same
@@ -149,6 +132,49 @@ export class SupplierPortalRegistrationService {
     }
 
     return this.supplierPortalAuthService.issueSession(supplierPortalUserId, connectionId);
+  }
+
+  /**
+   * Fully standalone registration (2026-08-21 P2) — no invite token, no
+   * company involved at all yet. Creates a `SupplierOrganization`+
+   * `SupplierPortalUser` with ZERO connections; the account can't do
+   * anything useful until a company finds it (`SuppliersService
+   * #connectExisting`, by exact email) and sends a PENDING connection
+   * request, which this same account then accepts from its own portal
+   * (`GET/POST supplier-portal/connections/...`) after logging in —
+   * `SupplierPortalAuthService#login()` now accepts a PENDING-only account
+   * for exactly this reason. Deliberately does NOT return a session: there
+   * is nothing yet for one to be scoped to.
+   */
+  async registerStandalone(dto: { organizationName: string; email: string; password: string }): Promise<{ email: string }> {
+    await this.createOrganizationAndUser(dto.organizationName, dto.email, dto.password);
+    return { email: dto.email };
+  }
+
+  /** Shared by `accept()`'s new-org branch and `registerStandalone()` — same argon2-hash + P2002-conflict handling either way. */
+  private async createOrganizationAndUser(
+    organizationName: string,
+    email: string,
+    password: string,
+  ): Promise<{ organizationId: string; portalUserId: string }> {
+    const passwordHash = await argon2.hash(password);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const organization = await tx.supplierOrganization.create({ data: { name: organizationName } });
+        const portalUser = await tx.supplierPortalUser.create({
+          data: { supplierOrganizationId: organization.id, email, passwordHash, active: true },
+        });
+        return { organizationId: organization.id, portalUserId: portalUser.id };
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new CodedConflictException(
+          'SUPPLIER_PORTAL_EMAIL_ALREADY_REGISTERED',
+          'This email already has a Supplier Portal account — log in instead of registering again.',
+        );
+      }
+      throw err;
+    }
   }
 
   private async findValidToken(rawToken: string) {
