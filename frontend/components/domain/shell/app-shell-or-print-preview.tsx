@@ -9,6 +9,7 @@ import { Topbar } from '@/components/domain/shell/topbar';
 import { ImpersonationBanner } from '@/components/domain/shell/impersonation-banner';
 import { TrainingOverlay } from '@/components/domain/training/training-overlay';
 import { TrainingWelcomeBanner } from '@/components/domain/training/training-welcome-banner';
+import { PRINT_PREVIEW_ROOT_ID } from '@/components/domain/print/print-area';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -31,7 +32,14 @@ export function AppShellOrPrintPreview({ children }: { children: ReactNode }) {
     return (
       <main className="print-preview-mode min-h-screen bg-white text-black">
         <PrintPreviewToolbar />
-        <div className="print-preview-scroll-area overflow-auto p-6">{children}</div>
+        {/* The actual printable content is portaled here by PrintArea (print-area.tsx) —
+            a plain, ordinarily-scrollable block, nothing special needed beyond overflow-auto
+            for the fixed-width (210mm) page to pan horizontally on narrow screens. */}
+        <div id={PRINT_PREVIEW_ROOT_ID} className="print-preview-scroll-area overflow-auto p-6" />
+        {/* The full page still renders normally here (so all its data-fetching/print-area
+            logic runs and portals its content above) but stays out of view — display:none,
+            not visibility, so it also can't accidentally intercept scroll/touch input. */}
+        <div style={{ display: 'none' }}>{children}</div>
       </main>
     );
   }

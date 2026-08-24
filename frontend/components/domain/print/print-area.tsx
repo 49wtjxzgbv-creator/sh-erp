@@ -1,12 +1,16 @@
 'use client';
 
-import { type ReactNode, Suspense } from 'react';
+import { type ReactNode, Suspense, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { Printer, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Avatar, PrintAreaContext } from '@/components/ui/avatar';
 import { PdfBranding } from './pdf-branding';
+
+/** DOM id of the empty container AppShellOrPrintPreview.tsx renders for `?print=1` — see PrintAreaInner's portal comment below for why. */
+export const PRINT_PREVIEW_ROOT_ID = 'print-preview-root';
 
 /**
  * Shared print scaffolding for every document/label print view (production-
@@ -36,13 +40,41 @@ function usePrintPreviewMode(): boolean {
 
 function PrintAreaInner({ children }: { children: ReactNode }) {
   const isPreview = usePrintPreviewMode();
-  return (
+  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
+
+  // Real gap found and fixed here (2026-08-24): `?print=1` opens the SAME
+  // route, so this div used to render right in place, in the middle of the
+  // full normal page's DOM — hiding the rest of that page via a CSS
+  // visibility trick (and escaping this div from it via `position:
+  // absolute`) turned out to be unreliable across browsers for scrolling
+  // (side columns cut off on mobile, bottom rows cut off on desktop —
+  // absolutely-positioned content's contribution to a scroll container's
+  // scrollable overflow is spec-defined but inconsistent in practice). A
+  // portal sidesteps the whole problem: in preview mode this renders into
+  // `#print-preview-root` (AppShellOrPrintPreview.tsx), a plain empty div
+  // that sits OUTSIDE the (now `display:none`-wrapped) normal page — so
+  // this becomes a completely ordinary, normally-flowed, normally-
+  // scrollable block, no CSS trickery required at all.
+  useEffect(() => {
+    if (!isPreview) {
+      setPortalTarget(null);
+      return;
+    }
+    setPortalTarget(document.getElementById(PRINT_PREVIEW_ROOT_ID));
+  }, [isPreview]);
+
+  const content = (
     <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>
       <PrintAreaContext.Provider value={true}>
         <PdfBranding>{children}</PdfBranding>
       </PrintAreaContext.Provider>
     </div>
   );
+
+  if (isPreview) {
+    return portalTarget ? createPortal(content, portalTarget) : null;
+  }
+  return content;
 }
 
 export function PrintArea({ children }: { children: ReactNode }) {
