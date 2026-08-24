@@ -164,6 +164,9 @@ model Company {
   purchaseOrderDocuments       PurchaseOrderDocument[]
   purchaseOrderPayments        PurchaseOrderPayment[]
   purchaseOrderExpenses        PurchaseOrderExpense[]
+  customerOrderDocuments       CustomerOrderDocument[]
+  customerOrderPayments        CustomerOrderPayment[]
+  customerOrderExpenses        CustomerOrderExpense[]
   employees                    Employee[]
   payrollEntries               PayrollEntry[]
   fileAssets                   FileAsset[]
@@ -720,6 +723,10 @@ model Supplier {
   // supplier — it simply never acquires a `connection` or product/assembly
   // link, same as any existing supplier who was never invited to the portal.
   financeDocuments PurchaseOrderDocument[] @relation("DocumentCounterparty")
+  // Same reuse rationale, Sales side (2026-08-24): a cost document attached
+  // directly to a CustomerOrder (packaging vendor, delivery-to-client
+  // carrier, etc.) — not necessarily this company's own product supplier.
+  customerOrderFinanceDocuments CustomerOrderDocument[]
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
@@ -1689,6 +1696,8 @@ model CustomerOrder {
   purchaseOrders       PurchaseOrder[]
   stockReservations    StockReservation[]
   materialRequirements OrderMaterialRequirement[]
+  financeDocuments     CustomerOrderDocument[] // Finance module (2026-08-24) — direct cost documents on this order, alongside the automatic rollup of linked purchaseOrders' own Finance data
+  financeExpenses      CustomerOrderExpense[] // Finance module (2026-08-24)
 
   @@unique([companyId, id]) // composite-FK target for CustomerOrderItem.customerOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2152,6 +2161,90 @@ model PurchaseOrderExpense {
   @@index([companyId, purchaseOrderId])
   @@index([documentId])
   @@map("purchase_order_expenses")
+}
+
+// CustomerOrder-Finance (2026-08-24) — same money model as above, one level
+// up: a CustomerOrder's real cost = the automatic rollup of every linked
+// PurchaseOrder's own actualCost (PurchaseOrder.sourceCustomerOrderId, set
+// today only by the shortage-driven auto-PO flow — customer-order-shortage.
+// service.ts) PLUS whatever is recorded directly here (cost documents not
+// tied to any specific purchase — packaging, delivery to the client, etc).
+// Reuses PurchaseOrderDocumentType/PurchaseOrderExpenseCategory as-is
+// (same real-world document/expense shapes apply on the sales side; not
+// worth a near-duplicate enum) and Supplier as the counterparty (same
+// "any vendor, not just a product supplier" rationale as the PO side).
+//
+// Same double-counting discipline as PurchaseOrder-Finance: nothing here
+// duplicates a linked PurchaseOrder's own goods/expenses — those are only
+// ever read via that PO's own FinanceService#buildSummary, never
+// re-entered as a CustomerOrderExpense.
+model CustomerOrderDocument {
+  id              String                    @id @default(uuid()) @db.Uuid
+  companyId       String                    @db.Uuid
+  customerOrderId String                    @db.Uuid
+  documentType    PurchaseOrderDocumentType
+  documentNumber  String?
+  documentDate    DateTime?                 @db.Date
+  counterpartyId  String                    @db.Uuid
+  amount          Decimal?                  @db.Decimal(14, 2)
+  currency        String                    @default("EUR")
+  note            String?
+  createdById     String                    @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder CustomerOrder          @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade)
+  counterparty  Supplier               @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  payments      CustomerOrderPayment[]
+  expenseLinks  CustomerOrderExpense[]
+
+  @@unique([companyId, id])
+  @@index([companyId, customerOrderId])
+  @@index([counterpartyId])
+  @@map("customer_order_documents")
+}
+
+model CustomerOrderPayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  documentId  String   @db.Uuid
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String   @default("EUR")
+  paidAt      DateTime @db.Date
+  method      String?
+  note        String?
+  createdById String   @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company  Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document CustomerOrderDocument @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Cascade)
+
+  @@index([companyId, documentId])
+  @@map("customer_order_payments")
+}
+
+model CustomerOrderExpense {
+  id              String                       @id @default(uuid()) @db.Uuid
+  companyId       String                       @db.Uuid
+  customerOrderId String                       @db.Uuid
+  category        PurchaseOrderExpenseCategory
+  amount          Decimal                      @db.Decimal(14, 2)
+  currency        String                       @default("EUR")
+  description     String?
+  documentId      String?                      @db.Uuid
+  createdById     String                       @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder CustomerOrder          @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade)
+  document      CustomerOrderDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, customerOrderId])
+  @@index([documentId])
+  @@map("customer_order_expenses")
 }
 
 // ============================================================================

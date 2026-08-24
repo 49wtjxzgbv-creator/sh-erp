@@ -2,7 +2,16 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useFinanceDocument, useAddFinancePayment, useDeleteFinancePayment, useDeleteFinanceDocument } from '@/lib/hooks/use-finance';
+import {
+  useFinanceDocument,
+  useAddFinancePayment,
+  useDeleteFinancePayment,
+  useDeleteFinanceDocument,
+  useCustomerOrderFinanceDocument,
+  useAddCustomerOrderPayment,
+  useDeleteCustomerOrderPayment,
+  useDeleteCustomerOrderDocument,
+} from '@/lib/hooks/use-finance';
 import { useFilesForEntity, useFileDownloadUrl } from '@/lib/hooks/use-files';
 import { uploadFile } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -15,6 +24,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
+/** Which parent this document/drawer belongs to — the only thing that differs between the PurchaseOrder-Finance and CustomerOrder-Finance flavors of this drawer is which hooks/file-entityType to use; the UI is otherwise identical. */
+type DocumentDrawerKind = 'purchase-order' | 'customer-order';
+
 const DOCUMENT_STATUS_VARIANT: Record<DocumentPaymentStatus, 'secondary' | 'warning' | 'success' | 'outline'> = {
   NO_AMOUNT: 'outline',
   UNPAID: 'secondary',
@@ -22,10 +34,16 @@ const DOCUMENT_STATUS_VARIANT: Record<DocumentPaymentStatus, 'secondary' | 'warn
   PAID: 'success',
 };
 
+const FILE_ENTITY_TYPE: Record<DocumentDrawerKind, string> = {
+  'purchase-order': 'PurchaseOrderDocument',
+  'customer-order': 'CustomerOrderDocument',
+};
+
 /** In-app preview without a mandatory download (point 9 of the confirmed design): PDF renders via a plain `<iframe>` (browsers do this natively, no library), images via `<img>` (same convention as photo-lightbox.tsx), anything else falls back to a filename + explicit download link. */
-function DocumentFilePreview({ documentId, canManage }: { documentId: string; canManage: boolean }) {
+function DocumentFilePreview({ kind, documentId, canManage }: { kind: DocumentDrawerKind; documentId: string; canManage: boolean }) {
   const t = useTranslations('finance');
-  const { data: files, refetch } = useFilesForEntity('PurchaseOrderDocument', documentId, 'FINANCE_DOCUMENT');
+  const entityType = FILE_ENTITY_TYPE[kind];
+  const { data: files, refetch } = useFilesForEntity(entityType, documentId, 'FINANCE_DOCUMENT');
   const file = files?.[0];
   const { data: downloadUrl } = useFileDownloadUrl(file?.id);
   const [uploading, setUploading] = useState(false);
@@ -36,7 +54,7 @@ function DocumentFilePreview({ documentId, canManage }: { documentId: string; ca
     if (!f) return;
     setUploading(true);
     try {
-      await uploadFile(f, { domain: 'FINANCE_DOCUMENT', entityType: 'PurchaseOrderDocument', entityId: documentId });
+      await uploadFile(f, { domain: 'FINANCE_DOCUMENT', entityType, entityId: documentId });
       await refetch();
     } finally {
       setUploading(false);
@@ -87,11 +105,25 @@ function DocumentFilePreview({ documentId, canManage }: { documentId: string; ca
   );
 }
 
-function AddPaymentForm({ purchaseOrderId, documentId, remaining, currency }: { purchaseOrderId: string; documentId: string; remaining: number; currency: string }) {
+function AddPaymentForm({
+  kind,
+  ownerId,
+  documentId,
+  remaining,
+  currency,
+}: {
+  kind: DocumentDrawerKind;
+  ownerId: string;
+  documentId: string;
+  remaining: number;
+  currency: string;
+}) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
-  const addPayment = useAddFinancePayment(purchaseOrderId, documentId);
+  const addPoPayment = useAddFinancePayment(ownerId, documentId);
+  const addCoPayment = useAddCustomerOrderPayment(ownerId, documentId);
+  const addPayment = kind === 'purchase-order' ? addPoPayment : addCoPayment;
   const [amount, setAmount] = useState(remaining > 0 ? String(remaining) : '');
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState('');
@@ -140,13 +172,17 @@ function AddPaymentForm({ purchaseOrderId, documentId, remaining, currency }: { 
 }
 
 export function DocumentDrawer({
-  purchaseOrderId,
+  kind = 'purchase-order',
+  ownerId,
   documentId,
   open,
   onOpenChange,
   canManage,
 }: {
-  purchaseOrderId: string;
+  /** Defaults to 'purchase-order' so every existing call site (PO-Finance detail page) keeps working unchanged. */
+  kind?: DocumentDrawerKind;
+  /** The owning PurchaseOrder or CustomerOrder id (matches `kind`). */
+  ownerId: string;
   documentId: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -154,9 +190,17 @@ export function DocumentDrawer({
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
-  const { data: document } = useFinanceDocument(documentId);
-  const deleteDocument = useDeleteFinanceDocument(purchaseOrderId);
-  const deletePayment = useDeleteFinancePayment(purchaseOrderId, documentId ?? '');
+
+  const poDocument = useFinanceDocument(kind === 'purchase-order' ? documentId : undefined);
+  const coDocument = useCustomerOrderFinanceDocument(kind === 'customer-order' ? documentId : undefined);
+  const document = kind === 'purchase-order' ? poDocument.data : coDocument.data;
+
+  const deletePoDocument = useDeleteFinanceDocument(ownerId);
+  const deleteCoDocument = useDeleteCustomerOrderDocument(ownerId);
+  const deletePoPayment = useDeleteFinancePayment(ownerId, documentId ?? '');
+  const deleteCoPayment = useDeleteCustomerOrderPayment(ownerId, documentId ?? '');
+  const deleteDocument = kind === 'purchase-order' ? deletePoDocument : deleteCoDocument;
+  const deletePayment = kind === 'purchase-order' ? deletePoPayment : deleteCoPayment;
 
   if (!documentId) return null;
 
@@ -183,12 +227,12 @@ export function DocumentDrawer({
               </DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-1 gap-6 pt-2 lg:grid-cols-2">
-              <DocumentFilePreview documentId={document.id} canManage={canManage} />
+              <DocumentFilePreview kind={kind} documentId={document.id} canManage={canManage} />
 
               <div className="space-y-4">
                 {/* TODO (P2, deferred at pre-production audit 2026-08-24 point 9):
                     metadata below is read-only in this drawer. PATCH
-                    /finance/documents/:id already exists and is tested
+                    endpoints already exist and are tested
                     (finance.service.spec.ts) — only the edit FORM is
                     missing here. Not required for MVP acceptance criteria;
                     add a small inline-edit affordance per field (or a
@@ -261,7 +305,7 @@ export function DocumentDrawer({
                   </ul>
 
                   {canManage && document.amount !== null && (
-                    <AddPaymentForm purchaseOrderId={purchaseOrderId} documentId={document.id} remaining={remaining} currency={document.currency} />
+                    <AddPaymentForm kind={kind} ownerId={ownerId} documentId={document.id} remaining={remaining} currency={document.currency} />
                   )}
                   {canManage && document.amount === null && (
                     <p className="text-sm text-muted-foreground">{t('cannotPayNoAmount')}</p>

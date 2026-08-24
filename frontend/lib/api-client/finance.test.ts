@@ -4,6 +4,11 @@ import {
   createPurchaseOrderDocument,
   addFinancePayment,
   createPurchaseOrderExpense,
+  listFinanceCustomerOrders,
+  getCustomerOrderFinanceSummary,
+  createCustomerOrderDocument,
+  addFinanceCustomerOrderPayment,
+  createCustomerOrderExpense,
 } from './finance';
 import { apiClient } from './http';
 
@@ -65,5 +70,49 @@ describe('createPurchaseOrderExpense', () => {
       amount: 180,
       documentId: 'doc-dhl',
     });
+  });
+});
+
+describe('listFinanceCustomerOrders', () => {
+  it('gets finance/customer-orders with filters as query params', async () => {
+    (mockedApiClient.get as jest.Mock).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    await listFinanceCustomerOrders({ search: 'Ромашка', paymentStatus: 'PARTIAL' });
+    expect(mockedApiClient.get).toHaveBeenCalledWith('finance/customer-orders', { query: { search: 'Ромашка', paymentStatus: 'PARTIAL' } });
+  });
+});
+
+describe('getCustomerOrderFinanceSummary', () => {
+  it('gets the rolled-up summary for one customer order', async () => {
+    (mockedApiClient.get as jest.Mock).mockResolvedValue({});
+    await getCustomerOrderFinanceSummary('co1');
+    expect(mockedApiClient.get).toHaveBeenCalledWith('finance/customer-orders/co1/summary');
+  });
+});
+
+describe('createCustomerOrderDocument', () => {
+  it('posts to finance/customer-orders/:id/documents', async () => {
+    (mockedApiClient.post as jest.Mock).mockResolvedValue({ id: 'cod1' });
+    await createCustomerOrderDocument('co1', { documentType: 'INVOICE', counterpartyId: 's1', amount: 50 });
+    expect(mockedApiClient.post).toHaveBeenCalledWith('finance/customer-orders/co1/documents', {
+      documentType: 'INVOICE',
+      counterpartyId: 's1',
+      amount: 50,
+    });
+  });
+});
+
+describe('addFinanceCustomerOrderPayment', () => {
+  it('posts to finance/customer-order-documents/:id/payments (distinct route namespace from the PO side)', async () => {
+    (mockedApiClient.post as jest.Mock).mockResolvedValue({ id: 'p1' });
+    await addFinanceCustomerOrderPayment('cod1', { amount: 100, paidAt: '2026-08-24' });
+    expect(mockedApiClient.post).toHaveBeenCalledWith('finance/customer-order-documents/cod1/payments', { amount: 100, paidAt: '2026-08-24' });
+  });
+});
+
+describe('createCustomerOrderExpense', () => {
+  it('posts to finance/customer-orders/:id/expenses', async () => {
+    (mockedApiClient.post as jest.Mock).mockResolvedValue({ id: 'exp1' });
+    await createCustomerOrderExpense('co1', { category: 'OTHER', amount: 50 });
+    expect(mockedApiClient.post).toHaveBeenCalledWith('finance/customer-orders/co1/expenses', { category: 'OTHER', amount: 50 });
   });
 });

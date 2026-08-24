@@ -16,6 +16,8 @@ import {
 import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useCustomerOrderFinanceSummary } from '@/lib/hooks/use-finance';
+import { formatMoney } from '@/lib/finance-format';
 import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
@@ -268,6 +270,48 @@ function ItemBatchesCell({ item }: { item: CustomerOrderItem }) {
   );
 }
 
+/**
+ * Finance module (2026-08-24 pivot) — compact summary only, deliberately
+ * not the full Finance UI (same "don't duplicate" rule as the earlier
+ * PurchaseOrder-side widget). Hidden entirely without `finance:read` (the
+ * module defaults to admin-only).
+ */
+function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) {
+  const t = useTranslations('finance');
+  const canReadFinance = useHasPermission('finance:read');
+  const { data: summary } = useCustomerOrderFinanceSummary(canReadFinance ? customerOrderId : undefined);
+  if (!canReadFinance || !summary) return null;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-base">{t('financeSummary')}</CardTitle>
+        <Link href={`/finance/orders/${customerOrderId}`} className="text-sm text-primary hover:underline">
+          {t('viewInFinance')}
+        </Link>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-4 pt-0 sm:grid-cols-4">
+        <div>
+          <p className="text-xs text-muted-foreground">{t('actualCost')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.actualCost, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('paid')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.paid, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('unpaidPerDocuments')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.unpaidPerDocuments, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('linkedPurchaseOrders')}</p>
+          <p className="text-sm font-medium">{summary.purchaseOrders.length}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -493,6 +537,8 @@ export default function CustomerOrderDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <FinanceSummaryWidget customerOrderId={order.id} />
 
       <Card>
         <CardHeader>

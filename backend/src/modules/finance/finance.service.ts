@@ -7,6 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { CreatePurchaseOrderDocumentDto, QueryFinancePurchaseOrdersDto, UpdatePurchaseOrderDocumentDto } from './dto/finance-document.dto';
 import { CreatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
 import { CreatePurchaseOrderExpenseDto, UpdatePurchaseOrderExpenseDto } from './dto/finance-expense.dto';
+import { CreateCustomerOrderDocumentDto, QueryFinanceCustomerOrdersDto, UpdateCustomerOrderDocumentDto } from './dto/finance-customer-order-document.dto';
+import { CreateCustomerOrderExpenseDto, UpdateCustomerOrderExpenseDto } from './dto/finance-customer-order-expense.dto';
 
 export type FinancePaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 export type DocumentPaymentStatus = 'NO_AMOUNT' | FinancePaymentStatus;
@@ -39,6 +41,32 @@ export interface PurchaseOrderFinanceSummary {
   otherCurrencies: FinanceCurrencyBucket[];
 }
 
+export interface CustomerOrderPurchaseOrderRollup {
+  purchaseOrder: { id: string; supplierNameSnapshot: string; status: string; orderDate: Date };
+  summary: PurchaseOrderFinanceSummary;
+}
+
+export interface CustomerOrderFinanceSummary {
+  customerOrderId: string;
+  primaryCurrency: string;
+  // Cost rolled up automatically from every linked PurchaseOrder
+  // (PurchaseOrder.sourceCustomerOrderId) — never re-entered manually, see
+  // CustomerOrderDocument's schema.prisma comment for the double-counting
+  // discipline this preserves.
+  purchaseCost: number;
+  // Direct cost documents/expenses on THIS order only (not tied to any
+  // specific purchase — packaging, delivery to the client, etc).
+  additionalExpenses: number;
+  actualCost: number; // purchaseCost + additionalExpenses
+  totalDocuments: number; // Σ linked-PO totalDocuments + Σ direct document amounts
+  paid: number;
+  unpaidPerDocuments: number;
+  documentCount: number;
+  lastActivityAt: Date | null;
+  otherCurrencies: FinanceCurrencyBucket[];
+  purchaseOrders: CustomerOrderPurchaseOrderRollup[];
+}
+
 type PoItemForCost = { qtyOrdered: Prisma.Decimal; expectedPrice: Prisma.Decimal | null; actualPrice: Prisma.Decimal | null };
 type MoneyRow = { amount: Prisma.Decimal | null; currency: string };
 type TimestampedRow = { createdAt: Date };
@@ -56,6 +84,32 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
     else map.set(k, [row]);
   }
   return map;
+}
+
+interface CurrencyContribution {
+  currency: string;
+  additionalExpenses: number;
+  totalDocuments: number;
+  paid: number;
+}
+
+/** Sums several sources' per-currency contributions (e.g. a CustomerOrder's own direct documents plus every linked PurchaseOrder's own currency buckets) into one final set of buckets — same "never blend different currencies" discipline as buildSummary, just merging multiple already-currency-separated sources instead of raw rows. */
+function mergeCurrencyContributions(contributions: CurrencyContribution[]): FinanceCurrencyBucket[] {
+  const map = new Map<string, { additionalExpenses: number; totalDocuments: number; paid: number }>();
+  for (const c of contributions) {
+    const bucket = map.get(c.currency) ?? { additionalExpenses: 0, totalDocuments: 0, paid: 0 };
+    bucket.additionalExpenses += c.additionalExpenses;
+    bucket.totalDocuments += c.totalDocuments;
+    bucket.paid += c.paid;
+    map.set(c.currency, bucket);
+  }
+  return [...map.entries()].map(([currency, v]) => ({
+    currency,
+    additionalExpenses: round2(v.additionalExpenses),
+    totalDocuments: round2(v.totalDocuments),
+    paid: round2(v.paid),
+    unpaidPerDocuments: round2(v.totalDocuments - v.paid),
+  }));
 }
 
 /**
@@ -225,7 +279,7 @@ export class FinanceService {
     return map;
   }
 
-  private poPaymentStatus(summary: PurchaseOrderFinanceSummary): FinancePaymentStatus {
+  private poPaymentStatus(summary: { totalDocuments: number; paid: number }): FinancePaymentStatus {
     if (summary.totalDocuments <= 0 || summary.paid <= 0) return 'UNPAID';
     if (summary.paid >= summary.totalDocuments) return 'PAID';
     return 'PARTIAL';
@@ -487,6 +541,439 @@ export class FinanceService {
       entityId: expenseId,
       before: expense,
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // CustomerOrder-Finance (2026-08-24) — same money model, one level up.
+  // A CustomerOrder's real cost = automatic rollup of every linked
+  // PurchaseOrder's own actualCost (sourceCustomerOrderId) + direct cost
+  // documents/expenses recorded here. See CustomerOrderFinanceSummary's own
+  // field comments and schema.prisma's CustomerOrderDocument comment for
+  // the full rationale and the double-counting guard.
+  // ---------------------------------------------------------------------
+
+  async getCustomerOrderSummary(user: RequestUser, customerOrderId: string): Promise<CustomerOrderFinanceSummary> {
+    await this.findCustomerOrderOrThrow(customerOrderId);
+
+    const linkedPOs = await this.prisma.tenant.purchaseOrder.findMany({
+      where: { sourceCustomerOrderId: customerOrderId },
+      include: { items: { select: { qtyOrdered: true, expectedPrice: true, actualPrice: true } } },
+      orderBy: { orderDate: 'desc' },
+    });
+    const poRollups = await this.buildPurchaseOrderRollups(linkedPOs);
+
+    const [directDocuments, directExpenses, directPayments] = await Promise.all([
+      this.prisma.tenant.customerOrderDocument.findMany({ where: { customerOrderId } }),
+      this.prisma.tenant.customerOrderExpense.findMany({ where: { customerOrderId } }),
+      this.prisma.tenant.customerOrderPayment.findMany({ where: { document: { customerOrderId } } }),
+    ]);
+    // Reuses buildSummary as-is with an empty `items` array — goodsCost is
+    // always 0 for the "direct" part, so its additionalExpenses/actualCost
+    // become exactly the direct-expenses total, with the same per-currency
+    // separation buildSummary already guarantees.
+    const directSummary = this.buildSummary(customerOrderId, [], directDocuments, directExpenses, directPayments);
+
+    return this.mergeCustomerOrderSummary(customerOrderId, poRollups, directSummary, directDocuments.length);
+  }
+
+  /**
+   * `/finance` landing page (Customer Orders tab) — same in-memory
+   * filter/paginate tradeoff as listPurchaseOrdersWithSummary, same
+   * rationale (paymentStatus is derived, can't be pushed into the DB query).
+   */
+  async listCustomerOrdersWithSummary(user: RequestUser, query: QueryFinanceCustomerOrdersDto) {
+    const where: Prisma.CustomerOrderWhereInput = {};
+    if (query.search) where.clientName = { contains: query.search, mode: 'insensitive' };
+
+    const orders = await this.prisma.tenant.customerOrder.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+    const orderIds = orders.map((o) => o.id);
+    if (orderIds.length === 0) {
+      return { items: [], total: 0, limit: query.limit ?? 50, offset: query.offset ?? 0 };
+    }
+
+    const [linkedPOs, directDocuments, directExpenses, directPayments] = await Promise.all([
+      this.prisma.tenant.purchaseOrder.findMany({
+        where: { sourceCustomerOrderId: { in: orderIds } },
+        include: { items: { select: { qtyOrdered: true, expectedPrice: true, actualPrice: true } } },
+      }),
+      this.prisma.tenant.customerOrderDocument.findMany({ where: { customerOrderId: { in: orderIds } } }),
+      this.prisma.tenant.customerOrderExpense.findMany({ where: { customerOrderId: { in: orderIds } } }),
+      this.prisma.tenant.customerOrderPayment.findMany({
+        where: { document: { customerOrderId: { in: orderIds } } },
+        include: { document: { select: { customerOrderId: true } } },
+      }),
+    ]);
+
+    const poIds = linkedPOs.map((p) => p.id);
+    const [poDocuments, poExpenses, poPayments] = await Promise.all([
+      poIds.length ? this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+      poIds.length ? this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+      poIds.length
+        ? this.prisma.tenant.purchaseOrderPayment.findMany({
+            where: { document: { purchaseOrderId: { in: poIds } } },
+            include: { document: { select: { purchaseOrderId: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    const poDocsByPo = groupBy(poDocuments, (d) => d.purchaseOrderId);
+    const poExpByPo = groupBy(poExpenses, (e) => e.purchaseOrderId);
+    const poPayByPo = groupBy(poPayments, (p) => p.document.purchaseOrderId);
+    const posByCustomerOrder = groupBy(linkedPOs, (p) => p.sourceCustomerOrderId as string);
+
+    const directDocsByOrder = groupBy(directDocuments, (d) => d.customerOrderId);
+    const directExpByOrder = groupBy(directExpenses, (e) => e.customerOrderId);
+    const directPayByOrder = groupBy(directPayments, (p) => p.document.customerOrderId);
+
+    let rows = orders.map((order) => {
+      const pos = posByCustomerOrder.get(order.id) ?? [];
+      const poRollups: CustomerOrderPurchaseOrderRollup[] = pos.map((po) => ({
+        purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
+        summary: this.buildSummary(po.id, po.items, poDocsByPo.get(po.id) ?? [], poExpByPo.get(po.id) ?? [], poPayByPo.get(po.id) ?? []),
+      }));
+      const directDocs = directDocsByOrder.get(order.id) ?? [];
+      const directSummary = this.buildSummary(order.id, [], directDocs, directExpByOrder.get(order.id) ?? [], directPayByOrder.get(order.id) ?? []);
+      const summary = this.mergeCustomerOrderSummary(order.id, poRollups, directSummary, directDocs.length);
+
+      return {
+        customerOrder: { id: order.id, clientName: order.clientName, orderNumber: order.orderNumber, status: order.status, createdAt: order.createdAt },
+        summary,
+        paymentStatus: this.poPaymentStatus(summary),
+      };
+    });
+
+    if (query.paymentStatus) rows = rows.filter((r) => r.paymentStatus === query.paymentStatus);
+
+    const total = rows.length;
+    const take = query.limit ?? 50;
+    const skip = query.offset ?? 0;
+    return { items: rows.slice(skip, skip + take), total, limit: take, offset: skip };
+  }
+
+  private async buildPurchaseOrderRollups(
+    linkedPOs: Array<{ id: string; supplierNameSnapshot: string; status: string; orderDate: Date; items: PoItemForCost[] }>,
+  ): Promise<CustomerOrderPurchaseOrderRollup[]> {
+    const poIds = linkedPOs.map((p) => p.id);
+    const [poDocuments, poExpenses, poPayments] = await Promise.all([
+      poIds.length ? this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+      poIds.length ? this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+      poIds.length
+        ? this.prisma.tenant.purchaseOrderPayment.findMany({
+            where: { document: { purchaseOrderId: { in: poIds } } },
+            include: { document: { select: { purchaseOrderId: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    const docsByPo = groupBy(poDocuments, (d) => d.purchaseOrderId);
+    const expByPo = groupBy(poExpenses, (e) => e.purchaseOrderId);
+    const payByPo = groupBy(poPayments, (p) => p.document.purchaseOrderId);
+
+    return linkedPOs.map((po) => ({
+      purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
+      summary: this.buildSummary(po.id, po.items, docsByPo.get(po.id) ?? [], expByPo.get(po.id) ?? [], payByPo.get(po.id) ?? []),
+    }));
+  }
+
+  /** Merges N linked-PO rollups + this order's own direct documents/expenses/payments into the final 6-metric CustomerOrderFinanceSummary — see that type's own field comments for what each number means and why they stay separate. */
+  private mergeCustomerOrderSummary(
+    customerOrderId: string,
+    poRollups: CustomerOrderPurchaseOrderRollup[],
+    directSummary: PurchaseOrderFinanceSummary,
+    directDocumentCount: number,
+  ): CustomerOrderFinanceSummary {
+    const purchaseCost = poRollups.reduce((sum, p) => sum + p.summary.actualCost, 0);
+
+    const contributions: CurrencyContribution[] = [
+      { currency: this.primaryCurrency, additionalExpenses: directSummary.additionalExpenses, totalDocuments: directSummary.totalDocuments, paid: directSummary.paid },
+      ...poRollups.map((p) => ({ currency: this.primaryCurrency, additionalExpenses: 0, totalDocuments: p.summary.totalDocuments, paid: p.summary.paid })),
+      ...directSummary.otherCurrencies.map((b) => ({ currency: b.currency, additionalExpenses: b.additionalExpenses, totalDocuments: b.totalDocuments, paid: b.paid })),
+      ...poRollups.flatMap((p) => p.summary.otherCurrencies.map((b) => ({ currency: b.currency, additionalExpenses: 0, totalDocuments: b.totalDocuments, paid: b.paid }))),
+    ];
+    const merged = mergeCurrencyContributions(contributions);
+    const primary = merged.find((b) => b.currency === this.primaryCurrency) ?? {
+      currency: this.primaryCurrency,
+      additionalExpenses: 0,
+      totalDocuments: 0,
+      paid: 0,
+      unpaidPerDocuments: 0,
+    };
+    const otherCurrencies = merged.filter((b) => b.currency !== this.primaryCurrency);
+
+    const documentCount = directDocumentCount + poRollups.reduce((sum, p) => sum + p.summary.documentCount, 0);
+    const lastActivityAt =
+      [directSummary.lastActivityAt, ...poRollups.map((p) => p.summary.lastActivityAt)]
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+
+    return {
+      customerOrderId,
+      primaryCurrency: this.primaryCurrency,
+      purchaseCost: round2(purchaseCost),
+      additionalExpenses: primary.additionalExpenses,
+      actualCost: round2(purchaseCost + primary.additionalExpenses),
+      totalDocuments: primary.totalDocuments,
+      paid: primary.paid,
+      unpaidPerDocuments: primary.unpaidPerDocuments,
+      documentCount,
+      lastActivityAt,
+      otherCurrencies,
+      purchaseOrders: poRollups,
+    };
+  }
+
+  async listCustomerOrderDocuments(user: RequestUser, customerOrderId: string) {
+    await this.findCustomerOrderOrThrow(customerOrderId);
+    const documents = await this.prisma.tenant.customerOrderDocument.findMany({
+      where: { customerOrderId },
+      include: { counterparty: { select: { id: true, name: true } }, payments: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return documents.map((d) => ({ ...d, paymentStatus: this.documentPaymentStatus(d, d.payments) }));
+  }
+
+  async createCustomerOrderDocument(user: RequestUser, customerOrderId: string, dto: CreateCustomerOrderDocumentDto) {
+    await this.findCustomerOrderOrThrow(customerOrderId);
+    await this.assertSupplierExists(dto.counterpartyId);
+
+    const document = await this.prisma.tenant.customerOrderDocument.create({
+      data: {
+        companyId: user.companyId,
+        customerOrderId,
+        documentType: dto.documentType,
+        documentNumber: dto.documentNumber,
+        documentDate: dto.documentDate,
+        counterpartyId: dto.counterpartyId,
+        amount: dto.amount,
+        currency: dto.currency ?? 'EUR',
+        note: dto.note,
+        createdById: user.userId,
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_document.created',
+      entityType: 'CustomerOrderDocument',
+      entityId: document.id,
+      after: document,
+      metadata: { customerOrderId },
+    });
+    return document;
+  }
+
+  async getCustomerOrderDocument(user: RequestUser, documentId: string) {
+    const document = await this.getCustomerOrderDocumentWithPaymentsOrThrow(documentId);
+    return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
+  }
+
+  async updateCustomerOrderDocument(user: RequestUser, documentId: string, dto: UpdateCustomerOrderDocumentDto) {
+    const before = await this.getCustomerOrderDocumentWithPaymentsOrThrow(documentId);
+    if (dto.counterpartyId) await this.assertSupplierExists(dto.counterpartyId);
+    if (dto.amount === null && before.payments.length > 0) {
+      throw new CodedBadRequestException('FINANCE_DOCUMENT_HAS_PAYMENTS', 'Cannot clear the amount — this document already has recorded payments.');
+    }
+
+    const document = await this.prisma.tenant.customerOrderDocument.update({
+      where: { id: documentId },
+      data: {
+        ...(dto.documentType !== undefined ? { documentType: dto.documentType } : {}),
+        ...(dto.documentNumber !== undefined ? { documentNumber: dto.documentNumber } : {}),
+        ...(dto.documentDate !== undefined ? { documentDate: dto.documentDate } : {}),
+        ...(dto.counterpartyId !== undefined ? { counterpartyId: dto.counterpartyId } : {}),
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_document.updated',
+      entityType: 'CustomerOrderDocument',
+      entityId: documentId,
+      before,
+      after: document,
+    });
+    return document;
+  }
+
+  async deleteCustomerOrderDocument(user: RequestUser, documentId: string) {
+    const document = await this.getCustomerOrderDocumentWithPaymentsOrThrow(documentId);
+    await this.prisma.tenant.customerOrderDocument.delete({ where: { id: documentId } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_document.deleted',
+      entityType: 'CustomerOrderDocument',
+      entityId: documentId,
+      before: document,
+    });
+  }
+
+  async addCustomerOrderPayment(user: RequestUser, documentId: string, dto: CreatePurchaseOrderPaymentDto) {
+    const document = await this.getCustomerOrderDocumentWithPaymentsOrThrow(documentId);
+    if (document.amount === null) {
+      throw new CodedBadRequestException('FINANCE_DOCUMENT_NO_AMOUNT', 'This document has no amount and cannot receive payments.');
+    }
+
+    const currency = dto.currency ?? document.currency;
+    if (currency === document.currency) {
+      const alreadyPaid = document.payments
+        .filter((p) => p.currency === document.currency)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+      const remaining = Number(document.amount) - alreadyPaid;
+      if (dto.amount > remaining + 0.005) {
+        throw new CodedBadRequestException(
+          'FINANCE_PAYMENT_EXCEEDS_REMAINING',
+          `Payment of ${dto.amount} ${currency} exceeds the remaining balance of ${round2(Math.max(remaining, 0))} ${currency}.`,
+        );
+      }
+    }
+
+    const payment = await this.prisma.tenant.customerOrderPayment.create({
+      data: {
+        companyId: user.companyId,
+        documentId,
+        amount: dto.amount,
+        currency,
+        paidAt: dto.paidAt,
+        method: dto.method,
+        note: dto.note,
+        createdById: user.userId,
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_payment.created',
+      entityType: 'CustomerOrderPayment',
+      entityId: payment.id,
+      after: payment,
+      metadata: { documentId },
+    });
+
+    return { ...payment, currencyMismatch: currency !== document.currency };
+  }
+
+  async deleteCustomerOrderPayment(user: RequestUser, paymentId: string) {
+    const payment = await this.prisma.tenant.customerOrderPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new CodedNotFoundException('FINANCE_PAYMENT_NOT_FOUND', 'Payment not found.');
+    await this.prisma.tenant.customerOrderPayment.delete({ where: { id: paymentId } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_payment.deleted',
+      entityType: 'CustomerOrderPayment',
+      entityId: paymentId,
+      before: payment,
+    });
+  }
+
+  async listCustomerOrderExpenses(user: RequestUser, customerOrderId: string) {
+    await this.findCustomerOrderOrThrow(customerOrderId);
+    return this.prisma.tenant.customerOrderExpense.findMany({ where: { customerOrderId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async createCustomerOrderExpense(user: RequestUser, customerOrderId: string, dto: CreateCustomerOrderExpenseDto) {
+    await this.findCustomerOrderOrThrow(customerOrderId);
+    if (dto.documentId) await this.assertCustomerOrderDocumentBelongsToOrder(dto.documentId, customerOrderId);
+
+    const expense = await this.prisma.tenant.customerOrderExpense.create({
+      data: {
+        companyId: user.companyId,
+        customerOrderId,
+        category: dto.category,
+        amount: dto.amount,
+        currency: dto.currency ?? 'EUR',
+        description: dto.description,
+        documentId: dto.documentId,
+        createdById: user.userId,
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_expense.created',
+      entityType: 'CustomerOrderExpense',
+      entityId: expense.id,
+      after: expense,
+      metadata: { customerOrderId },
+    });
+    return expense;
+  }
+
+  async updateCustomerOrderExpense(user: RequestUser, expenseId: string, dto: UpdateCustomerOrderExpenseDto) {
+    const before = await this.getCustomerOrderExpenseOrThrow(expenseId);
+    if (dto.documentId) await this.assertCustomerOrderDocumentBelongsToOrder(dto.documentId, before.customerOrderId);
+
+    const expense = await this.prisma.tenant.customerOrderExpense.update({
+      where: { id: expenseId },
+      data: {
+        ...(dto.category !== undefined ? { category: dto.category } : {}),
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.documentId !== undefined ? { documentId: dto.documentId } : {}),
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_expense.updated',
+      entityType: 'CustomerOrderExpense',
+      entityId: expenseId,
+      before,
+      after: expense,
+    });
+    return expense;
+  }
+
+  async deleteCustomerOrderExpense(user: RequestUser, expenseId: string) {
+    const expense = await this.getCustomerOrderExpenseOrThrow(expenseId);
+    await this.prisma.tenant.customerOrderExpense.delete({ where: { id: expenseId } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_expense.deleted',
+      entityType: 'CustomerOrderExpense',
+      entityId: expenseId,
+      before: expense,
+    });
+  }
+
+  private async findCustomerOrderOrThrow(customerOrderId: string) {
+    const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: customerOrderId } });
+    if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
+    return order;
+  }
+
+  private async getCustomerOrderDocumentWithPaymentsOrThrow(documentId: string) {
+    const document = await this.prisma.tenant.customerOrderDocument.findUnique({
+      where: { id: documentId },
+      include: { counterparty: { select: { id: true, name: true } }, payments: { orderBy: { paidAt: 'asc' } } },
+    });
+    if (!document) throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found.');
+    return document;
+  }
+
+  private async getCustomerOrderExpenseOrThrow(expenseId: string) {
+    const expense = await this.prisma.tenant.customerOrderExpense.findUnique({ where: { id: expenseId } });
+    if (!expense) throw new CodedNotFoundException('FINANCE_EXPENSE_NOT_FOUND', 'Expense not found.');
+    return expense;
+  }
+
+  private async assertCustomerOrderDocumentBelongsToOrder(documentId: string, customerOrderId: string) {
+    const document = await this.prisma.tenant.customerOrderDocument.findUnique({ where: { id: documentId } });
+    if (!document || document.customerOrderId !== customerOrderId) {
+      throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found on this customer order.');
+    }
   }
 
   // ---------------------------------------------------------------------

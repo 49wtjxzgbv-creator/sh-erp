@@ -205,3 +205,138 @@ export function updateFinanceExpense(id: string, dto: UpdatePurchaseOrderExpense
 export function deleteFinanceExpense(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`finance/expenses/${id}`);
 }
+
+// ---------------------------------------------------------------------
+// CustomerOrder-Finance (2026-08-24) — the `/finance` landing page's
+// primary view. Cost = automatic rollup of every linked PurchaseOrder's
+// own Finance data (types/functions above, unchanged) + direct documents/
+// expenses recorded here. See finance.service.ts's CustomerOrderFinanceSummary
+// comment for the full rationale.
+// ---------------------------------------------------------------------
+
+export interface CustomerOrderPurchaseOrderRollup {
+  purchaseOrder: { id: string; supplierNameSnapshot: string; status: PurchaseOrderStatus; orderDate: string };
+  summary: PurchaseOrderFinanceSummary;
+}
+
+export interface CustomerOrderFinanceSummary {
+  customerOrderId: string;
+  primaryCurrency: string;
+  purchaseCost: number;
+  additionalExpenses: number;
+  actualCost: number;
+  totalDocuments: number;
+  paid: number;
+  unpaidPerDocuments: number;
+  documentCount: number;
+  lastActivityAt: string | null;
+  otherCurrencies: FinanceCurrencyBucket[];
+  purchaseOrders: CustomerOrderPurchaseOrderRollup[];
+}
+
+export interface FinanceCustomerOrderRow {
+  customerOrder: { id: string; clientName: string; orderNumber: string | null; status: string; createdAt: string };
+  summary: CustomerOrderFinanceSummary;
+  paymentStatus: FinancePaymentStatus;
+}
+
+export interface QueryFinanceCustomerOrdersInput {
+  search?: string;
+  paymentStatus?: FinancePaymentStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedFinanceCustomerOrders {
+  items: FinanceCustomerOrderRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function listFinanceCustomerOrders(query: QueryFinanceCustomerOrdersInput = {}): Promise<PaginatedFinanceCustomerOrders> {
+  return apiClient.get<PaginatedFinanceCustomerOrders>('finance/customer-orders', { query: query as Record<string, string | number> });
+}
+
+export function getCustomerOrderFinanceSummary(customerOrderId: string): Promise<CustomerOrderFinanceSummary> {
+  return apiClient.get<CustomerOrderFinanceSummary>(`finance/customer-orders/${customerOrderId}/summary`);
+}
+
+export interface CustomerOrderDocument {
+  id: string;
+  customerOrderId: string;
+  documentType: PurchaseOrderDocumentType;
+  documentNumber: string | null;
+  documentDate: string | null;
+  counterpartyId: string;
+  counterparty?: { id: string; name: string };
+  amount: DecimalString | null;
+  currency: string;
+  note: string | null;
+  createdById: string;
+  createdAt: string;
+  payments: PurchaseOrderPayment[];
+  paymentStatus: DocumentPaymentStatus;
+}
+
+export type CreateCustomerOrderDocumentInput = CreatePurchaseOrderDocumentInput;
+export type UpdateCustomerOrderDocumentInput = UpdatePurchaseOrderDocumentInput;
+
+export function listCustomerOrderDocuments(customerOrderId: string): Promise<CustomerOrderDocument[]> {
+  return apiClient.get<CustomerOrderDocument[]>(`finance/customer-orders/${customerOrderId}/documents`);
+}
+
+export function createCustomerOrderDocument(customerOrderId: string, dto: CreateCustomerOrderDocumentInput): Promise<CustomerOrderDocument> {
+  return apiClient.post<CustomerOrderDocument>(`finance/customer-orders/${customerOrderId}/documents`, dto);
+}
+
+export function getFinanceCustomerOrderDocument(id: string): Promise<CustomerOrderDocument> {
+  return apiClient.get<CustomerOrderDocument>(`finance/customer-order-documents/${id}`);
+}
+
+export function updateFinanceCustomerOrderDocument(id: string, dto: UpdateCustomerOrderDocumentInput): Promise<CustomerOrderDocument> {
+  return apiClient.patch<CustomerOrderDocument>(`finance/customer-order-documents/${id}`, dto);
+}
+
+export function deleteFinanceCustomerOrderDocument(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`finance/customer-order-documents/${id}`);
+}
+
+export function addFinanceCustomerOrderPayment(documentId: string, dto: CreatePurchaseOrderPaymentInput): Promise<PurchaseOrderPayment> {
+  return apiClient.post<PurchaseOrderPayment>(`finance/customer-order-documents/${documentId}/payments`, dto);
+}
+
+export function deleteFinanceCustomerOrderPayment(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`finance/customer-order-payments/${id}`);
+}
+
+export interface CustomerOrderExpense {
+  id: string;
+  customerOrderId: string;
+  category: PurchaseOrderExpenseCategory;
+  amount: DecimalString;
+  currency: string;
+  description: string | null;
+  documentId: string | null;
+  createdById: string;
+  createdAt: string;
+}
+
+export type CreateCustomerOrderExpenseInput = CreatePurchaseOrderExpenseInput;
+export type UpdateCustomerOrderExpenseInput = UpdatePurchaseOrderExpenseInput;
+
+export function listCustomerOrderExpenses(customerOrderId: string): Promise<CustomerOrderExpense[]> {
+  return apiClient.get<CustomerOrderExpense[]>(`finance/customer-orders/${customerOrderId}/expenses`);
+}
+
+export function createCustomerOrderExpense(customerOrderId: string, dto: CreateCustomerOrderExpenseInput): Promise<CustomerOrderExpense> {
+  return apiClient.post<CustomerOrderExpense>(`finance/customer-orders/${customerOrderId}/expenses`, dto);
+}
+
+export function updateFinanceCustomerOrderExpense(id: string, dto: UpdateCustomerOrderExpenseInput): Promise<CustomerOrderExpense> {
+  return apiClient.patch<CustomerOrderExpense>(`finance/customer-order-expenses/${id}`, dto);
+}
+
+export function deleteFinanceCustomerOrderExpense(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`finance/customer-order-expenses/${id}`);
+}

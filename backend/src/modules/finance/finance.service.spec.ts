@@ -42,6 +42,10 @@ describe('FinanceService', () => {
         purchaseOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
         purchaseOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         supplier: { findUnique: jest.fn() },
+        customerOrder: { findUnique: jest.fn(), findMany: jest.fn() },
+        customerOrderDocument: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+        customerOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
+        customerOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
       },
     };
     audit = { record: jest.fn() };
@@ -449,6 +453,115 @@ describe('FinanceService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].purchaseOrder.id).toBe('po-paid');
       expect(result.total).toBe(1);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // CustomerOrder-Finance (2026-08-24) — cost rolled up from linked
+  // PurchaseOrders (sourceCustomerOrderId) + direct documents/expenses on
+  // the order itself. Same double-counting/currency discipline as the
+  // PO-side tests above, one level up.
+  // -----------------------------------------------------------------------
+  describe('getCustomerOrderSummary', () => {
+    const d = (over: Partial<any>) => ({ createdAt: new Date(), currency: 'EUR', ...over });
+
+    it('rolls up two linked purchase orders + a direct expense, with no double counting', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        { id: 'poA', supplierNameSnapshot: 'S-A', status: 'ORDERED', orderDate: new Date(), items: [{ qtyOrdered: 1, expectedPrice: 4000, actualPrice: null }] },
+        { id: 'poB', supplierNameSnapshot: 'S-B', status: 'ORDERED', orderDate: new Date(), items: [{ qtyOrdered: 1, expectedPrice: 800, actualPrice: null }] },
+      ]);
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d({ purchaseOrderId: 'poA', amount: 4000 }), d({ purchaseOrderId: 'poB', amount: 800 })]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([
+        { ...d({ amount: 4000 }), document: { purchaseOrderId: 'poA' } },
+      ]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 50 })]); // e.g. packaging, not tied to any PO
+      prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
+
+      const s = await service.getCustomerOrderSummary(user, 'co1');
+      expect(s.purchaseCost).toBe(4800); // 4000 + 800, never re-entered as an expense
+      expect(s.additionalExpenses).toBe(50); // ONLY the direct packaging expense — PO cost must not leak in here
+      expect(s.actualCost).toBe(4850);
+      expect(s.totalDocuments).toBe(4800); // 4000 + 800, no direct documents
+      expect(s.paid).toBe(4000);
+      expect(s.unpaidPerDocuments).toBe(800);
+      expect(s.documentCount).toBe(2); // 1 per linked PO, 0 direct
+      expect(s.purchaseOrders).toHaveLength(2);
+      expect(s.purchaseOrders.find((p) => p.purchaseOrder.id === 'poA')!.summary.actualCost).toBe(4000);
+    });
+
+    it('an order with no linked purchase orders at all — pure direct costs', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([d({ amount: 200 })]);
+      prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
+
+      const s = await service.getCustomerOrderSummary(user, 'co1');
+      expect(s.purchaseCost).toBe(0);
+      expect(s.actualCost).toBe(0); // a document alone (no Expense row) never inflates actualCost — same rule as the PO side
+      expect(s.totalDocuments).toBe(200);
+      expect(s.purchaseOrders).toEqual([]);
+    });
+
+    it('never mixes EUR and USD across the rollup + direct sources — merges same-currency buckets, keeps EUR/USD separate', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        { id: 'poA', supplierNameSnapshot: 'S-A', status: 'ORDERED', orderDate: new Date(), items: [] },
+      ]);
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d({ purchaseOrderId: 'poA', amount: 300, currency: 'USD' })]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 20, currency: 'USD' })]);
+      prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
+
+      const s = await service.getCustomerOrderSummary(user, 'co1');
+      expect(s.totalDocuments).toBe(0); // USD document excluded from the primary EUR figure
+      expect(s.additionalExpenses).toBe(0); // USD expense excluded too
+      expect(s.otherCurrencies).toEqual([
+        expect.objectContaining({ currency: 'USD', totalDocuments: 300, additionalExpenses: 20, paid: 0 }),
+      ]);
+    });
+
+    it('404s for a customer order that does not exist (or belongs to another tenant)', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue(null);
+      await expect(service.getCustomerOrderSummary(user, 'ghost')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('CustomerOrderDocument payments', () => {
+    it('walks unpaid -> partial -> paid via addCustomerOrderPayment, same rules as the PO side', async () => {
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValueOnce({ id: 'cod1', amount: 100, currency: 'EUR', payments: [] });
+      prisma.tenant.customerOrderPayment.create.mockResolvedValueOnce({ id: 'p1', amount: 60, currency: 'EUR' });
+      const result = await service.addCustomerOrderPayment(user, 'cod1', { amount: 60, paidAt: new Date() } as any);
+      expect(prisma.tenant.customerOrderPayment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ companyId: 'c1', documentId: 'cod1', amount: 60, currency: 'EUR', createdById: 'u1' }),
+      });
+      expect(result.currencyMismatch).toBe(false);
+    });
+
+    it('rejects a payment exceeding the remaining balance', async () => {
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({ id: 'cod1', amount: 100, currency: 'EUR', payments: [{ amount: 60, currency: 'EUR' }] });
+      await expect(service.addCustomerOrderPayment(user, 'cod1', { amount: 50, paidAt: new Date() } as any)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a payment on a document with no amount', async () => {
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({ id: 'cod1', amount: null, currency: 'EUR', payments: [] });
+      await expect(service.addCustomerOrderPayment(user, 'cod1', { amount: 10, paidAt: new Date() } as any)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('createCustomerOrderExpense — ownership chain', () => {
+    it('404s when the linked document belongs to a different customer order', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({ id: 'doc-other', customerOrderId: 'co-OTHER' });
+      await expect(
+        service.createCustomerOrderExpense(user, 'co1', { category: 'OTHER', amount: 10, documentId: 'doc-other' } as any),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.tenant.customerOrderExpense.create).not.toHaveBeenCalled();
     });
   });
 });

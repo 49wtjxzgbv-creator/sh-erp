@@ -245,7 +245,7 @@ function FinanceSummaryWidget({ orderId }: { orderId: string }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">{t('financeSummary')}</CardTitle>
-        <Link href={`/finance/${orderId}`} className="text-sm text-primary hover:underline">
+        <Link href={`/finance/purchase-orders/${orderId}`} className="text-sm text-primary hover:underline">
           {t('viewInFinance')}
         </Link>
       </CardHeader>
@@ -322,7 +322,7 @@ function PurchaseOrderDocumentsPanel({ orderId, canManage }: { orderId: string; 
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
           {tf('title')}:{' '}
-          <Link href={`/finance/${orderId}`} className="text-primary hover:underline">
+          <Link href={`/finance/purchase-orders/${orderId}`} className="text-primary hover:underline">
             {tf('viewInFinance')}
           </Link>
         </p>

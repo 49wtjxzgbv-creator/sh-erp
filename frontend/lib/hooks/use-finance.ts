@@ -15,12 +15,30 @@ import {
   createPurchaseOrderExpense,
   updateFinanceExpense,
   deleteFinanceExpense,
+  listFinanceCustomerOrders,
+  getCustomerOrderFinanceSummary,
+  listCustomerOrderDocuments,
+  createCustomerOrderDocument,
+  getFinanceCustomerOrderDocument,
+  updateFinanceCustomerOrderDocument,
+  deleteFinanceCustomerOrderDocument,
+  addFinanceCustomerOrderPayment,
+  deleteFinanceCustomerOrderPayment,
+  listCustomerOrderExpenses,
+  createCustomerOrderExpense,
+  updateFinanceCustomerOrderExpense,
+  deleteFinanceCustomerOrderExpense,
   type QueryFinancePurchaseOrdersInput,
   type CreatePurchaseOrderDocumentInput,
   type UpdatePurchaseOrderDocumentInput,
   type CreatePurchaseOrderPaymentInput,
   type CreatePurchaseOrderExpenseInput,
   type UpdatePurchaseOrderExpenseInput,
+  type QueryFinanceCustomerOrdersInput,
+  type CreateCustomerOrderDocumentInput,
+  type UpdateCustomerOrderDocumentInput,
+  type CreateCustomerOrderExpenseInput,
+  type UpdateCustomerOrderExpenseInput,
 } from '@/lib/api-client/finance';
 
 const financePurchaseOrdersKey = (query: QueryFinancePurchaseOrdersInput) => ['finance', 'purchase-orders', query] as const;
@@ -143,5 +161,134 @@ export function useDeleteFinanceExpense(purchaseOrderId: string) {
   return useMutation({
     mutationFn: (id: string) => deleteFinanceExpense(id),
     onSuccess: () => invalidatePurchaseOrderFinance(qc, purchaseOrderId),
+  });
+}
+
+// ---------------------------------------------------------------------
+// CustomerOrder-Finance (2026-08-24) — mirrors the PurchaseOrder hooks
+// above exactly, one level up. See lib/api-client/finance.ts's own header
+// comment for the full rationale.
+// ---------------------------------------------------------------------
+
+const financeCustomerOrdersKey = (query: QueryFinanceCustomerOrdersInput) => ['finance', 'customer-orders', query] as const;
+const financeCustomerOrderSummaryKey = (customerOrderId: string) => ['finance', 'customer-order-summary', customerOrderId] as const;
+const financeCustomerOrderDocumentsKey = (customerOrderId: string) => ['finance', 'customer-order-documents', customerOrderId] as const;
+const financeCustomerOrderDocumentKey = (id: string) => ['finance', 'customer-order-document', id] as const;
+const financeCustomerOrderExpensesKey = (customerOrderId: string) => ['finance', 'customer-order-expenses', customerOrderId] as const;
+
+/** Invalidates every view a CustomerOrder document/payment/expense mutation can affect, PLUS the linked PurchaseOrder's own Finance views (since the order's summary rolls up that PO's data) and the /finance list (both tabs). */
+function invalidateCustomerOrderFinance(qc: ReturnType<typeof useQueryClient>, customerOrderId: string) {
+  qc.invalidateQueries({ queryKey: financeCustomerOrderSummaryKey(customerOrderId) });
+  qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentsKey(customerOrderId) });
+  qc.invalidateQueries({ queryKey: financeCustomerOrderExpensesKey(customerOrderId) });
+  qc.invalidateQueries({ queryKey: ['finance', 'customer-orders'] });
+}
+
+export function useFinanceCustomerOrders(query: QueryFinanceCustomerOrdersInput) {
+  return useQuery({ queryKey: financeCustomerOrdersKey(query), queryFn: () => listFinanceCustomerOrders(query) });
+}
+
+export function useCustomerOrderFinanceSummary(customerOrderId: string | undefined) {
+  return useQuery({
+    queryKey: financeCustomerOrderSummaryKey(customerOrderId ?? ''),
+    queryFn: () => getCustomerOrderFinanceSummary(customerOrderId as string),
+    enabled: Boolean(customerOrderId),
+  });
+}
+
+export function useCustomerOrderFinanceDocuments(customerOrderId: string | undefined) {
+  return useQuery({
+    queryKey: financeCustomerOrderDocumentsKey(customerOrderId ?? ''),
+    queryFn: () => listCustomerOrderDocuments(customerOrderId as string),
+    enabled: Boolean(customerOrderId),
+  });
+}
+
+export function useCustomerOrderFinanceDocument(id: string | undefined) {
+  return useQuery({
+    queryKey: financeCustomerOrderDocumentKey(id ?? ''),
+    queryFn: () => getFinanceCustomerOrderDocument(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateCustomerOrderDocument(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateCustomerOrderDocumentInput) => createCustomerOrderDocument(customerOrderId, dto),
+    onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
+  });
+}
+
+export function useUpdateCustomerOrderDocument(customerOrderId: string, documentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdateCustomerOrderDocumentInput) => updateFinanceCustomerOrderDocument(documentId, dto),
+    onSuccess: () => {
+      invalidateCustomerOrderFinance(qc, customerOrderId);
+      qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentKey(documentId) });
+    },
+  });
+}
+
+export function useDeleteCustomerOrderDocument(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (documentId: string) => deleteFinanceCustomerOrderDocument(documentId),
+    onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
+  });
+}
+
+export function useAddCustomerOrderPayment(customerOrderId: string, documentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreatePurchaseOrderPaymentInput) => addFinanceCustomerOrderPayment(documentId, dto),
+    onSuccess: () => {
+      invalidateCustomerOrderFinance(qc, customerOrderId);
+      qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentKey(documentId) });
+    },
+  });
+}
+
+export function useDeleteCustomerOrderPayment(customerOrderId: string, documentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paymentId: string) => deleteFinanceCustomerOrderPayment(paymentId),
+    onSuccess: () => {
+      invalidateCustomerOrderFinance(qc, customerOrderId);
+      qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentKey(documentId) });
+    },
+  });
+}
+
+export function useCustomerOrderFinanceExpenses(customerOrderId: string | undefined) {
+  return useQuery({
+    queryKey: financeCustomerOrderExpensesKey(customerOrderId ?? ''),
+    queryFn: () => listCustomerOrderExpenses(customerOrderId as string),
+    enabled: Boolean(customerOrderId),
+  });
+}
+
+export function useCreateCustomerOrderExpense(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateCustomerOrderExpenseInput) => createCustomerOrderExpense(customerOrderId, dto),
+    onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
+  });
+}
+
+export function useUpdateCustomerOrderExpense(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateCustomerOrderExpenseInput }) => updateFinanceCustomerOrderExpense(id, dto),
+    onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
+  });
+}
+
+export function useDeleteCustomerOrderExpense(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteFinanceCustomerOrderExpense(id),
+    onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
   });
 }

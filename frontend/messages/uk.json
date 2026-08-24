@@ -600,7 +600,16 @@
     "cancel": "Скасувати",
     "create": "Створити",
     "remainingBalance": "Залишок",
-    "status": "Статус"
+    "status": "Статус",
+    "tabCustomerOrders": "Замовлення клієнтів",
+    "tabPurchaseOrders": "Закупівлі",
+    "searchPlaceholderOrders": "Пошук за клієнтом",
+    "noCustomerOrders": "Нічого не знайдено",
+    "purchaseCost": "Собівартість закупівель",
+    "linkedPurchaseOrders": "Закупівлі",
+    "noLinkedPurchaseOrders": "До цього замовлення ще не прив'язано жодної закупівлі",
+    "directDocuments": "Документи замовлення",
+    "directExpenses": "Витрати замовлення"
   },
   "sales": {
     "title": "Продажі",
