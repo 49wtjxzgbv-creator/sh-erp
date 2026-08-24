@@ -7,6 +7,7 @@ import { PurchaseOrdersService } from './purchase-orders.service';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
 import { DeliveryScheduleLinesDto } from './dto/delivery-schedule.dto';
+import { CreatePurchaseOrderCommentDto } from './dto/purchase-order-comment.dto';
 
 @ApiTags('procurement')
 @Controller({ path: 'purchase-orders', version: '1' })
@@ -95,5 +96,19 @@ export class PurchaseOrdersController {
   @ApiOperation({ summary: "Reject a supplier's proposed delivery schedule — the item's current version is left untouched." })
   async rejectDeliverySchedule(@CurrentUser() user: RequestUser, @Param('orderId') orderId: string, @Param('scheduleId') scheduleId: string) {
     return this.purchaseOrdersService.rejectDeliverySchedule(user, orderId, scheduleId);
+  }
+
+  @Get(':id/comments')
+  @RequirePermissions('purchase-orders:read')
+  @ApiOperation({ summary: 'Phase 2 — the discussion thread for this order (staff + supplier), oldest first.' })
+  async listComments(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.purchaseOrdersService.listComments(user, id);
+  }
+
+  @Post(':id/comments')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: 'Phase 2 — post a comment on this order, visible to the connected supplier.' })
+  async addComment(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: CreatePurchaseOrderCommentDto) {
+    return this.purchaseOrdersService.addComment(user, id, dto.body);
   }
 }

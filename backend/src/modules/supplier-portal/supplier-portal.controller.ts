@@ -6,6 +6,8 @@ import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.intercep
 import { SupplierPortalService } from './supplier-portal.service';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
+import { CreatePurchaseOrderCommentDto } from '../procurement/dto/purchase-order-comment.dto';
+import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -69,5 +71,57 @@ export class SupplierPortalController {
     @Body() dto: DeliveryScheduleLinesDto,
   ) {
     return this.supplierPortalService.proposeDeliverySchedule(actor, orderId, scheduleId, dto);
+  }
+
+  @Get('purchase-orders/:id/comments')
+  @ApiOperation({ summary: 'Phase 2 — the discussion thread for this order (staff + supplier), oldest first.' })
+  async listComments(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.listComments(actor, id);
+  }
+
+  @Post('purchase-orders/:id/comments')
+  @ApiOperation({ summary: 'Phase 2 — post a comment on this order, visible to the manufacturer.' })
+  async addComment(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: CreatePurchaseOrderCommentDto,
+  ) {
+    return this.supplierPortalService.addComment(actor, id, dto.body);
+  }
+
+  @Get('purchase-orders/:id/files')
+  @ApiOperation({ summary: 'Phase 2 — documents (e.g. invoices) attached to this order, staff- and supplier-uploaded alike.' })
+  async listFiles(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.listFiles(actor, id);
+  }
+
+  @Post('purchase-orders/:id/files/presigned-upload')
+  @ApiOperation({ summary: 'Phase 2, step 1 of 2: get a presigned PUT URL to attach a document to this order.' })
+  async createFileUpload(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: SupplierPortalUploadDto,
+  ) {
+    return this.supplierPortalService.createFileUpload(actor, id, dto);
+  }
+
+  @Post('purchase-orders/:id/files/:fileId/confirm')
+  @ApiOperation({ summary: 'Phase 2, step 2 of 2: confirm the direct-to-R2 upload succeeded.' })
+  async confirmFileUpload(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.supplierPortalService.confirmFileUpload(actor, id, fileId);
+  }
+
+  @Get('purchase-orders/:id/files/:fileId/download-url')
+  @ApiOperation({ summary: 'Phase 2 — short-lived presigned GET URL for a document attached to this order.' })
+  async getFileDownloadUrl(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.supplierPortalService.getFileDownloadUrl(actor, id, fileId);
   }
 }

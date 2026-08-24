@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EmailService } from '../notifications/email.service';
 
 interface ScheduleLineInput {
   date: Date;
@@ -30,9 +31,12 @@ interface ScheduleLineInput {
  */
 @Injectable()
 export class DeliverySchedulesService {
+  private readonly logger = new Logger(DeliverySchedulesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly emailService: EmailService,
   ) {}
 
   /** Staff-only: creates version 1 for an item that has no schedule yet. */
@@ -97,6 +101,7 @@ export class DeliverySchedulesService {
       after: schedule,
       metadata: { purchaseOrderItemId, versionNumber: schedule.versionNumber },
     });
+    await this.notify(purchaseOrderItemId, 'created');
     return schedule;
   }
 
@@ -121,6 +126,7 @@ export class DeliverySchedulesService {
       after: updated,
       metadata: { purchaseOrderItemId: schedule.purchaseOrderItemId, supplierPortalUserId: respondedById },
     });
+    await this.notify(schedule.purchaseOrderItemId, 'confirmed');
     return updated;
   }
 
@@ -182,6 +188,7 @@ export class DeliverySchedulesService {
         after: proposed,
         metadata: { purchaseOrderItemId: schedule.purchaseOrderItemId, supplierPortalUserId: respondedById, versionNumber },
       });
+      await this.notify(schedule.purchaseOrderItemId, 'proposed');
       return proposed;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -232,6 +239,7 @@ export class DeliverySchedulesService {
       after: updated,
       metadata: { purchaseOrderItemId: schedule.purchaseOrderItemId },
     });
+    await this.notify(schedule.purchaseOrderItemId, 'accepted');
     return updated;
   }
 
@@ -256,6 +264,7 @@ export class DeliverySchedulesService {
       after: updated,
       metadata: { purchaseOrderItemId: schedule.purchaseOrderItemId },
     });
+    await this.notify(schedule.purchaseOrderItemId, 'rejected');
     return updated;
   }
 
@@ -281,6 +290,81 @@ export class DeliverySchedulesService {
         'DELIVERY_SCHEDULE_EXCEEDS_ORDERED',
         `Scheduled quantity (${total}) cannot exceed the ordered quantity (${qtyOrdered}).`,
       );
+    }
+  }
+
+  /**
+   * Phase 2 — email the OTHER side whenever a delivery schedule changes
+   * state, so nobody has to poll by logging in (the biggest gap identified
+   * in the Phase 2 audit). Synchronous, inside the same per-request
+   * transaction as everything else in this class — deliberately NOT a
+   * background job (no BullMQ/worker exists yet, ADR-0005 undone; a job
+   * running outside request context with no `app.current_company_id` set
+   * is exactly the risk class the Phase 1 RLS audit was about). Best-effort:
+   * a failed lookup or a failed send is logged and swallowed, never lets a
+   * notification problem fail the actual state change it's reporting on —
+   * `EmailService.send` itself already fails open when SMTP isn't
+   * configured (logs instead of throwing).
+   */
+  private async notify(purchaseOrderItemId: string, event: 'created' | 'confirmed' | 'proposed' | 'accepted' | 'rejected'): Promise<void> {
+    try {
+      const item = await this.prisma.tenant.purchaseOrderItem.findUnique({
+        where: { id: purchaseOrderItemId },
+        include: { purchaseOrder: true },
+      });
+      if (!item) return;
+      const order = (item as any).purchaseOrder;
+      const label = item.articleSnapshot;
+
+      // Staff-initiated events (created/accepted/rejected) notify the
+      // supplier; supplier-initiated events (confirmed/proposed) notify
+      // staff — always the OTHER side, never the actor who just acted.
+      const notifySupplier = event === 'created' || event === 'accepted' || event === 'rejected';
+
+      if (notifySupplier) {
+        if (!order.supplierId) return;
+        const connection = await this.prisma.tenant.supplierConnection.findUnique({ where: { supplierId: order.supplierId } });
+        if (!connection) return;
+        const portalUser = await this.prisma.tenant.supplierPortalUser.findUnique({ where: { supplierOrganizationId: connection.supplierOrganizationId } });
+        if (!portalUser) return;
+        await this.emailService.send(portalUser.email, this.subjectFor(event), this.bodyFor(event, label));
+      } else {
+        const staffUser = await this.prisma.tenant.user.findUnique({ where: { id: order.createdById } });
+        if (!staffUser) return;
+        await this.emailService.send(staffUser.email, this.subjectFor(event), this.bodyFor(event, label));
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to send delivery-schedule notification (event=${event}, item=${purchaseOrderItemId}): ${err}`);
+    }
+  }
+
+  private subjectFor(event: 'created' | 'confirmed' | 'proposed' | 'accepted' | 'rejected'): string {
+    switch (event) {
+      case 'created':
+        return 'Новий графік поставки очікує підтвердження — SH ERP';
+      case 'confirmed':
+        return 'Постачальник підтвердив графік поставки — SH ERP';
+      case 'proposed':
+        return 'Постачальник запропонував зміни до графіка поставки — SH ERP';
+      case 'accepted':
+        return 'Вашу пропозицію прийнято — SH ERP';
+      case 'rejected':
+        return 'Вашу пропозицію відхилено — SH ERP';
+    }
+  }
+
+  private bodyFor(event: 'created' | 'confirmed' | 'proposed' | 'accepted' | 'rejected', articleLabel: string): string {
+    switch (event) {
+      case 'created':
+        return `Виробник створив графік поставки для позиції "${articleLabel}". Увійдіть у портал постачальника, щоб підтвердити або запропонувати зміни.`;
+      case 'confirmed':
+        return `Постачальник підтвердив графік поставки для позиції "${articleLabel}" без змін.`;
+      case 'proposed':
+        return `Постачальник запропонував інший розподіл поставки для позиції "${articleLabel}". Увійдіть у систему, щоб прийняти або відхилити пропозицію.`;
+      case 'accepted':
+        return `Виробник прийняв вашу пропозицію щодо графіка поставки для позиції "${articleLabel}".`;
+      case 'rejected':
+        return `Виробник відхилив вашу пропозицію щодо графіка поставки для позиції "${articleLabel}" — попередній графік лишається чинним.`;
     }
   }
 }

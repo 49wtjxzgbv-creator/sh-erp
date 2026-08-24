@@ -14,6 +14,7 @@ describe('DeliverySchedulesService', () => {
   let service: DeliverySchedulesService;
   let prisma: any;
   let audit: any;
+  let email: any;
 
   const p2002 = () => new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' });
 
@@ -22,10 +23,14 @@ describe('DeliverySchedulesService', () => {
       tenant: {
         purchaseOrderItem: { findUnique: jest.fn(), updateMany: jest.fn() },
         deliverySchedule: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+        supplierConnection: { findUnique: jest.fn() },
+        supplierPortalUser: { findUnique: jest.fn() },
+        user: { findUnique: jest.fn() },
       },
     };
     audit = { record: jest.fn() };
-    service = new DeliverySchedulesService(prisma, audit);
+    email = { send: jest.fn().mockResolvedValue({ sent: true }) };
+    service = new DeliverySchedulesService(prisma, audit, email);
   });
 
   describe('createFirstVersion', () => {
@@ -268,6 +273,61 @@ describe('DeliverySchedulesService', () => {
       expect(prisma.tenant.purchaseOrderItem.updateMany).not.toHaveBeenCalled();
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order.schedule_rejected' }));
       expect(result.status).toBe('REJECTED');
+    });
+  });
+
+  describe('notify — Phase 2 lifecycle emails, best-effort', () => {
+    it('emails the connected supplier when staff creates a schedule', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique
+        .mockResolvedValueOnce({ id: 'item1', qtyOrdered: 100, currentDeliveryScheduleId: null }) // ownership check
+        .mockResolvedValueOnce({ id: 'item1', articleSnapshot: 'ABC-1', purchaseOrder: { supplierId: 'sup1', createdById: 'staff1' } }); // notify() lookup
+      prisma.tenant.deliverySchedule.create.mockResolvedValue({ id: 'sched1', versionNumber: 1, status: 'PENDING', lines: [] });
+      prisma.tenant.purchaseOrderItem.updateMany.mockResolvedValue({ count: 1 });
+      prisma.tenant.supplierConnection.findUnique.mockResolvedValue({ supplierId: 'sup1', supplierOrganizationId: 'org1' });
+      prisma.tenant.supplierPortalUser.findUnique.mockResolvedValue({ email: 'supplier@example.test' });
+
+      await service.createFirstVersion('c1', 'staff1', 'item1', [{ date: new Date(), qty: 100 }]);
+
+      expect(prisma.tenant.supplierConnection.findUnique).toHaveBeenCalledWith({ where: { supplierId: 'sup1' } });
+      expect(email.send).toHaveBeenCalledWith('supplier@example.test', expect.any(String), expect.stringContaining('ABC-1'));
+    });
+
+    it('emails the staff creator when the supplier confirms', async () => {
+      prisma.tenant.deliverySchedule.update.mockResolvedValue({ id: 's1', status: 'CONFIRMED', lines: [] });
+      prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue({
+        id: 'item1',
+        articleSnapshot: 'ABC-1',
+        purchaseOrder: { supplierId: 'sup1', createdById: 'staff1' },
+      });
+      prisma.tenant.user.findUnique.mockResolvedValue({ email: 'staff@example.test' });
+
+      await service.confirmAsIs('c1', 'sp1', { id: 's1', purchaseOrderItemId: 'item1', status: 'PENDING' });
+
+      expect(prisma.tenant.user.findUnique).toHaveBeenCalledWith({ where: { id: 'staff1' } });
+      expect(email.send).toHaveBeenCalledWith('staff@example.test', expect.any(String), expect.stringContaining('ABC-1'));
+    });
+
+    it('never lets a notification failure propagate out of the state-changing action', async () => {
+      prisma.tenant.deliverySchedule.update.mockResolvedValue({ id: 's1', status: 'CONFIRMED', lines: [] });
+      prisma.tenant.purchaseOrderItem.findUnique.mockRejectedValue(new Error('db hiccup during notify lookup'));
+
+      const result = await service.confirmAsIs('c1', 'sp1', { id: 's1', purchaseOrderItemId: 'item1', status: 'PENDING' });
+
+      expect(result.status).toBe('CONFIRMED'); // the actual action still succeeded
+      expect(email.send).not.toHaveBeenCalled();
+    });
+
+    it('no-ops quietly when the item has no supplierId (e.g. free-text supplier)', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique
+        .mockResolvedValueOnce({ id: 'item1', qtyOrdered: 100, currentDeliveryScheduleId: null })
+        .mockResolvedValueOnce({ id: 'item1', articleSnapshot: 'ABC-1', purchaseOrder: { supplierId: null, createdById: 'staff1' } });
+      prisma.tenant.deliverySchedule.create.mockResolvedValue({ id: 'sched1', versionNumber: 1, status: 'PENDING', lines: [] });
+      prisma.tenant.purchaseOrderItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.createFirstVersion('c1', 'staff1', 'item1', [{ date: new Date(), qty: 100 }]);
+
+      expect(prisma.tenant.supplierConnection.findUnique).not.toHaveBeenCalled();
+      expect(email.send).not.toHaveBeenCalled();
     });
   });
 });

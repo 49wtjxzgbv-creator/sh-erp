@@ -160,6 +160,7 @@ model Company {
   purchaseOrderItems           PurchaseOrderItem[]
   deliverySchedules            DeliverySchedule[]
   deliveryScheduleLines        DeliveryScheduleLine[]
+  purchaseOrderComments        PurchaseOrderComment[]
   employees                    Employee[]
   payrollEntries               PayrollEntry[]
   fileAssets                   FileAsset[]
@@ -1796,10 +1797,11 @@ model PurchaseOrder {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company             Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  supplier            Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  sourceCustomerOrder CustomerOrder?      @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
+  company             Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier            Supplier?              @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  sourceCustomerOrder CustomerOrder?         @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
+  comments            PurchaseOrderComment[] // Phase 2 — staff/supplier discussion thread, oldest first
 
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderItem.purchaseOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -1936,6 +1938,38 @@ model DeliveryScheduleLine {
   @@index([deliveryScheduleId])
   @@index([companyId])
   @@map("delivery_schedule_lines")
+}
+
+enum PurchaseOrderCommentAuthorType {
+  STAFF
+  SUPPLIER
+}
+
+// Phase 2 (2026-08-24) — a plain, flat discussion thread per PurchaseOrder,
+// shared by staff and the connected supplier. Deliberately NOT per-item or
+// per-DeliveryScheduleLine (Phase 2 scope is "close the paper-trail gap",
+// not a full messaging system) — one thread per order is enough for the
+// real use case ("port congestion, splitting into 3 batches", "invoice
+// attached above"). `authorUserId`/`authorSupplierPortalUserId` are bare
+// columns with no FK, same "external actor" shape as
+// `DeliverySchedule.respondedById`/`AuditEvent.actorUserId` — exactly one
+// of the two is set, matching `authorType`.
+model PurchaseOrderComment {
+  id                         String                         @id @default(uuid()) @db.Uuid
+  companyId                  String                         @db.Uuid
+  purchaseOrderId            String                         @db.Uuid
+  authorType                 PurchaseOrderCommentAuthorType
+  authorUserId               String?                        @db.Uuid // set iff authorType = STAFF
+  authorSupplierPortalUserId String?                        @db.Uuid // set iff authorType = SUPPLIER
+  body                       String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a comment has no meaning without its order
+
+  @@index([companyId, purchaseOrderId, createdAt])
+  @@map("purchase_order_comments")
 }
 
 // ============================================================================

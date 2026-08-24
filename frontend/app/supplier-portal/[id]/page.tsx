@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
-import type { PurchaseOrder, PurchaseOrderStatus, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
+import type { PurchaseOrder, PurchaseOrderStatus, PurchaseOrderItem, DeliveryScheduleStatus, PurchaseOrderComment } from '@/lib/api-client/procurement';
+import type { FileAsset } from '@/lib/api-client/files';
 
 const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success'> = {
   ORDERED: 'secondary',
@@ -43,6 +44,7 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
   const schedules = item.deliverySchedules ?? [];
   const current = schedules.find((s) => s.id === item.currentDeliveryScheduleId);
   const proposed = schedules.find((s) => s.status === 'PROPOSED');
+  const history = schedules.filter((s) => s.id !== current?.id && s.id !== proposed?.id);
 
   if (!current) return null;
 
@@ -99,6 +101,20 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
         <p className="text-sm text-muted-foreground">{t('proposalAwaitingDecision')}</p>
       )}
 
+      {history.length > 0 && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{t('scheduleHistory')}</summary>
+          <ul className="mt-1 space-y-1">
+            {history.map((s) => (
+              <li key={s.id}>
+                v{s.versionNumber} — <Badge variant={SCHEDULE_STATUS_VARIANT[s.status]}>{t(`scheduleStatus${s.status}`)}</Badge>{' '}
+                {s.lines.map((l) => `${new Date(l.date).toLocaleDateString()}: ${l.qty}`).join(', ')}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {current.status === 'PENDING' && !proposed && (
         <div className="space-y-2">
           {!proposing ? (
@@ -148,6 +164,140 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
+  );
+}
+
+/** Phase 2 — documents (invoices, packing lists) attached to this order. Own presigned-upload flow (supplier-portal has its own auth surface, not lib/api-client/files.ts's staff-permission-gated endpoints) — same 3-step presign→PUT→confirm shape either way. */
+function SupplierPortalDocumentsPanel({ orderId }: { orderId: string }) {
+  const t = useTranslations('supplierPortal');
+  const [files, setFiles] = useState<FileAsset[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await supplierPortalApi.get<FileAsset[]>(`supplier-portal/purchase-orders/${orderId}/files`);
+    setFiles(res);
+  }, [orderId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const presigned = await supplierPortalApi.post<{ fileAssetId: string; uploadUrl: string }>(
+        `supplier-portal/purchase-orders/${orderId}/files/presigned-upload`,
+        { originalName: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size },
+      );
+      const putRes = await fetch(presigned.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      if (!putRes.ok) throw new Error(`Upload to storage failed (${putRes.status}).`);
+      await supplierPortalApi.post(`supplier-portal/purchase-orders/${orderId}/files/${presigned.fileAssetId}/confirm`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('scheduleActionFailed'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDownload(fileAssetId: string) {
+    const { downloadUrl } = await supplierPortalApi.get<{ downloadUrl: string }>(`supplier-portal/purchase-orders/${orderId}/files/${fileAssetId}/download-url`);
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('documents')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {files.length === 0 && <p className="text-sm text-muted-foreground">{t('noDocuments')}</p>}
+        <ul className="space-y-1">
+          {files.map((f) => (
+            <li key={f.id}>
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => handleDownload(f.id)}>
+                {f.originalName}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="space-y-1.5">
+          <input type="file" onChange={handleFileSelected} disabled={uploading} className="text-sm" />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Phase 2 — flat discussion thread for this order, shared with the manufacturer. */
+function SupplierPortalCommentsPanel({ orderId }: { orderId: string }) {
+  const t = useTranslations('supplierPortal');
+  const [comments, setComments] = useState<PurchaseOrderComment[]>([]);
+  const [body, setBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await supplierPortalApi.get<PurchaseOrderComment[]>(`supplier-portal/purchase-orders/${orderId}/comments`);
+    setComments(res);
+  }, [orderId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleSubmit() {
+    if (!body.trim()) return;
+    setSubmitting(true);
+    try {
+      await supplierPortalApi.post(`supplier-portal/purchase-orders/${orderId}/comments`, { body: body.trim() });
+      setBody('');
+      await load();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('comments')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {comments.length === 0 && <p className="text-sm text-muted-foreground">{t('noComments')}</p>}
+        <ul className="space-y-2">
+          {comments.map((c) => (
+            <li key={c.id} className="rounded-md border border-border p-2 text-sm">
+              <p className="mb-1 text-xs text-muted-foreground">
+                {c.authorType === 'STAFF' ? t('commentFromStaff') : t('commentFromSupplier')} · {new Date(c.createdAt).toLocaleString()}
+              </p>
+              <p>{c.body}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="space-y-1.5">
+          <textarea
+            className="w-full rounded-md border border-input bg-background p-2 text-sm"
+            rows={2}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={t('commentPlaceholder')}
+          />
+          <Button size="sm" loading={submitting} onClick={handleSubmit}>
+            {t('postComment')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -242,6 +392,7 @@ export default function SupplierPortalOrderDetailPage() {
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qtyOrdered')}</TableHead>
+                <TableHead>{t('qtyReceived')}</TableHead>
                 <TableHead className="w-40">{t('yourPrice')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -251,6 +402,7 @@ export default function SupplierPortalOrderDetailPage() {
                   <TableCell>{item.articleSnapshot}</TableCell>
                   <TableCell className="max-w-[260px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
                   <TableCell>{item.qtyOrdered}</TableCell>
+                  <TableCell>{item.qtyReceived}</TableCell>
                   <TableCell>
                     <Input
                       type="number"
@@ -286,6 +438,9 @@ export default function SupplierPortalOrderDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <SupplierPortalDocumentsPanel orderId={order.id} />
+      <SupplierPortalCommentsPanel orderId={order.id} />
 
       <Card>
         <CardHeader>

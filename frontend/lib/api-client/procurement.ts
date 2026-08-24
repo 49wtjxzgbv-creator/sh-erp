@@ -314,3 +314,22 @@ export function acceptDeliverySchedule(orderId: string, scheduleId: string): Pro
 export function rejectDeliverySchedule(orderId: string, scheduleId: string): Promise<DeliverySchedule> {
   return apiClient.post<DeliverySchedule>(`purchase-orders/${orderId}/delivery-schedule/${scheduleId}/reject`, {});
 }
+
+/** Phase 2 — the discussion thread for a purchase order, staff and connected supplier alike. */
+export interface PurchaseOrderComment {
+  id: string;
+  purchaseOrderId: string;
+  authorType: 'STAFF' | 'SUPPLIER';
+  authorUserId: string | null;
+  authorSupplierPortalUserId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export function listPurchaseOrderComments(orderId: string): Promise<PurchaseOrderComment[]> {
+  return apiClient.get<PurchaseOrderComment[]>(`purchase-orders/${orderId}/comments`);
+}
+
+export function addPurchaseOrderComment(orderId: string, body: string): Promise<PurchaseOrderComment> {
+  return apiClient.post<PurchaseOrderComment>(`purchase-orders/${orderId}/comments`, { body });
+}

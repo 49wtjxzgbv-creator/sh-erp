@@ -11,9 +11,12 @@ import {
   useCreateDeliverySchedule,
   useAcceptDeliverySchedule,
   useRejectDeliverySchedule,
+  usePurchaseOrderComments,
+  useAddPurchaseOrderComment,
 } from '@/lib/hooks/use-procurement';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
-import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useFilesForEntities, useFilesForEntity } from '@/lib/hooks/use-files';
+import { uploadFile, getFileDownloadUrl } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
@@ -219,6 +222,109 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
+  );
+}
+
+/** Phase 2 — documents (invoices, packing lists) attached to this order, staff- and supplier-uploaded alike. Reuses the existing generic files API (entityType='PurchaseOrder', domain='PURCHASE_INVOICE') — no new backend endpoint needed on the staff side. */
+function PurchaseOrderDocumentsPanel({ orderId, canManage }: { orderId: string; canManage: boolean }) {
+  const t = useTranslations('procurement');
+  const tc = useTranslations('common');
+  const { data: files, refetch } = useFilesForEntity('PurchaseOrder', orderId, 'PURCHASE_INVOICE');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await uploadFile(file, { domain: 'PURCHASE_INVOICE', entityType: 'PurchaseOrder', entityId: orderId });
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc('error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDownload(fileAssetId: string) {
+    const { downloadUrl } = await getFileDownloadUrl(fileAssetId);
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('documents')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {(files ?? []).length === 0 && <p className="text-sm text-muted-foreground">{t('noDocuments')}</p>}
+        <ul className="space-y-1">
+          {(files ?? []).map((f) => (
+            <li key={f.id}>
+              <button type="button" className="text-sm text-primary hover:underline" onClick={() => handleDownload(f.id)}>
+                {f.originalName}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {canManage && (
+          <div className="space-y-1.5">
+            <input type="file" onChange={handleFileSelected} disabled={uploading} className="text-sm" />
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Phase 2 — flat discussion thread for this order, shared with the connected supplier. */
+function PurchaseOrderCommentsPanel({ orderId }: { orderId: string }) {
+  const t = useTranslations('procurement');
+  const { data: comments } = usePurchaseOrderComments(orderId);
+  const addComment = useAddPurchaseOrderComment(orderId);
+  const [body, setBody] = useState('');
+
+  async function handleSubmit() {
+    if (!body.trim()) return;
+    await addComment.mutateAsync(body.trim());
+    setBody('');
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('comments')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {(comments ?? []).length === 0 && <p className="text-sm text-muted-foreground">{t('noComments')}</p>}
+        <ul className="space-y-2">
+          {(comments ?? []).map((c) => (
+            <li key={c.id} className="rounded-md border border-border p-2 text-sm">
+              <p className="mb-1 text-xs text-muted-foreground">
+                {c.authorType === 'STAFF' ? t('commentFromStaff') : t('commentFromSupplier')} · {new Date(c.createdAt).toLocaleString()}
+              </p>
+              <p>{c.body}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="space-y-1.5">
+          <textarea
+            className="w-full rounded-md border border-input bg-background p-2 text-sm"
+            rows={2}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={t('commentPlaceholder')}
+          />
+          <Button size="sm" loading={addComment.isPending} onClick={handleSubmit}>
+            {t('postComment')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -441,6 +547,9 @@ export default function PurchaseOrderDetailPage() {
           ))}
         </CardContent>
       </Card>
+
+      <PurchaseOrderDocumentsPanel orderId={order.id} canManage={canManage} />
+      <PurchaseOrderCommentsPanel orderId={order.id} />
 
       {!isDelivered && canManage && (
         <Card>

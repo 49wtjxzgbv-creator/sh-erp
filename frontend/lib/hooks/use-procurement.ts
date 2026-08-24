@@ -22,6 +22,8 @@ import {
   createDeliverySchedule,
   acceptDeliverySchedule,
   rejectDeliverySchedule,
+  listPurchaseOrderComments,
+  addPurchaseOrderComment,
   type QuerySuppliersInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
@@ -198,5 +200,23 @@ export function useRejectDeliverySchedule(orderId: string) {
   return useMutation({
     mutationFn: (scheduleId: string) => rejectDeliverySchedule(orderId, scheduleId),
     onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(orderId) }),
+  });
+}
+
+const purchaseOrderCommentsKey = (orderId: string) => ['purchase-orders', orderId, 'comments'] as const;
+
+export function usePurchaseOrderComments(orderId: string | undefined) {
+  return useQuery({
+    queryKey: purchaseOrderCommentsKey(orderId ?? ''),
+    queryFn: () => listPurchaseOrderComments(orderId as string),
+    enabled: Boolean(orderId),
+  });
+}
+
+export function useAddPurchaseOrderComment(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => addPurchaseOrderComment(orderId, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderCommentsKey(orderId) }),
   });
 }

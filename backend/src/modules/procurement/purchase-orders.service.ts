@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
 import { DeliverySchedulesService } from './delivery-schedules.service';
+import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
@@ -29,6 +30,7 @@ export class PurchaseOrdersService {
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
     private readonly deliverySchedulesService: DeliverySchedulesService,
+    private readonly commentsService: PurchaseOrderCommentsService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
@@ -288,6 +290,17 @@ export class PurchaseOrdersService {
       throw new CodedNotFoundException('DELIVERY_SCHEDULE_NOT_FOUND', 'Delivery schedule not found.');
     }
     return schedule;
+  }
+
+  /** Phase 2 — the discussion thread for this order, oldest first. Ownership re-checked via findOne, same pattern as delivery-schedule actions. */
+  async listComments(user: RequestUser, orderId: string) {
+    await this.findOne(user, orderId);
+    return this.commentsService.list(user.companyId, orderId);
+  }
+
+  async addComment(user: RequestUser, orderId: string, body: string) {
+    await this.findOne(user, orderId);
+    return this.commentsService.createByStaff(user.companyId, orderId, user.userId, body);
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {
