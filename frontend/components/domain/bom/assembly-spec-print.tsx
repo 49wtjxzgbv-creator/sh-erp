@@ -94,7 +94,16 @@ export function useOwnCostLines(assembly: { laborCostPerUnit: string; packagingC
   }, [assembly, t]);
 }
 
-export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
+/**
+ * `qty` defaults to 1 (a pure per-unit BOM reference sheet — the only thing
+ * that makes sense from bom/[id]/components/page.tsx, which has no order
+ * context at all). Callers that DO have a quantity to build against (e.g.
+ * production/[id]/page.tsx's `unitsPlanned`) pass it here so every line
+ * prints "how much we need for this whole batch," not just the BOM ratio —
+ * same `qtyPerUnit * qty` multiplication customer-order-print.tsx's
+ * AssemblyCompositionSection already does for the sales side.
+ */
+export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string; qty?: number }) {
   const t = useTranslations('bom');
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
@@ -112,7 +121,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
   const columns: PrintColumnOption[] = [
     { id: 'component', label: t('component') },
     { id: 'componentType', label: t('componentType') },
-    { id: 'qtyPerUnit', label: t('qtyPerUnit') },
+    { id: 'qtyPerUnit', label: qty === 1 ? t('qtyPerUnit') : t('qtyNeeded') },
     { id: 'cost', label: t('cost') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
@@ -152,7 +161,7 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
               {printOptions.isColumnVisible('component') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
               {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}
-              {printOptions.isColumnVisible('qtyPerUnit') && <th>{t('qtyPerUnit')}</th>}
+              {printOptions.isColumnVisible('qtyPerUnit') && <th>{qty === 1 ? t('qtyPerUnit') : t('qtyNeeded')}</th>}
               {printOptions.isColumnVisible('cost') && <th>{t('cost')}</th>}
             </tr>
           </thead>
@@ -184,8 +193,8 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                   </td>
                 )}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
-                {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
-                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost)}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit * qty}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost * qty)}</td>}
               </tr>
             ))}
             {ownCostLines.map((line, i) => (
@@ -195,15 +204,23 @@ export function AssemblySpecPrint({ assemblyId }: { assemblyId: string }) {
                 {printOptions.isColumnVisible('component') && <td />}
                 {printOptions.isColumnVisible('component') && <td>{line.label}</td>}
                 {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
-                {printOptions.isColumnVisible('qtyPerUnit') && <td>—</td>}
-                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.value)}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && <td>{qty}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.value * qty)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
         {printOptions.isColumnVisible('cost') && (
           <p className="mt-4 text-sm font-semibold">
-            {t('cost')}: {formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()}
+            {qty === 1 ? (
+              <>
+                {t('cost')}: {formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()}
+              </>
+            ) : (
+              <>
+                {t('cost')}: {formatEur(cost.costPerUnit * qty)} ({formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()} × {qty})
+              </>
+            )}
           </p>
         )}
       </PrintArea>

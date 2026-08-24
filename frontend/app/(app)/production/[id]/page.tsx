@@ -283,7 +283,7 @@ export default function ProductionOrderDetailPage() {
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`status${order.status}`)}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <AssemblySpecPrint assemblyId={order.assemblyId} />
+          <AssemblySpecPrint assemblyId={order.assemblyId} qty={Number(order.unitsPlanned)} />
           {order.status === 'PLANNED' && canManage && (
           <Dialog>
             <DialogTrigger asChild>

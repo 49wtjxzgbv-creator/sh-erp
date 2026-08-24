@@ -298,6 +298,7 @@
     "component": "Компонент",
     "warehouseOptional": "Склад (необов'язково)",
     "qtyPerUnit": "К-сть на одиницю",
+    "qtyNeeded": "Потрібна кількість",
     "qty": "Кількість",
     "componentTypeProduct": "Товар",
     "componentTypeAssembly": "Вузол (специфікація)",
