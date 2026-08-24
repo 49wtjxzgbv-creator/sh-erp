@@ -56,7 +56,17 @@ function ActualPriceCell({ batchIds }: { batchIds: string[] }) {
   return <td>{formatEur(total)}</td>;
 }
 
-function PrintPriceTotals({ order, items }: { order: CustomerOrder; items: CustomerOrderItem[] }) {
+function PrintPriceTotals({
+  order,
+  items,
+  showEstimated,
+  showActual,
+}: {
+  order: CustomerOrder;
+  items: CustomerOrderItem[];
+  showEstimated: boolean;
+  showActual: boolean;
+}) {
   const t = useTranslations('sales');
   const costResults = useAssemblyCosts(items.map((i) => i.assemblyId));
   const allBatchIds = items.flatMap((i) => i.quantitySummary?.batches.map((b) => b.id) ?? []);
@@ -94,9 +104,17 @@ function PrintPriceTotals({ order, items }: { order: CustomerOrder; items: Custo
 
   return (
     <p className="mt-2 text-sm">
-      {t('estimatedTotal')}: {hasEstimate ? formatEur(estimatedTotal) : t('pricePending')}
-      {' · '}
-      {t('actualTotal')}: {hasActual ? formatEur(actualTotal) : t('pricePending')}
+      {showEstimated && (
+        <>
+          {t('estimatedTotal')}: {hasEstimate ? formatEur(estimatedTotal) : t('pricePending')}
+        </>
+      )}
+      {showEstimated && showActual && ' · '}
+      {showActual && (
+        <>
+          {t('actualTotal')}: {hasActual ? formatEur(actualTotal) : t('pricePending')}
+        </>
+      )}
     </p>
   );
 }
@@ -293,7 +311,12 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
           </tbody>
         </table>
         {(printOptions.isColumnVisible('estimatedPrice') || printOptions.isColumnVisible('actualPrice')) && order.items && order.items.length > 0 && (
-          <PrintPriceTotals order={order} items={order.items} />
+          <PrintPriceTotals
+            order={order}
+            items={order.items}
+            showEstimated={printOptions.isColumnVisible('estimatedPrice')}
+            showActual={printOptions.isColumnVisible('actualPrice')}
+          />
         )}
         {printOptions.isColumnVisible('composition') && order.items && order.items.length > 0 && (
           <div className="mt-6">
