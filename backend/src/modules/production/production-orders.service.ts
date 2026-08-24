@@ -241,6 +241,38 @@ export class ProductionOrdersService {
     return cancelled;
   }
 
+  /**
+   * Permanent hard delete — admin-only (`production-orders:delete`), and
+   * only for an order that never actually started: `start()` (below)
+   * physically decrements stock, generates serialized FinishedGood units,
+   * and pays out PayrollEntry piecework rows — none of that is undone by
+   * removing this row, and FinishedGood.productionOrder is a Restrict FK
+   * (schema.prisma), so the DB would reject the delete anyway once any
+   * exist. This pre-check exists to give a clear, coded error instead of a
+   * raw FK-violation. PLANNED and CANCELLED are both safe: neither status
+   * can have any FinishedGood/PayrollEntry rows (both only ever created
+   * inside `start()`), and every other child (stage plans, pick-list items,
+   * stage events, worker assignments) cascades at the DB level.
+   */
+  async remove(user: RequestUser, id: string) {
+    const order = await this.findOne(user, id);
+    if (order.status !== 'PLANNED' && order.status !== 'CANCELLED') {
+      throw new CodedConflictException(
+        'PRODUCTION_ORDER_DELETE_ALREADY_STARTED',
+        'Cannot delete: this production order has already started — it has consumed stock, generated finished-good units, and/or paid out payroll. Only a planned or already-cancelled order can be deleted.',
+      );
+    }
+    await this.prisma.tenant.productionOrder.delete({ where: { id } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_order.deleted',
+      entityType: 'ProductionOrder',
+      entityId: id,
+      before: order,
+    });
+  }
+
   // ============================================================
   // Start — the core lifecycle transition
   // ============================================================

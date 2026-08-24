@@ -24,7 +24,7 @@ describe('ProductionOrdersService', () => {
       tenant: {
         assembly: { findUnique: jest.fn() },
         assemblyVersion: { findFirst: jest.fn(), findUnique: jest.fn() },
-        productionOrder: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+        productionOrder: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn(), delete: jest.fn() },
         productionOrderWorker: { createMany: jest.fn(), deleteMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         product: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
         warehouseStock: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -101,6 +101,32 @@ describe('ProductionOrdersService', () => {
       prisma.tenant.productionOrder.update.mockResolvedValue({ ...baseOrder, status: 'CANCELLED' });
       const result = await service.cancel(user, 'po1');
       expect(result.status).toBe('CANCELLED');
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes a PLANNED order', async () => {
+      await service.remove(user, 'po1');
+      expect(prisma.tenant.productionOrder.delete).toHaveBeenCalledWith({ where: { id: 'po1' } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'production_order.deleted', entityId: 'po1' }));
+    });
+
+    it('deletes a CANCELLED order', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'CANCELLED' });
+      await service.remove(user, 'po1');
+      expect(prisma.tenant.productionOrder.delete).toHaveBeenCalledWith({ where: { id: 'po1' } });
+    });
+
+    it('blocks deleting an IN_PROGRESS order, without touching the row', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'IN_PROGRESS' });
+      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
+    });
+
+    it('blocks deleting a COMPLETED order, without touching the row', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'COMPLETED' });
+      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
     });
   });
 

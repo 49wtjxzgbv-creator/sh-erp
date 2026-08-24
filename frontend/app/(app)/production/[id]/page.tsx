@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
@@ -9,6 +9,7 @@ import {
   useProductionStages,
   useSetProductionOrderWorkers,
   useCancelProductionOrder,
+  useDeleteProductionOrder,
   useStartProductionOrder,
   useAdvanceProductionOrderStage,
   useProductionOrderStagePlan,
@@ -185,6 +186,7 @@ function StagePlanEditor({ productionOrderId, stages }: { productionOrderId: str
 
 export default function ProductionOrderDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const t = useTranslations('production');
   const tb = useTranslations('bom');
   const tc = useTranslations('common');
@@ -198,9 +200,11 @@ export default function ProductionOrderDetailPage() {
 
   const setWorkers = useSetProductionOrderWorkers(params.id);
   const cancelOrder = useCancelProductionOrder(params.id);
+  const deleteOrder = useDeleteProductionOrder();
   const startOrder = useStartProductionOrder(params.id);
   const advanceStage = useAdvanceProductionOrderStage(params.id);
   const canManage = useHasPermission('production-orders:manage');
+  const canDelete = useHasPermission('production-orders:delete');
 
   const [workerRows, setWorkerRows] = useState<EditableWorkerRow[]>([]);
   const workersHydrated = useRef(false);
@@ -210,6 +214,7 @@ export default function ProductionOrderDetailPage() {
   const [startShortages, setStartShortages] = useState<ProductionShortageLine[]>([]);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (order?.workers && !workersHydrated.current) {
@@ -243,6 +248,16 @@ export default function ProductionOrderDetailPage() {
       await cancelOrder.mutateAsync();
     } catch (err) {
       setCancelError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleDelete() {
+    setDeleteError(null);
+    try {
+      await deleteOrder.mutateAsync(params.id);
+      router.replace('/production');
+    } catch (err) {
+      setDeleteError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -307,9 +322,33 @@ export default function ProductionOrderDetailPage() {
             </DialogContent>
           </Dialog>
           )}
+          {(order.status === 'PLANNED' || order.status === 'CANCELLED') && canDelete && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                {t('deleteOrderPermanently')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteOrderConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteOrderConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteOrder.isPending} onClick={handleDelete}>
+                  {tc('confirm')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          )}
         </div>
       </div>
       {cancelError && <p className="text-sm text-destructive">{cancelError}</p>}
+      {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-4">

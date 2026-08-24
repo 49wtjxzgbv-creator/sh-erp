@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -53,6 +53,14 @@ export class ProductionOrdersController {
   @ApiOperation({ summary: 'Cancel a PLANNED production order.' })
   async cancel(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.productionOrdersService.cancel(user, id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('production-orders:delete')
+  @ApiOperation({ summary: 'Permanently delete a production order — only PLANNED or CANCELLED (never one that has started, since start() already consumed stock/paid payroll/generated finished goods).' })
+  async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    await this.productionOrdersService.remove(user, id);
+    return { ok: true };
   }
 
   @Post(':id/start')

@@ -146,6 +146,10 @@ export function setProductionOrderWorkers(id: string, workers: ProductionOrderWo
 export function cancelProductionOrder(id: string): Promise<ProductionOrder> {
   return apiClient.post<ProductionOrder>(`production-orders/${id}/cancel`);
 }
+/** Permanent hard delete, admin-only — PLANNED or CANCELLED only (409 otherwise, since start() already consumed stock/paid payroll/generated finished goods). */
+export function deleteProductionOrder(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`production-orders/${id}`);
+}
 
 export interface StartProductionOrderInput {
   warehouseId?: string;

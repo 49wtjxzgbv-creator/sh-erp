@@ -59,6 +59,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   // Production
   { key: 'production-orders:read', resource: 'production-orders', action: 'read', description: 'View production orders.' },
   { key: 'production-orders:manage', resource: 'production-orders', action: 'manage', description: 'Plan, start, advance, and complete production orders.' },
+  { key: 'production-orders:delete', resource: 'production-orders', action: 'delete', description: 'Permanently delete a production order (planned or cancelled only) — admin-only, not granted to any default role besides Admin.' },
   { key: 'production-stages:manage', resource: 'production-stages', action: 'manage', description: 'Configure the company\'s production stage list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'finished-goods:read', resource: 'finished-goods', action: 'read', description: 'View finished goods / serials.' },
 

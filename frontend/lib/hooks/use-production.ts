@@ -7,6 +7,7 @@ import {
   createProductionOrder,
   setProductionOrderWorkers,
   cancelProductionOrder,
+  deleteProductionOrder,
   startProductionOrder,
   advanceProductionOrderStage,
   listProductionStages,
@@ -99,6 +100,14 @@ export function useCancelProductionOrder(id: string) {
       qc.invalidateQueries({ queryKey: ['production-orders'] });
       qc.invalidateQueries({ queryKey: orderKey(id) });
     },
+  });
+}
+
+export function useDeleteProductionOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProductionOrder(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['production-orders'] }),
   });
 }
 
