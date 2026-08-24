@@ -31,7 +31,7 @@ export function AppShellOrPrintPreview({ children }: { children: ReactNode }) {
     return (
       <main className="print-preview-mode min-h-screen bg-white text-black">
         <PrintPreviewToolbar />
-        <div className="overflow-x-auto p-6">{children}</div>
+        <div className="print-preview-scroll-area overflow-auto p-6">{children}</div>
       </main>
     );
   }
@@ -77,7 +77,7 @@ function PrintPreviewToolbar() {
   }
 
   return (
-    <div className="no-print sticky top-0 z-50 flex justify-end border-b border-gray-200 bg-gray-100 p-2">
+    <div className="no-print print-preview-toolbar sticky top-0 z-50 flex justify-end border-b border-gray-200 bg-gray-100 p-2">
       <Button type="button" variant="outline" size="sm" onClick={goBack}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         {t('backToAppAction')}
