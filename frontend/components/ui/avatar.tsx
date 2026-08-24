@@ -11,6 +11,14 @@ import { PhotoLightbox } from './photo-lightbox';
  * circular (`rounded-full`): these represent physical items, not people,
  * so a product-photo convention reads better than a user-avatar one.
  */
+/**
+ * True inside `<PrintArea>` (components/domain/print/print-area.tsx). Lives
+ * here, not in print-area.tsx, so this stays a one-way ui/ -> domain/
+ * dependency (print-area.tsx imports this and provides it; Avatar just
+ * reads it) instead of a ui/ component reaching into domain/.
+ */
+export const PrintAreaContext = React.createContext(false);
+
 const avatarVariants = cva('relative flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted', {
   variants: {
     size: {
@@ -43,6 +51,7 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLDivElement>, Varia
 function Avatar({ src, alt = '', fallbackIcon: FallbackIcon = ImageOff, size, className, zoomable = true, ...props }: AvatarProps) {
   const [failed, setFailed] = React.useState(false);
   const [zoomed, setZoomed] = React.useState(false);
+  const insidePrintArea = React.useContext(PrintAreaContext);
   const showImage = Boolean(src) && !failed;
   const canZoom = showImage && zoomable;
 
@@ -62,10 +71,19 @@ function Avatar({ src, alt = '', fallbackIcon: FallbackIcon = ImageOff, size, cl
       {showImage ? (
         // loading="lazy": a list page can show dozens of these at once — deferring
         // off-screen thumbnails until they're scrolled into view avoids firing every
-        // presigned-URL fetch simultaneously. Safe for print too — Chromium/Firefox
-        // force-load any still-deferred lazy images before printing/print-preview.
+        // presigned-URL fetch simultaneously. NOT safe inside <PrintArea> though: that
+        // whole subtree is `display:none` until the instant printing starts (see
+        // print-area.tsx), so a lazy <img> in there has never even been laid out, let
+        // alone force-loaded — confirmed regression (2026-08-24), print output missing
+        // every product/assembly photo. PrintAreaContext flips this to eager there.
         // eslint-disable-next-line @next/next/no-img-element -- R2 presigned URLs are short-lived and cross-origin; next/image's remote-pattern allowlist doesn't fit a per-request signed URL.
-        <img src={src as string} alt={alt} loading="lazy" className="h-full w-full object-contain" onError={() => setFailed(true)} />
+        <img
+          src={src as string}
+          alt={alt}
+          loading={insidePrintArea ? 'eager' : 'lazy'}
+          className="h-full w-full object-contain"
+          onError={() => setFailed(true)}
+        />
       ) : (
         <FallbackIcon className="h-1/3 w-1/3 text-muted-foreground" aria-hidden="true" />
       )}

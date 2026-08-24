@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Printer, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Avatar } from '@/components/ui/avatar';
+import { Avatar, PrintAreaContext } from '@/components/ui/avatar';
 import { PdfBranding } from './pdf-branding';
 
 /**
@@ -38,7 +38,9 @@ function PrintAreaInner({ children }: { children: ReactNode }) {
   const isPreview = usePrintPreviewMode();
   return (
     <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>
-      <PdfBranding>{children}</PdfBranding>
+      <PrintAreaContext.Provider value={true}>
+        <PdfBranding>{children}</PdfBranding>
+      </PrintAreaContext.Provider>
     </div>
   );
 }
@@ -48,7 +50,9 @@ export function PrintArea({ children }: { children: ReactNode }) {
     <Suspense
       fallback={
         <div className="print-area hidden print:block">
-          <PdfBranding>{children}</PdfBranding>
+          <PrintAreaContext.Provider value={true}>
+            <PdfBranding>{children}</PdfBranding>
+          </PrintAreaContext.Provider>
         </div>
       }
     >
