@@ -121,12 +121,17 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
   const columns: PrintColumnOption[] = [
     { id: 'component', label: t('component') },
     { id: 'componentType', label: t('componentType') },
-    { id: 'qtyPerUnit', label: qty === 1 ? t('qtyPerUnit') : t('qtyNeeded') },
+    { id: 'qtyPerUnit', label: t('qtyPerUnit') },
     { id: 'cost', label: t('cost') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
   if (!assembly || !cost) return null;
+
+  // Only worth a second "needed for the whole batch" column when qty !== 1
+  // — at qty === 1 (the plain BOM-reference case, e.g. bom/[id]/components)
+  // it would just repeat the same numbers as qtyPerUnit.
+  const showQtyNeededColumn = qty !== 1;
 
   function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
     if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
@@ -161,7 +166,8 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
               {printOptions.isColumnVisible('component') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('component') && <th>{t('component')}</th>}
               {printOptions.isColumnVisible('componentType') && <th>{t('componentType')}</th>}
-              {printOptions.isColumnVisible('qtyPerUnit') && <th>{qty === 1 ? t('qtyPerUnit') : t('qtyNeeded')}</th>}
+              {printOptions.isColumnVisible('qtyPerUnit') && <th>{t('qtyPerUnit')}</th>}
+              {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <th>{t('qtyNeeded')}</th>}
               {printOptions.isColumnVisible('cost') && <th>{t('cost')}</th>}
             </tr>
           </thead>
@@ -193,21 +199,24 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                   </td>
                 )}
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
-                {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit * qty}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
+                {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{line.qtyPerUnit * qty}</td>}
                 {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost * qty)}</td>}
               </tr>
             ))}
-            {ownCostLines.map((line, i) => (
-              <tr key={`own-${line.key}`}>
-                <td>{cost.breakdown.length + i + 1}</td>
-                {printOptions.includePhotos && <td />}
-                {printOptions.isColumnVisible('component') && <td />}
-                {printOptions.isColumnVisible('component') && <td>{line.label}</td>}
-                {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
-                {printOptions.isColumnVisible('qtyPerUnit') && <td>{qty}</td>}
-                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.value * qty)}</td>}
-              </tr>
-            ))}
+            {printOptions.isColumnVisible('cost') &&
+              ownCostLines.map((line, i) => (
+                <tr key={`own-${line.key}`}>
+                  <td>{cost.breakdown.length + i + 1}</td>
+                  {printOptions.includePhotos && <td />}
+                  {printOptions.isColumnVisible('component') && <td />}
+                  {printOptions.isColumnVisible('component') && <td>{line.label}</td>}
+                  {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
+                  {printOptions.isColumnVisible('qtyPerUnit') && <td>—</td>}
+                  {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{qty}</td>}
+                  <td>{formatEur(line.value * qty)}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
         {printOptions.isColumnVisible('cost') && (
