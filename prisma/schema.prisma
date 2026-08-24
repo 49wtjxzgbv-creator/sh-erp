@@ -1574,7 +1574,7 @@ model ProductionOrderWorker {
 model FinishedGood {
   id                          String             @id @default(uuid()) @db.Uuid
   companyId                   String             @db.Uuid
-  serialNumber                String             @unique // "SN-000001" format preserved
+  serialNumber                String             // "SN-000001" format preserved — unique per company, see @@unique below (2026-08-25: was global-unique, a real bug — see migration header)
   assemblyId                  String             @db.Uuid
   productionOrderId           String             @db.Uuid
   status                      FinishedGoodStatus @default(IN_STOCK)
@@ -1597,6 +1597,7 @@ model FinishedGood {
 
   @@unique([companyId, id]) // composite-FK target for QcCheck.finishedGood/ShipmentItem.finishedGood
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
+  @@unique([companyId, serialNumber]) // company-scoped, not global (2026-08-25 fix — see migration header)
   @@index([companyId, status])
   @@index([companyId, assemblyId])
   @@index([customerOrderId])
