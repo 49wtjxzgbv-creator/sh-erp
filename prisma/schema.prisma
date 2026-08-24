@@ -1518,6 +1518,7 @@ model ProductionOrderPickListItem {
   companyId               String   @db.Uuid
   productionOrderId       String   @db.Uuid
   productId               String?  @db.Uuid // null for a "finished sub-assembly consumed" line
+  subAssemblyId           String?  @db.Uuid // set only for a "finished sub-assembly consumed" line (productId null); lets the pick-list print resolve its photo, same as productId does for a raw-material line
   description             String // article/name snapshot at time of consumption
   qty                     Decimal  @db.Decimal(14, 3)
   unitPriceEur            Decimal? @db.Decimal(14, 2)

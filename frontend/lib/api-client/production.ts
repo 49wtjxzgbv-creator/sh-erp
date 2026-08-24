@@ -35,6 +35,8 @@ export interface ProductionOrderPickListItem {
   companyId: string;
   productionOrderId: string;
   productId: string | null;
+  /** Set only for a "finished sub-assembly consumed" line (productId null) — added 2026-08-25 so the pick-list print can resolve its photo, same as productId does for a raw-material line. Historical rows created before this predate the column and are simply null. */
+  subAssemblyId: string | null;
   description: string;
   qty: DecimalString;
   unitPriceEur: DecimalString | null;

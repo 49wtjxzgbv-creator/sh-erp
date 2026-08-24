@@ -1,10 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { Avatar } from '@/components/ui/avatar';
 import type { ProductionOrderPickListItem } from '@/lib/api-client/production';
 import type { DecimalString } from '@/lib/api-client/decimal';
 
@@ -21,20 +24,37 @@ export interface PickListPrintProps {
  * production order detail page, in a dedicated print layout. This is a
  * deliberate scope decision, not an oversight: the legacy warehouse
  * pick/issue sheet ("Аркуш видачі зі складу") had a richer per-line shape —
- * article, internal code, bin/cell location, and consumed serial numbers for
- * sub-assembly components — none of which exist on this backend's
- * `ProductionOrderPickListItem` (it only carries a free-text `description`,
- * see `lib/api-client/production.ts`). Reproducing the legacy sheet exactly
- * would need a new backend field/endpoint, out of scope for this pass; this
- * prints exactly what the order detail page already shows on screen, adding
- * no new data exposure, with the assembly's real name resolved (rather than
- * the raw id shown on screen) since a printed document handed to a customer
- * or shop floor worker showing a UUID would be a real regression.
+ * article, internal code, bin/cell location — none of which exist on this
+ * backend's `ProductionOrderPickListItem`. Reproducing the legacy sheet
+ * exactly would need new backend fields/endpoints, out of scope for this
+ * pass; this prints exactly what the order detail page already shows on
+ * screen, adding no new data exposure, with the assembly's real name
+ * resolved (rather than the raw id shown on screen) since a printed
+ * document handed to a customer or shop floor worker showing a UUID would
+ * be a real regression.
+ *
+ * Photos (added 2026-08-25, real gap found via user report): each line
+ * already carries productId (raw material) or subAssemblyId (a consumed
+ * sub-assembly) — same batched useFilesForEntities pattern as
+ * assembly-spec-print.tsx, one request per entity type instead of per row.
+ * Rows from before subAssemblyId existed (both ids null) just show no photo,
+ * same as a line whose product/assembly never had one uploaded.
  */
 export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems }: PickListPrintProps) {
   const t = useTranslations('production');
   const tp = useTranslations('print');
   const { data: assembly } = useAssembly(assemblyId);
+
+  const productIds = useMemo(() => pickListItems.filter((l) => l.productId).map((l) => l.productId as string), [pickListItems]);
+  const subAssemblyIds = useMemo(() => pickListItems.filter((l) => l.subAssemblyId).map((l) => l.subAssemblyId as string), [pickListItems]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', subAssemblyIds, 'ASSEMBLY_PHOTO');
+
+  function lineDownloadUrl(line: ProductionOrderPickListItem): string | undefined {
+    if (line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
+    if (line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
+    return undefined;
+  }
 
   const columns: PrintColumnOption[] = [
     { id: 'description', label: t('description') },
@@ -42,7 +62,7 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
     { id: 'unitPrice', label: t('unitPrice') },
     { id: 'lineTotal', label: t('lineTotal') },
   ];
-  const printOptions = usePrintOptions({ columns });
+  const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
   return (
     <>
@@ -51,6 +71,7 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
           open={printOptions.open}
           onOpenChange={printOptions.setOpen}
           columns={columns}
+          hasPhotos
           onConfirm={printOptions.confirm}
           triggerLabel={tp('printPickList')}
         />
@@ -64,6 +85,7 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
         <table>
           <thead>
             <tr>
+              {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
               {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
               {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
               {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
@@ -73,6 +95,11 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
           <tbody>
             {pickListItems.map((line) => (
               <tr key={line.id}>
+                {printOptions.includePhotos && (
+                  <td>
+                    <Avatar src={lineDownloadUrl(line)} size="lg" />
+                  </td>
+                )}
                 {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
                 {printOptions.isColumnVisible('qty') && <td>{line.qty}</td>}
                 {printOptions.isColumnVisible('unitPrice') && <td>{line.unitPriceEur != null ? formatEur(Number(line.unitPriceEur)) : '—'}</td>}

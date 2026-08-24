@@ -389,6 +389,7 @@ export class ProductionOrdersService {
     let materialsGermanCost = 0;
     const pickListRows: Array<{
       productId: string | null;
+      subAssemblyId: string | null;
       description: string;
       qty: number;
       unitPriceEur: number | null;
@@ -433,6 +434,7 @@ export class ProductionOrdersService {
       materialsGermanCost += unitPrice * needed;
       pickListRows.push({
         productId,
+        subAssemblyId: null,
         description: `${product.article} — ${product.name}`,
         qty: needed,
         unitPriceEur: unitPrice,
@@ -476,6 +478,7 @@ export class ProductionOrdersService {
       materialsGermanCost += lineGermanCost;
       pickListRows.push({
         productId: null,
+        subAssemblyId,
         description: `[assembly] ${subAssembly?.name ?? subAssemblyId}`,
         qty: needed,
         unitPriceEur: takeCount > 0 ? lineLocalCost / takeCount : null,
