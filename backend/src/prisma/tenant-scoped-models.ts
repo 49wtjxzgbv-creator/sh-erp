@@ -65,4 +65,19 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'CustomerOrderDocument',
   'CustomerOrderPayment',
   'CustomerOrderExpense',
+  'WorkTask',
+  'WorkTaskItem',
+  'ProductionExecution',
+  'ProductionExecutionAllocation',
+  'Team',
+  'TeamMember',
+  'PayrollPeriod',
+  // Pre-existing, unrelated to the production-labor module — surfaced by
+  // the new reverse-direction check below while investigating the same bug
+  // class live in production (2026-08-25): actively used via
+  // `prisma.tenant.supplierConnection`/`supplierInviteToken` in
+  // suppliers.service.ts/delivery-schedules.service.ts, so every create
+  // against them was failing in production exactly like Team's was.
+  'SupplierConnection',
+  'SupplierInviteToken',
 ]);

@@ -25,4 +25,23 @@ describe('TENANT_SCOPED_MODELS', () => {
     const fieldNames = model!.fields.map((f) => f.name);
     expect(fieldNames).toContain('companyId');
   });
+
+  /**
+   * The reverse direction of the check above — real production incident
+   * (2026-08-24): 7 new models (production-labor module) were added to
+   * schema.prisma with a `companyId` column but never added to this list,
+   * so `tenantScopingExtension` never stamped `companyId` on their writes
+   * at all. Every create against them failed outright in production
+   * ("Argument `company` is missing") — caught only by live manual testing
+   * after deploy, not by this test suite, because it only ever checked
+   * "everything IN the list is valid," never "everything that SHOULD be in
+   * the list actually is." This is that missing direction, permanently.
+   */
+  it('every schema model with a companyId column is present in TENANT_SCOPED_MODELS', () => {
+    const missing = Prisma.dmmf.datamodel.models
+      .filter((m) => m.fields.some((f) => f.name === 'companyId'))
+      .map((m) => m.name)
+      .filter((name) => !TENANT_SCOPED_MODELS.has(name));
+    expect(missing).toEqual([]);
+  });
 });
