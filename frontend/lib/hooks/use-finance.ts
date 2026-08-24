@@ -10,6 +10,7 @@ import {
   updateFinanceDocument,
   deleteFinanceDocument,
   addFinancePayment,
+  updateFinancePayment,
   deleteFinancePayment,
   listPurchaseOrderExpenses,
   createPurchaseOrderExpense,
@@ -23,6 +24,7 @@ import {
   updateFinanceCustomerOrderDocument,
   deleteFinanceCustomerOrderDocument,
   addFinanceCustomerOrderPayment,
+  updateFinanceCustomerOrderPayment,
   deleteFinanceCustomerOrderPayment,
   listCustomerOrderExpenses,
   createCustomerOrderExpense,
@@ -32,6 +34,7 @@ import {
   type CreatePurchaseOrderDocumentInput,
   type UpdatePurchaseOrderDocumentInput,
   type CreatePurchaseOrderPaymentInput,
+  type UpdatePurchaseOrderPaymentInput,
   type CreatePurchaseOrderExpenseInput,
   type UpdatePurchaseOrderExpenseInput,
   type QueryFinanceCustomerOrdersInput,
@@ -114,6 +117,17 @@ export function useAddFinancePayment(purchaseOrderId: string, documentId: string
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dto: CreatePurchaseOrderPaymentInput) => addFinancePayment(documentId, dto),
+    onSuccess: () => {
+      invalidatePurchaseOrderFinance(qc, purchaseOrderId);
+      qc.invalidateQueries({ queryKey: financeDocumentKey(documentId) });
+    },
+  });
+}
+
+export function useUpdateFinancePayment(purchaseOrderId: string, documentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdatePurchaseOrderPaymentInput }) => updateFinancePayment(id, dto),
     onSuccess: () => {
       invalidatePurchaseOrderFinance(qc, purchaseOrderId);
       qc.invalidateQueries({ queryKey: financeDocumentKey(documentId) });
@@ -243,6 +257,17 @@ export function useAddCustomerOrderPayment(customerOrderId: string, documentId: 
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dto: CreatePurchaseOrderPaymentInput) => addFinanceCustomerOrderPayment(documentId, dto),
+    onSuccess: () => {
+      invalidateCustomerOrderFinance(qc, customerOrderId);
+      qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentKey(documentId) });
+    },
+  });
+}
+
+export function useUpdateCustomerOrderPayment(customerOrderId: string, documentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdatePurchaseOrderPaymentInput }) => updateFinanceCustomerOrderPayment(id, dto),
     onSuccess: () => {
       invalidateCustomerOrderFinance(qc, customerOrderId);
       qc.invalidateQueries({ queryKey: financeCustomerOrderDocumentKey(documentId) });

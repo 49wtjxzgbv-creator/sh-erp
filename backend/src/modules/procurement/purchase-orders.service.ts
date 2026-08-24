@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -97,9 +97,26 @@ export class PurchaseOrdersService {
    * physical stock adjustment stays recorded even though the order it came
    * from no longer exists, same as `AuditEvent` never being retroactively
    * altered.
+   *
+   * Blocked (`PURCHASE_ORDER_HAS_FINANCE_DATA`) once any PurchaseOrderDocument
+   * or PurchaseOrderExpense exists — both cascade-delete at the DB level
+   * (documents also cascade their own Payments), which would otherwise
+   * silently erase recorded finance history with no warning. Caller must
+   * delete those first (same guard pattern as warehouses.service.ts and
+   * company-units.service.ts).
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
+    const [documentCount, expenseCount] = await Promise.all([
+      this.prisma.tenant.purchaseOrderDocument.count({ where: { purchaseOrderId: id } }),
+      this.prisma.tenant.purchaseOrderExpense.count({ where: { purchaseOrderId: id } }),
+    ]);
+    if (documentCount > 0 || expenseCount > 0) {
+      throw new CodedConflictException(
+        'PURCHASE_ORDER_HAS_FINANCE_DATA',
+        `Cannot delete: this purchase order has ${documentCount} finance document(s) and ${expenseCount} expense(s). Delete them first.`,
+      );
+    }
     await this.prisma.tenant.purchaseOrder.delete({ where: { id } });
     await this.auditService.record({
       companyId: user.companyId,

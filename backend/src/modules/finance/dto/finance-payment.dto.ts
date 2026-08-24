@@ -31,3 +31,35 @@ export class CreatePurchaseOrderPaymentDto {
   @IsString()
   note?: string;
 }
+
+export class UpdatePurchaseOrderPaymentDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  amount?: number;
+
+  @ApiPropertyOptional({ description: 'Defaults to the parent document\'s currency if omitted. Recorded as-is when it differs — no conversion, and the remaining-balance check is skipped in that case (see FinanceService#updatePayment).' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z]{3}$/, { message: 'currency must be a 3-letter uppercase code, e.g. EUR' })
+  currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))
+  @Type(() => Date)
+  @IsDate()
+  paidAt?: Date;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  method?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}

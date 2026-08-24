@@ -5,7 +5,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreatePurchaseOrderDocumentDto, QueryFinancePurchaseOrdersDto, UpdatePurchaseOrderDocumentDto } from './dto/finance-document.dto';
-import { CreatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
+import { CreatePurchaseOrderPaymentDto, UpdatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
 import { CreatePurchaseOrderExpenseDto, UpdatePurchaseOrderExpenseDto } from './dto/finance-expense.dto';
 import { CreateCustomerOrderDocumentDto, QueryFinanceCustomerOrdersDto, UpdateCustomerOrderDocumentDto } from './dto/finance-customer-order-document.dto';
 import { CreateCustomerOrderExpenseDto, UpdateCustomerOrderExpenseDto } from './dto/finance-customer-order-expense.dto';
@@ -451,6 +451,51 @@ export class FinanceService {
     return { ...payment, currencyMismatch: currency !== document.currency };
   }
 
+  /** Same remaining-balance rule as addPayment, but the payment being edited is excluded from its own "already paid" sum. */
+  async updatePayment(user: RequestUser, paymentId: string, dto: UpdatePurchaseOrderPaymentDto) {
+    const existing = await this.prisma.tenant.purchaseOrderPayment.findUnique({ where: { id: paymentId } });
+    if (!existing) throw new CodedNotFoundException('FINANCE_PAYMENT_NOT_FOUND', 'Payment not found.');
+    const document = await this.getDocumentWithPaymentsOrThrow(existing.documentId);
+
+    const amount = dto.amount ?? Number(existing.amount);
+    const currency = dto.currency ?? existing.currency;
+    if (document.amount !== null && currency === document.currency) {
+      const alreadyPaid = document.payments
+        .filter((p) => p.id !== paymentId && p.currency === document.currency)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+      const remaining = Number(document.amount) - alreadyPaid;
+      if (amount > remaining + 0.005) {
+        throw new CodedBadRequestException(
+          'FINANCE_PAYMENT_EXCEEDS_REMAINING',
+          `Payment of ${amount} ${currency} exceeds the remaining balance of ${round2(Math.max(remaining, 0))} ${currency}.`,
+        );
+      }
+    }
+
+    const payment = await this.prisma.tenant.purchaseOrderPayment.update({
+      where: { id: paymentId },
+      data: {
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.paidAt !== undefined ? { paidAt: dto.paidAt } : {}),
+        ...(dto.method !== undefined ? { method: dto.method } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_payment.updated',
+      entityType: 'PurchaseOrderPayment',
+      entityId: paymentId,
+      before: existing,
+      after: payment,
+    });
+
+    return { ...payment, currencyMismatch: currency !== document.currency };
+  }
+
   async deletePayment(user: RequestUser, paymentId: string) {
     const payment = await this.prisma.tenant.purchaseOrderPayment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new CodedNotFoundException('FINANCE_PAYMENT_NOT_FOUND', 'Payment not found.');
@@ -855,6 +900,51 @@ export class FinanceService {
       entityId: payment.id,
       after: payment,
       metadata: { documentId },
+    });
+
+    return { ...payment, currencyMismatch: currency !== document.currency };
+  }
+
+  /** Same remaining-balance rule as addCustomerOrderPayment, but the payment being edited is excluded from its own "already paid" sum. */
+  async updateCustomerOrderPayment(user: RequestUser, paymentId: string, dto: UpdatePurchaseOrderPaymentDto) {
+    const existing = await this.prisma.tenant.customerOrderPayment.findUnique({ where: { id: paymentId } });
+    if (!existing) throw new CodedNotFoundException('FINANCE_PAYMENT_NOT_FOUND', 'Payment not found.');
+    const document = await this.getCustomerOrderDocumentWithPaymentsOrThrow(existing.documentId);
+
+    const amount = dto.amount ?? Number(existing.amount);
+    const currency = dto.currency ?? existing.currency;
+    if (document.amount !== null && currency === document.currency) {
+      const alreadyPaid = document.payments
+        .filter((p) => p.id !== paymentId && p.currency === document.currency)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+      const remaining = Number(document.amount) - alreadyPaid;
+      if (amount > remaining + 0.005) {
+        throw new CodedBadRequestException(
+          'FINANCE_PAYMENT_EXCEEDS_REMAINING',
+          `Payment of ${amount} ${currency} exceeds the remaining balance of ${round2(Math.max(remaining, 0))} ${currency}.`,
+        );
+      }
+    }
+
+    const payment = await this.prisma.tenant.customerOrderPayment.update({
+      where: { id: paymentId },
+      data: {
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.paidAt !== undefined ? { paidAt: dto.paidAt } : {}),
+        ...(dto.method !== undefined ? { method: dto.method } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finance_customer_order_payment.updated',
+      entityType: 'CustomerOrderPayment',
+      entityId: paymentId,
+      before: existing,
+      after: payment,
     });
 
     return { ...payment, currencyMismatch: currency !== document.currency };

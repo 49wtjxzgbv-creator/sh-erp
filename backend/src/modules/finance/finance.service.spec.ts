@@ -39,12 +39,12 @@ describe('FinanceService', () => {
       tenant: {
         purchaseOrder: { findUnique: jest.fn(), findMany: jest.fn() },
         purchaseOrderDocument: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        purchaseOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
+        purchaseOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         purchaseOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         supplier: { findUnique: jest.fn() },
         customerOrder: { findUnique: jest.fn(), findMany: jest.fn() },
         customerOrderDocument: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        customerOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
+        customerOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         customerOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
       },
     };
@@ -415,6 +415,38 @@ describe('FinanceService', () => {
     // direct code read of main.ts's `useGlobalPipes` registration.
   });
 
+  describe('updatePayment', () => {
+    it('excludes the payment being edited from its own remaining-balance check (raising its amount up to the full document total is allowed)', async () => {
+      prisma.tenant.purchaseOrderPayment.findUnique.mockResolvedValue({ id: 'pay1', documentId: 'doc1', amount: 2000, currency: 'EUR' });
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({
+        id: 'doc1', amount: 5000, currency: 'EUR', payments: [{ id: 'pay1', amount: 2000, currency: 'EUR' }, { id: 'pay2', amount: 3000, currency: 'EUR' }],
+      });
+      prisma.tenant.purchaseOrderPayment.update.mockResolvedValue({ id: 'pay1', amount: 2000, currency: 'EUR' });
+
+      const result = await service.updatePayment(user, 'pay1', { amount: 2000 } as any);
+      expect(prisma.tenant.purchaseOrderPayment.update).toHaveBeenCalledWith({
+        where: { id: 'pay1' },
+        data: expect.objectContaining({ amount: 2000 }),
+      });
+      expect(result.currencyMismatch).toBe(false);
+    });
+
+    it('rejects raising the amount past the remaining balance (excluding itself)', async () => {
+      prisma.tenant.purchaseOrderPayment.findUnique.mockResolvedValue({ id: 'pay1', documentId: 'doc1', amount: 2000, currency: 'EUR' });
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({
+        id: 'doc1', amount: 5000, currency: 'EUR', payments: [{ id: 'pay1', amount: 2000, currency: 'EUR' }, { id: 'pay2', amount: 3000, currency: 'EUR' }],
+      });
+
+      await expect(service.updatePayment(user, 'pay1', { amount: 2001 } as any)).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.purchaseOrderPayment.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the payment does not exist', async () => {
+      prisma.tenant.purchaseOrderPayment.findUnique.mockResolvedValue(null);
+      await expect(service.updatePayment(user, 'ghost', { amount: 10 } as any)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('listPurchaseOrdersWithSummary — derived PO-level payment status', () => {
     it('classifies UNPAID / PARTIAL / PAID from totalDocuments vs paid', async () => {
       prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
@@ -551,6 +583,38 @@ describe('FinanceService', () => {
     it('rejects a payment on a document with no amount', async () => {
       prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({ id: 'cod1', amount: null, currency: 'EUR', payments: [] });
       await expect(service.addCustomerOrderPayment(user, 'cod1', { amount: 10, paidAt: new Date() } as any)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateCustomerOrderPayment', () => {
+    it('excludes the payment being edited from its own remaining-balance check', async () => {
+      prisma.tenant.customerOrderPayment.findUnique.mockResolvedValue({ id: 'p1', documentId: 'cod1', amount: 60, currency: 'EUR' });
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({
+        id: 'cod1', amount: 100, currency: 'EUR', payments: [{ id: 'p1', amount: 60, currency: 'EUR' }],
+      });
+      prisma.tenant.customerOrderPayment.update.mockResolvedValue({ id: 'p1', amount: 100, currency: 'EUR' });
+
+      const result = await service.updateCustomerOrderPayment(user, 'p1', { amount: 100 } as any);
+      expect(prisma.tenant.customerOrderPayment.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: expect.objectContaining({ amount: 100 }),
+      });
+      expect(result.currencyMismatch).toBe(false);
+    });
+
+    it('rejects raising the amount past the remaining balance (excluding itself)', async () => {
+      prisma.tenant.customerOrderPayment.findUnique.mockResolvedValue({ id: 'p1', documentId: 'cod1', amount: 60, currency: 'EUR' });
+      prisma.tenant.customerOrderDocument.findUnique.mockResolvedValue({
+        id: 'cod1', amount: 100, currency: 'EUR', payments: [{ id: 'p1', amount: 60, currency: 'EUR' }],
+      });
+
+      await expect(service.updateCustomerOrderPayment(user, 'p1', { amount: 101 } as any)).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.customerOrderPayment.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the payment does not exist', async () => {
+      prisma.tenant.customerOrderPayment.findUnique.mockResolvedValue(null);
+      await expect(service.updateCustomerOrderPayment(user, 'ghost', { amount: 10 } as any)).rejects.toThrow(NotFoundException);
     });
   });
 

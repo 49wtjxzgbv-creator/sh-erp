@@ -139,6 +139,7 @@ function OrderPriceTotals({ order, items }: { order: CustomerOrder; items: Custo
       <div>
         <p className="text-xs text-muted-foreground">{t('actualTotal')}</p>
         <p className="text-sm font-medium">{hasActual ? formatEur(actualTotal) : t('pricePending')}</p>
+        <p className="text-[11px] text-muted-foreground">{t('actualTotalHint')}</p>
       </div>
     </div>
   );
@@ -294,6 +295,7 @@ function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) 
         <div>
           <p className="text-xs text-muted-foreground">{t('actualCost')}</p>
           <p className="text-sm font-medium">{formatMoney(summary.actualCost, summary.primaryCurrency)}</p>
+          <p className="text-[11px] text-muted-foreground">{t('actualCostHint')}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">{t('paid')}</p>

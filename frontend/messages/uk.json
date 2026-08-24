@@ -500,6 +500,8 @@
     "commentPlaceholder": "Напишіть коментар…",
     "postComment": "Надіслати",
     "newSupplier": "Новий постачальник",
+    "createSupplierAction": "+ Додати нового постачальника",
+    "createSupplierActionNamed": "+ Додати «{name}» як нового постачальника",
     "connectExistingSupplier": "Підключити існуючого постачальника",
     "connectExistingSupplierDescription": "Для постачальника, який уже самостійно зареєстрував акаунт порталу постачальника — вкажіть його email, і ми надішлемо запит на підключення.",
     "connectExistingSupplierSubmit": "Надіслати запит",
@@ -539,6 +541,7 @@
     "goodsCost": "Товари",
     "additionalExpenses": "Додаткові витрати",
     "actualCost": "Фактична вартість",
+    "actualCostHint": "Розрахунок з Фінансів: закупівлі + додаткові витрати (не залежить від виробничої собівартості)",
     "totalDocuments": "Загальна сума документів",
     "paid": "Оплачено",
     "unpaidPerDocuments": "Несплачено за документами",
@@ -609,7 +612,9 @@
     "linkedPurchaseOrders": "Закупівлі",
     "noLinkedPurchaseOrders": "До цього замовлення ще не прив'язано жодної закупівлі",
     "directDocuments": "Документи замовлення",
-    "directExpenses": "Витрати замовлення"
+    "directExpenses": "Витрати замовлення",
+    "expand": "Розгорнути",
+    "collapse": "Згорнути"
   },
   "sales": {
     "title": "Продажі",
@@ -636,6 +641,7 @@
     "actualPrice": "Фактична ціна",
     "estimatedTotal": "Оцінена вартість замовлення",
     "actualTotal": "Фактична вартість замовлення",
+    "actualTotalHint": "Виробнича собівартість (BOM) — фіксується в момент запуску партії у виробництво, далі не перераховується",
     "pricePending": "ще не визначено",
     "fullComposition": "Повний склад (з підвиробами)",
     "addLine": "Додати рядок",
@@ -1329,6 +1335,7 @@
     "PURCHASE_ORDER_NOT_FOUND": "Замовлення постачальнику не знайдено.",
     "PURCHASE_ORDER_ITEM_NOT_FOUND": "Позицію замовлення не знайдено.",
     "PURCHASE_ORDER_ALREADY_DELIVERED": "Це замовлення вже повністю доставлено.",
+    "PURCHASE_ORDER_HAS_FINANCE_DATA": "Не можна видалити: у цієї закупівлі вже є фінансові документи або витрати. Спочатку видаліть їх.",
     "PROCUREMENT_NO_DEFAULT_WAREHOUSE": "Не налаштовано основний склад і жоден не вказано — неможливо визначити, куди оприбуткувати товар.",
     "SUPPLIER_PORTAL_LINE_NOT_FOUND": "Ця позиція не належить цьому замовленню.",
     "DELIVERY_SCHEDULE_ALREADY_EXISTS": "Для цієї позиції вже існує графік поставки.",

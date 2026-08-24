@@ -160,8 +160,14 @@ export interface CreatePurchaseOrderPaymentInput {
   note?: string;
 }
 
+export type UpdatePurchaseOrderPaymentInput = Partial<CreatePurchaseOrderPaymentInput>;
+
 export function addFinancePayment(documentId: string, dto: CreatePurchaseOrderPaymentInput): Promise<PurchaseOrderPayment> {
   return apiClient.post<PurchaseOrderPayment>(`finance/documents/${documentId}/payments`, dto);
+}
+
+export function updateFinancePayment(id: string, dto: UpdatePurchaseOrderPaymentInput): Promise<PurchaseOrderPayment> {
+  return apiClient.patch<PurchaseOrderPayment>(`finance/payments/${id}`, dto);
 }
 
 export function deleteFinancePayment(id: string): Promise<{ ok: true }> {
@@ -188,7 +194,7 @@ export interface CreatePurchaseOrderExpenseInput {
   documentId?: string;
 }
 
-export type UpdatePurchaseOrderExpenseInput = Partial<CreatePurchaseOrderExpenseInput> & { documentId?: string | null };
+export type UpdatePurchaseOrderExpenseInput = Partial<Omit<CreatePurchaseOrderExpenseInput, 'documentId'>> & { documentId?: string | null };
 
 export function listPurchaseOrderExpenses(purchaseOrderId: string): Promise<PurchaseOrderExpense[]> {
   return apiClient.get<PurchaseOrderExpense[]>(`finance/purchase-orders/${purchaseOrderId}/expenses`);
@@ -304,6 +310,10 @@ export function deleteFinanceCustomerOrderDocument(id: string): Promise<{ ok: tr
 
 export function addFinanceCustomerOrderPayment(documentId: string, dto: CreatePurchaseOrderPaymentInput): Promise<PurchaseOrderPayment> {
   return apiClient.post<PurchaseOrderPayment>(`finance/customer-order-documents/${documentId}/payments`, dto);
+}
+
+export function updateFinanceCustomerOrderPayment(id: string, dto: UpdatePurchaseOrderPaymentInput): Promise<PurchaseOrderPayment> {
+  return apiClient.patch<PurchaseOrderPayment>(`finance/customer-order-payments/${id}`, dto);
 }
 
 export function deleteFinanceCustomerOrderPayment(id: string): Promise<{ ok: true }> {

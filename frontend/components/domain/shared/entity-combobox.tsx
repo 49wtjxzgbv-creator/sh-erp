@@ -47,6 +47,8 @@ export interface EntityComboboxProps<T> {
   leading?: React.ReactNode;
   inputClassName?: string;
   containerClassName?: string;
+  /** Optional row rendered below the item list (e.g. a "+ create new" action) — opt-in only, no effect on callers that omit it. */
+  footer?: React.ReactNode;
 }
 
 export function EntityCombobox<T>({
@@ -64,6 +66,7 @@ export function EntityCombobox<T>({
   leading,
   inputClassName,
   containerClassName,
+  footer,
 }: EntityComboboxProps<T>) {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -157,6 +160,7 @@ export function EntityCombobox<T>({
         ) : (
           <div className="px-3 py-2 text-sm text-muted-foreground">{emptyLabel}</div>
         )}
+        {footer}
       </PopoverContent>
     </Popover>
   );

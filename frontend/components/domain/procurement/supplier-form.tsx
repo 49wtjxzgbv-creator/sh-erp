@@ -38,9 +38,11 @@ export interface SupplierFormProps {
   submitError: string | null;
   /** View-only for a role with `suppliers:read` but not `suppliers:write`. */
   readOnly?: boolean;
+  /** Prefills the name field for a brand-new supplier (e.g. the text already typed into a picker's search box) — ignored when `supplier` is given. */
+  initialName?: string;
 }
 
-export function SupplierForm({ supplier, onSubmit, submitting, submitError, readOnly }: SupplierFormProps) {
+export function SupplierForm({ supplier, onSubmit, submitting, submitError, readOnly, initialName }: SupplierFormProps) {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
 
@@ -50,7 +52,7 @@ export function SupplierForm({ supplier, onSubmit, submitting, submitError, read
     formState: { errors },
   } = useForm<SupplierFormValues>({
     resolver: zodResolver(supplierSchema),
-    defaultValues: supplierToFormValues(supplier),
+    defaultValues: supplier ? supplierToFormValues(supplier) : { name: initialName ?? '' },
   });
 
   async function submit(values: SupplierFormValues) {

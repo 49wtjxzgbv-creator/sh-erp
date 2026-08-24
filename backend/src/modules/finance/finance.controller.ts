@@ -4,7 +4,7 @@ import { CurrentUser, RequestUser } from '../../common/decorators/current-user.d
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { FinanceService } from './finance.service';
 import { CreatePurchaseOrderDocumentDto, QueryFinancePurchaseOrdersDto, UpdatePurchaseOrderDocumentDto } from './dto/finance-document.dto';
-import { CreatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
+import { CreatePurchaseOrderPaymentDto, UpdatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
 import { CreatePurchaseOrderExpenseDto, UpdatePurchaseOrderExpenseDto } from './dto/finance-expense.dto';
 import { CreateCustomerOrderDocumentDto, QueryFinanceCustomerOrdersDto, UpdateCustomerOrderDocumentDto } from './dto/finance-customer-order-document.dto';
 import { CreateCustomerOrderExpenseDto, UpdateCustomerOrderExpenseDto } from './dto/finance-customer-order-expense.dto';
@@ -73,6 +73,13 @@ export class FinanceController {
   @ApiOperation({ summary: 'Record a payment against a document. Rejected if the document has no amount, or if the payment (same currency as the document) would exceed its remaining balance.' })
   async addPayment(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: CreatePurchaseOrderPaymentDto) {
     return this.financeService.addPayment(user, id, dto);
+  }
+
+  @Patch('payments/:id')
+  @RequirePermissions('finance:manage')
+  @ApiOperation({ summary: 'Edit a payment. Same remaining-balance rule as recording one, excluding the payment being edited from its own "already paid" sum.' })
+  async updatePayment(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdatePurchaseOrderPaymentDto) {
+    return this.financeService.updatePayment(user, id, dto);
   }
 
   @Delete('payments/:id')
@@ -182,6 +189,13 @@ export class FinanceController {
   @ApiOperation({ summary: 'Record a payment against a customer-order document. Rejected if the document has no amount, or if the payment (same currency as the document) would exceed its remaining balance.' })
   async addCustomerOrderPayment(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: CreatePurchaseOrderPaymentDto) {
     return this.financeService.addCustomerOrderPayment(user, id, dto);
+  }
+
+  @Patch('customer-order-payments/:id')
+  @RequirePermissions('finance:manage')
+  @ApiOperation({ summary: 'Edit a customer-order payment. Same remaining-balance rule as recording one, excluding the payment being edited from its own "already paid" sum.' })
+  async updateCustomerOrderPayment(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdatePurchaseOrderPaymentDto) {
+    return this.financeService.updateCustomerOrderPayment(user, id, dto);
   }
 
   @Delete('customer-order-payments/:id')

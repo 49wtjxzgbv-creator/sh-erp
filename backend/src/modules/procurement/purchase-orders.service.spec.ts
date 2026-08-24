@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PurchaseOrdersService } from './purchase-orders.service';
 
 describe('PurchaseOrdersService', () => {
@@ -20,8 +20,10 @@ describe('PurchaseOrdersService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn() },
+        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
         purchaseOrderItem: { update: jest.fn(), findMany: jest.fn() },
+        purchaseOrderDocument: { count: jest.fn().mockResolvedValue(0) },
+        purchaseOrderExpense: { count: jest.fn().mockResolvedValue(0) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
         orderMaterialRequirement: { findUnique: jest.fn() },
         // receive() writes actualPrice back onto Product.sellPriceEur when
@@ -185,6 +187,26 @@ describe('PurchaseOrdersService', () => {
       await expect(
         service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 1 }] }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes a purchase order with no recorded finance data', async () => {
+      await service.remove(user, 'po1');
+      expect(prisma.tenant.purchaseOrder.delete).toHaveBeenCalledWith({ where: { id: 'po1' } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order.deleted', entityId: 'po1' }));
+    });
+
+    it('blocks deletion when the order has finance documents, without touching the row', async () => {
+      prisma.tenant.purchaseOrderDocument.count.mockResolvedValue(2);
+      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.purchaseOrder.delete).not.toHaveBeenCalled();
+    });
+
+    it('blocks deletion when the order has expenses, without touching the row', async () => {
+      prisma.tenant.purchaseOrderExpense.count.mockResolvedValue(1);
+      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.purchaseOrder.delete).not.toHaveBeenCalled();
     });
   });
 });
