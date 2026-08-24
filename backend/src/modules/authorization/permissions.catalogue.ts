@@ -71,6 +71,14 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'purchase-orders:manage', resource: 'purchase-orders', action: 'manage', description: 'Create/edit purchase orders and record receiving.' },
   { key: 'purchase-orders:delete', resource: 'purchase-orders', action: 'delete', description: 'Permanently delete a purchase order — admin-only, not granted to any default role besides Admin.' },
 
+  // Finance — PO documents/expenses/payments (Finance module, 2026-08-24).
+  // Admin-only by default, same sensitivity rationale as `reports:valuation`
+  // (exposes invoice amounts and payment records) — companies can grant it
+  // to a custom role if they want procurement staff to see/manage it too.
+  { key: 'finance:read', resource: 'finance', action: 'read', description: 'View PO financial documents, expenses, payments, and summaries.' },
+  { key: 'finance:manage', resource: 'finance', action: 'manage', description: 'Create/edit PO financial documents, expenses, and record payments.' },
+  { key: 'finance:delete', resource: 'finance', action: 'delete', description: 'Delete a PO financial document, expense, or payment — admin-only, not granted to any default role besides Admin.' },
+
   // Sales
   { key: 'customer-orders:read', resource: 'customer-orders', action: 'read', description: 'View customer orders.' },
   { key: 'customer-orders:manage', resource: 'customer-orders', action: 'manage', description: 'Create/edit customer orders, give lines to production, preview and create shortage-driven purchase orders.' },

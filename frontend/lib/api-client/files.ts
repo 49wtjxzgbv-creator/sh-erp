@@ -19,7 +19,8 @@ export type FileDomain =
   | 'EMPLOYEE_PHOTO'
   | 'QC_PHOTO'
   | 'SHIPMENT_PHOTO'
-  | 'BRANDING';
+  | 'BRANDING'
+  | 'FINANCE_DOCUMENT';
 
 export type FileConversionStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
 

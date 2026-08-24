@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -18,6 +19,8 @@ import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useFilesForEntities, useFilesForEntity } from '@/lib/hooks/use-files';
 import { uploadFile, getFileDownloadUrl } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { useFinanceSummary } from '@/lib/hooks/use-finance';
+import { formatMoney } from '@/lib/finance-format';
 import { formatEur } from '@/lib/utils';
 import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -225,10 +228,67 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
   );
 }
 
-/** Phase 2 — documents (invoices, packing lists) attached to this order, staff- and supplier-uploaded alike. Reuses the existing generic files API (entityType='PurchaseOrder', domain='PURCHASE_INVOICE') — no new backend endpoint needed on the staff side. */
+/**
+ * Finance module (2026-08-24) — compact summary only, deliberately not the
+ * full Finance UI (point 14 of the confirmed design: don't duplicate
+ * /finance/[purchaseOrderId] here). Hidden entirely for a user without
+ * `finance:read` (the module defaults to admin-only, same sensitivity as
+ * `reports:valuation`).
+ */
+function FinanceSummaryWidget({ orderId }: { orderId: string }) {
+  const t = useTranslations('finance');
+  const canReadFinance = useHasPermission('finance:read');
+  const { data: summary } = useFinanceSummary(canReadFinance ? orderId : undefined);
+  if (!canReadFinance || !summary) return null;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-base">{t('financeSummary')}</CardTitle>
+        <Link href={`/finance/${orderId}`} className="text-sm text-primary hover:underline">
+          {t('viewInFinance')}
+        </Link>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-4 pt-0 sm:grid-cols-4">
+        <div>
+          <p className="text-xs text-muted-foreground">{t('actualCost')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.actualCost, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('paid')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.paid, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('unpaidPerDocuments')}</p>
+          <p className="text-sm font-medium">{formatMoney(summary.unpaidPerDocuments, summary.primaryCurrency)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('documentCount')}</p>
+          <p className="text-sm font-medium">{summary.documentCount}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Phase 2 — documents (invoices, packing lists) attached to this order,
+ * staff- and supplier-uploaded alike. Reuses the existing generic files API
+ * (entityType='PurchaseOrder', domain='PURCHASE_INVOICE') — no new backend
+ * endpoint needed on the staff side.
+ *
+ * LEGACY, kept as-is (2026-08-24 pre-production audit, point 7): a plain
+ * flat file list, no type/number/date/amount/counterparty/payment
+ * structure. The Finance module (FinanceSummaryWidget above, full UI at
+ * /finance/[id]) is now the CANONICAL way to record a PO's financial
+ * documents. Nothing here migrates or duplicates into Finance automatically
+ * — a file uploaded in one panel never appears in the other; they are two
+ * independent upload actions the user chooses between.
+ */
 function PurchaseOrderDocumentsPanel({ orderId, canManage }: { orderId: string; canManage: boolean }) {
   const t = useTranslations('procurement');
   const tc = useTranslations('common');
+  const tf = useTranslations('finance');
   const { data: files, refetch } = useFilesForEntity('PurchaseOrder', orderId, 'PURCHASE_INVOICE');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +320,12 @@ function PurchaseOrderDocumentsPanel({ orderId, canManage }: { orderId: string; 
         <CardTitle className="text-base">{t('documents')}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          {tf('title')}:{' '}
+          <Link href={`/finance/${orderId}`} className="text-primary hover:underline">
+            {tf('viewInFinance')}
+          </Link>
+        </p>
         {(files ?? []).length === 0 && <p className="text-sm text-muted-foreground">{t('noDocuments')}</p>}
         <ul className="space-y-1">
           {(files ?? []).map((f) => (
@@ -552,6 +618,7 @@ export default function PurchaseOrderDetailPage() {
         </CardContent>
       </Card>
 
+      <FinanceSummaryWidget orderId={order.id} />
       <PurchaseOrderDocumentsPanel orderId={order.id} canManage={canManage} />
       <PurchaseOrderCommentsPanel orderId={order.id} />
 

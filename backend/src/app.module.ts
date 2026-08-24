@@ -16,6 +16,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { BomModule } from './modules/bom/bom.module';
 import { ProductionModule } from './modules/production/production.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
+import { FinanceModule } from './modules/finance/finance.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { HrModule } from './modules/hr/hr.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -54,6 +55,7 @@ import { LandingPageModule } from './modules/landing-page/landing-page.module';
     BomModule,
     ProductionModule,
     ProcurementModule,
+    FinanceModule,
     SalesModule,
     HrModule,
     ReportsModule,

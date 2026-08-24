@@ -12,6 +12,7 @@ import {
   ListTree,
   Factory,
   Truck,
+  Wallet,
   ShoppingCart,
   Users,
   BarChart3,
@@ -45,6 +46,7 @@ export const NAV_ITEMS = [
   { href: '/bom', labelKey: 'bom', icon: ListTree },
   { href: '/production', labelKey: 'production', icon: Factory },
   { href: '/procurement', labelKey: 'procurement', icon: Truck },
+  { href: '/finance', labelKey: 'finance', icon: Wallet, permission: 'finance:read' },
   { href: '/sales', labelKey: 'sales', icon: ShoppingCart },
   // `employees:manage`/`payroll:manage` gate EVERY route in this module,
   // including plain GET — there is no read-only view a restricted role

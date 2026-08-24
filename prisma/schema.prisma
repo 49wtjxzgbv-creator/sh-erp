@@ -161,6 +161,9 @@ model Company {
   deliverySchedules            DeliverySchedule[]
   deliveryScheduleLines        DeliveryScheduleLine[]
   purchaseOrderComments        PurchaseOrderComment[]
+  purchaseOrderDocuments       PurchaseOrderDocument[]
+  purchaseOrderPayments        PurchaseOrderPayment[]
+  purchaseOrderExpenses        PurchaseOrderExpense[]
   employees                    Employee[]
   payrollEntries               PayrollEntry[]
   fileAssets                   FileAsset[]
@@ -571,6 +574,18 @@ enum FileDomain {
   QC_PHOTO
   SHIPMENT_PHOTO
   BRANDING
+  // Finance module (2026-08-24) — entityType "PurchaseOrderDocument",
+  // entityId = PurchaseOrderDocument.id. This is now the CANONICAL way to
+  // record a PO's financial/primary documents (type, number, date,
+  // counterparty, amount, currency, payments) — see FinanceModule.
+  // PURCHASE_INVOICE (above) is kept, untouched, as a legacy/backward-
+  // compatible flat file attachment directly on PurchaseOrder (Phase 2,
+  // supplier-portal upload flow) — it is NOT deprecated/removed and nothing
+  // migrates between the two automatically; a file uploaded to one never
+  // appears in or duplicates into the other. New financial-document work
+  // should use FINANCE_DOCUMENT; PURCHASE_INVOICE remains only for
+  // whatever already relies on it.
+  FINANCE_DOCUMENT
 }
 
 enum FileConversionStatus {
@@ -697,6 +712,14 @@ model Supplier {
   inviteTokens   SupplierInviteToken[]
   productLinks   ProductSupplier[]
   assemblyLinks  AssemblySupplier[]
+  // Finance module (2026-08-24) — counterparty on a PurchaseOrderDocument.
+  // Deliberately reused, not a separate "Counterparty"/"Payee" entity: audit
+  // confirmed `Supplier` has no required field beyond `name` and no relation
+  // that forces product-supplying behavior, so a freight forwarder / customs
+  // broker / insurer is exactly as valid a row here as a real product
+  // supplier — it simply never acquires a `connection` or product/assembly
+  // link, same as any existing supplier who was never invited to the portal.
+  financeDocuments PurchaseOrderDocument[] @relation("DocumentCounterparty")
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
@@ -1802,6 +1825,8 @@ model PurchaseOrder {
   sourceCustomerOrder CustomerOrder?         @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
   comments            PurchaseOrderComment[] // Phase 2 — staff/supplier discussion thread, oldest first
+  financeDocuments    PurchaseOrderDocument[] // Finance module (2026-08-24)
+  financeExpenses     PurchaseOrderExpense[] // Finance module (2026-08-24)
 
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderItem.purchaseOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -1970,6 +1995,163 @@ model PurchaseOrderComment {
 
   @@index([companyId, purchaseOrderId, createdAt])
   @@map("purchase_order_comments")
+}
+
+// ============================================================================
+// SECTION: Finance — PO Documents / Expenses / Payments  (module: FinanceModule)
+// ============================================================================
+//
+// Design confirmed in chat 2026-08-24 (Finance / "Документи та витрати" spec).
+// Scope: PURCHASE ORDER -> DOCUMENTS -> EXPENSES -> PAYMENTS -> ACTUAL COST.
+// Explicitly NOT tax accounting, chart of accounts, bank reconciliation, or
+// currency conversion — see each model's own comments for the exact boundary.
+//
+// Three money entities, never conflated (this is the whole point of the
+// design — see PurchaseOrder-level summary math spelled out below):
+//   Document = a primary/financial document that confirms an amount or
+//              operation from some counterparty. Not itself a cost or a
+//              payment.
+//   Expense  = a cost that counts toward the PO's actual/landed cost.
+//              Exists independently of whether a confirming Document has
+//              arrived yet (see `documentId` below).
+//   Payment  = money actually paid against one specific Document.
+//
+// Double-counting guard, enforced by convention (not a DB constraint, since
+// Postgres can't express "this Decimal equals that other table's SUM"):
+// goods cost is NEVER represented as a PurchaseOrderExpense row — it always
+// comes straight from `PurchaseOrderItem` (qty x actualPrice/expectedPrice).
+// The matching goods invoice is still recorded as a PurchaseOrderDocument
+// (documentType=INVOICE) so it can receive Payments, but it must not also
+// get an Expense row, or the PO's "additional expenses" total would double
+// the goods cost.
+//
+// Six PO-level summary numbers, deliberately kept separate (never blended
+// into a single "amount due" — see the exact chat example that motivated
+// this): goods cost (from PurchaseOrderItem) + additional expenses (SUM of
+// PurchaseOrderExpense.amount) = actual cost. SUM of PurchaseOrderDocument
+// .amount (non-null only) = total documents. SUM of PurchaseOrderPayment
+// .amount across this PO's documents = paid. total documents - paid =
+// "unpaid per documents" — the one actionable "what do I owe on invoices I
+// actually have", which is NOT the same as actual cost - paid (that second
+// number can be larger if an expense exists with no invoice yet, e.g.
+// insurance accrued but not yet billed — showing it as "due" would be
+// wrong, since there's nothing yet to pay).
+//
+// Currency: `currency` lives on all three money entities (Document, Expense,
+// Payment) independently — no FX conversion or exchange-rate concept exists
+// anywhere in this schema (confirmed by audit: every other money field in
+// the app is implicitly EUR). Same-PO sums in the application layer are only
+// ever computed within one currency; a differently-currencied row is
+// surfaced as its own separate figure, never silently added in. This is the
+// first currency-aware corner of the schema — deliberately additive so a
+// real conversion layer can be bolted on later without reshaping these
+// tables.
+
+enum PurchaseOrderDocumentType {
+  INVOICE
+  DELIVERY_NOTE
+  PROFORMA_INVOICE
+  PACKING_LIST
+  TRANSPORT_DOCUMENT
+  CUSTOMS_DOCUMENT
+  ACT
+  OTHER
+}
+
+enum PurchaseOrderExpenseCategory {
+  SHIPPING
+  CUSTOMS
+  INSURANCE
+  OTHER
+}
+
+// One row per uploaded financial/primary document. The actual file is NOT a
+// direct FK here — it goes through the existing generic FileAsset
+// entityType/entityId pointer (domain FINANCE_DOCUMENT, entityType
+// "PurchaseOrderDocument", entityId = this row's id), the same pattern used
+// for every other file attachment in the app. A document is created first
+// (metadata only), then the file is attached via the normal 2-step presigned
+// upload against that id — avoids inventing a second file-linking mechanism.
+model PurchaseOrderDocument {
+  id              String                    @id @default(uuid()) @db.Uuid
+  companyId       String                    @db.Uuid
+  purchaseOrderId String                    @db.Uuid
+  documentType    PurchaseOrderDocumentType
+  documentNumber  String?
+  documentDate    DateTime?                 @db.Date
+  counterpartyId  String                    @db.Uuid // Supplier — the PO's own supplier OR any other counterparty (DHL, customs broker, insurer); see Supplier.financeDocuments comment
+  amount          Decimal?                  @db.Decimal(14, 2) // nullable — some documents (e.g. a plain Packing List) carry no monetary amount and can never receive Payments (enforced in service layer)
+  currency        String                    @default("EUR")
+  note            String?
+  createdById     String                    @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder          @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a document has no meaning without its order
+  counterparty  Supplier               @relation("DocumentCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  payments      PurchaseOrderPayment[]
+  expenseLinks  PurchaseOrderExpense[] // Expenses that cite this document as their confirming paperwork (optional, see PurchaseOrderExpense.documentId)
+
+  @@unique([companyId, id]) // composite-FK target for PurchaseOrderPayment.document
+  @@index([companyId, purchaseOrderId])
+  @@index([counterpartyId])
+  @@map("purchase_order_documents")
+}
+
+// A single payment against one Document. A Document's payment status
+// (unpaid/partial/paid) is always DERIVED from SUM(payments) vs
+// Document.amount — never stored as a boolean/enum column, so it can never
+// silently drift out of sync with the actual payments.
+model PurchaseOrderPayment {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @db.Uuid
+  documentId String   @db.Uuid
+  amount     Decimal  @db.Decimal(14, 2)
+  currency   String   @default("EUR") // independent of the document's currency — MVP does not convert, only records what was actually entered; service layer flags (does not block) a mismatch against the parent document's currency
+  paidAt     DateTime @db.Date
+  method     String?
+  note       String?
+  createdById String  @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company  Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document PurchaseOrderDocument @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Cascade) // composite — a payment has no meaning without its document
+
+  @@index([companyId, documentId])
+  @@map("purchase_order_payments")
+}
+
+// A cost that counts toward the PO's actual/landed cost, additive to the
+// goods cost already known from PurchaseOrderItem. `documentId` is optional
+// on purpose ("якщо можливо" — link the confirming document when one
+// exists): an expense can be recorded the moment it's known (e.g. an
+// estimated insurance cost) before any invoice for it has arrived. Plain
+// (non-composite) FK to PurchaseOrderDocument, deliberately, since it's
+// optional — avoids any composite-FK-with-nullable-column edge case; the
+// service layer still verifies the referenced document belongs to the same
+// company/PO before allowing the link.
+model PurchaseOrderExpense {
+  id              String                       @id @default(uuid()) @db.Uuid
+  companyId       String                       @db.Uuid
+  purchaseOrderId String                       @db.Uuid
+  category        PurchaseOrderExpenseCategory
+  amount          Decimal                      @db.Decimal(14, 2)
+  currency        String                       @default("EUR")
+  description     String?
+  documentId      String?                      @db.Uuid
+  createdById     String                       @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder          @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — an expense has no meaning without its order
+  document      PurchaseOrderDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull) // plain FK — optional link, see model comment
+
+  @@index([companyId, purchaseOrderId])
+  @@index([documentId])
+  @@map("purchase_order_expenses")
 }
 
 // ============================================================================

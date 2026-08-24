@@ -59,4 +59,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'DeliverySchedule',
   'DeliveryScheduleLine',
   'PurchaseOrderComment',
+  'PurchaseOrderDocument',
+  'PurchaseOrderPayment',
+  'PurchaseOrderExpense',
 ]);
