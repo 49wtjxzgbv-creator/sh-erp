@@ -57,12 +57,23 @@ describe('PayrollPeriodsService', () => {
       await expect(service.assertDateNotClosed(new Date('2026-01-15'))).rejects.toThrow(ConflictException);
     });
 
-    it('queries only CLOSED periods whose range contains the date', async () => {
-      const date = new Date('2026-01-15');
+    it('queries only CLOSED periods whose range contains the UTC start-of-day of the date', async () => {
+      const date = new Date('2026-01-15T14:32:00Z');
       await service.assertDateNotClosed(date);
       expect(prisma.tenant.payrollPeriod.findFirst).toHaveBeenCalledWith({
-        where: { status: 'CLOSED', periodStart: { lte: date }, periodEnd: { gte: date } },
+        where: { status: 'CLOSED', periodStart: { lte: new Date('2026-01-15T00:00:00Z') }, periodEnd: { gte: new Date('2026-01-15T00:00:00Z') } },
       });
+    });
+
+    it('real incident (2026-08-25): blocks a timestamp later in the day than periodEnd\'s midnight — periodEnd covers the WHOLE last day, not just its first instant', async () => {
+      // periodEnd stored as UTC midnight (date-only input) — a write at 23:39 that same day must still be blocked.
+      prisma.tenant.payrollPeriod.findFirst.mockResolvedValue({
+        ...openPeriod,
+        status: 'CLOSED',
+        periodStart: new Date('2026-01-10T00:00:00Z'),
+        periodEnd: new Date('2026-01-31T00:00:00Z'),
+      });
+      await expect(service.assertDateNotClosed(new Date('2026-01-31T23:39:00Z'))).rejects.toThrow(ConflictException);
     });
   });
 });

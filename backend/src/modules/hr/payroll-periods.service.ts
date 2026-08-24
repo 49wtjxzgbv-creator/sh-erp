@@ -96,10 +96,26 @@ export class PayrollPeriodsService {
     return period;
   }
 
-  /** Throws if `date` falls inside any CLOSED period for this tenant. Used by every payroll-affecting write (locked spec #13). */
+  /**
+   * Throws if `date` falls inside any CLOSED period for this tenant. Used
+   * by every payroll-affecting write (locked spec #13).
+   *
+   * `periodStart`/`periodEnd` are always UTC-midnight-of-day values (the
+   * create form only accepts a plain date, and `new Date("YYYY-MM-DD")`
+   * parses as UTC midnight) — but `date` here is a real timestamp with a
+   * time-of-day (an execution's `performedAt`, a manual entry's
+   * `entryDate`, or "now"). Comparing the raw timestamp against
+   * `periodEnd` would only catch a write dated exactly at midnight on the
+   * period's last day, silently letting every other time that same day
+   * through — a real incident found via manual testing (2026-08-25).
+   * Truncating `date` down to its own UTC start-of-day before comparing
+   * makes this a correct calendar-day-range check regardless of what time
+   * of day `date` itself carries.
+   */
   async assertDateNotClosed(date: Date) {
+    const startOfDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     const closed = await this.prisma.tenant.payrollPeriod.findFirst({
-      where: { status: 'CLOSED', periodStart: { lte: date }, periodEnd: { gte: date } },
+      where: { status: 'CLOSED', periodStart: { lte: startOfDay }, periodEnd: { gte: startOfDay } },
     });
     if (closed) {
       throw new CodedConflictException(
