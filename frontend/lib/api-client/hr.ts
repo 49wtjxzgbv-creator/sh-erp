@@ -84,7 +84,7 @@ export function reactivateEmployee(id: string): Promise<Employee> {
   return apiClient.post<Employee>(`employees/${id}/reactivate`);
 }
 
-/** PIECEWORK is system-generated only, from ProductionOrdersService.start() (Module 6) — never postable through recordManualEntry. */
+/** PIECEWORK is system-generated only, by ProductionExecutionsService#confirm (production-labor module, see lib/api-client/production-labor.ts) — never postable through recordManualEntry. */
 export type PayrollEntryType = 'PIECEWORK' | 'ADVANCE' | 'BONUS' | 'PENALTY';
 export const MANUAL_PAYROLL_ENTRY_TYPES = ['ADVANCE', 'BONUS', 'PENALTY'] as const;
 export type ManualPayrollEntryType = (typeof MANUAL_PAYROLL_ENTRY_TYPES)[number];
@@ -154,4 +154,105 @@ export interface PayrollSummaryQuery {
 /** Per-employee totals by type, plus a QC-defect count cross-referenced through assigned production orders (Phase 1 §6.5). */
 export function getPayrollSummary(query: PayrollSummaryQuery = {}): Promise<PayrollSummaryLine[]> {
   return apiClient.get<PayrollSummaryLine[]>('payroll/summary', { query: query as Record<string, string> });
+}
+
+// ---- Teams (production-labor module, 2026-08-24) ----
+// backend/src/modules/hr/teams.controller.ts. A team is a preset of worker
+// composition only — never a payroll unit. Renaming/re-rostering a team
+// never touches any ProductionExecution's own already-recorded allocations.
+
+export interface TeamMember {
+  id: string;
+  companyId: string;
+  teamId: string;
+  employeeId: string;
+  employee?: Employee;
+}
+
+export interface Team {
+  id: string;
+  companyId: string;
+  name: string;
+  createdAt: string;
+  members?: TeamMember[];
+}
+
+export interface QueryTeamsInput {
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedTeams {
+  items: Team[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function queryTeams(query: QueryTeamsInput = {}): Promise<PaginatedTeams> {
+  return apiClient.get<PaginatedTeams>('teams', { query: query as Record<string, string | number> });
+}
+export function getTeam(id: string): Promise<Team> {
+  return apiClient.get<Team>(`teams/${id}`);
+}
+export function createTeam(name: string): Promise<Team> {
+  return apiClient.post<Team>('teams', { name });
+}
+export function updateTeam(id: string, name: string): Promise<Team> {
+  return apiClient.patch<Team>(`teams/${id}`, { name });
+}
+/** Full replace, mirrors setProductionOrderWorkers. */
+export function setTeamMembers(id: string, employeeIds: string[]): Promise<Team> {
+  return apiClient.post<Team>(`teams/${id}/members`, { employeeIds });
+}
+export function deleteTeam(id: string): Promise<{ success: true }> {
+  return apiClient.delete<{ success: true }>(`teams/${id}`);
+}
+
+// ---- Payroll periods (production-labor module, 2026-08-24) ----
+// backend/src/modules/hr/payroll-periods.controller.ts. Closing a period
+// blocks new/confirmed/voided payroll-affecting entries (manual PayrollEntry
+// AND ProductionExecution create/confirm/void) dated inside it.
+
+export type PayrollPeriodStatus = 'OPEN' | 'CLOSED';
+
+export interface PayrollPeriod {
+  id: string;
+  companyId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: PayrollPeriodStatus;
+  closedById: string | null;
+  closedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatePayrollPeriodInput {
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface QueryPayrollPeriodsInput {
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedPayrollPeriods {
+  items: PayrollPeriod[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function queryPayrollPeriods(query: QueryPayrollPeriodsInput = {}): Promise<PaginatedPayrollPeriods> {
+  return apiClient.get<PaginatedPayrollPeriods>('payroll-periods', { query: query as Record<string, string | number> });
+}
+export function createPayrollPeriod(dto: CreatePayrollPeriodInput): Promise<PayrollPeriod> {
+  return apiClient.post<PayrollPeriod>('payroll-periods', dto);
+}
+export function closePayrollPeriod(id: string): Promise<PayrollPeriod> {
+  return apiClient.post<PayrollPeriod>(`payroll-periods/${id}/close`);
+}
+export function reopenPayrollPeriod(id: string): Promise<PayrollPeriod> {
+  return apiClient.post<PayrollPeriod>(`payroll-periods/${id}/reopen`);
 }

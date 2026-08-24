@@ -63,6 +63,13 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'production-stages:manage', resource: 'production-stages', action: 'manage', description: 'Configure the company\'s production stage list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'finished-goods:read', resource: 'finished-goods', action: 'read', description: 'View finished goods / serials.' },
 
+  // Production-labor module (2026-08-24): recording/confirming labor
+  // against a ProductionOrder batch or a standalone GENERAL WorkTask.
+  { key: 'production-executions:read', resource: 'production-executions', action: 'read', description: 'View recorded labor executions and their allocations.' },
+  { key: 'production-executions:record', resource: 'production-executions', action: 'record', description: 'Record/edit a DRAFT labor execution.' },
+  { key: 'production-executions:confirm', resource: 'production-executions', action: 'confirm', description: 'Confirm a DRAFT execution (generates PayrollEntry rows), or void/correct a CONFIRMED one.' },
+  { key: 'work-tasks:manage', resource: 'work-tasks', action: 'manage', description: 'Create/edit GENERAL work tasks (non-product labor with a manually-set fund) and their informational product tags.' },
+
   // Quality — split into checklist configuration (admin-only, legacy matrix) vs. recording a check (admin+storekeeper-equivalent roles)
   { key: 'qc-checklist:manage', resource: 'qc-checklist', action: 'manage', description: 'Configure the QC checklist item list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'qc:record', resource: 'qc', action: 'record', description: 'Record a QC check result against a finished good.' },
@@ -89,6 +96,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
 
   // HR
   { key: 'employees:manage', resource: 'employees', action: 'manage', description: 'Manage employee records.' },
+  { key: 'teams:manage', resource: 'teams', action: 'manage', description: 'Manage brigades/teams — presets of worker composition used to prefill a labor execution\'s allocations. Never a payroll unit itself.' },
 
   // Reports
   { key: 'reports:read', resource: 'reports', action: 'read', description: 'View operational reports (reorder suggestions, monthly production rollup).' },
@@ -97,6 +105,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   // Payroll — called out explicitly since it's the field-sensitivity
   // example used throughout Phase 2 (§6's "price-stripping" successor).
   { key: 'payroll:manage', resource: 'payroll', action: 'manage', description: 'View and record payroll entries.' },
+  { key: 'payroll-periods:manage', resource: 'payroll-periods', action: 'manage', description: 'Open/close payroll periods. A closed period blocks new/confirmed/voided payroll-affecting entries dated inside it — admin-only, not granted to any default role besides Admin.' },
 
   // AI
   { key: 'ai:use', resource: 'ai', action: 'use', description: 'Ask the help assistant or full AI assistant (available to every default role in the legacy RBAC matrix, Phase 1 §5).' },
@@ -129,6 +138,12 @@ export const DEFAULT_ROLES = [
       'products:read', 'assemblies:read', 'assemblies:write',
       'production-orders:read', 'production-orders:manage', 'finished-goods:read',
       'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use',
+      // Production-labor module (2026-08-24): the shop-floor foreman role
+      // records AND confirms its own executions — this codebase has no
+      // separate "Supervisor" role yet, so both tiers are bundled here,
+      // same as production-orders:manage already bundling start/advance.
+      'production-executions:read', 'production-executions:record', 'production-executions:confirm',
+      'work-tasks:manage', 'teams:manage',
     ],
   },
   {

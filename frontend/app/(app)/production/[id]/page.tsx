@@ -27,6 +27,7 @@ import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine,
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
+import { ProductionExecutionsPanel } from '@/components/domain/production/production-executions-panel';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
 import { AssemblySpecPrint } from '@/components/domain/bom/assembly-spec-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -205,6 +206,8 @@ export default function ProductionOrderDetailPage() {
   const advanceStage = useAdvanceProductionOrderStage(params.id);
   const canManage = useHasPermission('production-orders:manage');
   const canDelete = useHasPermission('production-orders:delete');
+  const canRecordExecutions = useHasPermission('production-executions:record');
+  const canConfirmExecutions = useHasPermission('production-executions:confirm');
 
   const [workerRows, setWorkerRows] = useState<EditableWorkerRow[]>([]);
   const workersHydrated = useRef(false);
@@ -413,6 +416,19 @@ export default function ProductionOrderDetailPage() {
             {advanceError && <p className="text-sm text-destructive">{advanceError}</p>}
           </CardContent>
         </Card>
+      )}
+
+      {(order.status === 'IN_PROGRESS' || order.status === 'COMPLETED') && (
+        <ProductionExecutionsPanel
+          parent={{
+            kind: 'production-order',
+            productionOrderId: order.id,
+            unitsPlanned: Number(order.unitsPlanned),
+            laborCostEur: Number(order.laborCostEur ?? 0),
+          }}
+          canRecord={canRecordExecutions}
+          canConfirm={canConfirmExecutions}
+        />
       )}
 
       {order.status === 'PLANNED' && canManage && (

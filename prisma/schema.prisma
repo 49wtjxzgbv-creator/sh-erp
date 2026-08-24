@@ -134,58 +134,65 @@ model Company {
   // Prisma for explicit foreign-key relations (both sides must be declared),
   // and genuinely useful in practice (typed `include`, cascading admin
   // tooling, company-level counts) despite the length of this list.
-  products                     Product[]
-  units                        CompanyUnit[]
-  suppliers                    Supplier[]
-  supplierConnections          SupplierConnection[]
-  supplierInviteTokens         SupplierInviteToken[]
-  warehouses                   Warehouse[]
-  warehouseStocks              WarehouseStock[]
-  stockMovements               StockMovement[]
-  inventorySessions            InventorySession[]
-  inventoryItems               InventoryItem[]
-  assemblies                   Assembly[]
-  productionStages             ProductionStage[]
-  productionOrders             ProductionOrder[]
-  productionOrderStagePlans    ProductionOrderStagePlan[]
-  finishedGoods                FinishedGood[]
-  qcChecklistItems             QcChecklistItem[]
-  qcChecks                     QcCheck[]
-  qcCheckResults               QcCheckResult[]
-  customerOrders               CustomerOrder[]
-  customerOrderItems           CustomerOrderItem[]
-  shipments                    Shipment[]
-  shipmentItems                ShipmentItem[]
-  purchaseOrders               PurchaseOrder[]
-  purchaseOrderItems           PurchaseOrderItem[]
-  deliverySchedules            DeliverySchedule[]
-  deliveryScheduleLines        DeliveryScheduleLine[]
-  purchaseOrderComments        PurchaseOrderComment[]
-  purchaseOrderDocuments       PurchaseOrderDocument[]
-  purchaseOrderPayments        PurchaseOrderPayment[]
-  purchaseOrderExpenses        PurchaseOrderExpense[]
-  customerOrderDocuments       CustomerOrderDocument[]
-  customerOrderPayments        CustomerOrderPayment[]
-  customerOrderExpenses        CustomerOrderExpense[]
-  employees                    Employee[]
-  payrollEntries               PayrollEntry[]
-  fileAssets                   FileAsset[]
-  pendingAiActions             PendingAiAction[]
-  aiUsageLogs                  AiUsageLog[]
-  legacyMigrationRuns          LegacyMigrationRun[]
-  importJobs                   ImportJob[]
-  importConnections            ImportConnection[]
-  assemblyComponents           AssemblyComponent[]
-  assemblyVersions             AssemblyVersion[]
-  assemblyVersionComponents    AssemblyVersionComponent[]
-  productionOrderPickListItems ProductionOrderPickListItem[]
-  productionOrderStageEvents   ProductionOrderStageEvent[]
-  productionOrderWorkers       ProductionOrderWorker[]
-  productionScheduleSlots      ProductionScheduleSlot[]
-  productSuppliers             ProductSupplier[]
-  assemblySuppliers            AssemblySupplier[]
-  stockReservations            StockReservation[]
-  orderMaterialRequirements    OrderMaterialRequirement[]
+  products                       Product[]
+  units                          CompanyUnit[]
+  suppliers                      Supplier[]
+  supplierConnections            SupplierConnection[]
+  supplierInviteTokens           SupplierInviteToken[]
+  warehouses                     Warehouse[]
+  warehouseStocks                WarehouseStock[]
+  stockMovements                 StockMovement[]
+  inventorySessions              InventorySession[]
+  inventoryItems                 InventoryItem[]
+  assemblies                     Assembly[]
+  productionStages               ProductionStage[]
+  productionOrders               ProductionOrder[]
+  productionOrderStagePlans      ProductionOrderStagePlan[]
+  finishedGoods                  FinishedGood[]
+  qcChecklistItems               QcChecklistItem[]
+  qcChecks                       QcCheck[]
+  qcCheckResults                 QcCheckResult[]
+  customerOrders                 CustomerOrder[]
+  customerOrderItems             CustomerOrderItem[]
+  shipments                      Shipment[]
+  shipmentItems                  ShipmentItem[]
+  purchaseOrders                 PurchaseOrder[]
+  purchaseOrderItems             PurchaseOrderItem[]
+  deliverySchedules              DeliverySchedule[]
+  deliveryScheduleLines          DeliveryScheduleLine[]
+  purchaseOrderComments          PurchaseOrderComment[]
+  purchaseOrderDocuments         PurchaseOrderDocument[]
+  purchaseOrderPayments          PurchaseOrderPayment[]
+  purchaseOrderExpenses          PurchaseOrderExpense[]
+  customerOrderDocuments         CustomerOrderDocument[]
+  customerOrderPayments          CustomerOrderPayment[]
+  customerOrderExpenses          CustomerOrderExpense[]
+  employees                      Employee[]
+  payrollEntries                 PayrollEntry[]
+  fileAssets                     FileAsset[]
+  pendingAiActions               PendingAiAction[]
+  aiUsageLogs                    AiUsageLog[]
+  legacyMigrationRuns            LegacyMigrationRun[]
+  importJobs                     ImportJob[]
+  importConnections              ImportConnection[]
+  assemblyComponents             AssemblyComponent[]
+  assemblyVersions               AssemblyVersion[]
+  assemblyVersionComponents      AssemblyVersionComponent[]
+  productionOrderPickListItems   ProductionOrderPickListItem[]
+  productionOrderStageEvents     ProductionOrderStageEvent[]
+  productionOrderWorkers         ProductionOrderWorker[]
+  productionScheduleSlots        ProductionScheduleSlot[]
+  productSuppliers               ProductSupplier[]
+  assemblySuppliers              AssemblySupplier[]
+  stockReservations              StockReservation[]
+  orderMaterialRequirements      OrderMaterialRequirement[]
+  teams                          Team[]
+  teamMembers                    TeamMember[]
+  workTasks                      WorkTask[]
+  workTaskItems                  WorkTaskItem[]
+  productionExecutions           ProductionExecution[]
+  productionExecutionAllocations ProductionExecutionAllocation[]
+  payrollPeriods                 PayrollPeriod[]
 
   @@map("companies")
 }
@@ -702,19 +709,19 @@ model Supplier {
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
-  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  products       Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
-  assemblies     Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
-  purchaseOrders PurchaseOrder[]
+  company                       Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products                      Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
+  assemblies                    Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
+  purchaseOrders                PurchaseOrder[]
   // Portal access for THIS company's record of this supplier now goes
   // through SupplierConnection (2026-08-21 P0 — one real-world supplier
   // can work with many companies through one shared login/SupplierOrganization).
   // `Supplier` itself is unchanged: still "how this one company privately
   // records this vendor" — the connection is what turns that into portal access.
-  connection     SupplierConnection?
-  inviteTokens   SupplierInviteToken[]
-  productLinks   ProductSupplier[]
-  assemblyLinks  AssemblySupplier[]
+  connection                    SupplierConnection?
+  inviteTokens                  SupplierInviteToken[]
+  productLinks                  ProductSupplier[]
+  assemblyLinks                 AssemblySupplier[]
   // Finance module (2026-08-24) — counterparty on a PurchaseOrderDocument.
   // Deliberately reused, not a separate "Counterparty"/"Payee" entity: audit
   // confirmed `Supplier` has no required field beyond `name` and no relation
@@ -722,7 +729,7 @@ model Supplier {
   // broker / insurer is exactly as valid a row here as a real product
   // supplier — it simply never acquires a `connection` or product/assembly
   // link, same as any existing supplier who was never invited to the portal.
-  financeDocuments PurchaseOrderDocument[] @relation("DocumentCounterparty")
+  financeDocuments              PurchaseOrderDocument[] @relation("DocumentCounterparty")
   // Same reuse rationale, Sales side (2026-08-24): a cost document attached
   // directly to a CustomerOrder (packaging vendor, delivery-to-client
   // carrier, etc.) — not necessarily this company's own product supplier.
@@ -1235,6 +1242,14 @@ model Assembly {
   deliveryCostPerUnit  Decimal @default(0) @db.Decimal(14, 2)
   otherCostPerUnit     Decimal @default(0) @db.Decimal(14, 2)
 
+  // Production-labor module (2026-08-24): whether a single worker is
+  // allowed to execute this assembly alone, or a team/multiple workers is
+  // required. A soft rule enforced only at ProductionExecution#confirm
+  // (ProductionExecutionAllocation count >= 2 when false) — deliberately
+  // does NOT drive any payroll math itself (labor fund still comes from
+  // laborCostPerUnit regardless of who/how many executed it).
+  soloAllowed Boolean @default(true)
+
   defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
   legacyId String?
@@ -1412,6 +1427,7 @@ model ProductionOrder {
   customerOrderItem CustomerOrderItem?            @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // this batch's parent order line (План-графік §1, batch-splitting)
   stagePlans        ProductionOrderStagePlan[]
   scheduleSlot      ProductionScheduleSlot?
+  executions        ProductionExecution[] // production-labor module (2026-08-24): this batch's own labor fund is `laborCostEur` above, consumed incrementally by these
 
   @@unique([companyId, id]) // composite-FK target for pick-list/stage-event/worker children and FinishedGood.productionOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -1596,6 +1612,141 @@ enum FinishedGoodStatus {
   DEFECTIVE
 }
 
+// ----------------------------------------------------------------------------
+// Production-labor module (2026-08-24) — incremental, confirmable execution
+// records against a ProductionOrder's own frozen `laborCostEur` fund (no new
+// fund field: that ProductionOrder field already IS `Assembly.laborCostPerUnit
+// x unitsPlanned`, frozen once at start(), see start()'s own "Cost freezing"
+// comment). WorkTask exists ONLY for labor with no ProductionOrder to attach
+// to (general work) — every product-specific execution attaches directly to
+// its ProductionOrder, deliberately not through WorkTask, since ProductionOrder
+// already is "a batch of a specific product" and batch-splitting (План-графік
+// §1, CustomerOrderItem -> many ProductionOrder) already gives each batch its
+// own frozen rate — wrapping it in another entity would only duplicate that.
+// ----------------------------------------------------------------------------
+
+model WorkTask {
+  id          String         @id @default(uuid()) @db.Uuid
+  companyId   String         @db.Uuid
+  title       String
+  fund        Decimal        @db.Decimal(14, 2) // set manually — general work has no per-unit rate to derive it from
+  status      WorkTaskStatus @default(OPEN)
+  createdById String         @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company    Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items      WorkTaskItem[]
+  executions ProductionExecution[]
+
+  @@unique([companyId, id]) // composite-FK target for WorkTaskItem/ProductionExecution
+  @@index([companyId])
+  @@map("work_tasks")
+}
+
+enum WorkTaskStatus {
+  OPEN
+  CLOSED
+}
+
+// Purely informational tag ("this general work touched product X") —
+// never read by any fund/allocation calculation, reporting only.
+model WorkTaskItem {
+  id                  String @id @default(uuid()) @db.Uuid
+  companyId           String @db.Uuid
+  workTaskId          String @db.Uuid
+  customerOrderItemId String @db.Uuid
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  workTask          WorkTask          @relation(fields: [companyId, workTaskId], references: [companyId, id], onDelete: Cascade) // composite — a tag has no meaning without its task
+  customerOrderItem CustomerOrderItem @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade) // composite — informational, dies with either side
+
+  @@unique([workTaskId, customerOrderItemId])
+  @@index([companyId])
+  @@map("work_task_items")
+}
+
+// ONE recorded event: "on this date, this qty/work was done, by these
+// people, in these shares." Exactly one of productionOrderId/workTaskId is
+// set (enforced via a CHECK constraint in the migration — Prisma's schema
+// DSL has no native XOR construct). Both are optional relations (Prisma
+// requires every `fields` scalar to be optional for an optional relation,
+// and companyId never is), so both stay single-column FKs, same convention
+// as PayrollEntry.productionOrder above.
+model ProductionExecution {
+  id                String                    @id @default(uuid()) @db.Uuid
+  companyId         String                    @db.Uuid
+  productionOrderId String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  workTaskId        String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  performedAt       DateTime                  @db.Timestamptz(3)
+  qtyCompleted      Decimal?                  @db.Decimal(14, 3) // required in practice for PRODUCT (drives totalAmount), optional/informational for GENERAL
+  method            ProductionExecutionMethod
+  teamId            String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation) — reporting tag only, never the fund owner
+  allocationMode    ExecutionAllocationMode
+  totalAmount       Decimal                   @db.Decimal(14, 2) // PRODUCT: server-computed (qtyCompleted / unitsPlanned x laborCostEur), never client input. GENERAL: entered manually, validated against WorkTask.fund
+  status            ProductionExecutionStatus @default(DRAFT)
+  recordedById      String                    @db.Uuid
+  confirmedById     String?                   @db.Uuid
+  confirmedAt       DateTime?                 @db.Timestamptz(3)
+  note              String?
+
+  // Correction chain: the NEW execution points back at the VOIDED one it
+  // replaces. @unique so at most one correction can claim to replace a
+  // given original — avoids ambiguous parallel corrections of the same void.
+  supersedesId String? @unique @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company         Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  productionOrder ProductionOrder?                @relation(fields: [productionOrderId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
+  workTask        WorkTask?                       @relation(fields: [workTaskId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
+  team            Team?                           @relation(fields: [teamId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
+  supersedes      ProductionExecution?            @relation("ExecutionCorrection", fields: [supersedesId], references: [id])
+  supersededBy    ProductionExecution?            @relation("ExecutionCorrection")
+  allocations     ProductionExecutionAllocation[]
+
+  @@unique([companyId, id]) // composite-FK target for ProductionExecutionAllocation.execution
+  @@index([companyId, productionOrderId])
+  @@index([companyId, workTaskId])
+  @@map("production_executions")
+}
+
+enum ProductionExecutionMethod {
+  SOLO
+  TEAM
+  MULTI_WORKER
+}
+
+enum ExecutionAllocationMode {
+  PERCENT
+  HOURS
+}
+
+enum ProductionExecutionStatus {
+  DRAFT
+  CONFIRMED
+  VOIDED
+}
+
+model ProductionExecutionAllocation {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  executionId String   @db.Uuid
+  employeeId  String   @db.Uuid
+  percent     Decimal? @db.Decimal(5, 2) // PERCENT mode — normalized to sum to 100 across the execution's allocations, same convention as ProductionOrderWorker.percent
+  hours       Decimal? @db.Decimal(6, 2) // HOURS mode — a manually-entered, execution-scoped coefficient, NOT an hourly wage; no attendance/timesheet system exists or is implied
+  amount      Decimal  @db.Decimal(14, 2) // this employee's final share of execution.totalAmount
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  execution    ProductionExecution @relation(fields: [companyId, executionId], references: [companyId, id], onDelete: Cascade) // composite — an allocation has no meaning without its execution
+  employee     Employee            @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite
+  payrollEntry PayrollEntry? // back-relation only — PayrollEntry.sourceAllocationId owns the FK
+
+  @@unique([executionId, employeeId])
+  @@index([companyId])
+  @@map("production_execution_allocations")
+}
+
 // ============================================================================
 // SECTION: Quality  (module: QualityModule) — QualityControl.gs
 // ============================================================================
@@ -1735,7 +1886,9 @@ model CustomerOrderItem {
   customerOrder    CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
   assembly         Assembly          @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
   productionOrders ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
+  workTaskItems    WorkTaskItem[] // production-labor module: general-work tags referencing this item (reporting only, never funds)
 
+  @@unique([companyId, id]) // composite-FK target for WorkTaskItem.customerOrderItem (production-labor module, 2026-08-24)
   @@index([customerOrderId])
   @@index([companyId])
   @@index([assemblyId])
@@ -1829,9 +1982,9 @@ model PurchaseOrder {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company             Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  supplier            Supplier?              @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  sourceCustomerOrder CustomerOrder?         @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
+  company             Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier            Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  sourceCustomerOrder CustomerOrder?          @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
   comments            PurchaseOrderComment[] // Phase 2 — staff/supplier discussion thread, oldest first
   financeDocuments    PurchaseOrderDocument[] // Finance module (2026-08-24)
@@ -2113,15 +2266,15 @@ model PurchaseOrderDocument {
 // Document.amount — never stored as a boolean/enum column, so it can never
 // silently drift out of sync with the actual payments.
 model PurchaseOrderPayment {
-  id         String   @id @default(uuid()) @db.Uuid
-  companyId  String   @db.Uuid
-  documentId String   @db.Uuid
-  amount     Decimal  @db.Decimal(14, 2)
-  currency   String   @default("EUR") // independent of the document's currency — MVP does not convert, only records what was actually entered; service layer flags (does not block) a mismatch against the parent document's currency
-  paidAt     DateTime @db.Date
-  method     String?
-  note       String?
-  createdById String  @db.Uuid
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  documentId  String   @db.Uuid
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String   @default("EUR") // independent of the document's currency — MVP does not convert, only records what was actually entered; service layer flags (does not block) a mismatch against the parent document's currency
+  paidAt      DateTime @db.Date
+  method      String?
+  note        String?
+  createdById String   @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
@@ -2266,9 +2419,11 @@ model Employee {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company           Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  productionWorkers ProductionOrderWorker[]
-  payrollEntries    PayrollEntry[]
+  company              Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  productionWorkers    ProductionOrderWorker[]
+  payrollEntries       PayrollEntry[]
+  teamMemberships      TeamMember[]
+  executionAllocations ProductionExecutionAllocation[]
 
   @@unique([companyId, id]) // composite-FK target for ProductionOrderWorker.employee/PayrollEntry.employee
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2293,14 +2448,22 @@ model PayrollEntry {
   comment           String?
   createdById       String           @db.Uuid
 
+  // Production-labor module (2026-08-24): set only for PIECEWORK entries
+  // generated by ProductionExecution#confirm — traces this ledger row back
+  // to exactly the allocation that produced it. Null for every entry from
+  // the old one-shot start()-time generation (removed) and for manual
+  // ADVANCE/BONUS/PENALTY entries, which never had one.
+  sourceAllocationId String? @unique @db.Uuid // single-column FK — see header §cross-tenant (optional relation) — @unique: at most one PayrollEntry per allocation
+
   legacyId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   // immutable ledger — no updatedAt/deletedAt; a correction is a new entry, not an edit
 
-  company         Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  employee        Employee         @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite — kept Restrict (default): a payroll ledger entry must always trace back to a real employee
-  productionOrder ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+  company          Company                        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee         Employee                       @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite — kept Restrict (default): a payroll ledger entry must always trace back to a real employee
+  productionOrder  ProductionOrder?               @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+  sourceAllocation ProductionExecutionAllocation? @relation(fields: [sourceAllocationId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, employeeId])
@@ -2312,6 +2475,66 @@ enum PayrollEntryType {
   ADVANCE
   BONUS
   PENALTY
+}
+
+// Production-labor module (2026-08-24): organizational preset only — NOT a
+// payroll unit. Membership is current-state, never historized, because who
+// actually worked is always recorded directly on
+// ProductionExecutionAllocation.employeeId regardless of today's roster
+// (see ProductionExecution.teamId's own comment).
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company    Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  members    TeamMember[]
+  executions ProductionExecution[]
+
+  @@unique([companyId, id]) // composite-FK target for TeamMember.team
+  @@index([companyId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @db.Uuid
+  teamId     String @db.Uuid
+  employeeId String @db.Uuid
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  team     Team     @relation(fields: [companyId, teamId], references: [companyId, id], onDelete: Cascade) // composite — membership has no meaning without its team
+  employee Employee @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite
+
+  @@unique([teamId, employeeId])
+  @@index([companyId])
+  @@map("team_members")
+}
+
+// Production-labor module (2026-08-24): a closed period blocks new/void/
+// confirm operations on ProductionExecution and manual PayrollEntry rows
+// (recordManualEntry) whose date falls inside it — accounting freeze, not a
+// business-hours calendar.
+model PayrollPeriod {
+  id          String              @id @default(uuid()) @db.Uuid
+  companyId   String              @db.Uuid
+  periodStart DateTime            @db.Timestamptz(3)
+  periodEnd   DateTime            @db.Timestamptz(3)
+  status      PayrollPeriodStatus @default(OPEN)
+  closedById  String?             @db.Uuid
+  closedAt    DateTime?           @db.Timestamptz(3)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, periodStart, periodEnd])
+  @@map("payroll_periods")
+}
+
+enum PayrollPeriodStatus {
+  OPEN
+  CLOSED
 }
 
 // ============================================================================

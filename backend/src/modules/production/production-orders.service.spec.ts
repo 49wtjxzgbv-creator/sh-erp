@@ -288,7 +288,7 @@ describe('ProductionOrdersService', () => {
       });
     });
 
-    it('splits piecework pay across workers proportionally to their (normalized) percentages', async () => {
+    it('production-labor module (2026-08-24): never touches PayrollEntry at start() any more, worker assignments or not — piecework is now generated only by ProductionExecutionsService#confirm', async () => {
       prisma.tenant.productionOrderWorker.findMany.mockResolvedValue([
         { employeeId: 'e1', percent: 60 },
         { employeeId: 'e2', percent: 40 },
@@ -296,17 +296,6 @@ describe('ProductionOrdersService', () => {
 
       await service.start(user, 'po1', {});
 
-      // laborCostEur total = 20 (own labor, from the cost-freezing test above)
-      expect(prisma.tenant.payrollEntry.createMany).toHaveBeenCalledWith({
-        data: [
-          expect.objectContaining({ employeeId: 'e1', type: 'PIECEWORK', productionOrderId: 'po1', amount: 12 }),
-          expect.objectContaining({ employeeId: 'e2', type: 'PIECEWORK', productionOrderId: 'po1', amount: 8 }),
-        ],
-      });
-    });
-
-    it('creates no payroll entries when no workers are assigned', async () => {
-      await service.start(user, 'po1', {});
       expect(prisma.tenant.payrollEntry.createMany).not.toHaveBeenCalled();
     });
 

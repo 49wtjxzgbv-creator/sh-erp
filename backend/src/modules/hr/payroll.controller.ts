@@ -12,7 +12,7 @@ export class PayrollController {
 
   @Post('entries')
   @RequirePermissions('payroll:manage')
-  @ApiOperation({ summary: 'Record a manual advance/bonus/penalty entry. Piecework entries are system-generated only (Module 6).' })
+  @ApiOperation({ summary: 'Record a manual advance/bonus/penalty entry. Piecework entries are system-generated only, via ProductionExecutionsService#confirm.' })
   async recordManualEntry(@CurrentUser() user: RequestUser, @Body() dto: RecordPayrollEntryDto) {
     return this.payrollService.recordManualEntry(user, dto);
   }

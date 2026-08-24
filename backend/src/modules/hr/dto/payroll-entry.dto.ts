@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsDate, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
-/** PIECEWORK is deliberately excluded — those entries are system-generated only, from ProductionOrdersService.start() (Module 6). This endpoint is for the 3 manual entry types. */
+/** PIECEWORK is deliberately excluded — those entries are system-generated only, by ProductionExecutionsService#confirm (production-labor module, 2026-08-24). This endpoint is for the 3 manual entry types. */
 export const MANUAL_PAYROLL_ENTRY_TYPES = ['ADVANCE', 'BONUS', 'PENALTY'] as const;
 export type ManualPayrollEntryType = (typeof MANUAL_PAYROLL_ENTRY_TYPES)[number];
 

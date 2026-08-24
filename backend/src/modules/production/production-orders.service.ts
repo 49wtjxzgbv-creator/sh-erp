@@ -244,15 +244,19 @@ export class ProductionOrdersService {
   /**
    * Permanent hard delete — admin-only (`production-orders:delete`), and
    * only for an order that never actually started: `start()` (below)
-   * physically decrements stock, generates serialized FinishedGood units,
-   * and pays out PayrollEntry piecework rows — none of that is undone by
-   * removing this row, and FinishedGood.productionOrder is a Restrict FK
-   * (schema.prisma), so the DB would reject the delete anyway once any
-   * exist. This pre-check exists to give a clear, coded error instead of a
-   * raw FK-violation. PLANNED and CANCELLED are both safe: neither status
-   * can have any FinishedGood/PayrollEntry rows (both only ever created
-   * inside `start()`), and every other child (stage plans, pick-list items,
-   * stage events, worker assignments) cascades at the DB level.
+   * physically decrements stock and generates serialized FinishedGood
+   * units — none of that is undone by removing this row, and
+   * FinishedGood.productionOrder is a Restrict FK (schema.prisma), so the
+   * DB would reject the delete anyway once any exist. This pre-check
+   * exists to give a clear, coded error instead of a raw FK-violation.
+   * PLANNED and CANCELLED are both safe: neither status can have any
+   * FinishedGood rows (only ever created inside `start()`), and neither can
+   * have any ProductionExecution/PayrollEntry rows either — those require
+   * the order to be IN_PROGRESS/COMPLETED (production-executions.service.ts's
+   * `getStartedProductionOrder`), and `cancel()` only ever transitions
+   * PLANNED -> CANCELLED, never IN_PROGRESS -> CANCELLED. Every other
+   * child (stage plans, pick-list items, stage events, worker assignments)
+   * cascades at the DB level.
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
@@ -510,25 +514,14 @@ export class ProductionOrdersService {
       })) as any,
     });
 
-    // ---- Piecework payroll split (Phase 1 §3.5) ----
-    const workers = await this.prisma.tenant.productionOrderWorker.findMany({ where: { productionOrderId: order.id } });
-    if (workers.length > 0) {
-      const totalPercent = workers.reduce((sum, w) => sum + Number(w.percent), 0);
-      await this.prisma.tenant.payrollEntry.createMany({
-        data: workers.map((w) => {
-          const normalizedPercent = totalPercent > 0 ? (Number(w.percent) / totalPercent) * 100 : 0;
-          return {
-            employeeId: w.employeeId,
-            type: 'PIECEWORK',
-            productionOrderId: order.id,
-            unitsProduced: unitsPlanned * (normalizedPercent / 100),
-            amount: ownLabor * (normalizedPercent / 100),
-            createdById: user.userId,
-            comment: `Piecework for production order ${order.id}`,
-          };
-        }) as any,
-      });
-    }
+    // Production-labor module (2026-08-24): piecework PayrollEntry rows are
+    // no longer generated here. `laborCostEur` (frozen just below) is now
+    // consumed incrementally by ProductionExecution#confirm
+    // (production-executions.service.ts) instead of being paid out in one
+    // shot at start() time — see that file's own header comment. The
+    // ProductionOrderWorker rows saved on this order are kept as-is: they
+    // remain a preset/suggestion for prefilling an execution's allocations,
+    // never a source of automatic payroll.
 
     // ---- Stage tracking, or immediate completion if none configured ----
     const stages = await this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });

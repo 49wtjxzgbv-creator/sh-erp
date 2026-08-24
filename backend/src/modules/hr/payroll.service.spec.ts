@@ -18,7 +18,8 @@ describe('PayrollService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new PayrollService(prisma, audit);
+    const payrollPeriods = { assertDateNotClosed: jest.fn().mockResolvedValue(undefined) };
+    service = new PayrollService(prisma, audit, payrollPeriods as any);
   });
 
   describe('recordManualEntry — sign convention (Phase 1 §3.5)', () => {

@@ -4,6 +4,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PayrollSummaryQueryDto, QueryPayrollEntriesDto, RecordPayrollEntryDto } from './dto/payroll-entry.dto';
+import { PayrollPeriodsService } from './payroll-periods.service';
 
 export interface PayrollSummaryLine {
   employeeId: string;
@@ -18,10 +19,10 @@ export interface PayrollSummaryLine {
 
 /**
  * Manual advance/bonus/penalty ledger entries (Payroll.gs, Phase 1 §3.5).
- * PIECEWORK entries are never created here — they're system-generated from
- * `ProductionOrdersService.start()` (Module 6), split by assigned-worker
- * percentage. This service only handles the 3 manual types plus the
- * cross-referenced summary report.
+ * PIECEWORK entries are never created here — they're generated only by
+ * `ProductionExecutionsService#confirm` (production-labor module,
+ * 2026-08-24), one row per confirmed allocation. This service only handles
+ * the 3 manual types plus the cross-referenced summary report.
  *
  * `PayrollEntry` is an immutable ledger (no `updatedAt`/`deletedAt` in the
  * schema, and the DB grants in database-schema.md §2 revoke UPDATE/DELETE
@@ -34,6 +35,7 @@ export class PayrollService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly payrollPeriodsService: PayrollPeriodsService,
   ) {}
 
   /** Applies the sign convention (ADVANCE/PENALTY negative, BONUS positive, Phase 1 §3.5) so callers only ever pass a positive magnitude. */
@@ -42,6 +44,7 @@ export class PayrollService {
     if (!employee) {
       throw new CodedBadRequestException('EMPLOYEE_NOT_FOUND', 'Employee not found.');
     }
+    await this.payrollPeriodsService.assertDateNotClosed(dto.entryDate ?? new Date());
 
     const signedAmount = dto.type === 'BONUS' ? Math.abs(dto.amount) : -Math.abs(dto.amount);
 

@@ -12,6 +12,8 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 const TABS = [
   { href: '/hr', labelKey: 'employees', permission: 'employees:manage' },
   { href: '/hr/payroll', labelKey: 'payroll', permission: 'payroll:manage' },
+  { href: '/hr/teams', labelKey: 'teamsTitle', permission: 'teams:manage' },
+  { href: '/hr/payroll-periods', labelKey: 'payrollPeriodsTitle', permission: 'payroll-periods:manage' },
 ] as const;
 
 /**
@@ -25,11 +27,14 @@ export default function HrLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations('hr');
   const router = useRouter();
   const pathname = usePathname();
-  const activeHref = pathname.startsWith('/hr/payroll') ? '/hr/payroll' : '/hr';
+  const activeHref =
+    TABS.find((tab) => tab.href !== '/hr' && (pathname === tab.href || pathname.startsWith(`${tab.href}/`)))?.href ?? '/hr';
   const canEmployees = useHasPermission('employees:manage');
   const canPayroll = useHasPermission('payroll:manage');
+  const canTeams = useHasPermission('teams:manage');
+  const canPayrollPeriods = useHasPermission('payroll-periods:manage');
   const { isSuccess } = useMyPermissions();
-  const allowed = canEmployees || canPayroll;
+  const allowed = canEmployees || canPayroll || canTeams || canPayrollPeriods;
 
   useEffect(() => {
     if (isSuccess && !allowed) router.replace('/dashboard');
@@ -40,6 +45,8 @@ export default function HrLayout({ children }: { children: React.ReactNode }) {
   const permissionGranted: Record<(typeof TABS)[number]['permission'], boolean> = {
     'employees:manage': canEmployees,
     'payroll:manage': canPayroll,
+    'teams:manage': canTeams,
+    'payroll-periods:manage': canPayrollPeriods,
   };
   const tabs = TABS.filter((tab) => permissionGranted[tab.permission]);
 
