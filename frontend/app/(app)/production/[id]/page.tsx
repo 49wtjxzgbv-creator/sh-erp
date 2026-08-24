@@ -7,7 +7,6 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useProductionOrder,
   useProductionStages,
-  useSetProductionOrderWorkers,
   useCancelProductionOrder,
   useDeleteProductionOrder,
   useStartProductionOrder,
@@ -26,7 +25,6 @@ import { useHasPermission } from '@/lib/hooks/use-roles';
 import type { ProductionOrderStatus, FinishedGoodStatus, ProductionShortageLine, ProductionStage } from '@/lib/api-client/production';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { WorkerEditor, workersToRows, rowsToWorkers, type EditableWorkerRow } from '@/components/domain/production/worker-editor';
 import { ProductionExecutionsPanel } from '@/components/domain/production/production-executions-panel';
 import { PickListPrint } from '@/components/domain/production/pick-list-print';
 import { AssemblySpecPrint } from '@/components/domain/bom/assembly-spec-print';
@@ -199,7 +197,6 @@ export default function ProductionOrderDetailPage() {
   const { data: assembly } = useAssembly(order?.assemblyId);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', order ? [order.assemblyId] : [], 'ASSEMBLY_PHOTO');
 
-  const setWorkers = useSetProductionOrderWorkers(params.id);
   const cancelOrder = useCancelProductionOrder(params.id);
   const deleteOrder = useDeleteProductionOrder();
   const startOrder = useStartProductionOrder(params.id);
@@ -209,9 +206,6 @@ export default function ProductionOrderDetailPage() {
   const canRecordExecutions = useHasPermission('production-executions:record');
   const canConfirmExecutions = useHasPermission('production-executions:confirm');
 
-  const [workerRows, setWorkerRows] = useState<EditableWorkerRow[]>([]);
-  const workersHydrated = useRef(false);
-  const [workersError, setWorkersError] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [startError, setStartError] = useState<string | null>(null);
   const [startShortages, setStartShortages] = useState<ProductionShortageLine[]>([]);
@@ -219,30 +213,8 @@ export default function ProductionOrderDetailPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (order?.workers && !workersHydrated.current) {
-      workersHydrated.current = true;
-      setWorkerRows(workersToRows(order.workers.map((w) => ({ employeeId: w.employeeId, percent: Number(w.percent) }))));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.workers]);
-
   if (isLoading || !order) {
     return <LoadingBlock />;
-  }
-
-  async function handleSaveWorkers() {
-    setWorkersError(null);
-    const workers = rowsToWorkers(workerRows);
-    if (workers === null) {
-      setWorkersError(t('invalidRow'));
-      return;
-    }
-    try {
-      await setWorkers.mutateAsync(workers);
-    } catch (err) {
-      setWorkersError(apiErrorMessage(err, tc('error')));
-    }
   }
 
   async function handleCancel() {
@@ -433,19 +405,6 @@ export default function ProductionOrderDetailPage() {
 
       {order.status === 'PLANNED' && canManage && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('workers')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <WorkerEditor rows={workerRows} onChange={setWorkerRows} />
-              {workersError && <p className="text-sm text-destructive">{workersError}</p>}
-              <Button variant="outline" onClick={handleSaveWorkers} loading={setWorkers.isPending}>
-                {tc('save')}
-              </Button>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{t('startOrder')}</CardTitle>
