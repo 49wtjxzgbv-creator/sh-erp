@@ -14,6 +14,7 @@ import { useHasPermission } from '@/lib/hooks/use-roles';
 import type { FinancePaymentStatus } from '@/lib/api-client/finance';
 import { DocumentsPanel } from '@/components/domain/finance/documents-panel';
 import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
+import { CustomerOrderFinancePrint } from '@/components/domain/finance/customer-order-finance-print';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -174,9 +175,12 @@ export default function CustomerOrderFinancePage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">{order.orderNumber || order.clientName}</h1>
-        <p className="text-sm text-muted-foreground">{order.clientName}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">{order.orderNumber || order.clientName}</h1>
+          <p className="text-sm text-muted-foreground">{order.clientName}</p>
+        </div>
+        <CustomerOrderFinancePrint customerOrderId={customerOrderId} orderLabel={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`} />
       </div>
       <SummaryCard customerOrderId={customerOrderId} />
       <LinkedPurchaseOrdersPanel customerOrderId={customerOrderId} canManageFinance={canManage} />

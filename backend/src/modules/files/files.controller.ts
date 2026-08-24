@@ -39,6 +39,13 @@ export class FilesController {
     return this.filesService.getDownloadUrl(user, id);
   }
 
+  @Get(':id/preview')
+  @RequirePermissions('files:read')
+  @ApiOperation({ summary: 'Server-side parsed preview (rows/cells as JSON) for a .xlsx spreadsheet attachment — the one exception to "files are never proxied through the API", since the browser can\'t render .xlsx natively the way it does PDFs/images.' })
+  async preview(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.filesService.getSpreadsheetPreview(user, id);
+  }
+
   @Get()
   @RequirePermissions('files:read')
   @ApiOperation({ summary: 'List (non-deleted) files attached to a given entity, optionally filtered to specific domain(s).' })

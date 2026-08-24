@@ -55,9 +55,10 @@ export function DocumentsPanel({
             className="flex w-full items-center justify-between rounded-md border p-3 text-left text-sm transition-colors hover:border-primary/50"
           >
             <div>
-              <div className="font-medium">{doc.documentNumber || t(`documentType${doc.documentType}`)}</div>
+              <div className="font-medium">{doc.counterparty?.name}</div>
               <div className="text-xs text-muted-foreground">
-                {t(`documentType${doc.documentType}`)} · {doc.counterparty?.name}
+                {t(`documentType${doc.documentType}`)}
+                {doc.documentNumber && ` · ${doc.documentNumber}`}
                 {doc.documentDate && ` · ${new Date(doc.documentDate).toLocaleDateString()}`}
               </div>
             </div>

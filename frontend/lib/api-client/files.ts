@@ -70,6 +70,23 @@ export function getFileDownloadUrl(fileAssetId: string): Promise<{ downloadUrl: 
   return apiClient.get(`files/${fileAssetId}/download-url`);
 }
 
+export interface FilePreviewSheet {
+  name: string;
+  rows: (string | number | null)[][];
+  truncatedRows: boolean;
+  truncatedCols: boolean;
+}
+
+export interface FilePreview {
+  sheets: FilePreviewSheet[];
+  truncatedSheets: boolean;
+}
+
+/** Server-side parsed preview (rows/cells as JSON) — only available for .xlsx attachments, see files.service.ts#getSpreadsheetPreview's header comment for why this is the one file type proxied through the API. */
+export function getFilePreview(fileAssetId: string): Promise<FilePreview> {
+  return apiClient.get(`files/${fileAssetId}/preview`);
+}
+
 /** `domain` narrows to one or more `FileDomain`s (e.g. only `PRODUCT_PHOTO`, excluding `PRODUCT_DOCUMENT`) — omit to list every file on the entity regardless of domain. */
 export function listFilesForEntity(entityType: string, entityId: string, domain?: FileDomain | FileDomain[]): Promise<FileAsset[]> {
   return apiClient.get<FileAsset[]>('files', { query: { entityType, entityId, ...domainQuery(domain) } });

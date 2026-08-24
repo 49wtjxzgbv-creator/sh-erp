@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import * as ExcelJS from 'exceljs';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockResolvedValue('https://r2.example.com/signed'),
@@ -99,5 +100,60 @@ describe('FilesService', () => {
       data: { deletedAt: expect.any(Date) },
     });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'file.deleted' }));
+  });
+
+  describe('getSpreadsheetPreview', () => {
+    const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+    async function bufferToBody(buf: Buffer) {
+      return (async function* () {
+        yield buf;
+      })();
+    }
+
+    it('parses rows from a real .xlsx buffer', async () => {
+      const wb = new ExcelJS.Workbook();
+      const sheet = wb.addWorksheet('Sheet1');
+      sheet.addRow(['Name', 'Amount']);
+      sheet.addRow(['Acme', 100]);
+      const buf = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
+
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({
+        id: 'f1', deletedAt: null, sizeBytes: buf.byteLength, mimeType: XLSX_MIME, storageKey: 'tenants/c1/x.xlsx',
+      });
+      service['r2'].send = jest.fn().mockResolvedValue({ Body: await bufferToBody(buf) });
+
+      const result = await service.getSpreadsheetPreview(user, 'f1');
+      expect(result.sheets).toHaveLength(1);
+      expect(result.sheets[0].name).toBe('Sheet1');
+      expect(result.sheets[0].rows[0]).toEqual(['Name', 'Amount']);
+      expect(result.sheets[0].rows[1]).toEqual(['Acme', 100]);
+      expect(result.truncatedSheets).toBe(false);
+    });
+
+    it('rejects a non-.xlsx mimeType without ever touching R2', async () => {
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({ id: 'f1', deletedAt: null, sizeBytes: 10, mimeType: 'application/pdf' });
+      const send = jest.fn();
+      service['r2'].send = send;
+
+      await expect(service.getSpreadsheetPreview(user, 'f1')).rejects.toThrow(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('rejects a file over the preview size cap without ever touching R2', async () => {
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({ id: 'f1', deletedAt: null, sizeBytes: 20 * 1024 * 1024, mimeType: XLSX_MIME });
+      const send = jest.fn();
+      service['r2'].send = send;
+
+      await expect(service.getSpreadsheetPreview(user, 'f1')).rejects.toThrow(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('rejects bytes that are not actually a readable workbook', async () => {
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({ id: 'f1', deletedAt: null, sizeBytes: 10, mimeType: XLSX_MIME, storageKey: 'k' });
+      service['r2'].send = jest.fn().mockResolvedValue({ Body: await bufferToBody(Buffer.from('not a workbook')) });
+
+      await expect(service.getSpreadsheetPreview(user, 'f1')).rejects.toThrow(BadRequestException);
+    });
   });
 });

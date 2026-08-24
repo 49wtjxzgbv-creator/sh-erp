@@ -54,8 +54,12 @@ export interface CustomerOrderFinanceSummary {
   // CustomerOrderDocument's schema.prisma comment for the double-counting
   // discipline this preserves.
   purchaseCost: number;
-  // Direct cost documents/expenses on THIS order only (not tied to any
-  // specific purchase — packaging, delivery to the client, etc).
+  // Direct cost on THIS order only (not tied to any specific purchase —
+  // packaging, delivery to the client, etc): every direct Expense row,
+  // PLUS any direct Document's own amount that isn't already cited by one
+  // of those Expenses (see withUnlinkedDocumentsAsExpenses's own header
+  // comment for why this is safe here but never done on the PurchaseOrder
+  // side, where it would double the items-based goods cost).
   additionalExpenses: number;
   actualCost: number; // purchaseCost + additionalExpenses
   totalDocuments: number; // Σ linked-PO totalDocuments + Σ direct document amounts
@@ -268,6 +272,33 @@ export class FinanceService {
       lastActivityAt,
       otherCurrencies,
     };
+  }
+
+  /**
+   * CustomerOrder-Finance "direct" summary only (never the PurchaseOrder
+   * side — see buildSummary's own goodsCost, which already prices goods
+   * from PurchaseOrderItem.actualPrice/expectedPrice; counting a PO's own
+   * goods-invoice Document as an expense too would double the goods cost,
+   * exactly what Scenario C in finance.service.spec.ts guards against).
+   *
+   * A direct CustomerOrderDocument has no such items-based cost to double-
+   * count against, so — confirmed with the user 2026-08-24 ("не завжди
+   * робитиму все через закупівлі, деколи легше напряму") — its own amount
+   * now counts toward additionalExpenses/actualCost by default, as if it
+   * were its own Expense row, UNLESS an Expense already cites it via
+   * `documentId` (that Expense's amount is then the authoritative number
+   * for that document — may legitimately differ from the document's own
+   * amount, e.g. a partial expense against a bigger invoice). Only affects
+   * additionalExpenses/actualCost; `documents` itself still drives
+   * totalDocuments/paid/unpaidPerDocuments unchanged.
+   */
+  private withUnlinkedDocumentsAsExpenses<E extends { documentId: string | null } & MoneyRow & TimestampedRow>(
+    documents: (MoneyRow & TimestampedRow & { id: string })[],
+    expenses: E[],
+  ): (E | (MoneyRow & TimestampedRow))[] {
+    const linkedDocumentIds = new Set(expenses.map((e) => e.documentId).filter((id): id is string => id !== null));
+    const unlinkedDocuments = documents.filter((d) => !linkedDocumentIds.has(d.id) && d.amount !== null);
+    return [...expenses, ...unlinkedDocuments];
   }
 
   private sumByCurrency(rows: MoneyRow[]): Map<string, number> {
@@ -613,10 +644,18 @@ export class FinanceService {
       this.prisma.tenant.customerOrderPayment.findMany({ where: { document: { customerOrderId } } }),
     ]);
     // Reuses buildSummary as-is with an empty `items` array — goodsCost is
-    // always 0 for the "direct" part, so its additionalExpenses/actualCost
-    // become exactly the direct-expenses total, with the same per-currency
-    // separation buildSummary already guarantees.
-    const directSummary = this.buildSummary(customerOrderId, [], directDocuments, directExpenses, directPayments);
+    // always 0 for the "direct" part. additionalExpenses/actualCost = the
+    // direct Expense rows PLUS any direct Document's own amount that isn't
+    // already cited by one of those Expenses (see
+    // withUnlinkedDocumentsAsExpenses's own header comment), with the same
+    // per-currency separation buildSummary already guarantees.
+    const directSummary = this.buildSummary(
+      customerOrderId,
+      [],
+      directDocuments,
+      this.withUnlinkedDocumentsAsExpenses(directDocuments, directExpenses),
+      directPayments,
+    );
 
     return this.mergeCustomerOrderSummary(customerOrderId, poRollups, directSummary, directDocuments.length);
   }
@@ -679,7 +718,13 @@ export class FinanceService {
         summary: this.buildSummary(po.id, po.items, poDocsByPo.get(po.id) ?? [], poExpByPo.get(po.id) ?? [], poPayByPo.get(po.id) ?? []),
       }));
       const directDocs = directDocsByOrder.get(order.id) ?? [];
-      const directSummary = this.buildSummary(order.id, [], directDocs, directExpByOrder.get(order.id) ?? [], directPayByOrder.get(order.id) ?? []);
+      const directSummary = this.buildSummary(
+        order.id,
+        [],
+        directDocs,
+        this.withUnlinkedDocumentsAsExpenses(directDocs, directExpByOrder.get(order.id) ?? []),
+        directPayByOrder.get(order.id) ?? [],
+      );
       const summary = this.mergeCustomerOrderSummary(order.id, poRollups, directSummary, directDocs.length);
 
       return {

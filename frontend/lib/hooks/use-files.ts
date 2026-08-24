@@ -1,10 +1,12 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   listFilesForEntity,
   listFilesForEntities,
   getFileDownloadUrl,
+  getFilePreview,
+  deleteFile,
   type FileDomain,
   type FileAssetWithUrl,
 } from '@/lib/api-client/files';
@@ -55,4 +57,19 @@ export function useFileDownloadUrl(fileAssetId: string | undefined) {
     enabled: Boolean(fileAssetId),
     staleTime: 50 * 60 * 1000,
   });
+}
+
+/** Only meaningful for a .xlsx attachment — pass `enabled: false` (via the `active` param) for anything else so no request fires for a PDF/image that will never call this. */
+export function useFilePreview(fileAssetId: string | undefined, active: boolean) {
+  return useQuery({
+    queryKey: ['file-preview', fileAssetId],
+    queryFn: () => getFilePreview(fileAssetId as string),
+    enabled: Boolean(fileAssetId) && active,
+    staleTime: 50 * 60 * 1000,
+  });
+}
+
+/** Soft-deletes one file attachment. Caller is responsible for invalidating/refetching the entity's file list (its `entityType`/`entityId` aren't known here) — same "caller owns invalidation" shape as the mutation hooks in use-finance.ts. */
+export function useDeleteFile() {
+  return useMutation({ mutationFn: (fileAssetId: string) => deleteFile(fileAssetId) });
 }

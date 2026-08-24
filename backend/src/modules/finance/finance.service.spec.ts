@@ -524,18 +524,47 @@ describe('FinanceService', () => {
       expect(s.purchaseOrders.find((p) => p.purchaseOrder.id === 'poA')!.summary.actualCost).toBe(4000);
     });
 
-    it('an order with no linked purchase orders at all — pure direct costs', async () => {
+    it('an order with no linked purchase orders at all — a direct document with no linked Expense counts toward actualCost on its own (2026-08-24: "не завжди робитиму все через закупівлі")', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
       prisma.tenant.purchaseOrder.findMany.mockResolvedValue([]);
-      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([d({ amount: 200 })]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([d({ id: 'doc1', amount: 200 })]);
       prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([]);
       prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
 
       const s = await service.getCustomerOrderSummary(user, 'co1');
       expect(s.purchaseCost).toBe(0);
-      expect(s.actualCost).toBe(0); // a document alone (no Expense row) never inflates actualCost — same rule as the PO side
+      expect(s.additionalExpenses).toBe(200); // unlike the PurchaseOrder side, a direct document has no items-based goods cost to double-count against
+      expect(s.actualCost).toBe(200);
       expect(s.totalDocuments).toBe(200);
       expect(s.purchaseOrders).toEqual([]);
+    });
+
+    it('a direct document already cited by an Expense (documentId) is NOT counted twice — the Expense amount wins even when it differs from the document amount', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([d({ id: 'doc1', amount: 500 })]); // full invoice
+      prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 300, documentId: 'doc1' })]); // only part of it is a real cost so far
+      prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
+
+      const s = await service.getCustomerOrderSummary(user, 'co1');
+      expect(s.additionalExpenses).toBe(300); // the linked Expense's own amount, not the document's 500
+      expect(s.actualCost).toBe(300);
+      expect(s.totalDocuments).toBe(500); // the document's full amount still shows here, unaffected
+    });
+
+    it('a second, unlinked direct document on the same order still counts on its own alongside a linked one', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([
+        d({ id: 'doc1', amount: 500 }), // linked to an Expense below
+        d({ id: 'doc2', amount: 80 }), // no Expense at all
+      ]);
+      prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 300, documentId: 'doc1' })]);
+      prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
+
+      const s = await service.getCustomerOrderSummary(user, 'co1');
+      expect(s.additionalExpenses).toBe(380); // 300 (linked Expense) + 80 (doc2's own amount, unlinked)
+      expect(s.totalDocuments).toBe(580);
     });
 
     it('never mixes EUR and USD across the rollup + direct sources — merges same-currency buckets, keeps EUR/USD separate', async () => {

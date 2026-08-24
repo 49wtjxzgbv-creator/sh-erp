@@ -15,8 +15,8 @@ import {
   useDeleteCustomerOrderDocument,
 } from '@/lib/hooks/use-finance';
 import type { PurchaseOrderPayment } from '@/lib/api-client/finance';
-import { useFilesForEntity, useFileDownloadUrl } from '@/lib/hooks/use-files';
-import { uploadFile } from '@/lib/api-client/files';
+import { useFilesForEntity, useFileDownloadUrl, useFilePreview, useDeleteFile } from '@/lib/hooks/use-files';
+import { uploadFile, type FileAsset } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatMoney } from '@/lib/finance-format';
 import type { DocumentPaymentStatus } from '@/lib/api-client/finance';
@@ -43,40 +43,114 @@ const FILE_ENTITY_TYPE: Record<DocumentDrawerKind, string> = {
   'customer-order': 'CustomerOrderDocument',
 };
 
-/** In-app preview without a mandatory download (point 9 of the confirmed design): PDF renders via a plain `<iframe>` (browsers do this natively, no library), images via `<img>` (same convention as photo-lightbox.tsx), anything else falls back to a filename + explicit download link. */
-function DocumentFilePreview({ kind, documentId, canManage }: { kind: DocumentDrawerKind; documentId: string; canManage: boolean }) {
-  const t = useTranslations('finance');
-  const entityType = FILE_ENTITY_TYPE[kind];
-  const { data: files, refetch } = useFilesForEntity(entityType, documentId, 'FINANCE_DOCUMENT');
-  const file = files?.[0];
-  const { data: downloadUrl } = useFileDownloadUrl(file?.id);
-  const [uploading, setUploading] = useState(false);
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-  async function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (!f) return;
-    setUploading(true);
-    try {
-      await uploadFile(f, { domain: 'FINANCE_DOCUMENT', entityType, entityId: documentId });
-      await refetch();
-    } finally {
-      setUploading(false);
-    }
+/** Server-side parsed table preview for a .xlsx attachment — see files.service.ts#getSpreadsheetPreview's header comment for why this is the one file type proxied through the API instead of previewed via a plain `<iframe>`/`<img>` src. */
+function SpreadsheetPreview({ fileId, fileName, downloadUrl }: { fileId: string; fileName: string; downloadUrl: string | undefined }) {
+  const t = useTranslations('finance');
+  const apiErrorMessage = useApiErrorMessage();
+  const { data: preview, isLoading, error } = useFilePreview(fileId, true);
+  const [activeSheet, setActiveSheet] = useState(0);
+
+  if (isLoading) {
+    return <div className="flex h-full min-h-[16rem] items-center justify-center text-sm text-muted-foreground">…</div>;
   }
 
-  if (!file) {
+  if (error || !preview || preview.sheets.length === 0) {
     return (
-      <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-3 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-        <span>{t('noFileYet')}</span>
-        {canManage && <input type="file" onChange={handleSelect} disabled={uploading} className="text-sm" />}
+      <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 rounded-md border p-8 text-center text-sm">
+        <span className="font-medium">{fileName}</span>
+        <span className="text-muted-foreground">{error ? apiErrorMessage(error, t('noFilePreview')) : t('noFilePreview')}</span>
+        {downloadUrl && (
+          <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+            {t('download')}
+          </a>
+        )}
       </div>
     );
   }
 
+  const sheet = preview.sheets[Math.min(activeSheet, preview.sheets.length - 1)];
+
+  return (
+    <div className="flex h-full min-h-[16rem] flex-col gap-2 rounded-md border p-2">
+      {preview.sheets.length > 1 && (
+        <div className="flex flex-wrap gap-1 border-b pb-2">
+          {preview.sheets.map((s, i) => (
+            <button
+              key={s.name}
+              type="button"
+              onClick={() => setActiveSheet(i)}
+              className={`rounded px-2 py-1 text-xs ${i === activeSheet ? 'bg-secondary font-medium' : 'text-muted-foreground hover:underline'}`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="max-h-[28rem] overflow-auto">
+        <table className="min-w-full border-collapse text-xs">
+          <tbody>
+            {sheet.rows.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((cell, ci) => (
+                  <td key={ci} className="border px-2 py-1 whitespace-nowrap">{cell ?? ''}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {(sheet.truncatedRows || sheet.truncatedCols || preview.truncatedSheets) && (
+        <p className="text-xs text-muted-foreground">{t('previewTruncated')}</p>
+      )}
+      {downloadUrl && (
+        <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="self-start text-xs text-primary hover:underline">
+          {t('download')}
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** Opens the file in a new tab and asks it to print itself once loaded — works for anything the browser renders natively (PDF, images); `window.print()` is one of the handful of Window members exposed cross-origin, so this is safe even though a presigned R2 URL is a different origin. */
+function printFileUrl(url: string) {
+  const win = window.open(url, '_blank');
+  if (!win) return;
+  win.addEventListener('load', () => {
+    win.focus();
+    win.print();
+  });
+}
+
+/** Download + Print action row for a file the browser can render inline (PDF/image) — `canPrint` is false for anything else (e.g. the unsupported-type fallback), since "print" only makes sense once there's something on-screen to print. */
+function FileActions({ downloadUrl, canPrint }: { downloadUrl: string | undefined; canPrint: boolean }) {
+  const t = useTranslations('finance');
+  if (!downloadUrl) return null;
+  return (
+    <div className="flex gap-3 pt-1 text-xs">
+      <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+        {t('download')}
+      </a>
+      {canPrint && (
+        <button type="button" className="text-primary hover:underline" onClick={() => printFileUrl(downloadUrl)}>
+          {t('print')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One selected file's preview, branched by mimeType — PDF via `<iframe>` (browsers do this natively, no library), images via `<img>` (same convention as photo-lightbox.tsx), .xlsx via SpreadsheetPreview (server-parsed table, own download-only row — printing a raw workbook isn't meaningful the same way), anything else falls back to a filename + Download only. */
+function FileContentPreview({ file, downloadUrl }: { file: FileAsset; downloadUrl: string | undefined }) {
+  const t = useTranslations('finance');
+
   if (file.mimeType === 'application/pdf') {
     return downloadUrl ? (
-      <iframe src={downloadUrl} title={file.originalName} className="h-full min-h-[24rem] w-full rounded-md border" />
+      <div className="flex h-full min-h-[24rem] flex-col gap-1">
+        <iframe src={downloadUrl} title={file.originalName} className="min-h-[24rem] w-full flex-1 rounded-md border" />
+        <FileActions downloadUrl={downloadUrl} canPrint />
+      </div>
     ) : (
       <div className="flex h-full min-h-[16rem] items-center justify-center text-sm text-muted-foreground">…</div>
     );
@@ -84,25 +158,102 @@ function DocumentFilePreview({ kind, documentId, canManage }: { kind: DocumentDr
 
   if (file.mimeType.startsWith('image/')) {
     return downloadUrl ? (
-      // eslint-disable-next-line @next/next/no-img-element -- arbitrary presigned R2 URL, same convention as photo-lightbox.tsx
-      <img src={downloadUrl} alt={file.originalName} className="max-h-[28rem] w-full rounded-md border object-contain" />
+      <div className="flex h-full flex-col gap-1">
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary presigned R2 URL, same convention as photo-lightbox.tsx */}
+        <img src={downloadUrl} alt={file.originalName} className="max-h-[28rem] w-full rounded-md border object-contain" />
+        <FileActions downloadUrl={downloadUrl} canPrint />
+      </div>
     ) : (
       <div className="flex h-full min-h-[16rem] items-center justify-center text-sm text-muted-foreground">…</div>
     );
+  }
+
+  if (file.mimeType === XLSX_MIME_TYPE) {
+    return <SpreadsheetPreview fileId={file.id} fileName={file.originalName} downloadUrl={downloadUrl} />;
   }
 
   return (
     <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 rounded-md border p-8 text-center text-sm">
       <span className="font-medium">{file.originalName}</span>
       <span className="text-muted-foreground">{t('noFilePreview')}</span>
-      {downloadUrl && (
-        <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-          {t('download')}
-        </a>
+      <FileActions downloadUrl={downloadUrl} canPrint={false} />
+    </div>
+  );
+}
+
+/** In-app preview for every file attached to this document — a document can carry more than one (multi-file upload/attach), so this owns a tab strip to pick which one is shown, on top of FileContentPreview's per-file rendering. */
+function DocumentFilePreview({ kind, documentId, canManage }: { kind: DocumentDrawerKind; documentId: string; canManage: boolean }) {
+  const t = useTranslations('finance');
+  const tc = useTranslations('common');
+  const entityType = FILE_ENTITY_TYPE[kind];
+  const { data: files, refetch } = useFilesForEntity(entityType, documentId, 'FINANCE_DOCUMENT');
+  const deleteFile = useDeleteFile();
+  const [selectedFileId, setSelectedFileId] = useState<string | undefined>();
+  const [uploading, setUploading] = useState(false);
+
+  const fileList = files ?? [];
+  const activeFile = fileList.find((f) => f.id === selectedFileId) ?? fileList[0];
+  const { data: downloadUrl } = useFileDownloadUrl(activeFile?.id);
+
+  async function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (selected.length === 0) return;
+    setUploading(true);
+    try {
+      for (const f of selected) {
+        await uploadFile(f, { domain: 'FINANCE_DOCUMENT', entityType, entityId: documentId });
+      }
+      await refetch();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteFile(fileId: string) {
+    if (!window.confirm(t('confirmDelete'))) return;
+    await deleteFile.mutateAsync(fileId);
+    if (selectedFileId === fileId) setSelectedFileId(undefined);
+    await refetch();
+  }
+
+  if (fileList.length === 0) {
+    return (
+      <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-3 rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <span>{t('noFileYet')}</span>
+        {canManage && <input type="file" multiple onChange={handleSelect} disabled={uploading} className="text-sm" />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-[16rem] flex-col gap-2">
+      {fileList.length > 1 && (
+        <div className="flex flex-wrap gap-1 border-b pb-2">
+          {fileList.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setSelectedFileId(f.id)}
+              title={f.originalName}
+              className={`max-w-[10rem] truncate rounded px-2 py-1 text-xs ${
+                (activeFile?.id ?? fileList[0].id) === f.id ? 'bg-secondary font-medium' : 'text-muted-foreground hover:underline'
+              }`}
+            >
+              {f.originalName}
+            </button>
+          ))}
+        </div>
       )}
+      <div className="flex-1">{activeFile && <FileContentPreview file={activeFile} downloadUrl={downloadUrl} />}</div>
       {canManage && (
-        <div className="pt-2">
-          <input type="file" onChange={handleSelect} disabled={uploading} className="text-sm" />
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <input type="file" multiple onChange={handleSelect} disabled={uploading} className="text-sm" />
+          {activeFile && (
+            <button type="button" className="text-xs text-destructive hover:underline" onClick={() => handleDeleteFile(activeFile.id)}>
+              {tc('delete')} «{activeFile.originalName}»
+            </button>
+          )}
         </div>
       )}
     </div>
