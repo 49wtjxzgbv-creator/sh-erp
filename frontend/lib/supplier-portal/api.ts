@@ -1,5 +1,6 @@
 import { getSupplierPortalAccessToken, useSupplierPortalSessionStore } from './session-store';
 import { restoreSession } from './actions';
+import { ApiError, type ApiErrorBody } from '../api-client/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
 
@@ -36,8 +37,10 @@ class SupplierPortalApiClient {
     const text = await res.text();
     const data = text ? JSON.parse(text) : undefined;
     if (!res.ok) {
-      const message = (data && (data.message || data.error)) || res.statusText;
-      throw new Error(Array.isArray(message) ? message.join(', ') : String(message));
+      // Same ApiError shape as lib/api-client/http.ts — lets supplier-portal
+      // pages use the same useApiErrorMessage() code->translation lookup
+      // instead of always showing the backend's raw (English) message.
+      throw new ApiError(res.status, data as ApiErrorBody, res.statusText);
     }
     return data as T;
   }

@@ -335,7 +335,7 @@ export default function PurchaseOrderDetailPage() {
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
 
-  const { data: order, isLoading } = usePurchaseOrder(params.id);
+  const { data: order, isLoading, isError, error: loadError } = usePurchaseOrder(params.id);
   const { data: warehouses } = useWarehouses();
   const receive = useReceivePurchaseOrder(params.id);
   const deleteOrder = useDeletePurchaseOrder();
@@ -359,6 +359,10 @@ export default function PurchaseOrderDetailPage() {
     () => new Map((supplierProducts ?? []).map((sp) => [sp.productId, sp.price])),
     [supplierProducts],
   );
+
+  if (isError) {
+    return <p className="text-sm text-destructive">{apiErrorMessage(loadError, t('orderNotFound'))}</p>;
+  }
 
   if (isLoading || !order) {
     return <LoadingBlock />;

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
+import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { PurchaseOrder, PurchaseOrderStatus, PurchaseOrderItem, DeliveryScheduleStatus, PurchaseOrderComment } from '@/lib/api-client/procurement';
 import type { FileAsset } from '@/lib/api-client/files';
 
@@ -36,6 +37,7 @@ const SCHEDULE_STATUS_VARIANT: Record<DeliveryScheduleStatus, 'secondary' | 'war
  */
 function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: string; item: PurchaseOrderItem; onChanged: () => Promise<void> }) {
   const t = useTranslations('supplierPortal');
+  const apiErrorMessage = useApiErrorMessage();
   const [proposing, setProposing] = useState(false);
   const [lines, setLines] = useState<{ date: string; qty: string }[]>([{ date: '', qty: '' }]);
   const [busy, setBusy] = useState(false);
@@ -57,7 +59,7 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
       await supplierPortalApi.post(`supplier-portal/purchase-orders/${orderId}/delivery-schedule/${current!.id}/confirm`);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('scheduleActionFailed'));
+      setError(apiErrorMessage(err, t('scheduleActionFailed')));
     } finally {
       setBusy(false);
     }
@@ -77,7 +79,7 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
       setLines([{ date: '', qty: '' }]);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('scheduleActionFailed'));
+      setError(apiErrorMessage(err, t('scheduleActionFailed')));
     } finally {
       setBusy(false);
     }
@@ -170,6 +172,7 @@ function SupplierDeliveryScheduleBlock({ orderId, item, onChanged }: { orderId: 
 /** Phase 2 — documents (invoices, packing lists) attached to this order. Own presigned-upload flow (supplier-portal has its own auth surface, not lib/api-client/files.ts's staff-permission-gated endpoints) — same 3-step presign→PUT→confirm shape either way. */
 function SupplierPortalDocumentsPanel({ orderId }: { orderId: string }) {
   const t = useTranslations('supplierPortal');
+  const apiErrorMessage = useApiErrorMessage();
   const [files, setFiles] = useState<FileAsset[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,7 +206,7 @@ function SupplierPortalDocumentsPanel({ orderId }: { orderId: string }) {
       await supplierPortalApi.post(`supplier-portal/purchase-orders/${orderId}/files/${presigned.fileAssetId}/confirm`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('scheduleActionFailed'));
+      setError(apiErrorMessage(err, t('scheduleActionFailed')));
     } finally {
       setUploading(false);
     }
@@ -304,9 +307,11 @@ function SupplierPortalCommentsPanel({ orderId }: { orderId: string }) {
 export default function SupplierPortalOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('supplierPortal');
+  const apiErrorMessage = useApiErrorMessage();
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [deliveryDate, setDeliveryDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -315,20 +320,30 @@ export default function SupplierPortalOrderDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await supplierPortalApi.get<PurchaseOrder>(`supplier-portal/purchase-orders/${params.id}`);
-    setOrder(res);
-    setDeliveryDate(res.supplierConfirmedDeliveryDate ? res.supplierConfirmedDeliveryDate.slice(0, 10) : '');
-    const seeded: Record<string, string> = {};
-    for (const item of res.items ?? []) {
-      seeded[item.id] = item.supplierConfirmedPrice != null ? String(item.supplierConfirmedPrice) : '';
+    setLoadError(null);
+    try {
+      const res = await supplierPortalApi.get<PurchaseOrder>(`supplier-portal/purchase-orders/${params.id}`);
+      setOrder(res);
+      setDeliveryDate(res.supplierConfirmedDeliveryDate ? res.supplierConfirmedDeliveryDate.slice(0, 10) : '');
+      const seeded: Record<string, string> = {};
+      for (const item of res.items ?? []) {
+        seeded[item.id] = item.supplierConfirmedPrice != null ? String(item.supplierConfirmedPrice) : '';
+      }
+      setPrices(seeded);
+    } catch (err) {
+      setLoadError(err);
+    } finally {
+      setLoading(false);
     }
-    setPrices(seeded);
-    setLoading(false);
   }, [params.id]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  if (loadError) {
+    return <p className="text-sm text-destructive">{apiErrorMessage(loadError, t('orderNotFound'))}</p>;
+  }
 
   if (loading || !order) {
     return <LoadingBlock />;
@@ -353,7 +368,7 @@ export default function SupplierPortalOrderDetailPage() {
       setSuccess(true);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('confirmFailed'));
+      setError(apiErrorMessage(err, t('confirmFailed')));
     } finally {
       setSubmitting(false);
     }

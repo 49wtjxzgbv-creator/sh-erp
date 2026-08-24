@@ -62,4 +62,17 @@ echo "=== 3. Shipping .next/standalone to $VPS_HOST:$REMOTE_FRONTEND_DIR/.next/s
 ssh "$VPS_HOST" "mkdir -p $REMOTE_FRONTEND_DIR/.next"
 rsync -az --delete "$REPO_ROOT/frontend/.next/standalone/" "$VPS_HOST:$REMOTE_FRONTEND_DIR/.next/standalone/"
 
+# rsync from a workstation preserves the LOCAL machine's UID/GID (not a
+# real account on the VPS), so the shipped tree ends up owned by whatever
+# numeric UID this workstation happens to use — not `shserp`, the user
+# ops/systemd/sh-erp-frontend.service actually runs as (User=shserp). Left
+# as-is, Next.js's own ISR file-system cache (`.next/standalone/.next/cache`)
+# can't be created at runtime and every request logs a swallowed EACCES
+# (real incident, 2026-08-21/24 — happened identically on two separate
+# deploys before this step existed). chown after every ship, not just once,
+# since --delete means every deploy re-lays the tree with the shipping
+# machine's UID again.
+echo "=== 4. Fixing ownership for the shserp service user ==="
+ssh "$VPS_HOST" "chown -R shserp:shserp $REMOTE_FRONTEND_DIR/.next/standalone"
+
 echo "=== Done. Now run ops/deploy.sh on the VPS (git pull first) to build the backend and restart both services. ==="
