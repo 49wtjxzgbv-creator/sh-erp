@@ -35,7 +35,7 @@ describe('ProductionOrdersService', () => {
         payrollEntry: { createMany: jest.fn() },
         productionStage: { findMany: jest.fn().mockResolvedValue([]) },
         productionOrderStageEvent: { create: jest.fn(), deleteMany: jest.fn() },
-        productionExecution: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+        productionExecution: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), deleteMany: jest.fn() },
         stockMovement: { findMany: jest.fn().mockResolvedValue([]) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
       },
@@ -133,8 +133,9 @@ describe('ProductionOrdersService', () => {
       expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
     });
 
-    it('real incident (2026-08-25), fixed same day: deletes a reverted-to-PLANNED order even with VOIDED execution history still attached — ProductionExecution.productionOrder IS onDelete: SetNull at the DB level (the migration always had it; an earlier app-level guard here wrongly assumed otherwise and blocked this unnecessarily)', async () => {
+    it('real incident (2026-08-25): deletes a reverted-to-PLANNED order by first hard-deleting its (necessarily VOIDED) ProductionExecution rows — SET NULL alone can\'t satisfy the production_executions_exactly_one_parent CHECK constraint for a row with no workTaskId either', async () => {
       await service.remove(user, 'po1');
+      expect(prisma.tenant.productionExecution.deleteMany).toHaveBeenCalledWith({ where: { productionOrderId: 'po1' } });
       expect(prisma.tenant.productionOrder.delete).toHaveBeenCalledWith({ where: { id: 'po1' } });
     });
   });

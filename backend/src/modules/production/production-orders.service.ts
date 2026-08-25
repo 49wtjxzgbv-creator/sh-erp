@@ -261,15 +261,24 @@ export class ProductionOrdersService {
    * A PLANNED order CAN have ProductionExecution history if it was
    * IN_PROGRESS and got reverted (`revertStart` below) — those rows stay
    * VOIDED, compensating PayrollEntry already written, immutable-ledger
-   * convention. Real incident (2026-08-25): this used to be additionally
-   * guarded here against exactly that case, on the mistaken belief that
-   * ProductionExecution.productionOrder had no onDelete: SetNull — it
-   * always did (see that field's schema.prisma comment, a real drift
-   * between the migration and the Prisma annotation). Deleting the order
-   * now correctly orphans those rows (productionOrderId -> null) instead
-   * of being blocked; the compensating PayrollEntry rows (already
-   * SetNull) keep their own textual comment referencing the order id, so
-   * no audit information is actually lost.
+   * convention. They're explicitly hard-deleted here (never `CONFIRMED` at
+   * this point — that requires IN_PROGRESS/COMPLETED, and revertStart
+   * already hard-deletes any `DRAFT` ones — so only `VOIDED` rows can ever
+   * reach this code path). Two real incidents on the same day (2026-08-25)
+   * before landing on this: (1) a guard here originally blocked deletion
+   * outright, on the mistaken belief that ProductionExecution.productionOrder
+   * had no onDelete: SetNull (it always did — a real drift between the
+   * migration and the Prisma schema annotation, since fixed); (2) removing
+   * that guard and relying on the FK's SET NULL then hit Postgres error
+   * 23514 — `production_executions_exactly_one_parent`, the CHECK
+   * constraint requiring EXACTLY ONE of productionOrderId/workTaskId,
+   * makes SET NULL on productionOrderId alone impossible to satisfy for a
+   * row whose workTaskId is also null (every PRODUCT-parented execution).
+   * Deleting the row outright is the only option left — and is safe: the
+   * money ledger (PayrollEntry, already `onDelete: SetNull`) keeps its own
+   * textual comment referencing the order id, so no financial audit
+   * information is lost, only the now-parentless execution/allocation
+   * metadata (qtyCompleted, per-employee split) goes away with it.
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
@@ -279,6 +288,7 @@ export class ProductionOrdersService {
         'Cannot delete: this production order has already started — it has consumed stock, generated finished-good units, and/or paid out payroll. Only a planned or already-cancelled order can be deleted.',
       );
     }
+    await this.prisma.tenant.productionExecution.deleteMany({ where: { productionOrderId: id } });
     await this.prisma.tenant.productionOrder.delete({ where: { id } });
     await this.auditService.record({
       companyId: user.companyId,
