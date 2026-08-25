@@ -48,7 +48,13 @@ function DocumentsPrintSection({ title, documents }: { title: string; documents:
   if (documents.length === 0) return null;
 
   return (
-    <div className="mb-4 break-inside-avoid">
+    // No break-inside-avoid here — see assembly-spec-print.tsx's
+    // AssemblyCompositionSection for the real print regression this class of
+    // "whole div must stay on one page" wrapper causes once its table grows
+    // past a single page's remaining height (rows overlapping instead of
+    // paginating). Per-row avoidance (globals.css's `.print-area tr`) is
+    // already correct and sufficient.
+    <div className="mb-4">
       <h3 className="mb-1 font-semibold">{title}</h3>
       <table>
         <thead>
@@ -108,7 +114,7 @@ function ExpensesPrintSection({ title, expenses }: { title: string; expenses: (P
   if (expenses.length === 0) return null;
 
   return (
-    <div className="mb-4 break-inside-avoid">
+    <div className="mb-4">
       <h3 className="mb-1 font-semibold">{title}</h3>
       <table>
         <thead>
@@ -147,7 +153,7 @@ function LinkedPurchaseOrderFinanceSection({
   const { data: expenses } = useFinanceExpenses(purchaseOrderId);
 
   return (
-    <div className="mb-6 break-inside-avoid">
+    <div className="mb-6">
       <p className="mb-1 font-semibold">
         {supplierName} · {new Date(orderDate).toLocaleDateString()}
       </p>

@@ -146,7 +146,19 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
   const name = `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}`;
 
   return (
-    <div className="mb-4 break-inside-avoid" style={{ marginLeft: depth * 24 }}>
+    // Real print regression (2026-08-25): `break-inside-avoid` here forced the
+    // WHOLE section (heading + entire table, however many rows) to stay on one
+    // page. That's fine for a short section, but once a real multi-row
+    // sub-assembly section exceeded a single page's remaining height, it
+    // conflicted with the per-row `break-inside: avoid` already set on every
+    // `tr` (globals.css's `.print-area tr`) — the print engine couldn't
+    // satisfy "don't break this div" AND "don't break any row inside it" at
+    // once, and visibly overlapped rows instead of erroring. Dropping it here
+    // lets the table paginate normally (rows breaking cleanly between pages,
+    // `<thead>` repeating via `display: table-header-group`), which is the
+    // already-working, already-tested behavior for every other printed table
+    // in this app.
+    <div className="mb-4" style={{ marginLeft: depth * 24 }}>
       <div className="mb-1 flex items-center gap-2">
         <Avatar src={photosOfThis?.[assemblyId]?.[0]?.downloadUrl} size="lg" />
         <p className="font-semibold">{depth === 0 ? tp('consistsOfTop', { name, qty }) : tp('consistsOfSub', { name, qty })}</p>
