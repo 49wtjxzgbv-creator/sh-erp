@@ -34,6 +34,16 @@ export interface AvailabilityResult {
   shortages: Array<{ productId: string; needed: number; available: number; shortage: number }>;
 }
 
+export interface SubAssemblyNeed {
+  assemblyId: string;
+  name: string;
+  article: string | null;
+  /** Total qty of this sub-assembly needed across every branch of the BOM tree it appears in. */
+  qtyNeeded: number;
+  /** Current IN_STOCK FinishedGood count for this sub-assembly. */
+  qtyInStock: number;
+}
+
 /**
  * BOM module (Assemblies.gs, Phase 1 §3.3). Ports:
  *  - Full BOM CRUD (Assembly header + AssemblyComponent lines).
@@ -503,6 +513,61 @@ export class AssembliesService {
         requirements.set(line.productId, (requirements.get(line.productId) ?? 0) + neededQty);
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
         await this.flattenRequirements(line.subAssemblyId, neededQty, requirements, visited);
+      }
+    }
+
+    visited.delete(assemblyId);
+  }
+
+  // ============================================================
+  // Sub-assembly batch planning (2026-08-25 user request)
+  // ============================================================
+
+  /**
+   * Every DISTINCT sub-assembly needed to build `qty` units of `assemblyId`,
+   * at ANY BOM depth (a sub-assembly's own sub-assemblies included), with
+   * quantities aggregated across every branch it appears in — the "what
+   * needs its own production batch, and how much of it is already on the
+   * shelf" list shown when adding a sales-order line. Deliberately always
+   * recurses through every ASSEMBLY-type line unconditionally, unlike
+   * CustomerOrderShortageService's buy-line rule (which stops recursing
+   * once a sub-assembly has a supplier link) — the question here is "what
+   * needs a production batch," not "what needs a purchase order," so a
+   * supplier link is irrelevant to it.
+   */
+  async listSubAssembliesNeeded(user: RequestUser, assemblyId: string, qty: number): Promise<SubAssemblyNeed[]> {
+    await this.findOne(user, assemblyId);
+
+    const needs = new Map<string, number>();
+    await this.flattenSubAssemblyNeeds(assemblyId, qty, needs, new Set());
+
+    const results: SubAssemblyNeed[] = [];
+    for (const [subAssemblyId, qtyNeeded] of needs) {
+      const sub = await this.prisma.tenant.assembly.findUnique({ where: { id: subAssemblyId } });
+      const qtyInStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId: subAssemblyId, status: 'IN_STOCK' } });
+      results.push({ assemblyId: subAssemblyId, name: sub?.name ?? subAssemblyId, article: sub?.article ?? null, qtyNeeded, qtyInStock });
+    }
+    return results;
+  }
+
+  /** Same ancestor-path cycle-guard convention as flattenRequirements/calcAssemblyCostRecursive above. */
+  private async flattenSubAssemblyNeeds(
+    assemblyId: string,
+    qtyOfAssembly: number,
+    needs: Map<string, number>,
+    visited: Set<string>,
+  ): Promise<void> {
+    if (visited.has(assemblyId)) {
+      throw new CodedConflictException('BOM_CIRCULAR_EXPAND', `Circular BOM detected while expanding assembly ${assemblyId}.`);
+    }
+    visited.add(assemblyId);
+
+    const components = await this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId } });
+    for (const line of components) {
+      if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const neededQty = qtyOfAssembly * Number(line.qtyPerUnit);
+        needs.set(line.subAssemblyId, (needs.get(line.subAssemblyId) ?? 0) + neededQty);
+        await this.flattenSubAssemblyNeeds(line.subAssemblyId, neededQty, needs, visited);
       }
     }
 

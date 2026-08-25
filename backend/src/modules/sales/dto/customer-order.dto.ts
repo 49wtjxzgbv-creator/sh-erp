@@ -39,6 +39,18 @@ class ExtraCostsDto {
   otherCost?: number;
 }
 
+export class SubAssemblyToProduceDto {
+  @ApiProperty()
+  @IsUUID()
+  assemblyId!: string;
+
+  @ApiProperty({ description: 'Whole number of units to plan a production batch for — one FinishedGood serial per unit, same as any other ProductionOrder.' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  qty!: number;
+}
+
 export class CustomerOrderItemDto {
   @ApiProperty()
   @IsUUID()
@@ -49,6 +61,19 @@ export class CustomerOrderItemDto {
   @IsNumber()
   @Min(0.001)
   qty!: number;
+
+  @ApiPropertyOptional({
+    type: [SubAssemblyToProduceDto],
+    description:
+      'Sub-assemblies this line needs (recursively) that should each get their own PLANNED production batch now, ' +
+      'linked via ProductionOrder.subAssemblyForItemId — rather than being left to consume from whatever\'s already ' +
+      'IN_STOCK once the parent assembly is started.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SubAssemblyToProduceDto)
+  subAssembliesToProduce?: SubAssemblyToProduceDto[];
 
   @ApiPropertyOptional({ description: 'Planned start for this line, only if it differs from the order\'s own. Never auto-derived — left null shows as "не заплановано".' })
   @IsOptional()

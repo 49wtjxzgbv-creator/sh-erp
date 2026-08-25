@@ -16,6 +16,7 @@ import {
   getAssemblyVersion,
   calculateAssemblyCost,
   checkAssemblyAvailability,
+  getSubAssembliesNeeded,
   produceAssembly,
   type QueryAssembliesInput,
   type CreateAssemblyInput,
@@ -169,6 +170,32 @@ export function useAssemblyCosts(assemblyIds: (string | undefined)[]) {
 export function useCheckAvailability() {
   return useMutation({
     mutationFn: ({ assemblyId, qty }: { assemblyId: string; qty: number }) => checkAssemblyAvailability(assemblyId, qty),
+  });
+}
+
+/** On demand, same reasoning as useCheckAvailability above — checked fresh each time the planning dialog opens for a specific assembly+qty, not a background-refetched resource. */
+export function useSubAssembliesNeeded() {
+  return useMutation({
+    mutationFn: ({ assemblyId, qty }: { assemblyId: string; qty: number }) => getSubAssembliesNeeded(assemblyId, qty),
+  });
+}
+
+/**
+ * "Does this assembly have ANY sub-assembly, at any depth" — a cheap,
+ * qty-independent existence probe (fixed qty=1: presence/absence of an
+ * ASSEMBLY-type BOM line doesn't depend on how many units are being built)
+ * used to decide whether to auto-open SubAssemblyPlanningDialog when a
+ * sales-order line's assembly is picked, without popping the dialog open
+ * for the common case of an assembly with no sub-assemblies at all.
+ */
+/** Same `useQueries` shape as useAssemblyCosts above, for the same reason: a dynamic-length row list can't call a plain useQuery in a loop directly (Rules of Hooks). */
+export function useHasSubAssembliesMany(assemblyIds: (string | undefined)[]) {
+  return useQueries({
+    queries: assemblyIds.map((id) => ({
+      queryKey: ['sub-assemblies-needed-probe', id ?? ''],
+      queryFn: async () => (await getSubAssembliesNeeded(id as string, 1)).length > 0,
+      enabled: Boolean(id),
+    })),
   });
 }
 

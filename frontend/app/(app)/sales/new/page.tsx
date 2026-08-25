@@ -1,15 +1,17 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCreateCustomerOrder } from '@/lib/hooks/use-sales';
-import { useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { useAssemblyCosts, useHasSubAssembliesMany } from '@/lib/hooks/use-bom';
 import { formatEur, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import type { CustomerOrderItemInput, CustomerOrderPriority } from '@/lib/api-client/sales';
+import type { CustomerOrderItemInput, CustomerOrderPriority, SubAssemblyToProduceInput } from '@/lib/api-client/sales';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
+import { SubAssemblyPlanningDialog } from '@/components/domain/sales/sub-assembly-planning-dialog';
+import { Layers } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +29,8 @@ interface EditableItemRow {
   plannedStartAt: string;
   plannedEndAt: string;
   itemDeadline: string;
+  /** "Виготовити" decisions made in SubAssemblyPlanningDialog for this row's assembly — undefined means "not decided yet / use from stock for everything". */
+  subAssembliesToProduce?: SubAssemblyToProduceInput[];
 }
 
 let rowKeySeq = 0;
@@ -57,6 +61,25 @@ export default function NewCustomerOrderPage() {
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [planningRowKey, setPlanningRowKey] = useState<string | null>(null);
+
+  // "Чи запитувати про підвироби" (2026-08-25): cheap per-row existence
+  // probe, qty-independent (see useHasSubAssembliesMany) — drives the
+  // auto-open effect below and the "Підвироби" button's visibility, without
+  // popping the planning dialog open for the common case of an assembly
+  // with no sub-assemblies at all.
+  const hasSubAssembliesResults = useHasSubAssembliesMany(rows.map((r) => r.assemblyId));
+  const autoOpenedForAssembly = useRef<Record<string, string | undefined>>({});
+  useEffect(() => {
+    rows.forEach((row, i) => {
+      if (!row.assemblyId) return;
+      if (autoOpenedForAssembly.current[row.key] === row.assemblyId) return;
+      if (hasSubAssembliesResults[i]?.data !== true) return;
+      autoOpenedForAssembly.current[row.key] = row.assemblyId;
+      setPlanningRowKey(row.key);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when the probe results settle, not on every rows/state change
+  }, [hasSubAssembliesResults.map((r) => r.data).join(',')]);
 
   // "Оцінена ціна" — a live estimate from each assembly's current BOM cost
   // (sellPriceEur-based, the one price basis every calculation in this app
@@ -79,6 +102,8 @@ export default function NewCustomerOrderPage() {
     .filter((v) => Number.isFinite(v) && v > 0);
   const extraCostsTotal = extraCosts.reduce((sum, v) => sum + v, 0);
   const hasExtraCosts = extraCosts.length > 0;
+
+  const planningRow = rows.find((r) => r.key === planningRowKey) ?? null;
 
   const estimatedTotal =
     rowEstimates.some((v) => v != null) || hasExtraCosts
@@ -118,6 +143,7 @@ export default function NewCustomerOrderPage() {
         plannedStartAt: fromDatetimeLocalValue(row.plannedStartAt),
         plannedEndAt: fromDatetimeLocalValue(row.plannedEndAt),
         itemDeadline: fromDatetimeLocalValue(row.itemDeadline),
+        subAssembliesToProduce: row.subAssembliesToProduce?.length ? row.subAssembliesToProduce : undefined,
       });
     }
 
@@ -256,7 +282,13 @@ export default function NewCustomerOrderPage() {
                   <Fragment key={row.key}>
                     <TableRow>
                       <TableCell>
-                        <AssemblyPicker value={row.assemblyId} onChange={(id) => updateRow(row.key, { assemblyId: id })} />
+                        <AssemblyPicker
+                          value={row.assemblyId}
+                          onChange={(id) => {
+                            if (id !== row.assemblyId) delete autoOpenedForAssembly.current[row.key];
+                            updateRow(row.key, { assemblyId: id, subAssembliesToProduce: id === row.assemblyId ? row.subAssembliesToProduce : undefined });
+                          }}
+                        />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -293,6 +325,14 @@ export default function NewCustomerOrderPage() {
                             <Input id={`${row.key}-deadline`} type="datetime-local" value={row.itemDeadline} onChange={(e) => updateRow(row.key, { itemDeadline: e.target.value })} />
                           </div>
                         </div>
+                        {hasSubAssembliesResults[i]?.data === true && (
+                          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setPlanningRowKey(row.key)}>
+                            <Layers className="mr-2 h-4 w-4" />
+                            {row.subAssembliesToProduce?.length
+                              ? t('subAssemblyPlannedBadge', { count: row.subAssembliesToProduce.length })
+                              : t('subAssemblyPlanningButton')}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   </Fragment>
@@ -317,6 +357,17 @@ export default function NewCustomerOrderPage() {
       <Button onClick={handleSubmit} loading={createOrder.isPending} data-tour="sales-form-save">
         {tc('create')}
       </Button>
+
+      {planningRow && (
+        <SubAssemblyPlanningDialog
+          open={planningRowKey !== null}
+          onOpenChange={(open) => { if (!open) setPlanningRowKey(null); }}
+          assemblyId={planningRow.assemblyId}
+          qty={Number(planningRow.qty) || 1}
+          initialDecisions={planningRow.subAssembliesToProduce}
+          onConfirm={(decisions) => updateRow(planningRow.key, { subAssembliesToProduce: decisions })}
+        />
+      )}
     </div>
     </RequirePermission>
   );

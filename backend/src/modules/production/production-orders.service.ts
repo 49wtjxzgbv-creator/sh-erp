@@ -95,6 +95,7 @@ export class ProductionOrdersService {
         scheduledStartAt: dto.scheduledStartAt,
         scheduledEndAt: dto.scheduledEndAt,
         customerOrderItemId: dto.customerOrderItemId,
+        subAssemblyForItemId: dto.subAssemblyForItemId,
       } as any,
     });
 

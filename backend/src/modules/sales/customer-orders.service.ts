@@ -59,18 +59,46 @@ export class CustomerOrdersService {
         comment: dto.comment,
         status: 'NEW',
         createdById: user.userId,
-        items: {
-          create: dto.items.map((item) => ({
-            assemblyId: item.assemblyId,
-            qty: item.qty,
-            plannedStartAt: item.plannedStartAt,
-            plannedEndAt: item.plannedEndAt,
-            itemDeadline: item.itemDeadline,
-          })),
-        },
       } as any,
-      include: { items: true },
     });
+
+    // Items are created one at a time here (rather than Prisma's nested
+    // `items: { create: [...] }` array, used before 2026-08-25) so each
+    // one's real id is known immediately — needed to link any requested
+    // sub-assembly production batches (below) to the SPECIFIC item that
+    // needs them, without relying on a returned relation array happening to
+    // preserve input order (never a documented guarantee).
+    const items = [];
+    for (const itemDto of dto.items) {
+      const item = await this.prisma.tenant.customerOrderItem.create({
+        data: {
+          customerOrderId: order.id,
+          assemblyId: itemDto.assemblyId,
+          qty: itemDto.qty,
+          plannedStartAt: itemDto.plannedStartAt,
+          plannedEndAt: itemDto.plannedEndAt,
+          itemDeadline: itemDto.itemDeadline,
+        } as any,
+      });
+      items.push(item);
+
+      // Sub-assembly batch planning (2026-08-25 user request): plan a
+      // PLANNED production batch now for each sub-assembly the user chose
+      // to make rather than pull from existing finished-goods stock. Linked
+      // via `subAssemblyForItemId` — see ProductionOrder's own schema
+      // comment for why this must never be `customerOrderItemId`
+      // (getItemQuantitySummary/withPriceTotals key strictly off that field
+      // and would double-count these batches against the parent item).
+      for (const sub of itemDto.subAssembliesToProduce ?? []) {
+        await this.productionOrdersService.create(user, {
+          assemblyId: sub.assemblyId,
+          unitsPlanned: sub.qty,
+          subAssemblyForItemId: item.id,
+        });
+      }
+    }
+
+    const fullOrder = { ...order, items };
 
     await this.auditService.record({
       companyId: user.companyId,
@@ -78,12 +106,12 @@ export class CustomerOrdersService {
       action: 'customer_order.created',
       entityType: 'CustomerOrder',
       entityId: order.id,
-      after: order,
+      after: fullOrder,
     });
 
     await this.shortageService.ensureRequirementsAndAutoReserve(user, order.id);
 
-    return order;
+    return fullOrder;
   }
 
   async findOne(user: RequestUser, id: string) {

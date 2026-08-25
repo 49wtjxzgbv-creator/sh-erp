@@ -6,7 +6,7 @@ import { AssembliesService } from './assemblies.service';
 import { SetAssemblyComponentsDto } from './dto/assembly-component.dto';
 import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
-import { CheckAvailabilityDto, ProduceAssemblyDto } from './dto/produce-assembly.dto';
+import { CheckAvailabilityDto, ProduceAssemblyDto, SubAssembliesNeededQueryDto } from './dto/produce-assembly.dto';
 import { QueryAssembliesDto } from './dto/query-assemblies.dto';
 
 @ApiTags('bom')
@@ -116,6 +116,21 @@ export class AssembliesController {
   @ApiOperation({ summary: 'Recursive per-unit cost calculation from Product.sellPriceEur, cycle-protected (calcAssemblyCost_ port).' })
   async calculateCost(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.assembliesService.calculateCost(user, id);
+  }
+
+  @Get(':id/sub-assemblies-needed')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({
+    summary:
+      'Every distinct sub-assembly needed to build `qty` units of this assembly, at any BOM depth, with the ' +
+      'current IN_STOCK count for each — the "план виготовлення підвиробів" list shown when adding a sales-order line.',
+  })
+  async subAssembliesNeeded(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Query() query: SubAssembliesNeededQueryDto,
+  ) {
+    return this.assembliesService.listSubAssembliesNeeded(user, id, query.qty);
   }
 
   @Post(':id/check-availability')

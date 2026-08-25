@@ -45,7 +45,7 @@ describe('CustomerOrdersService', () => {
     prisma = {
       tenant: {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        customerOrderItem: { update: jest.fn() },
+        customerOrderItem: { create: jest.fn(), update: jest.fn() },
         productionOrder: { findMany: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0) },
       },
@@ -64,10 +64,11 @@ describe('CustomerOrdersService', () => {
   });
 
   describe('create', () => {
-    it('creates the order with nested items and status NEW', async () => {
-      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW', items: [] });
+    it('creates the order header, then each item individually, with status NEW', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
 
-      await service.create(user, {
+      const result = await service.create(user, {
         clientName: 'Acme Client',
         items: [{ assemblyId: 'a1', qty: 3 }],
       });
@@ -79,16 +80,43 @@ describe('CustomerOrdersService', () => {
             status: 'NEW',
             priority: 'NORMAL',
             createdById: 'u1',
-            items: { create: [{ assemblyId: 'a1', qty: 3 }] },
           }),
         }),
       );
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ customerOrderId: 'co1', assemblyId: 'a1', qty: 3 }),
+      });
+      expect(result.items).toEqual([{ id: 'item1', assemblyId: 'a1', qty: 3 }]);
     });
 
     it('§ simplified spec: auto-reserves available raw materials by default, no manual decision required', async () => {
-      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW', items: [] });
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
       await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
       expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+    });
+
+    it('sub-assembly batch planning (2026-08-25): plans a PLANNED production batch per requested sub-assembly, linked via subAssemblyForItemId (never customerOrderItemId)', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
+
+      await service.create(user, {
+        clientName: 'Acme Client',
+        items: [{ assemblyId: 'a1', qty: 3, subAssembliesToProduce: [{ assemblyId: 'sub1', qty: 6 }] }],
+      });
+
+      expect(productionOrdersService.create).toHaveBeenCalledWith(user, {
+        assemblyId: 'sub1',
+        unitsPlanned: 6,
+        subAssemblyForItemId: 'item1',
+      });
+    });
+
+    it('does not plan any sub-assembly batch when the line has none requested', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
+      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+      expect(productionOrdersService.create).not.toHaveBeenCalled();
     });
   });
 

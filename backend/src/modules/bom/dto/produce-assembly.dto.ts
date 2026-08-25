@@ -27,3 +27,11 @@ export class CheckAvailabilityDto {
   @Min(0.0001)
   qty!: number;
 }
+
+export class SubAssembliesNeededQueryDto {
+  @ApiProperty({ description: 'Number of finished units of the top-level assembly being planned.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.0001)
+  qty!: number;
+}

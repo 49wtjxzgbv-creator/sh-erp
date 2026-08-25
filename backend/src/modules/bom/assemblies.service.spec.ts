@@ -32,6 +32,7 @@ describe('AssembliesService', () => {
         assemblyVersionComponent: { createMany: jest.fn() },
         product: { findUnique: jest.fn() },
         warehouse: { findFirst: jest.fn() },
+        finishedGood: { count: jest.fn().mockResolvedValue(0) },
       },
     };
     audit = { record: jest.fn() };
@@ -257,6 +258,53 @@ describe('AssembliesService', () => {
       prisma.tenant.warehouse.findFirst.mockResolvedValue(null);
 
       await expect(service.produce(user, 'a1', { qty: 1 } as any)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('listSubAssembliesNeeded', () => {
+    beforeEach(() => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });
+    });
+
+    it('aggregates the same sub-assembly across multiple branches into one qtyNeeded total', async () => {
+      // a1: 2x sub1 (direct) + 1x sub2, sub2 itself needs 3x sub1 -> sub1 needed = 2 + 1*3 = 5
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([
+          { componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 2 },
+          { componentType: 'ASSEMBLY', subAssemblyId: 'sub2', qtyPerUnit: 1 },
+        ])
+        .mockResolvedValueOnce([]) // sub1's own components
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 3 }]); // sub2's own components
+
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub One', article: 'S1' })
+        .mockResolvedValueOnce({ id: 'sub2', name: 'Sub Two', article: 'S2' });
+      prisma.tenant.finishedGood.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+      const result = await service.listSubAssembliesNeeded(user, 'a1', 1);
+
+      expect(result).toEqual(
+        expect.arrayContaining([
+          { assemblyId: 'sub1', name: 'Sub One', article: 'S1', qtyNeeded: 5, qtyInStock: 1 },
+          { assemblyId: 'sub2', name: 'Sub Two', article: 'S2', qtyNeeded: 1, qtyInStock: 0 },
+        ]),
+      );
+      expect(result).toHaveLength(2);
+    });
+
+    it('returns an empty list for an assembly with no sub-assembly components', async () => {
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValueOnce([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 }]);
+      const result = await service.listSubAssembliesNeeded(user, 'a1', 3);
+      expect(result).toEqual([]);
+    });
+
+    it('detects a circular BOM instead of recursing forever', async () => {
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'a1', qtyPerUnit: 1 }]); // sub1 points back at a1
+
+      await expect(service.listSubAssembliesNeeded(user, 'a1', 1)).rejects.toThrow(ConflictException);
     });
   });
 });

@@ -87,6 +87,11 @@ export interface CustomerOrder {
   actualTotal?: number | null;
 }
 
+export interface SubAssemblyToProduceInput {
+  assemblyId: string;
+  qty: number;
+}
+
 export interface CustomerOrderItemInput {
   assemblyId: string;
   qty: number;
@@ -94,6 +99,8 @@ export interface CustomerOrderItemInput {
   plannedStartAt?: string;
   plannedEndAt?: string;
   itemDeadline?: string;
+  /** Sub-assemblies (recursively, at any BOM depth) chosen to get their own PLANNED production batch now, rather than being left to consume from existing finished-goods stock. */
+  subAssembliesToProduce?: SubAssemblyToProduceInput[];
 }
 
 export interface CreateCustomerOrderInput {

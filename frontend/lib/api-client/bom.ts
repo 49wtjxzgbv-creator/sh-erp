@@ -195,6 +195,21 @@ export function checkAssemblyAvailability(assemblyId: string, qty: number): Prom
   return apiClient.post<AvailabilityResult>(`assemblies/${assemblyId}/check-availability`, { qty });
 }
 
+export interface SubAssemblyNeed {
+  assemblyId: string;
+  name: string;
+  article: string | null;
+  /** Total qty needed across every branch of the BOM tree it appears in. */
+  qtyNeeded: number;
+  /** Current IN_STOCK FinishedGood count. */
+  qtyInStock: number;
+}
+
+/** Every distinct sub-assembly needed to build `qty` units of this assembly, at any BOM depth. */
+export function getSubAssembliesNeeded(assemblyId: string, qty: number): Promise<SubAssemblyNeed[]> {
+  return apiClient.get<SubAssemblyNeed[]>(`assemblies/${assemblyId}/sub-assemblies-needed`, { query: { qty } });
+}
+
 export interface ProduceAssemblyInput {
   qty: number;
   warehouseId?: string;

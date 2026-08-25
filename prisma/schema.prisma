@@ -1404,6 +1404,21 @@ model ProductionOrder {
   // same CustomerOrderItem (План-графік §1, batch-splitting)
   customerOrderItemId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
+  // Sub-assembly batch planning (2026-08-25 user request): set when THIS
+  // batch produces a SUB-assembly needed to build another CustomerOrderItem's
+  // own (parent) assembly — chosen via "додати підвироби в замовлення" at
+  // order-creation time, as an alternative to silently relying on whatever
+  // happens to already be IN_STOCK once the parent starts. Deliberately a
+  // SEPARATE field from customerOrderItemId, never the same one: both
+  // CustomerOrdersService#getItemQuantitySummary and #withPriceTotals key
+  // strictly off customerOrderItemId to sum a batch's units/cost toward
+  // ITS OWN item's progress — reusing that field for a sub-assembly's batch
+  // would silently double-count the sub-assembly's units/cost against the
+  // parent item's completion and actual cost. This field is purely a "why
+  // does this batch exist" traceability pointer, intentionally never read
+  // by either of those two methods.
+  subAssemblyForItemId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+
   totalLocalCostEur  Decimal? @db.Decimal(14, 2)
   totalGermanCostEur Decimal? @db.Decimal(14, 2)
   laborCostEur       Decimal? @db.Decimal(14, 2)
@@ -1426,6 +1441,7 @@ model ProductionOrder {
   finishedGoods     FinishedGood[]
   payrollEntries    PayrollEntry[]
   customerOrderItem CustomerOrderItem?            @relation("ItemProductionBatches", fields: [customerOrderItemId], references: [id], onDelete: SetNull) // this batch's parent order line (План-графік §1, batch-splitting)
+  subAssemblyForItem CustomerOrderItem?           @relation("SubAssemblyBatches", fields: [subAssemblyForItemId], references: [id], onDelete: SetNull) // see subAssemblyForItemId's own comment above
   stagePlans        ProductionOrderStagePlan[]
   scheduleSlot      ProductionScheduleSlot?
   executions        ProductionExecution[] // production-labor module (2026-08-24): this batch's own labor fund is `laborCostEur` above, consumed incrementally by these
@@ -1434,6 +1450,7 @@ model ProductionOrder {
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, status])
   @@index([companyId, customerOrderItemId])
+  @@index([companyId, subAssemblyForItemId])
   @@map("production_orders")
 }
 
@@ -1889,6 +1906,7 @@ model CustomerOrderItem {
   customerOrder    CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
   assembly         Assembly          @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
   productionOrders ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
+  subAssemblyBatches ProductionOrder[] @relation("SubAssemblyBatches") // batches producing a SUB-assembly this item's own assembly needs (see ProductionOrder.subAssemblyForItemId) — distinct relation from productionOrders above, deliberately excluded from quantity/cost rollups
   workTaskItems    WorkTaskItem[] // production-labor module: general-work tags referencing this item (reporting only, never funds)
 
   @@unique([companyId, id]) // composite-FK target for WorkTaskItem.customerOrderItem (production-labor module, 2026-08-24)

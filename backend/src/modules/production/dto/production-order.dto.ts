@@ -74,6 +74,15 @@ export class CreateProductionOrderDto {
   @IsOptional()
   @IsUUID()
   customerOrderItemId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Set only when this batch produces a SUB-assembly needed by another CustomerOrderItem\'s own assembly ' +
+      '(sub-assembly batch planning at order-creation time) — distinct from customerOrderItemId above, never both.',
+  })
+  @IsOptional()
+  @IsUUID()
+  subAssemblyForItemId?: string;
 }
 
 export class ProductionOrderStagePlanEntryDto {
