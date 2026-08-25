@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const TABS = [
   { href: '/inventory', labelKey: 'stockLevels' },
   { href: '/inventory/movements', labelKey: 'stockHistory' },
+  { href: '/inventory/finished-goods', labelKey: 'finishedGoods' },
   { href: '/inventory/warehouses', labelKey: 'warehouses' },
   { href: '/inventory/sessions', labelKey: 'sessions' },
   { href: '/inventory/expected', labelKey: 'expectedFromSupplier' },

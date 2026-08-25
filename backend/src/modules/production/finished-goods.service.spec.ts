@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { FinishedGoodsService } from './finished-goods.service';
 
 describe('FinishedGoodsService', () => {
@@ -11,8 +11,10 @@ describe('FinishedGoodsService', () => {
     prisma = {
       tenant: {
         $executeRaw: jest.fn(),
-        finishedGood: { count: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), createMany: jest.fn() },
+        finishedGood: { count: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), createMany: jest.fn(), delete: jest.fn(), groupBy: jest.fn() },
         assembly: { findUnique: jest.fn() },
+        qcCheck: { count: jest.fn().mockResolvedValue(0) },
+        shipmentItem: { count: jest.fn().mockResolvedValue(0) },
       },
     };
     audit = { record: jest.fn() };
@@ -65,6 +67,48 @@ describe('FinishedGoodsService', () => {
       });
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finished_good.received_purchased' }));
       expect(result).toEqual([{ id: 'fg1' }, { id: 'fg2' }]);
+    });
+  });
+
+  describe('summaryByAssembly', () => {
+    it('returns one { assemblyId, qty } line per assembly, counting only IN_STOCK units', async () => {
+      prisma.tenant.finishedGood.groupBy.mockResolvedValue([
+        { assemblyId: 'a1', _count: { _all: 3 } },
+        { assemblyId: 'a2', _count: { _all: 1 } },
+      ]);
+      const result = await service.summaryByAssembly(user);
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith({
+        by: ['assemblyId'],
+        where: { status: 'IN_STOCK' },
+        _count: { _all: true },
+      });
+      expect(result).toEqual([
+        { assemblyId: 'a1', qty: 3 },
+        { assemblyId: 'a2', qty: 1 },
+      ]);
+    });
+  });
+
+  describe('remove', () => {
+    it('rejects a unit that is not IN_STOCK, without touching the row', async () => {
+      prisma.tenant.finishedGood.findUnique.mockResolvedValue({ id: 'fg1', status: 'SHIPPED' });
+      await expect(service.remove(user, 'fg1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.finishedGood.delete).not.toHaveBeenCalled();
+    });
+
+    it('rejects an IN_STOCK unit that still has QC checks or shipment records attached', async () => {
+      prisma.tenant.finishedGood.findUnique.mockResolvedValue({ id: 'fg1', status: 'IN_STOCK' });
+      prisma.tenant.qcCheck.count.mockResolvedValue(1);
+      await expect(service.remove(user, 'fg1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.finishedGood.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes a clean IN_STOCK unit and records an audit entry', async () => {
+      const good = { id: 'fg1', status: 'IN_STOCK' };
+      prisma.tenant.finishedGood.findUnique.mockResolvedValue(good);
+      await service.remove(user, 'fg1');
+      expect(prisma.tenant.finishedGood.delete).toHaveBeenCalledWith({ where: { id: 'fg1' } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finished_good.deleted', entityId: 'fg1' }));
     });
   });
 });

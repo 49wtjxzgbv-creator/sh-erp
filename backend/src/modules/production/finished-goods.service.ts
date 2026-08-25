@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
-import { CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
@@ -50,6 +50,61 @@ export class FinishedGoodsService {
       this.prisma.tenant.finishedGood.count({ where }),
     ]);
     return { items, total, limit: take, offset: skip };
+  }
+
+  /**
+   * "Склад → Готова продукція" (2026-08-25 user request): one row per
+   * Assembly with its IN_STOCK count, instead of the flat per-serial list
+   * (`query` above) — the flat list stays for a full-detail/all-statuses
+   * view, this is the "what's actually on the shelf, grouped by article"
+   * view. No materialized per-assembly table exists (unlike WarehouseStock
+   * for products), so this is a real Prisma `groupBy` computed on read —
+   * fine at this scale (grouped by distinct assembly, not by unit).
+   */
+  async summaryByAssembly(user: RequestUser) {
+    const grouped = await this.prisma.tenant.finishedGood.groupBy({
+      by: ['assemblyId'],
+      where: { status: 'IN_STOCK' },
+      _count: { _all: true },
+    });
+    return grouped.map((g) => ({ assemblyId: g.assemblyId, qty: g._count._all }));
+  }
+
+  /**
+   * Hard delete — IN_STOCK only (a shipped/consumed/reworked/defective unit
+   * reflects something that already happened in the real world; deleting
+   * the record wouldn't undo that, it would just hide it). QcCheck and
+   * ShipmentItem both have Restrict-by-default FKs to FinishedGood
+   * (schema.prisma) — pre-checked here for the same clear-coded-error-
+   * instead-of-raw-FK-violation reason as ProductionOrdersService#remove.
+   */
+  async remove(user: RequestUser, id: string) {
+    const good = await this.findOne(user, id);
+    if (good.status !== 'IN_STOCK') {
+      throw new CodedConflictException(
+        'FINISHED_GOOD_DELETE_NOT_IN_STOCK',
+        'Cannot delete: only a unit still IN_STOCK can be deleted — this one has already been shipped, consumed, or QC-flagged.',
+      );
+    }
+    const [qcCheckCount, shipmentItemCount] = await Promise.all([
+      this.prisma.tenant.qcCheck.count({ where: { finishedGoodId: id } }),
+      this.prisma.tenant.shipmentItem.count({ where: { finishedGoodId: id } }),
+    ]);
+    if (qcCheckCount > 0 || shipmentItemCount > 0) {
+      throw new CodedConflictException(
+        'FINISHED_GOOD_DELETE_HAS_HISTORY',
+        `Cannot delete: this unit has ${qcCheckCount} QC check(s) and ${shipmentItemCount} shipment record(s) attached — that history must stay attached to something.`,
+      );
+    }
+    await this.prisma.tenant.finishedGood.delete({ where: { id } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finished_good.deleted',
+      entityType: 'FinishedGood',
+      entityId: id,
+      before: good,
+    });
   }
 
   /**

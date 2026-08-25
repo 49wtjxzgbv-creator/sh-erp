@@ -63,6 +63,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'production-stages:manage', resource: 'production-stages', action: 'manage', description: 'Configure the company\'s production stage list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'finished-goods:read', resource: 'finished-goods', action: 'read', description: 'View finished goods / serials.' },
   { key: 'finished-goods:manage', resource: 'finished-goods', action: 'manage', description: 'Receive units bought ready-made from a supplier directly onto stock, without a production order.' },
+  { key: 'finished-goods:delete', resource: 'finished-goods', action: 'delete', description: 'Permanently delete a finished-good unit (IN_STOCK only) — admin-only, not granted to any default role besides Admin.' },
 
   // Production-labor module (2026-08-24): recording/confirming labor
   // against a ProductionOrder batch or a standalone GENERAL WorkTask.

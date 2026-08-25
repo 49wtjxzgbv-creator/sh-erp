@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
@@ -9,6 +9,7 @@ import {
   useQcChecklistItems,
   useQcChecksForFinishedGood,
   useRecordQcCheck,
+  useDeleteFinishedGood,
 } from '@/lib/hooks/use-production';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
@@ -20,6 +21,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { useHasPermission } from '@/lib/hooks/use-roles';
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 
 const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
   IN_STOCK: 'success',
@@ -31,6 +42,7 @@ const FG_STATUS_VARIANT: Record<FinishedGoodStatus, 'secondary' | 'warning' | 's
 
 export default function FinishedGoodDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const t = useTranslations('production');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
@@ -39,13 +51,16 @@ export default function FinishedGoodDetailPage() {
   const { data: checklistItems } = useQcChecklistItems();
   const { data: qcChecks } = useQcChecksForFinishedGood(params.id);
   const recordCheck = useRecordQcCheck();
+  const deleteGood = useDeleteFinishedGood();
   const canRecordQc = useHasPermission('qc:record');
+  const canDelete = useHasPermission('finished-goods:delete');
 
   const [passedMap, setPassedMap] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<QcResult>('ACCEPTED');
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (checklistItems) {
@@ -85,12 +100,48 @@ export default function FinishedGoodDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleteError(null);
+    try {
+      await deleteGood.mutateAsync(fg!.id);
+      router.replace('/production/finished-goods');
+    } catch (err) {
+      setDeleteError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold">{fg.serialNumber}</h1>
-        <Badge variant={FG_STATUS_VARIANT[fg.status]}>{t(`fgStatus${fg.status}`)}</Badge>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold">{fg.serialNumber}</h1>
+          <Badge variant={FG_STATUS_VARIANT[fg.status]}>{t(`fgStatus${fg.status}`)}</Badge>
+        </div>
+        {canDelete && fg.status === 'IN_STOCK' && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                {t('deleteFinishedGood')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('deleteFinishedGoodConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('deleteFinishedGoodConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={deleteGood.isPending} onClick={handleDelete}>
+                  {tc('confirm')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
+      {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-3">

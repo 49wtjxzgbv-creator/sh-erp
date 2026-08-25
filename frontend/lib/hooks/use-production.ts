@@ -17,6 +17,8 @@ import {
   deleteProductionStage,
   queryFinishedGoods,
   getFinishedGood,
+  getFinishedGoodsSummary,
+  deleteFinishedGood,
   receivePurchasedFinishedGoods,
   listQcChecklistItems,
   createQcChecklistItem,
@@ -48,6 +50,7 @@ const orderKey = (id: string) => ['production-orders', id] as const;
 const stagesKey = ['production-stages'] as const;
 const finishedGoodsKey = (query: QueryFinishedGoodsInput) => ['finished-goods', query] as const;
 const finishedGoodKey = (id: string) => ['finished-goods', id] as const;
+const finishedGoodsSummaryKey = ['finished-goods', 'summary'] as const;
 const checklistKey = ['qc-checklist-items'] as const;
 const qcChecksKey = (finishedGoodId: string) => ['qc-checks', 'finished-good', finishedGoodId] as const;
 const scheduleKey = (query: ProductionScheduleQuery) => ['production-schedule', query] as const;
@@ -210,6 +213,18 @@ export function useFinishedGood(id: string | undefined) {
     queryKey: finishedGoodKey(id ?? ''),
     queryFn: () => getFinishedGood(id as string),
     enabled: Boolean(id),
+  });
+}
+
+export function useFinishedGoodsSummary() {
+  return useQuery({ queryKey: finishedGoodsSummaryKey, queryFn: () => getFinishedGoodsSummary() });
+}
+
+export function useDeleteFinishedGood() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteFinishedGood(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finished-goods'] }),
   });
 }
 

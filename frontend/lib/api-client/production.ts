@@ -274,6 +274,22 @@ export function getFinishedGood(id: string): Promise<FinishedGood> {
   return apiClient.get<FinishedGood>(`finished-goods/${id}`);
 }
 
+export interface FinishedGoodsSummaryLine {
+  assemblyId: string;
+  /** IN_STOCK count only — this is "what's actually on the shelf," not a full-history count. */
+  qty: number;
+}
+
+/** One row per Assembly with its IN_STOCK count — the grouped "Склад → Готова продукція" view, distinct from queryFinishedGoods' flat per-serial list. */
+export function getFinishedGoodsSummary(): Promise<FinishedGoodsSummaryLine[]> {
+  return apiClient.get<FinishedGoodsSummaryLine[]>('finished-goods/summary');
+}
+
+/** IN_STOCK only, and only if it has no QC checks or shipment records attached — 409 otherwise. */
+export function deleteFinishedGood(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`finished-goods/${id}`);
+}
+
 export interface ReceivePurchasedFinishedGoodsInput {
   assemblyId: string;
   qty: number;
