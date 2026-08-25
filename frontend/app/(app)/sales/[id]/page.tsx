@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
+import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 
@@ -596,6 +597,20 @@ export default function CustomerOrderDetailPage() {
               })}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('productionProgress')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {(order.items ?? []).map((item) => (
+            <div key={item.id} className="space-y-2">
+              <div className="text-sm font-medium"><AssemblyCell assemblyId={item.assemblyId} /></div>
+              <ProductionProgressTree orderId={order.id} itemId={item.id} />
+            </div>
+          ))}
         </CardContent>
       </Card>
 

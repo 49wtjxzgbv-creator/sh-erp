@@ -10,6 +10,7 @@ import {
   completeCustomerOrder,
   deleteCustomerOrder,
   giveItemToProduction,
+  getItemProductionTree,
   giveAllToProduction,
   getShortagePreview,
   createPurchaseOrdersFromShortage,
@@ -107,6 +108,15 @@ export function useGiveItemToProduction(orderId: string) {
       qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
       qc.invalidateQueries({ queryKey: ['production-orders'] });
     },
+  });
+}
+
+/** Invalidated by the same broad ['production-orders']/order-detail keys useGiveItemToProduction already invalidates, so "give to production"/"revert start" elsewhere in the app keep this tree fresh automatically. */
+export function useItemProductionTree(orderId: string, itemId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId, 'items', itemId ?? '', 'production-tree'] as const,
+    queryFn: () => getItemProductionTree(orderId, itemId as string),
+    enabled: enabled && Boolean(itemId),
   });
 }
 

@@ -44,6 +44,20 @@ export interface SubAssemblyNeed {
   qtyInStock: number;
 }
 
+export interface ProductionTreeNode {
+  assemblyId: string;
+  name: string;
+  article: string | null;
+  /** Qty of THIS node needed at this exact point in the tree (already multiplied down from the root). */
+  qtyNeeded: number;
+  /** Current IN_STOCK FinishedGood count for this node's own assembly. */
+  qtyInStock: number;
+  /** qtyInStock >= ceil(qtyNeeded) — same physical-whole-unit rounding start() uses for FIFO sub-assembly consumption. */
+  done: boolean;
+  /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
+  children: ProductionTreeNode[];
+}
+
 /**
  * BOM module (Assemblies.gs, Phase 1 §3.3). Ports:
  *  - Full BOM CRUD (Assembly header + AssemblyComponent lines).
@@ -572,6 +586,55 @@ export class AssembliesService {
     }
 
     visited.delete(assemblyId);
+  }
+
+  /**
+   * "Хід виробництва" (2026-08-25 user request): the full BOM tree as an
+   * actual parent -> child chain (unlike listSubAssembliesNeeded's flat,
+   * cross-branch-aggregated map above) — every node carries its own
+   * IN_STOCK count and a `done` flag, so a sales order's production plan
+   * can be rendered as "this виріб is made of these підвироби, which are
+   * each made of..." with what's already on the shelf lit up green and
+   * what still needs producing left grey. Same always-recurse rule as
+   * listSubAssembliesNeeded (not CustomerOrderShortageService's
+   * supplier-link-gated one) — this is about physical stock readiness,
+   * not purchasing.
+   */
+  async getProductionTree(user: RequestUser, assemblyId: string, qty: number): Promise<ProductionTreeNode> {
+    await this.findOne(user, assemblyId);
+    return this.buildProductionTree(assemblyId, qty, new Set());
+  }
+
+  private async buildProductionTree(assemblyId: string, qty: number, visited: Set<string>): Promise<ProductionTreeNode> {
+    if (visited.has(assemblyId)) {
+      throw new CodedConflictException('BOM_CIRCULAR_EXPAND', `Circular BOM detected while expanding assembly ${assemblyId}.`);
+    }
+    visited.add(assemblyId);
+
+    const [assembly, qtyInStock, components] = await Promise.all([
+      this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
+      this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK' } }),
+      this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
+    ]);
+    if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
+
+    const children: ProductionTreeNode[] = [];
+    for (const line of components) {
+      if (!line.subAssemblyId) continue;
+      children.push(await this.buildProductionTree(line.subAssemblyId, qty * Number(line.qtyPerUnit), visited));
+    }
+
+    visited.delete(assemblyId);
+
+    return {
+      assemblyId,
+      name: assembly.name,
+      article: assembly.article,
+      qtyNeeded: qty,
+      qtyInStock,
+      done: qtyInStock >= Math.ceil(qty),
+      children,
+    };
   }
 
   /**

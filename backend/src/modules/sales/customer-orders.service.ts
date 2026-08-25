@@ -3,7 +3,7 @@ import { CodedBadRequestException, CodedNotFoundException } from '../../common/a
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AssembliesService } from '../bom/assemblies.service';
+import { AssembliesService, ProductionTreeNode } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
@@ -22,6 +22,11 @@ import { GiveItemToProductionDto } from './dto/give-to-production.dto';
  * it's the single most algorithmically involved piece of this module
  * (Phase 1 §3.4) and deserves its own focused file.
  */
+export interface ProductionTreeNodeWithBatches extends ProductionTreeNode {
+  batches: Array<{ id: string; status: string; unitsPlanned: number }>;
+  children: ProductionTreeNodeWithBatches[];
+}
+
 @Injectable()
 export class CustomerOrdersService {
   constructor(
@@ -412,6 +417,46 @@ export class CustomerOrdersService {
     });
 
     return { item, productionOrder };
+  }
+
+  /**
+   * "Хід виробництва" (2026-08-25 user request): this item's full BOM tree
+   * (AssembliesService#getProductionTree — parent виріб -> підвироби ->
+   * their own підвироби, recursively), with every node also carrying
+   * whichever ProductionOrder batches already exist for it — matched via
+   * EITHER customerOrderItemId (the item's own top-level assembly, "give to
+   * production") OR subAssemblyForItemId (a sub-assembly batch planned at
+   * order-creation time, see that field's schema comment) — both point at
+   * the same `itemId`, so one query covers the whole tree regardless of
+   * depth. Lets staff see, at a glance, what's already on the shelf
+   * (green), what still needs producing (grey), and whether a batch is
+   * already planned for it (so they know what to actually click "start" on
+   * next, rather than accidentally creating a duplicate batch).
+   */
+  async getItemProductionTree(user: RequestUser, orderId: string, itemId: string) {
+    const order = await this.findOne(user, orderId);
+    const item = (order.items as any[]).find((i) => i.id === itemId);
+    if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
+
+    const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty));
+
+    const batches = await this.prisma.tenant.productionOrder.findMany({
+      where: { OR: [{ customerOrderItemId: itemId }, { subAssemblyForItemId: itemId }] },
+    });
+    const batchesByAssembly = new Map<string, typeof batches>();
+    for (const b of batches) {
+      const list = batchesByAssembly.get(b.assemblyId) ?? [];
+      list.push(b);
+      batchesByAssembly.set(b.assemblyId, list);
+    }
+
+    const attachBatches = (node: ProductionTreeNode): ProductionTreeNodeWithBatches => ({
+      ...node,
+      batches: (batchesByAssembly.get(node.assemblyId) ?? []).map((b) => ({ id: b.id, status: b.status, unitsPlanned: Number(b.unitsPlanned) })),
+      children: node.children.map(attachBatches),
+    });
+
+    return attachBatches(tree);
   }
 
   /**

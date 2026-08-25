@@ -307,4 +307,48 @@ describe('AssembliesService', () => {
       await expect(service.listSubAssembliesNeeded(user, 'a1', 1)).rejects.toThrow(ConflictException);
     });
   });
+
+  describe('getProductionTree', () => {
+    beforeEach(() => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });
+    });
+
+    it('builds a real parent -> child tree, each node done when its own IN_STOCK count covers its own needed qty', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1' })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null });
+      prisma.tenant.finishedGood.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getProductionTree(user, 'a1', 2);
+
+      expect(result).toEqual({
+        assemblyId: 'a1',
+        name: 'A1',
+        article: 'ART-A1',
+        qtyNeeded: 2,
+        qtyInStock: 2,
+        done: true,
+        children: [
+          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 2, qtyInStock: 1, done: false, children: [] },
+        ],
+      });
+    });
+
+    it('detects a circular BOM instead of recursing forever', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] })
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null });
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'a1', qtyPerUnit: 1 }]); // sub1 points back at a1
+
+      await expect(service.getProductionTree(user, 'a1', 1)).rejects.toThrow(ConflictException);
+    });
+  });
 });

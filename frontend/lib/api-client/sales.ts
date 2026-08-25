@@ -188,6 +188,22 @@ export function giveAllToProduction(orderId: string): Promise<GiveToProductionRe
   return apiClient.post<GiveToProductionResult[]>(`customer-orders/${orderId}/give-all-to-production`);
 }
 
+/** "Хід виробництва" — one node of an order line's full BOM tree (виріб -> підвироби -> ...), each with its own IN_STOCK readiness and any already-planned batches. */
+export interface ProductionTreeNode {
+  assemblyId: string;
+  name: string;
+  article: string | null;
+  qtyNeeded: number;
+  qtyInStock: number;
+  done: boolean;
+  batches: Array<{ id: string; status: string; unitsPlanned: number }>;
+  children: ProductionTreeNode[];
+}
+
+export function getItemProductionTree(orderId: string, itemId: string): Promise<ProductionTreeNode> {
+  return apiClient.get<ProductionTreeNode>(`customer-orders/${orderId}/items/${itemId}/production-tree`);
+}
+
 export interface ShortageSupplierOption {
   supplierId: string;
   supplierName: string;

@@ -33,6 +33,12 @@ describe('CustomerOrdersService', () => {
    */
   function mockProductionOrdersFindMany(rows: any[]) {
     prisma.tenant.productionOrder.findMany.mockImplementation(({ where }: any) => {
+      // getItemProductionTree's own query shape: { OR: [{ customerOrderItemId }, { subAssemblyForItemId }] }
+      if (where?.OR) {
+        return Promise.resolve(
+          rows.filter((r) => where.OR.some((cond: any) => Object.entries(cond).every(([k, v]) => r[k] === v))),
+        );
+      }
       const filter = where?.customerOrderItemId;
       if (filter && typeof filter === 'object' && 'in' in filter) {
         return Promise.resolve(rows.filter((r) => filter.in.includes(r.customerOrderItemId)));
@@ -52,7 +58,10 @@ describe('CustomerOrdersService', () => {
     };
     audit = { record: jest.fn() };
     productionOrdersService = { create: jest.fn() };
-    assembliesService = { calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }) };
+    assembliesService = {
+      calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }),
+      getProductionTree: jest.fn(),
+    };
     stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
     service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, shortageService);
@@ -177,6 +186,37 @@ describe('CustomerOrdersService', () => {
       await service.giveItemToProduction(user, 'co1', 'item1', {});
 
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getItemProductionTree', () => {
+    it('rejects an item that does not belong to this order', async () => {
+      await expect(service.getItemProductionTree(user, 'co1', 'not-an-item')).rejects.toThrow(NotFoundException);
+    });
+
+    it('attaches batches to each tree node by matching assemblyId, sourced from either customerOrderItemId or subAssemblyForItemId', async () => {
+      assembliesService.getProductionTree.mockResolvedValue({
+        assemblyId: 'a1',
+        name: 'A1',
+        article: null,
+        qtyNeeded: 3,
+        qtyInStock: 0,
+        done: false,
+        children: [
+          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 3, qtyInStock: 3, done: true, children: [] },
+        ],
+      });
+      mockProductionOrdersFindMany([
+        { id: 'po-top', assemblyId: 'a1', status: 'PLANNED', unitsPlanned: 3, customerOrderItemId: 'item1', subAssemblyForItemId: null },
+        { id: 'po-sub', assemblyId: 'sub1', status: 'PLANNED', unitsPlanned: 3, customerOrderItemId: null, subAssemblyForItemId: 'item1' },
+        { id: 'po-other', assemblyId: 'a1', status: 'PLANNED', unitsPlanned: 1, customerOrderItemId: 'item2', subAssemblyForItemId: null },
+      ]);
+
+      const result = await service.getItemProductionTree(user, 'co1', 'item1');
+
+      expect(assembliesService.getProductionTree).toHaveBeenCalledWith(user, 'a1', 3);
+      expect(result.batches).toEqual([{ id: 'po-top', status: 'PLANNED', unitsPlanned: 3 }]);
+      expect(result.children[0].batches).toEqual([{ id: 'po-sub', status: 'PLANNED', unitsPlanned: 3 }]);
     });
   });
 

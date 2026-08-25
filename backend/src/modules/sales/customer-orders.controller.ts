@@ -78,6 +78,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.giveItemToProduction(user, id, itemId, dto);
   }
 
+  @Get(':id/items/:itemId/production-tree')
+  @RequirePermissions('customer-orders:read')
+  @ApiOperation({
+    summary:
+      '"Хід виробництва" — this line\'s full BOM tree (виріб -> підвироби -> their own підвироби), each node ' +
+      'carrying its current IN_STOCK count, a done flag, and any already-planned ProductionOrder batches.',
+  })
+  async getItemProductionTree(@CurrentUser() user: RequestUser, @Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.customerOrdersService.getItemProductionTree(user, id, itemId);
+  }
+
   @Post(':id/give-all-to-production')
   @RequirePermissions('customer-orders:manage')
   @ApiOperation({ summary: 'Hand every not-yet-given line off to production in one call.' })
