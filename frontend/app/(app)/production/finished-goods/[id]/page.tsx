@@ -103,8 +103,12 @@ export default function FinishedGoodDetailPage() {
             <p className="text-sm">{new Date(fg.manufactureDate).toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">{t('productionOrder')}</p>
-            <p className="max-w-[200px] truncate text-sm" title={fg.productionOrderId}>{fg.productionOrderId}</p>
+            <p className="text-xs text-muted-foreground">{t('origin')}</p>
+            {fg.productionOrderId ? (
+              <p className="max-w-[200px] truncate text-sm" title={fg.productionOrderId}>{fg.productionOrderId}</p>
+            ) : (
+              <p className="text-sm">{t('originPurchased')}</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('localCost')}</p>

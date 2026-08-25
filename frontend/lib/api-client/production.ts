@@ -58,7 +58,8 @@ export interface FinishedGood {
   companyId: string;
   serialNumber: string;
   assemblyId: string;
-  productionOrderId: string;
+  /** Null for a unit received via receivePurchasedFinishedGoods — bought ready-made from a supplier, never went through a ProductionOrder. */
+  productionOrderId: string | null;
   status: FinishedGoodStatus;
   customerOrderId: string | null;
   comment: string | null;
@@ -271,6 +272,18 @@ export function queryFinishedGoods(query: QueryFinishedGoodsInput = {}): Promise
 }
 export function getFinishedGood(id: string): Promise<FinishedGood> {
   return apiClient.get<FinishedGood>(`finished-goods/${id}`);
+}
+
+export interface ReceivePurchasedFinishedGoodsInput {
+  assemblyId: string;
+  qty: number;
+  unitCostEur: number;
+  comment?: string;
+}
+
+/** Stocks units bought ready-made from a supplier — no ProductionOrder, no BOM consumption. */
+export function receivePurchasedFinishedGoods(dto: ReceivePurchasedFinishedGoodsInput): Promise<FinishedGood[]> {
+  return apiClient.post<FinishedGood[]>('finished-goods/receive-purchased', dto);
 }
 
 export interface QcChecklistItem {

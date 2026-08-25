@@ -1578,7 +1578,7 @@ model FinishedGood {
   companyId                   String             @db.Uuid
   serialNumber                String             // "SN-000001" format preserved — unique per company, see @@unique below (2026-08-25: was global-unique, a real bug — see migration header)
   assemblyId                  String             @db.Uuid
-  productionOrderId           String             @db.Uuid
+  productionOrderId           String?            @db.Uuid // single-column FK — see header §cross-tenant (optional relation). Nullable since 2026-08-25: a unit RECEIVED (bought ready-made from a supplier, FinishedGoodsService#receivePurchased) has no ProductionOrder — was required until then, see migration header for the real gap this fixed ("no way to stock a purchased sub-assembly without faking a production run").
   status                      FinishedGoodStatus @default(IN_STOCK)
   customerOrderId             String?            @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   comment                     String?
@@ -1592,7 +1592,7 @@ model FinishedGood {
 
   company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   assembly        Assembly        @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrder ProductionOrder @relation(fields: [companyId, productionOrderId], references: [companyId, id]) // composite — kept Restrict (default): a finished good must always trace back to the order that made it
+  productionOrder ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull) // single-column FK (optional relation, see header §cross-tenant) — a purchased-and-received unit has none
   customerOrder   CustomerOrder?  @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
   qcChecks        QcCheck[]
   shipmentItems   ShipmentItem[]

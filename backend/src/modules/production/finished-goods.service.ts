@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
 
 export interface QueryFinishedGoodsInput {
   assemblyId?: string;
@@ -25,7 +27,10 @@ export interface QueryFinishedGoodsInput {
  */
 @Injectable()
 export class FinishedGoodsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   async findOne(user: RequestUser, id: string) {
     const good = await this.prisma.tenant.finishedGood.findUnique({ where: { id } });
@@ -72,5 +77,47 @@ export class FinishedGoodsService {
       serials.push(`SN-${String(existingCount + i).padStart(6, '0')}`);
     }
     return serials;
+  }
+
+  /**
+   * Stocks units of an assembly bought ready-made from a supplier — the
+   * direct counterpart to ProductionOrdersService#start(), but with no
+   * ProductionOrder at all: no BOM/pick-list consumption (nothing was
+   * assembled here), no labor fund to freeze (nobody on this company's
+   * payroll made it). `productionOrderId` stays null, which is exactly
+   * what distinguishes a purchased unit from a manufactured one everywhere
+   * else in the app (finished-goods list, the parent-assembly consumption
+   * loop in start(), etc. — see the 2026-08-25 migration header for the
+   * full blast-radius check that confirmed nothing else assumes non-null).
+   */
+  async receivePurchased(user: RequestUser, dto: ReceivePurchasedFinishedGoodsDto) {
+    const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
+    if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
+
+    const serials = await this.generateSerialNumbers(user.companyId, dto.qty);
+    await this.prisma.tenant.finishedGood.createMany({
+      data: serials.map((serialNumber) => ({
+        serialNumber,
+        assemblyId: dto.assemblyId,
+        productionOrderId: null,
+        status: 'IN_STOCK',
+        unitCostLocalEur: dto.unitCostEur,
+        unitCostGermanEur: dto.unitCostEur,
+        comment: dto.comment,
+      })) as any,
+    });
+
+    const created = await this.prisma.tenant.finishedGood.findMany({ where: { serialNumber: { in: serials } } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'finished_good.received_purchased',
+      entityType: 'FinishedGood',
+      entityId: dto.assemblyId,
+      after: { assemblyId: dto.assemblyId, qty: dto.qty, unitCostEur: dto.unitCostEur, serials },
+    });
+
+    return created;
   }
 }

@@ -62,6 +62,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'production-orders:delete', resource: 'production-orders', action: 'delete', description: 'Permanently delete a production order (planned or cancelled only) — admin-only, not granted to any default role besides Admin.' },
   { key: 'production-stages:manage', resource: 'production-stages', action: 'manage', description: 'Configure the company\'s production stage list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'finished-goods:read', resource: 'finished-goods', action: 'read', description: 'View finished goods / serials.' },
+  { key: 'finished-goods:manage', resource: 'finished-goods', action: 'manage', description: 'Receive units bought ready-made from a supplier directly onto stock, without a production order.' },
 
   // Production-labor module (2026-08-24): recording/confirming labor
   // against a ProductionOrder batch or a standalone GENERAL WorkTask.
@@ -126,7 +127,7 @@ export const DEFAULT_ROLES = [
     permissions: [
       'products:read', 'products:write', 'units:manage', 'suppliers:read',
       'warehouses:manage', 'stock:read', 'stock:adjust', 'inventory-sessions:manage',
-      'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'files:read', 'files:write',
+      'purchase-orders:read', 'finished-goods:read', 'finished-goods:manage', 'shipments:read', 'files:read', 'files:write',
       // AI: full RBAC-matrix parity with the legacy "storekeeper" role — both
       // basic AI use and confirming a critical action (Phase 1 §5's AI rows).
       'ai:use', 'ai:use-critical-actions',
@@ -136,7 +137,7 @@ export const DEFAULT_ROLES = [
     name: 'Production',
     permissions: [
       'products:read', 'assemblies:read', 'assemblies:write',
-      'production-orders:read', 'production-orders:manage', 'finished-goods:read',
+      'production-orders:read', 'production-orders:manage', 'finished-goods:read', 'finished-goods:manage',
       'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use',
       // Production-labor module (2026-08-24): the shop-floor foreman role
       // records AND confirms its own executions — this codebase has no

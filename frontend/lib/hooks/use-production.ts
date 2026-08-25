@@ -17,6 +17,7 @@ import {
   deleteProductionStage,
   queryFinishedGoods,
   getFinishedGood,
+  receivePurchasedFinishedGoods,
   listQcChecklistItems,
   createQcChecklistItem,
   deleteQcChecklistItem,
@@ -34,6 +35,7 @@ import {
   type ProductionOrderWorkerInput,
   type StartProductionOrderInput,
   type QueryFinishedGoodsInput,
+  type ReceivePurchasedFinishedGoodsInput,
   type RecordQcCheckInput,
   type CreateProductionScheduleSlotInput,
   type UpdateProductionScheduleSlotInput,
@@ -208,6 +210,14 @@ export function useFinishedGood(id: string | undefined) {
     queryKey: finishedGoodKey(id ?? ''),
     queryFn: () => getFinishedGood(id as string),
     enabled: Boolean(id),
+  });
+}
+
+export function useReceivePurchasedFinishedGoods() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: ReceivePurchasedFinishedGoodsInput) => receivePurchasedFinishedGoods(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finished-goods'] }),
   });
 }
 

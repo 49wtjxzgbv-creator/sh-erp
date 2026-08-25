@@ -12,6 +12,8 @@ import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { ReceivePurchasedFinishedGoodsDialog } from '@/components/domain/production/receive-purchased-finished-goods-dialog';
+import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
 
@@ -39,6 +41,7 @@ export default function FinishedGoodsPage() {
   const router = useRouter();
   const [status, setStatus] = useState<FinishedGoodStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
+  const canReceivePurchased = useHasPermission('finished-goods:manage');
 
   const { data, isLoading } = useFinishedGoods({ status, limit: PAGE_SIZE, offset });
 
@@ -68,25 +71,35 @@ export default function FinishedGoodsPage() {
         header: t('manufactureDate'),
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
       },
+      {
+        accessorKey: 'productionOrderId',
+        header: t('origin'),
+        cell: ({ getValue }) => (
+          <Badge variant={getValue() ? 'secondary' : 'warning'}>{getValue() ? t('originManufactured') : t('originPurchased')}</Badge>
+        ),
+      },
     ],
     [t],
   );
 
   return (
     <div className="space-y-4">
-      <Select value={status ?? '__all'} onValueChange={(v) => { setStatus(v === '__all' ? undefined : (v as FinishedGoodStatus)); setOffset(0); }}>
-        <SelectTrigger className="w-48">
-          <SelectValue placeholder={t('filterByStatus')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all">{t('allStatuses')}</SelectItem>
-          <SelectItem value="IN_STOCK">{t('fgStatusIN_STOCK')}</SelectItem>
-          <SelectItem value="SHIPPED">{t('fgStatusSHIPPED')}</SelectItem>
-          <SelectItem value="CONSUMED">{t('fgStatusCONSUMED')}</SelectItem>
-          <SelectItem value="REWORK">{t('fgStatusREWORK')}</SelectItem>
-          <SelectItem value="DEFECTIVE">{t('fgStatusDEFECTIVE')}</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Select value={status ?? '__all'} onValueChange={(v) => { setStatus(v === '__all' ? undefined : (v as FinishedGoodStatus)); setOffset(0); }}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder={t('filterByStatus')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">{t('allStatuses')}</SelectItem>
+            <SelectItem value="IN_STOCK">{t('fgStatusIN_STOCK')}</SelectItem>
+            <SelectItem value="SHIPPED">{t('fgStatusSHIPPED')}</SelectItem>
+            <SelectItem value="CONSUMED">{t('fgStatusCONSUMED')}</SelectItem>
+            <SelectItem value="REWORK">{t('fgStatusREWORK')}</SelectItem>
+            <SelectItem value="DEFECTIVE">{t('fgStatusDEFECTIVE')}</SelectItem>
+          </SelectContent>
+        </Select>
+        {canReceivePurchased && <ReceivePurchasedFinishedGoodsDialog />}
+      </div>
 
       <div data-tour="finished-goods-list">
         <DataTable

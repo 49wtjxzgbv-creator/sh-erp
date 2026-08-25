@@ -1,8 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { QueryFinishedGoodsDto } from './dto/finished-goods.dto';
+import { QueryFinishedGoodsDto, ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
 import { FinishedGoodsService } from './finished-goods.service';
 
 @ApiTags('production')
@@ -22,5 +22,16 @@ export class FinishedGoodsController {
   @ApiOperation({ summary: 'Get one finished good by id.' })
   async findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.finishedGoodsService.findOne(user, id);
+  }
+
+  @Post('receive-purchased')
+  @RequirePermissions('finished-goods:manage')
+  @ApiOperation({
+    summary:
+      'Stock units of an assembly bought ready-made from a supplier, without going through the ProductionOrder ' +
+      'create->start lifecycle — no BOM consumption, no labor fund (there is none to freeze).',
+  })
+  async receivePurchased(@CurrentUser() user: RequestUser, @Body() dto: ReceivePurchasedFinishedGoodsDto) {
+    return this.finishedGoodsService.receivePurchased(user, dto);
   }
 }
