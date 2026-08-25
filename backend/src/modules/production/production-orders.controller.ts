@@ -79,6 +79,18 @@ export class ProductionOrdersController {
     return this.productionOrdersService.start(user, id, dto);
   }
 
+  @Post(':id/revert-start')
+  @RequirePermissions('production-orders:delete')
+  @ApiOperation({
+    summary:
+      'Undo start(): returns consumed raw-material stock and consumed sub-assembly finished goods, deletes this order\'s ' +
+      'own output finished goods, reverses any recorded labor pay, and resets the order back to PLANNED. Only for ' +
+      'IN_PROGRESS orders whose own output has not been shipped/QC-checked/consumed elsewhere yet.',
+  })
+  async revertStart(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productionOrdersService.revertStart(user, id);
+  }
+
   @Post(':id/advance-stage')
   @RequirePermissions('production-orders:manage')
   @ApiOperation({ summary: 'Advance to the next configured production stage; auto-completes on the last one.' })

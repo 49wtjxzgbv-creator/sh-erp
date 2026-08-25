@@ -1178,6 +1178,7 @@ enum StockMovementType {
   ASSEMBLY_CONSUMPTION
   PRODUCTION_CONSUMPTION
   INVENTORY_RECONCILIATION
+  PRODUCTION_REVERSAL // exact inverse of a PRODUCTION_CONSUMPTION movement, written by ProductionOrdersService#revertStart (2026-08-25)
 }
 
 model InventorySession {

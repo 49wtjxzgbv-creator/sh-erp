@@ -153,6 +153,17 @@ export function deleteProductionOrder(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`production-orders/${id}`);
 }
 
+/**
+ * Undoes start(): returns consumed stock/sub-assembly finished goods,
+ * deletes this order's own output finished goods, reverses any recorded
+ * labor pay, and resets the order back to PLANNED. IN_PROGRESS only —
+ * 409 if this order's own output has already been shipped/QC-checked/
+ * consumed elsewhere (see backend's PRODUCTION_REVERT_OUTPUT_ALREADY_USED).
+ */
+export function revertProductionOrderStart(id: string): Promise<ProductionOrder> {
+  return apiClient.post<ProductionOrder>(`production-orders/${id}/revert-start`);
+}
+
 export interface StartProductionOrderInput {
   warehouseId?: string;
 }

@@ -8,6 +8,7 @@ describe('ProductionOrdersService', () => {
   let stock: any;
   let stockReservationService: any;
   let finishedGoodsService: any;
+  let productionExecutionsService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const baseOrder = {
@@ -29,11 +30,13 @@ describe('ProductionOrdersService', () => {
         product: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
         warehouseStock: { findUnique: jest.fn().mockResolvedValue(null) },
         customerOrderItem: { findUnique: jest.fn() },
-        finishedGood: { count: jest.fn(), findMany: jest.fn(), update: jest.fn(), createMany: jest.fn() },
-        productionOrderPickListItem: { createMany: jest.fn() },
+        finishedGood: { count: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn(), updateMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
+        productionOrderPickListItem: { createMany: jest.fn(), deleteMany: jest.fn() },
         payrollEntry: { createMany: jest.fn() },
         productionStage: { findMany: jest.fn().mockResolvedValue([]) },
-        productionOrderStageEvent: { create: jest.fn() },
+        productionOrderStageEvent: { create: jest.fn(), deleteMany: jest.fn() },
+        productionExecution: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+        stockMovement: { findMany: jest.fn().mockResolvedValue([]) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
       },
     };
@@ -44,7 +47,8 @@ describe('ProductionOrdersService', () => {
       consume: jest.fn().mockResolvedValue(0),
     };
     finishedGoodsService = { generateSerialNumbers: jest.fn().mockResolvedValue(['SN-000001', 'SN-000002']) };
-    service = new ProductionOrdersService(prisma, audit, stock, stockReservationService, finishedGoodsService);
+    productionExecutionsService = { remove: jest.fn().mockResolvedValue(undefined), void_: jest.fn().mockResolvedValue(undefined) };
+    service = new ProductionOrdersService(prisma, audit, stock, stockReservationService, finishedGoodsService, productionExecutionsService);
 
     // findOne() default plumbing for most tests
     prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder });
@@ -127,6 +131,73 @@ describe('ProductionOrdersService', () => {
       prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'COMPLETED' });
       await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
       expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
+    });
+
+    it('real incident (2026-08-25): blocks deleting a reverted-to-PLANNED order that still has VOIDED execution history, since ProductionExecution.productionOrder has no onDelete: SetNull', async () => {
+      prisma.tenant.productionExecution.count.mockResolvedValue(1);
+      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('revertStart', () => {
+    const startedOrder = {
+      ...baseOrder,
+      status: 'IN_PROGRESS',
+      customerOrderItemId: null,
+      pickListItems: [
+        { productId: 'p1', subAssemblyId: null, consumedFinishedGoodIds: [] },
+        { productId: null, subAssemblyId: 'sub1', consumedFinishedGoodIds: ['fg1', 'fg2'] },
+      ],
+    };
+
+    it('rejects a non-IN_PROGRESS order', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'PLANNED' });
+      await expect(service.revertStart(user, 'po1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('blocks when this order\'s own output has already been shipped/consumed/QC-checked elsewhere', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue(startedOrder);
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([
+        { id: 'out1', serialNumber: 'SN-000001', status: 'SHIPPED', customerOrderId: null, qcChecks: [] },
+      ]);
+      await expect(service.revertStart(user, 'po1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.finishedGood.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('reverses stock, sub-assembly consumption, output goods, and DRAFT/CONFIRMED executions, then resets the order to PLANNED', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue(startedOrder);
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([
+        { id: 'out1', serialNumber: 'SN-000001', status: 'IN_STOCK', customerOrderId: null, qcChecks: [] },
+      ]);
+      prisma.tenant.stockMovement.findMany.mockResolvedValue([
+        { productId: 'p1', warehouseId: 'wDefault', qtyDelta: -6 },
+      ]);
+      prisma.tenant.productionExecution.findMany.mockResolvedValue([
+        { id: 'exec-draft', status: 'DRAFT' },
+        { id: 'exec-confirmed', status: 'CONFIRMED' },
+        { id: 'exec-voided', status: 'VOIDED' },
+      ]);
+      prisma.tenant.productionOrder.update.mockResolvedValue({ ...startedOrder, status: 'PLANNED' });
+
+      await service.revertStart(user, 'po1');
+
+      expect(productionExecutionsService.remove).toHaveBeenCalledWith(user, 'exec-draft');
+      expect(productionExecutionsService.void_).toHaveBeenCalledWith(user, 'exec-confirmed', expect.any(Object));
+      expect(stock.applyMovement).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ productId: 'p1', warehouseId: 'wDefault', type: 'PRODUCTION_REVERSAL', qtyDelta: 6 }),
+      );
+      expect(prisma.tenant.finishedGood.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['fg1', 'fg2'] } },
+        data: { status: 'IN_STOCK', consumedInProductionOrderId: null },
+      });
+      expect(prisma.tenant.finishedGood.deleteMany).toHaveBeenCalledWith({ where: { productionOrderId: 'po1' } });
+      expect(prisma.tenant.productionOrderPickListItem.deleteMany).toHaveBeenCalledWith({ where: { productionOrderId: 'po1' } });
+      expect(prisma.tenant.productionOrder.update).toHaveBeenCalledWith({
+        where: { id: 'po1' },
+        data: expect.objectContaining({ status: 'PLANNED', currentStageIndex: null, laborCostEur: null }),
+      });
     });
   });
 

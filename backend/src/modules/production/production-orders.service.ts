@@ -14,6 +14,7 @@ import {
   StartProductionOrderDto,
 } from './dto/production-order.dto';
 import { FinishedGoodsService } from './finished-goods.service';
+import { ProductionExecutionsService } from './production-executions.service';
 
 interface ShortageLine {
   kind: 'PRODUCT' | 'ASSEMBLY';
@@ -51,6 +52,7 @@ export class ProductionOrdersService {
     private readonly stockService: StockService,
     private readonly stockReservationService: StockReservationService,
     private readonly finishedGoodsService: FinishedGoodsService,
+    private readonly productionExecutionsService: ProductionExecutionsService,
   ) {}
 
   // ============================================================
@@ -249,14 +251,20 @@ export class ProductionOrdersService {
    * FinishedGood.productionOrder is a Restrict FK (schema.prisma), so the
    * DB would reject the delete anyway once any exist. This pre-check
    * exists to give a clear, coded error instead of a raw FK-violation.
-   * PLANNED and CANCELLED are both safe: neither status can have any
-   * FinishedGood rows (only ever created inside `start()`), and neither can
-   * have any ProductionExecution/PayrollEntry rows either — those require
-   * the order to be IN_PROGRESS/COMPLETED (production-executions.service.ts's
-   * `getStartedProductionOrder`), and `cancel()` only ever transitions
-   * PLANNED -> CANCELLED, never IN_PROGRESS -> CANCELLED. Every other
-   * child (stage plans, pick-list items, stage events, worker assignments)
-   * cascades at the DB level.
+   * PLANNED and CANCELLED are both safe in the common case: neither status
+   * can have any FinishedGood rows (only ever created inside `start()`),
+   * and `cancel()` only ever transitions PLANNED -> CANCELLED, never
+   * IN_PROGRESS -> CANCELLED. Every other child (stage plans, pick-list
+   * items, stage events, worker assignments) cascades at the DB level.
+   *
+   * One real exception (2026-08-25, `revertStart` below): a PLANNED order
+   * CAN now have ProductionExecution history if it was IN_PROGRESS and got
+   * reverted — those rows (VOIDED, with their compensating PayrollEntry
+   * already written) deliberately stay attached rather than being erased,
+   * same immutable-ledger convention as everywhere else payroll is
+   * touched. ProductionExecution.productionOrder has no onDelete: SetNull
+   * (unlike PayrollEntry.productionOrder), so this second guard is a real
+   * FK-violation prevention, not just a nicer error message.
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
@@ -264,6 +272,13 @@ export class ProductionOrdersService {
       throw new CodedConflictException(
         'PRODUCTION_ORDER_DELETE_ALREADY_STARTED',
         'Cannot delete: this production order has already started — it has consumed stock, generated finished-good units, and/or paid out payroll. Only a planned or already-cancelled order can be deleted.',
+      );
+    }
+    const executionCount = await this.prisma.tenant.productionExecution.count({ where: { productionOrderId: id } });
+    if (executionCount > 0) {
+      throw new CodedConflictException(
+        'PRODUCTION_ORDER_DELETE_HAS_EXECUTION_HISTORY',
+        `Cannot delete: this order has ${executionCount} labor-execution record(s) in its history (from before it was reverted to planned). Its payroll trail must stay attached to something — leave the order as-is.`,
       );
     }
     await this.prisma.tenant.productionOrder.delete({ where: { id } });
@@ -556,6 +571,152 @@ export class ProductionOrdersService {
     });
 
     return this.findOne(user, order.id);
+  }
+
+  // ============================================================
+  // Revert — undo a started (IN_PROGRESS) order back to PLANNED
+  // ============================================================
+
+  /**
+   * "Скасувати виробництво, повернути все на склад" (2026-08-25 user
+   * request): undoes everything `start()` did, as if it had never been
+   * called — returns consumed raw-material stock and consumed sub-assembly
+   * FinishedGood units, deletes the FinishedGood units THIS order itself
+   * produced, reverses any labor pay already recorded against it, and
+   * resets the order's own fields back to their pre-start values. The
+   * order row itself is kept (transitioned to PLANNED, not deleted) —
+   * FinishedGood/ProductionExecution both have Restrict-by-default FKs to
+   * ProductionOrder, and a VOIDED execution's compensating PayrollEntry
+   * needs a real row to keep pointing at (immutable-ledger convention).
+   * `remove()` above can hard-delete the result afterward IF it has no
+   * execution history left (i.e. it never had any CONFIRMED work booked).
+   *
+   * Deliberately IN_PROGRESS-only, never COMPLETED: a completed batch's
+   * output has had a full stage-tracking lifecycle and is far more likely
+   * to already be shipped/consumed downstream — the guard below would
+   * reject most of those anyway, but the status check gives a clearer,
+   * earlier error for the common case.
+   *
+   * Blocked (not silently partial) if ANY FinishedGood this order produced
+   * is no longer exactly as `start()` left it — shipped, consumed as
+   * someone else's sub-assembly, QC-checked, or linked to a customer
+   * order. "Return everything as if nothing happened" is only actually
+   * true if nothing downstream has happened yet; once it has, undoing this
+   * order would have to silently undo THAT too, which this deliberately
+   * never does.
+   */
+  async revertStart(user: RequestUser, id: string) {
+    const order = await this.findOne(user, id);
+    if (order.status !== 'IN_PROGRESS') {
+      throw new CodedBadRequestException(
+        'PRODUCTION_REVERT_ONLY_IN_PROGRESS',
+        'Only an IN_PROGRESS production order can be reverted.',
+      );
+    }
+
+    const ownGoods = await this.prisma.tenant.finishedGood.findMany({
+      where: { productionOrderId: id },
+      include: { qcChecks: true },
+    });
+    const touched = ownGoods.filter((g) => g.status !== 'IN_STOCK' || g.customerOrderId !== null || g.qcChecks.length > 0);
+    if (touched.length > 0) {
+      throw new CodedConflictException(
+        'PRODUCTION_REVERT_OUTPUT_ALREADY_USED',
+        `Cannot revert: ${touched.length} finished-good unit(s) from this order have already been shipped, QC-checked, or otherwise touched (${touched
+          .map((g) => g.serialNumber)
+          .join(', ')}). Resolve those first.`,
+        { serialNumbers: touched.map((g) => g.serialNumber) },
+      );
+    }
+
+    // ---- Reverse labor/payroll first (its own guards — e.g. a closed
+    // payroll period — should abort before any stock is touched) ----
+    const executions = await this.prisma.tenant.productionExecution.findMany({ where: { productionOrderId: id } });
+    for (const execution of executions) {
+      if (execution.status === 'DRAFT') {
+        await this.productionExecutionsService.remove(user, execution.id);
+      } else if (execution.status === 'CONFIRMED') {
+        await this.productionExecutionsService.void_(user, execution.id, {
+          note: 'Виробниче замовлення скасовано, залишки повернено на склад',
+        });
+      }
+      // VOIDED: already reversed by an earlier void — nothing to do.
+    }
+
+    // ---- Reverse raw-material consumption — the StockMovement ledger is
+    // the authoritative record of exactly what warehouse/qty was consumed
+    // (the pick-list row doesn't carry a warehouseId), and re-crediting
+    // through `applyMovement` with `preferredOrderId` re-creates this
+    // batch's customer-order reservation the same way any other stock
+    // increase does (StockReservationService#topUp) — no manual
+    // reservation surgery needed. ----
+    const orderItem = order.customerOrderItemId
+      ? await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: order.customerOrderItemId } })
+      : null;
+    const customerOrderId = orderItem?.customerOrderId ?? undefined;
+
+    const consumptionMovements = await this.prisma.tenant.stockMovement.findMany({
+      where: { sourceType: 'ProductionOrder', sourceId: id, type: 'PRODUCTION_CONSUMPTION' },
+    });
+    for (const movement of consumptionMovements) {
+      if (!movement.warehouseId) continue;
+      await this.stockService.applyMovement(user, {
+        productId: movement.productId,
+        warehouseId: movement.warehouseId,
+        type: 'PRODUCTION_REVERSAL',
+        qtyDelta: -Number(movement.qtyDelta),
+        sourceType: 'ProductionOrder',
+        sourceId: id,
+        preferredOrderId: customerOrderId,
+      });
+    }
+
+    // ---- Reverse sub-assembly consumption — return the exact FinishedGood
+    // units this order consumed (recorded on its own pick-list rows),
+    // never re-derived via a fresh FIFO pick. ----
+    for (const line of order.pickListItems) {
+      if (line.subAssemblyId && line.consumedFinishedGoodIds.length > 0) {
+        await this.prisma.tenant.finishedGood.updateMany({
+          where: { id: { in: line.consumedFinishedGoodIds } },
+          data: { status: 'IN_STOCK', consumedInProductionOrderId: null },
+        });
+      }
+    }
+
+    // ---- Drop this order's own consumption/tracking records and the
+    // (confirmed-untouched) output units it produced ----
+    await this.prisma.tenant.productionOrderPickListItem.deleteMany({ where: { productionOrderId: id } });
+    await this.prisma.tenant.productionOrderStageEvent.deleteMany({ where: { productionOrderId: id } });
+    await this.prisma.tenant.finishedGood.deleteMany({ where: { productionOrderId: id } });
+
+    // ---- Reset the order itself back to exactly its pre-start() state ----
+    const reverted = await this.prisma.tenant.productionOrder.update({
+      where: { id },
+      data: {
+        status: 'PLANNED',
+        currentStageIndex: null,
+        completedAt: null,
+        totalLocalCostEur: null,
+        totalGermanCostEur: null,
+        laborCostEur: null,
+        packagingCostEur: null,
+        deliveryCostEur: null,
+        otherCostEur: null,
+        fullCostEur: null,
+      },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'production_order.reverted',
+      entityType: 'ProductionOrder',
+      entityId: id,
+      before: order,
+      after: reverted,
+    });
+
+    return this.findOne(user, id);
   }
 
   // ============================================================

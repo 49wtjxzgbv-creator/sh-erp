@@ -10,6 +10,7 @@ import {
   useCancelProductionOrder,
   useDeleteProductionOrder,
   useStartProductionOrder,
+  useRevertProductionOrderStart,
   useAdvanceProductionOrderStage,
   useProductionOrderStagePlan,
   useSetProductionOrderStagePlan,
@@ -200,6 +201,7 @@ export default function ProductionOrderDetailPage() {
   const cancelOrder = useCancelProductionOrder(params.id);
   const deleteOrder = useDeleteProductionOrder();
   const startOrder = useStartProductionOrder(params.id);
+  const revertStart = useRevertProductionOrderStart(params.id);
   const advanceStage = useAdvanceProductionOrderStage(params.id);
   const canManage = useHasPermission('production-orders:manage');
   const canDelete = useHasPermission('production-orders:delete');
@@ -212,6 +214,7 @@ export default function ProductionOrderDetailPage() {
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [revertError, setRevertError] = useState<string | null>(null);
 
   if (isLoading || !order) {
     return <LoadingBlock />;
@@ -233,6 +236,15 @@ export default function ProductionOrderDetailPage() {
       router.replace('/production');
     } catch (err) {
       setDeleteError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleRevertStart() {
+    setRevertError(null);
+    try {
+      await revertStart.mutateAsync();
+    } catch (err) {
+      setRevertError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -320,10 +332,34 @@ export default function ProductionOrderDetailPage() {
             </DialogContent>
           </Dialog>
           )}
+          {order.status === 'IN_PROGRESS' && canDelete && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                {t('revertStartOrder')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('revertStartConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('revertStartConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={revertStart.isPending} onClick={handleRevertStart}>
+                  {tc('confirm')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          )}
         </div>
       </div>
       {cancelError && <p className="text-sm text-destructive">{cancelError}</p>}
       {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+      {revertError && <p className="text-sm text-destructive">{revertError}</p>}
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-4">

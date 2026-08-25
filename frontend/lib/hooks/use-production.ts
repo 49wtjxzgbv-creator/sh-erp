@@ -9,6 +9,7 @@ import {
   cancelProductionOrder,
   deleteProductionOrder,
   startProductionOrder,
+  revertProductionOrderStart,
   advanceProductionOrderStage,
   listProductionStages,
   createProductionStage,
@@ -123,6 +124,23 @@ export function useStartProductionOrder(id: string) {
       qc.invalidateQueries({ queryKey: ['stock-levels'] });
       qc.invalidateQueries({ queryKey: ['stock-history'] });
       qc.invalidateQueries({ queryKey: ['finished-goods'] });
+    },
+  });
+}
+
+export function useRevertProductionOrderStart(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => revertProductionOrderStart(id),
+    onSuccess: () => {
+      // Same blast radius as start() itself — stock, finished goods, and
+      // this batch's own labor-execution history all just changed.
+      qc.invalidateQueries({ queryKey: ['production-orders'] });
+      qc.invalidateQueries({ queryKey: orderKey(id) });
+      qc.invalidateQueries({ queryKey: ['stock-levels'] });
+      qc.invalidateQueries({ queryKey: ['stock-history'] });
+      qc.invalidateQueries({ queryKey: ['finished-goods'] });
+      qc.invalidateQueries({ queryKey: ['production-executions'] });
     },
   });
 }
