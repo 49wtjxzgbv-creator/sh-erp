@@ -195,7 +195,7 @@ export default function PlannerPage() {
           <h1 className="text-xl font-semibold">{t('title')}</h1>
           <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <LearnThisButton courseId="planner" label="Навчитися працювати з План-графіком" />
           <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
             <button

@@ -18,7 +18,13 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn('flex items-center gap-1 border-b border-border', className)}
+    // `overflow-x-auto` makes the tab strip its own bounded horizontal
+    // scroller instead of either wrapping (reads oddly for navigation,
+    // unlike a button toolbar) or forcing the whole page to scroll
+    // sideways once a module has 5-6 tabs — a real gap on every module
+    // with more than ~4 tabs (Production, Inventory, Procurement, BOM)
+    // once the sidebar+content width drops below phone/small-tablet size.
+    className={cn('flex items-center gap-1 overflow-x-auto border-b border-border', className)}
     {...props}
   />
 ));

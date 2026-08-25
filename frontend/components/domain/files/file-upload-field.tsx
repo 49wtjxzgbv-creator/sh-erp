@@ -103,7 +103,7 @@ export function FileUploadField({
     <div className="space-y-2">
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleFileSelected} />
       {preview ? (
-        <div className="flex items-start gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -119,8 +119,8 @@ export function FileUploadField({
           >
             <Avatar src={downloadUrl} size="2xl" zoomable={false} />
           </button>
-          <div className="flex flex-col gap-1">
-            <div className="flex gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap gap-1.5">
               <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
                 <Upload className="mr-2 h-4 w-4" />
                 {value ? tc('edit') : tc('create')}

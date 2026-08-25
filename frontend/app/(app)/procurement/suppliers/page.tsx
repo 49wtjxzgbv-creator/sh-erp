@@ -123,7 +123,7 @@ export default function SuppliersPage() {
           className="max-w-sm"
         />
         {useHasPermission('suppliers:write') && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <ConnectExistingSupplierDialog />
             <Button asChild>
               <Link href="/procurement/suppliers/new">
