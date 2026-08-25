@@ -99,9 +99,9 @@ export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty,
           <p className="text-sm text-muted-foreground">{t('subAssemblyPlanningDescription')}</p>
           {needed.isPending && <p className="text-sm text-muted-foreground">{tc('loading')}</p>}
           {rows.map((row) => (
-            <div key={row.assemblyId} className="flex items-center gap-3 rounded-md border border-border p-3">
+            <div key={row.assemblyId} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
               <Avatar src={photosByAssembly?.[row.assemblyId]?.[0]?.downloadUrl} size="md" />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-40">
                 <p className="truncate text-sm font-medium">{row.article ? `${row.article} — ${row.name}` : row.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('subAssemblyNeeded', { qty: row.qtyNeeded })} · {t('subAssemblyInStock', { qty: row.qtyInStock })}
@@ -112,7 +112,7 @@ export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty,
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="sm"

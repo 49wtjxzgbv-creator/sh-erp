@@ -28,16 +28,22 @@ function TreeNode({ node, depth, photosByAssembly }: { node: ProductionTreeNode;
   const t = useTranslations('sales');
   const tp = useTranslations('production');
 
+  // Capped + smaller-than-before step so a deep chain (4+ levels, seen on
+  // real BOMs) doesn't eat most of a phone's width before any content even
+  // renders — indentation past level 6 stops growing, it's already
+  // unambiguous which branch is whose by then.
+  const indent = Math.min(depth, 6) * 16;
+
   return (
-    <div style={{ marginLeft: depth * 28 }} className="space-y-2">
+    <div style={{ marginLeft: indent }} className="space-y-2">
       <div
         className={cn(
-          'flex items-center gap-3 rounded-md border p-2',
+          'flex flex-wrap items-center gap-2 rounded-md border p-2',
           node.done ? 'border-success/40 bg-success/10' : 'border-border bg-muted/30',
         )}
       >
         <Avatar src={photosByAssembly?.[node.assemblyId]?.[0]?.downloadUrl} size="md" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-40">
           <p className={cn('truncate text-sm font-medium', node.done && 'text-success-foreground')}>
             {node.article ? `${node.article} — ${node.name}` : node.name}
           </p>
@@ -45,14 +51,16 @@ function TreeNode({ node, depth, photosByAssembly }: { node: ProductionTreeNode;
             {t('subAssemblyNeeded', { qty: node.qtyNeeded })} · {t('subAssemblyInStock', { qty: node.qtyInStock })}
           </p>
         </div>
-        <Badge variant={node.done ? 'success' : 'secondary'}>{node.done ? t('productionTreeReady') : t('productionTreeNotReady')}</Badge>
-        {node.batches.map((b) => (
-          <Link key={b.id} href={`/production/${b.id}`}>
-            <Badge variant={BATCH_STATUS_VARIANT[b.status as ProductionOrderStatus] ?? 'secondary'} className="hover:underline">
-              {tp(`status${b.status}`)}
-            </Badge>
-          </Link>
-        ))}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant={node.done ? 'success' : 'secondary'}>{node.done ? t('productionTreeReady') : t('productionTreeNotReady')}</Badge>
+          {node.batches.map((b) => (
+            <Link key={b.id} href={`/production/${b.id}`}>
+              <Badge variant={BATCH_STATUS_VARIANT[b.status as ProductionOrderStatus] ?? 'secondary'} className="hover:underline">
+                {tp(`status${b.status}`)}
+              </Badge>
+            </Link>
+          ))}
+        </div>
       </div>
       {node.children.map((child) => (
         <TreeNode key={child.assemblyId} node={child} depth={depth + 1} photosByAssembly={photosByAssembly} />

@@ -133,7 +133,7 @@ function OrderPriceTotals({ order, items }: { order: CustomerOrder; items: Custo
   }
 
   return (
-    <div className="flex gap-6">
+    <div className="flex flex-wrap gap-x-6 gap-y-2">
       <div>
         <p className="text-xs text-muted-foreground">{t('estimatedTotal')}</p>
         <p className="text-sm font-medium">{hasEstimate ? formatEur(estimatedTotal) : t('pricePending')}</p>
@@ -287,7 +287,7 @@ function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) 
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">{t('financeSummary')}</CardTitle>
         <Link href={`/finance/orders/${customerOrderId}`} className="text-sm text-primary hover:underline">
           {t('viewInFinance')}
@@ -334,7 +334,7 @@ function PayrollFundWidget({ orderId }: { orderId: string }) {
       <CardHeader>
         <CardTitle className="text-base">{t('payrollFund')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex gap-6 pt-0">
+      <CardContent className="flex flex-wrap gap-x-6 gap-y-2 pt-0">
         <div>
           <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
           <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
@@ -431,7 +431,7 @@ export default function CustomerOrderDetailPage() {
           <h2 className="text-lg font-semibold">{order.clientName}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`orderStatus${order.status}`)}</Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canManage && (
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
               {t('editOrder')}
@@ -588,9 +588,9 @@ export default function CustomerOrderDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">{t('items')}</CardTitle>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {order.items && order.items.length > 0 && <OrderPriceTotals order={order} items={order.items} />}
             {hasUngivenLines && canManage && (
               <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
