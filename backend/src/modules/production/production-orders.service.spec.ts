@@ -194,6 +194,10 @@ describe('ProductionOrdersService', () => {
       });
       expect(prisma.tenant.finishedGood.deleteMany).toHaveBeenCalledWith({ where: { productionOrderId: 'po1' } });
       expect(prisma.tenant.productionOrderPickListItem.deleteMany).toHaveBeenCalledWith({ where: { productionOrderId: 'po1' } });
+      // Real incident (2026-08-25): production_order_stage_events is a permanently
+      // immutable ledger (REVOKE DELETE FROM app_user, migration 20260805000000) —
+      // deleting from it 500'd in production the first time this ran.
+      expect(prisma.tenant.productionOrderStageEvent.deleteMany).not.toHaveBeenCalled();
       expect(prisma.tenant.productionOrder.update).toHaveBeenCalledWith({
         where: { id: 'po1' },
         data: expect.objectContaining({ status: 'PLANNED', currentStageIndex: null, laborCostEur: null }),

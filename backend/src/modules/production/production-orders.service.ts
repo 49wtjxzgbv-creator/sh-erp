@@ -683,10 +683,17 @@ export class ProductionOrdersService {
       }
     }
 
-    // ---- Drop this order's own consumption/tracking records and the
-    // (confirmed-untouched) output units it produced ----
+    // ---- Drop this order's own pick-list rows and the (confirmed-untouched)
+    // output units it produced. Deliberately does NOT touch
+    // ProductionOrderStageEvent: it's an immutable append-only ledger by the
+    // same DB-level rule as stock_movements/payroll_entries/audit_events
+    // (schema migration 20260805000000's `REVOKE UPDATE, DELETE ... FROM
+    // app_user` — a real 500 the first time this ran in production,
+    // "permission denied for table production_order_stage_events").
+    // "Stage X was reached at time Y" stays true as a historical fact even
+    // after the order is reverted, exactly like a reverted stock movement or
+    // a voided execution's PayrollEntry never get deleted either. ----
     await this.prisma.tenant.productionOrderPickListItem.deleteMany({ where: { productionOrderId: id } });
-    await this.prisma.tenant.productionOrderStageEvent.deleteMany({ where: { productionOrderId: id } });
     await this.prisma.tenant.finishedGood.deleteMany({ where: { productionOrderId: id } });
 
     // ---- Reset the order itself back to exactly its pre-start() state ----
