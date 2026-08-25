@@ -2,24 +2,16 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAssembly, useAssemblyCost, useAssemblyCosts, useAssembliesByIds } from '@/lib/hooks/use-bom';
-import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useAssemblyCost, useAssemblyCosts, useAssembliesByIds } from '@/lib/hooks/use-bom';
 import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { toNumber } from '@/lib/api-client/decimal';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
-import {
-  ComponentNameCell,
-  ComponentArticleCell,
-  useOwnCostLines,
-  EMPTY_PRODUCTS_MAP,
-  EMPTY_ASSEMBLIES_MAP,
-} from '@/components/domain/bom/assembly-spec-print';
+import { AssemblyCompositionSection, EMPTY_ASSEMBLIES_MAP } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { CustomerOrder, CustomerOrderItem } from '@/lib/api-client/sales';
-import type { CostBreakdownLine } from '@/lib/api-client/bom';
 
 /** Resolves an order line's assembly name — `CustomerOrderItem` only carries a raw `assemblyId` (frontend/README's tracked "raw id, no name" simplification), not acceptable on a document handed to a customer. Takes the caller's already-batch-fetched map (see CustomerOrderPrint) rather than firing its own request per row. */
 function AssemblyNameCell({ assemblyId, assembliesById }: { assemblyId: string; assembliesById: Map<string, { name: string; article: string | null }> }) {
@@ -116,108 +108,6 @@ function PrintPriceTotals({
         </>
       )}
     </p>
-  );
-}
-
-/**
- * One "X consists of: [table]" block per assembly node in the exploded
- * composition tree, followed by one such block per sub-assembly it uses —
- * in that order (parent's own component table first, then each child's own
- * block), so the printed document reads top-down exactly as asked: "виріб
- * X складається з товарів/підвиробу Y", then right below, "підвиріб Y
- * складається з товарів...", and so on down to raw products. `qty` is
- * already the fully accumulated quantity needed for the *whole order* down
- * this branch (order qty × every ancestor's qtyPerUnit), not a
- * per-parent-unit ratio — that's the actual question being answered
- * ("скільки потрібно"). BOM cycles are rejected at save time
- * (setAssemblyComponents), so the recursion always terminates at product
- * leaves — no depth guard needed here.
- */
-function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { assemblyId: string; qty: number; depth: number; showPrice: boolean }) {
-  const t = useTranslations('bom');
-  const tp = useTranslations('print');
-  const { data: assembly } = useAssembly(assemblyId);
-  const { data: cost } = useAssemblyCost(assemblyId);
-  const ownCostLines = useOwnCostLines(assembly);
-
-  const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
-  const subAssemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
-  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', subAssemblyIds, 'ASSEMBLY_PHOTO');
-  const { data: photosOfThis } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
-  // One batched request per level for names/articles instead of one per BOM
-  // line — a real incident: the individual-request version blew through
-  // the global per-client rate limit on a deep/wide real order (150+
-  // leaf products), permanently stranding whichever names got 429'd on
-  // their raw id. See ComponentNameCell's own header comment.
-  const { data: productsById } = useProductsByIds(productIds);
-  const { data: subAssembliesById } = useAssembliesByIds(subAssemblyIds);
-
-  if (!assembly || !cost) return null;
-
-  function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
-    if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
-    if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
-    return undefined;
-  }
-
-  const name = `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}`;
-
-  return (
-    <div className="mb-4 break-inside-avoid" style={{ marginLeft: depth * 24 }}>
-      <div className="mb-1 flex items-center gap-2">
-        <Avatar src={photosOfThis?.[assemblyId]?.[0]?.downloadUrl} size="lg" />
-        <p className="font-semibold">{depth === 0 ? tp('consistsOfTop', { name, qty }) : tp('consistsOfSub', { name, qty })}</p>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th className="print-photo-col">{tp('photoColumn')}</th>
-            <th>{t('article')}</th>
-            <th>{t('component')}</th>
-            <th>{t('componentType')}</th>
-            <th>{t('qty')}</th>
-            {showPrice && <th>{t('cost')}</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {cost.breakdown.map((line, i) => (
-            <tr key={i}>
-              <td><Avatar src={lineDownloadUrl(line)} size="lg" /></td>
-              <td className="font-bold">
-                <ComponentArticleCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
-              </td>
-              <td>
-                <ComponentNameCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
-              </td>
-              <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
-              <td>{line.qtyPerUnit * qty}</td>
-              {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
-            </tr>
-          ))}
-          {ownCostLines.map((line) => (
-            <tr key={`own-${line.key}`}>
-              <td />
-              <td />
-              <td>{line.label}</td>
-              <td>{t('componentTypeOwn')}</td>
-              <td>{qty}</td>
-              {showPrice && <td>{formatEur(line.value * qty)}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {showPrice && (
-        <p className="mt-1 text-sm">
-          {t('cost')}: {formatEur(cost.costPerUnit * qty)}
-        </p>
-      )}
-      {cost.breakdown
-        .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
-        .map((l, i) => (
-          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} showPrice={showPrice} />
-        ))}
-    </div>
   );
 }
 

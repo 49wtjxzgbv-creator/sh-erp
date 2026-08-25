@@ -95,13 +95,127 @@ export function useOwnCostLines(assembly: { laborCostPerUnit: string; packagingC
 }
 
 /**
+ * One "X consists of: [table]" block per assembly node in the exploded
+ * composition tree, followed by one such block per sub-assembly it uses —
+ * in that order (parent's own component table first, then each child's own
+ * block), so the printed document reads top-down: "виріб/підвиріб X
+ * складається з товарів/підвиробу Y", then right below, "підвиріб Y
+ * складається з товарів...", and so on down to raw products. `qty` is
+ * already the fully accumulated quantity needed (order/batch qty × every
+ * ancestor's qtyPerUnit down this branch), not a per-parent-unit ratio —
+ * that's the actual question being answered ("скільки потрібно"). BOM
+ * cycles are rejected at save time (setAssemblyComponents), so the
+ * recursion always terminates at product leaves — no depth guard needed.
+ *
+ * Shared by every print view that needs to drill into sub-assembly
+ * composition rather than stop at an opaque "sub-assembly, qty N" line:
+ * customer-order-print.tsx (per order item), and this file's own
+ * AssemblySpecPrint/production's PickListPrint (per direct sub-assembly
+ * line, called at depth >= 1 so it always reads "Підвиріб", never "Виріб"
+ * — the printed document's own top-level subject already has its own
+ * header/table, this is only ever supplementary detail below it).
+ */
+export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { assemblyId: string; qty: number; depth: number; showPrice: boolean }) {
+  const t = useTranslations('bom');
+  const tp = useTranslations('print');
+  const { data: assembly } = useAssembly(assemblyId);
+  const { data: cost } = useAssemblyCost(assemblyId);
+  const ownCostLines = useOwnCostLines(assembly);
+
+  const productIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'PRODUCT' && l.productId).map((l) => l.productId as string), [cost]);
+  const subAssemblyIds = useMemo(() => (cost?.breakdown ?? []).filter((l) => l.componentType === 'ASSEMBLY' && l.subAssemblyId).map((l) => l.subAssemblyId as string), [cost]);
+  const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', subAssemblyIds, 'ASSEMBLY_PHOTO');
+  const { data: photosOfThis } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
+  // One batched request per level for names/articles instead of one per BOM
+  // line — a real incident: the individual-request version blew through
+  // the global per-client rate limit on a deep/wide real order (150+ leaf
+  // products), permanently stranding whichever names got 429'd on their
+  // raw id. See ComponentNameCell's own header comment.
+  const { data: productsById } = useProductsByIds(productIds);
+  const { data: subAssembliesById } = useAssembliesByIds(subAssemblyIds);
+
+  if (!assembly || !cost) return null;
+
+  function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
+    if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
+    if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
+    return undefined;
+  }
+
+  const name = `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}`;
+
+  return (
+    <div className="mb-4 break-inside-avoid" style={{ marginLeft: depth * 24 }}>
+      <div className="mb-1 flex items-center gap-2">
+        <Avatar src={photosOfThis?.[assemblyId]?.[0]?.downloadUrl} size="lg" />
+        <p className="font-semibold">{depth === 0 ? tp('consistsOfTop', { name, qty }) : tp('consistsOfSub', { name, qty })}</p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th className="print-photo-col">{tp('photoColumn')}</th>
+            <th>{t('article')}</th>
+            <th>{t('component')}</th>
+            <th>{t('componentType')}</th>
+            <th>{t('qty')}</th>
+            {showPrice && <th>{t('cost')}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {cost.breakdown.map((line, i) => (
+            <tr key={i}>
+              <td><Avatar src={lineDownloadUrl(line)} size="lg" /></td>
+              <td className="font-bold">
+                <ComponentArticleCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+              </td>
+              <td>
+                <ComponentNameCell line={line} productsById={productsById ?? EMPTY_PRODUCTS_MAP} assembliesById={subAssembliesById ?? EMPTY_ASSEMBLIES_MAP} />
+              </td>
+              <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
+              <td>{line.qtyPerUnit * qty}</td>
+              {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
+            </tr>
+          ))}
+          {ownCostLines.map((line) => (
+            <tr key={`own-${line.key}`}>
+              <td />
+              <td />
+              <td>{line.label}</td>
+              <td>{t('componentTypeOwn')}</td>
+              <td>{qty}</td>
+              {showPrice && <td>{formatEur(line.value * qty)}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {showPrice && (
+        <p className="mt-1 text-sm">
+          {t('cost')}: {formatEur(cost.costPerUnit * qty)}
+        </p>
+      )}
+      {cost.breakdown
+        .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
+        .map((l, i) => (
+          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} showPrice={showPrice} />
+        ))}
+    </div>
+  );
+}
+
+/**
  * `qty` defaults to 1 (a pure per-unit BOM reference sheet — the only thing
  * that makes sense from bom/[id]/components/page.tsx, which has no order
  * context at all). Callers that DO have a quantity to build against (e.g.
  * production/[id]/page.tsx's `unitsPlanned`) pass it here so every line
- * prints "how much we need for this whole batch," not just the BOM ratio —
- * same `qtyPerUnit * qty` multiplication customer-order-print.tsx's
- * AssemblyCompositionSection already does for the sales side.
+ * prints "how much we need for this whole batch," not just the BOM ratio.
+ *
+ * When a component line is itself a sub-assembly, ticking "full
+ * composition" in print options additionally explodes that sub-assembly's
+ * own composition below the main table (AssemblyCompositionSection,
+ * recursive) — otherwise it stays an opaque "sub-assembly, qty N" line,
+ * same gap fixed for the pick-list print (pick-list-print.tsx) and already
+ * solved on the sales side (customer-order-print.tsx).
  */
 export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string; qty?: number }) {
   const t = useTranslations('bom');
@@ -123,6 +237,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
     { id: 'componentType', label: t('componentType') },
     { id: 'qtyPerUnit', label: t('qtyPerUnit') },
     { id: 'cost', label: t('cost') },
+    { id: 'composition', label: t('fullComposition') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
@@ -132,6 +247,9 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
   // — at qty === 1 (the plain BOM-reference case, e.g. bom/[id]/components)
   // it would just repeat the same numbers as qtyPerUnit.
   const showQtyNeededColumn = qty !== 1;
+  const subAssemblyLines = cost.breakdown.filter(
+    (l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId),
+  );
 
   function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
     if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
@@ -231,6 +349,20 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
               </>
             )}
           </p>
+        )}
+        {printOptions.isColumnVisible('composition') && subAssemblyLines.length > 0 && (
+          <div className="mt-6">
+            <h2 className="mb-2 text-base font-semibold">{tp('compositionSectionTitle')}</h2>
+            {subAssemblyLines.map((l, i) => (
+              <AssemblyCompositionSection
+                key={i}
+                assemblyId={l.subAssemblyId}
+                qty={l.qtyPerUnit * qty}
+                depth={1}
+                showPrice={printOptions.isColumnVisible('cost')}
+              />
+            ))}
+          </div>
         )}
       </PrintArea>
     </>

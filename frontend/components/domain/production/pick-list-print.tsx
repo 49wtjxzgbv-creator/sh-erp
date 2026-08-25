@@ -7,6 +7,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { AssemblyCompositionSection } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import type { ProductionOrderPickListItem } from '@/lib/api-client/production';
 import type { DecimalString } from '@/lib/api-client/decimal';
@@ -39,6 +40,12 @@ export interface PickListPrintProps {
  * assembly-spec-print.tsx, one request per entity type instead of per row.
  * Rows from before subAssemblyId existed (both ids null) just show no photo,
  * same as a line whose product/assembly never had one uploaded.
+ *
+ * Full composition (added 2026-08-25, same user report): ticking "full
+ * composition" additionally explodes each consumed sub-assembly line's own
+ * composition below the main table (AssemblyCompositionSection, recursive)
+ * — otherwise a sub-assembly line stays an opaque "[assembly] Name, qty N",
+ * same gap already fixed for assembly-spec-print.tsx and customer-order-print.tsx.
  */
 export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems }: PickListPrintProps) {
   const t = useTranslations('production');
@@ -61,8 +68,11 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
     { id: 'qty', label: t('qty') },
     { id: 'unitPrice', label: t('unitPrice') },
     { id: 'lineTotal', label: t('lineTotal') },
+    { id: 'composition', label: t('fullComposition') },
   ];
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
+
+  const subAssemblyLines = pickListItems.filter((l): l is ProductionOrderPickListItem & { subAssemblyId: string } => Boolean(l.subAssemblyId));
 
   return (
     <>
@@ -109,6 +119,20 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
           </tbody>
         </table>
         <p className="mt-8 text-xs">{tp('issuedBy')}: ____________________&nbsp;&nbsp;&nbsp;&nbsp;{tp('receivedBy')}: ____________________</p>
+        {printOptions.isColumnVisible('composition') && subAssemblyLines.length > 0 && (
+          <div className="mt-6">
+            <h2 className="mb-2 text-base font-semibold">{tp('compositionSectionTitle')}</h2>
+            {subAssemblyLines.map((line) => (
+              <AssemblyCompositionSection
+                key={line.id}
+                assemblyId={line.subAssemblyId}
+                qty={Number(line.qty)}
+                depth={1}
+                showPrice={printOptions.isColumnVisible('unitPrice')}
+              />
+            ))}
+          </div>
+        )}
       </PrintArea>
     </>
   );

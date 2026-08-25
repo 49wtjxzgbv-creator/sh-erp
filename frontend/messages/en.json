@@ -327,7 +327,8 @@
     "viewVersion": "View",
     "deleteConfirmTitle": "Delete assembly?",
     "deleteConfirmDescription": "The assembly will be marked deleted.",
-    "searchPlaceholder": "Search by name or article…"
+    "searchPlaceholder": "Search by name or article…",
+    "fullComposition": "Full composition (with sub-assemblies)"
   },
   "production": {
     "title": "Production",

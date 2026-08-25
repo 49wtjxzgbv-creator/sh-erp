@@ -329,7 +329,8 @@
     "viewVersion": "Переглянути",
     "deleteConfirmTitle": "Видалити специфікацію?",
     "deleteConfirmDescription": "Специфікацію буде позначено як видалену.",
-    "searchPlaceholder": "Пошук за назвою або артикулом…"
+    "searchPlaceholder": "Пошук за назвою або артикулом…",
+    "fullComposition": "Повний склад (з підвиробами)"
   },
   "production": {
     "title": "Виробництво",
