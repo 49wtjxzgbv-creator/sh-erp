@@ -284,7 +284,7 @@ export default function ProductionOrderDetailPage() {
           <h2 className="text-lg font-semibold">{t('orderHeader')}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`status${order.status}`)}</Badge>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <AssemblySpecPrint assemblyId={order.assemblyId} qty={Number(order.unitsPlanned)} />
           {order.status === 'PLANNED' && canManage && (
           <Dialog>
@@ -547,7 +547,7 @@ export default function ProductionOrderDetailPage() {
 
       {order.pickListItems && order.pickListItems.length > 0 && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-base">{t('pickList')}</CardTitle>
             <PickListPrint
               orderId={order.id}

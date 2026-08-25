@@ -388,7 +388,7 @@ export default function ProductGridPage() {
           <DialogHeader>
             <DialogTitle>{t('gridColumns')}</DialogTitle>
           </DialogHeader>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setVisibleKeys(new Set(PRODUCT_GRID_COLUMNS.map((c) => c.key)))}>
               {t('gridShowAllColumns')}
             </Button>

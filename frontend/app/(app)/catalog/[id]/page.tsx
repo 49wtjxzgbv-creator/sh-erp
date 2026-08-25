@@ -55,7 +55,7 @@ export default function EditProductPage() {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">
           {t('editProduct')} — {product.article}
         </h1>

@@ -304,7 +304,7 @@ export default function SupplierDetailPage() {
 
   return (
     <div className="max-w-4xl space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">{supplier.name}</h1>
         {canWrite && (
           <Dialog>

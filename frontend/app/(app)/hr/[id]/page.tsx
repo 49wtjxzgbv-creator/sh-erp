@@ -66,7 +66,7 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">{employee.fullName}</h1>
           <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'secondary'}>

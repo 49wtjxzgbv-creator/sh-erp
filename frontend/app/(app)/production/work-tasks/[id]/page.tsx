@@ -211,7 +211,7 @@ export default function WorkTaskDetailPage() {
           <Badge variant={task.status === 'CLOSED' ? 'secondary' : 'success'}>{t(`workTaskStatus${task.status}`)}</Badge>
         </div>
         {canManage && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {task.status === 'OPEN' ? (
               <Button variant="outline" size="sm" onClick={handleClose} loading={closeTask.isPending}>
                 {t('closeWorkTaskAction')}

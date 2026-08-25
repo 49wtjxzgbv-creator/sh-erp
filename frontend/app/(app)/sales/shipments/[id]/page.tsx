@@ -70,7 +70,7 @@ export default function ShipmentDetailPage() {
           <Badge variant={STATUS_VARIANT[shipment.status]}>{t(`shipmentStatus${shipment.status}`)}</Badge>
         </div>
         {!isDelivered && canManage && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Dialog>
               <DialogTrigger asChild>
                 <Button size="sm">{t('markDelivered')}</Button>

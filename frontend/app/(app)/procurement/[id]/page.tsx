@@ -243,7 +243,7 @@ function FinanceSummaryWidget({ orderId }: { orderId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">{t('financeSummary')}</CardTitle>
         <Link href={`/finance/purchase-orders/${orderId}`} className="text-sm text-primary hover:underline">
           {t('viewInFinance')}
@@ -478,7 +478,7 @@ export default function PurchaseOrderDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold">{order.supplierNameSnapshot}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
