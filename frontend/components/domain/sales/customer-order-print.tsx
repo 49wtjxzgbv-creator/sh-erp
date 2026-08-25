@@ -144,7 +144,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
         />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
           title={tp('customerOrderTitle')}
           subtitle={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`}

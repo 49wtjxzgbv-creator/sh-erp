@@ -160,11 +160,25 @@
   body * {
     visibility: hidden;
   }
-  .print-area,
-  .print-area * {
+  /* Real regression (2026-08-25): a page can host more than one `.print-area`
+   * at once (production/[id]/page.tsx's assembly-spec + pick-list prints).
+   * These two rules used to target the bare `.print-area` class, so
+   * printing ONE made EVERY print area on the page visible AND
+   * `position: absolute; inset: 0` simultaneously — two full documents
+   * stacked exactly on top of each other, rows visibly overlapping. Now
+   * scoped to `.print-area--active` (print-area.tsx: every print area
+   * starts active by default — a single-print-view page and a bare Ctrl+P
+   * both still work unchanged; usePrintOptions in print-options.tsx
+   * deactivates every OTHER print area right before firing window.print()
+   * for a specific view). Every other rule below stays keyed on the plain
+   * `.print-area` class — harmless either way, since an inactive one is
+   * never visible regardless of its styling.
+   */
+  .print-area--active,
+  .print-area--active * {
     visibility: visible;
   }
-  .print-area {
+  .print-area--active {
     position: absolute;
     inset: 0;
     width: 100%;

@@ -108,7 +108,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
           <PreviewButton />
         )}
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('supplierRequestsTitle')} />
         {printable.map((group, gi) => (
           <div key={group.supplierId ?? `none-${gi}`} className={gi < printable.length - 1 ? 'print-page-break' : ''}>

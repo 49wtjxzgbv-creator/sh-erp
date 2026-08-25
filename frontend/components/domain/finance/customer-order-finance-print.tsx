@@ -192,7 +192,7 @@ export function CustomerOrderFinancePrint({ customerOrderId, orderLabel }: { cus
         />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('financeTitle')} subtitle={orderLabel} />
         {printOptions.isColumnVisible('summary') && summary && <SummaryPrintBlock summary={summary} />}
         {printOptions.isColumnVisible('directDocuments') && (

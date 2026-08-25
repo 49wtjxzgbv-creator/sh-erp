@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useIsFetching } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Printer, Settings2 } from 'lucide-react';
@@ -43,6 +43,24 @@ const PRINT_MAX_WAIT_MS = 20000;
  * missing from a customer order's printed full composition because
  * window.print() fired on the very next render after confirm, without
  * waiting for the composition tree's own data to arrive.
+ *
+ * `printAreaId` (real regression, 2026-08-25): a page can host more than
+ * one `<PrintArea>` at once — production/[id]/page.tsx always mounts both
+ * AssemblySpecPrint's and PickListPrint's (the second only once the order
+ * has started). `@media print`'s visibility trick used to target the bare
+ * `.print-area` class, so BOTH became visible AND `position: absolute;
+ * inset: 0` simultaneously the moment either one printed — two full
+ * documents stacked exactly on top of each other, rows visibly
+ * overlapping. Confirmed live: exactly 2 `.print-area` elements coexist on
+ * that page once an order is started. `useId()` gives each `usePrintOptions`
+ * call (and therefore each print view) a stable, page-wide-unique id;
+ * right before firing `window.print()`, every OTHER print area is
+ * explicitly deactivated and only this one is marked active (see
+ * `print-area.tsx` + globals.css's `.print-area--active` rule). Every
+ * `<PrintArea>` starts marked active by default (see print-area.tsx) so a
+ * page with only one print view — every page except production/[id] —
+ * behaves exactly as before, including a bare Ctrl+P with no button ever
+ * clicked.
  */
 export function usePrintOptions({ columns, hasPhotos = false }: { columns: PrintColumnOption[]; hasPhotos?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -51,13 +69,21 @@ export function usePrintOptions({ columns, hasPhotos = false }: { columns: Print
   const [printRequestId, setPrintRequestId] = useState(0);
   const isFetching = useIsFetching();
   const printedRequestId = useRef(0);
+  const printAreaId = useId();
+
+  const activateOnlyThisPrintArea = useCallback(() => {
+    document.querySelectorAll('.print-area').forEach((el) => {
+      el.classList.toggle('print-area--active', el.getAttribute('data-print-area-id') === printAreaId);
+    });
+  }, [printAreaId]);
 
   useEffect(() => {
     if (printRequestId === 0 || printRequestId === printedRequestId.current) return;
     if (isFetching > 0) return;
     printedRequestId.current = printRequestId;
+    activateOnlyThisPrintArea();
     window.print();
-  }, [printRequestId, isFetching]);
+  }, [printRequestId, isFetching, activateOnlyThisPrintArea]);
 
   // Safety net: print anyway once PRINT_MAX_WAIT_MS has passed, in case one
   // stray query never settles — a slightly-incomplete printout beats one
@@ -67,11 +93,12 @@ export function usePrintOptions({ columns, hasPhotos = false }: { columns: Print
     const timer = setTimeout(() => {
       if (printedRequestId.current !== printRequestId) {
         printedRequestId.current = printRequestId;
+        activateOnlyThisPrintArea();
         window.print();
       }
     }, PRINT_MAX_WAIT_MS);
     return () => clearTimeout(timer);
-  }, [printRequestId]);
+  }, [printRequestId, activateOnlyThisPrintArea]);
 
   function confirm(nextVisibleColumns: Set<string>, nextIncludePhotos: boolean) {
     setVisibleColumns(nextVisibleColumns);
@@ -87,6 +114,7 @@ export function usePrintOptions({ columns, hasPhotos = false }: { columns: Print
     includePhotos,
     confirm,
     isColumnVisible: (id: string) => visibleColumns.has(id),
+    printAreaId,
   };
 }
 

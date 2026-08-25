@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, Suspense, useEffect, useState } from 'react';
+import { type ReactNode, Suspense, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { Printer, ExternalLink } from 'lucide-react';
@@ -38,7 +38,7 @@ function usePrintPreviewMode(): boolean {
   return searchParams.get('print') === '1';
 }
 
-function PrintAreaInner({ children }: { children: ReactNode }) {
+function PrintAreaInner({ children, printAreaId }: { children: ReactNode; printAreaId: string }) {
   const isPreview = usePrintPreviewMode();
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
 
@@ -64,7 +64,7 @@ function PrintAreaInner({ children }: { children: ReactNode }) {
   }, [isPreview]);
 
   const content = (
-    <div className={`print-area print:block ${isPreview ? 'block' : 'hidden'}`}>
+    <div data-print-area-id={printAreaId} className={`print-area print-area--active print:block ${isPreview ? 'block' : 'hidden'}`}>
       <PrintAreaContext.Provider value={true}>
         <PdfBranding>{children}</PdfBranding>
       </PrintAreaContext.Provider>
@@ -77,18 +77,36 @@ function PrintAreaInner({ children }: { children: ReactNode }) {
   return content;
 }
 
-export function PrintArea({ children }: { children: ReactNode }) {
+/**
+ * `printAreaId` (real regression, 2026-08-25): a page can host more than one
+ * `<PrintArea>` at once (e.g. production/[id]/page.tsx's assembly-spec AND
+ * pick-list prints) — `@media print`'s visibility trick used to target every
+ * `.print-area` unconditionally, so printing ONE made BOTH visible and
+ * `position: absolute`, stacking two full documents exactly on top of each
+ * other. Every print area now starts marked `print-area--active` (so a
+ * single-print-view page, and a bare Ctrl+P with no button ever clicked,
+ * both work exactly as before); `usePrintOptions` (print-options.tsx) only
+ * deactivates every OTHER print area right before firing `window.print()`
+ * itself, when a specific view's own "Друкувати" was actually clicked.
+ * Optional — a caller with no `usePrintOptions` (PrintButton-only views:
+ * dashboard/catalog/planner pages, product-labels-dialog.tsx) falls back to
+ * its own stable per-instance id, which is never deactivated by anything
+ * since it's the only print area on its page.
+ */
+export function PrintArea({ children, printAreaId }: { children: ReactNode; printAreaId?: string }) {
+  const fallbackId = useId();
+  const resolvedId = printAreaId ?? fallbackId;
   return (
     <Suspense
       fallback={
-        <div className="print-area hidden print:block">
+        <div data-print-area-id={resolvedId} className="print-area print-area--active hidden print:block">
           <PrintAreaContext.Provider value={true}>
             <PdfBranding>{children}</PdfBranding>
           </PrintAreaContext.Provider>
         </div>
       }
     >
-      <PrintAreaInner>{children}</PrintAreaInner>
+      <PrintAreaInner printAreaId={resolvedId}>{children}</PrintAreaInner>
     </Suspense>
   );
 }

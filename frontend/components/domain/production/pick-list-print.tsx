@@ -87,7 +87,7 @@ export function PickListPrint({ orderId, assemblyId, unitsPlanned, pickListItems
         />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
           title={tp('pickListTitle')}
           subtitle={`${assembly?.name ?? assemblyId} — ${unitsPlanned} ${tp('units')} — ${tp('orderId')} ${orderId.slice(0, 8)}`}

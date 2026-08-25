@@ -46,7 +46,7 @@ export function AvailabilityPrint({ assemblyId, result }: { assemblyId: string; 
         />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
           title={tp('availabilityTitle')}
           subtitle={`${assembly.article ?? ''} ${assembly.name} — ${t('qty')}: ${result.qty}`}

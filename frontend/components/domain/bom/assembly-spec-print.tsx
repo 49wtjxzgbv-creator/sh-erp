@@ -282,7 +282,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
         />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
           title={tp('specificationTitle')}
           subtitle={`${assembly.article ?? ''} ${assembly.name}`}
