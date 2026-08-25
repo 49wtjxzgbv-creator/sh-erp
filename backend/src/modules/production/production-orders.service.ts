@@ -258,14 +258,18 @@ export class ProductionOrdersService {
    * IN_PROGRESS -> CANCELLED. Every other child (stage plans, pick-list
    * items, stage events, worker assignments) cascades at the DB level.
    *
-   * One real exception (2026-08-25, `revertStart` below): a PLANNED order
-   * CAN now have ProductionExecution history if it was IN_PROGRESS and got
-   * reverted — those rows (VOIDED, with their compensating PayrollEntry
-   * already written) deliberately stay attached rather than being erased,
-   * same immutable-ledger convention as everywhere else payroll is
-   * touched. ProductionExecution.productionOrder has no onDelete: SetNull
-   * (unlike PayrollEntry.productionOrder), so this second guard is a real
-   * FK-violation prevention, not just a nicer error message.
+   * A PLANNED order CAN have ProductionExecution history if it was
+   * IN_PROGRESS and got reverted (`revertStart` below) — those rows stay
+   * VOIDED, compensating PayrollEntry already written, immutable-ledger
+   * convention. Real incident (2026-08-25): this used to be additionally
+   * guarded here against exactly that case, on the mistaken belief that
+   * ProductionExecution.productionOrder had no onDelete: SetNull — it
+   * always did (see that field's schema.prisma comment, a real drift
+   * between the migration and the Prisma annotation). Deleting the order
+   * now correctly orphans those rows (productionOrderId -> null) instead
+   * of being blocked; the compensating PayrollEntry rows (already
+   * SetNull) keep their own textual comment referencing the order id, so
+   * no audit information is actually lost.
    */
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
@@ -273,13 +277,6 @@ export class ProductionOrdersService {
       throw new CodedConflictException(
         'PRODUCTION_ORDER_DELETE_ALREADY_STARTED',
         'Cannot delete: this production order has already started — it has consumed stock, generated finished-good units, and/or paid out payroll. Only a planned or already-cancelled order can be deleted.',
-      );
-    }
-    const executionCount = await this.prisma.tenant.productionExecution.count({ where: { productionOrderId: id } });
-    if (executionCount > 0) {
-      throw new CodedConflictException(
-        'PRODUCTION_ORDER_DELETE_HAS_EXECUTION_HISTORY',
-        `Cannot delete: this order has ${executionCount} labor-execution record(s) in its history (from before it was reverted to planned). Its payroll trail must stay attached to something — leave the order as-is.`,
       );
     }
     await this.prisma.tenant.productionOrder.delete({ where: { id } });

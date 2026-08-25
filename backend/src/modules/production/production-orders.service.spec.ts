@@ -133,10 +133,9 @@ describe('ProductionOrdersService', () => {
       expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
     });
 
-    it('real incident (2026-08-25): blocks deleting a reverted-to-PLANNED order that still has VOIDED execution history, since ProductionExecution.productionOrder has no onDelete: SetNull', async () => {
-      prisma.tenant.productionExecution.count.mockResolvedValue(1);
-      await expect(service.remove(user, 'po1')).rejects.toThrow(ConflictException);
-      expect(prisma.tenant.productionOrder.delete).not.toHaveBeenCalled();
+    it('real incident (2026-08-25), fixed same day: deletes a reverted-to-PLANNED order even with VOIDED execution history still attached — ProductionExecution.productionOrder IS onDelete: SetNull at the DB level (the migration always had it; an earlier app-level guard here wrongly assumed otherwise and blocked this unnecessarily)', async () => {
+      await service.remove(user, 'po1');
+      expect(prisma.tenant.productionOrder.delete).toHaveBeenCalledWith({ where: { id: 'po1' } });
     });
   });
 

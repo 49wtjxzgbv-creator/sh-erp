@@ -1718,7 +1718,7 @@ model ProductionExecution {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   company         Company                         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  productionOrder ProductionOrder?                @relation(fields: [productionOrderId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
+  productionOrder ProductionOrder?                @relation(fields: [productionOrderId], references: [id], onDelete: SetNull) // single-column FK (optional relation, see header §cross-tenant). Schema-drift fix (2026-08-25): the migration (20260825000000) already created this FK ON DELETE SET NULL — this annotation was simply missing, which led ProductionOrdersService#remove to wrongly assume deleting an order with attached (VOIDED) execution history would violate an FK, and block it with an app-level guard that was never actually necessary. Removed; a deleted order's executions/payroll history now orphans cleanly, same as PayrollEntry.productionOrder already does.
   workTask        WorkTask?                       @relation(fields: [workTaskId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
   team            Team?                           @relation(fields: [teamId], references: [id]) // single-column FK — see header §cross-tenant (optional relation)
   supersedes      ProductionExecution?            @relation("ExecutionCorrection", fields: [supersedesId], references: [id])
