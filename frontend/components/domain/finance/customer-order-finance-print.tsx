@@ -42,8 +42,27 @@ function SummaryPrintBlock({ summary }: { summary: CustomerOrderFinanceSummary }
   );
 }
 
-/** One document table (documentType/number/date/counterparty/amount/status/paid/remaining) plus, below it, a flat "who was paid how much and when" payments list — this is the "хто кому скільки заплатили, винні" part of the printout. */
-function DocumentsPrintSection({ title, documents }: { title: string; documents: (PurchaseOrderDocument | CustomerOrderDocument)[] }) {
+/**
+ * One document table plus, below it, a flat "who was paid how much and when"
+ * payments list — this is the "хто кому скільки заплатили, винні" part of
+ * the printout. Column order (2026-08-25, per user request): counterparty/
+ * amount/status/paid/remaining come first (the numbers a reader scans for),
+ * with documentType/documentNumber/documentDate pushed after "Залишок" since
+ * they're identifying metadata, not the figures being reconciled. Each
+ * column is individually toggleable via `printOptions` (same
+ * usePrintOptions/isColumnVisible mechanism every other print view uses) —
+ * this table is what people actually mean by "фінансовий звіт" print, so
+ * per-column selection matters more here than section-level toggles alone.
+ */
+function DocumentsPrintSection({
+  title,
+  documents,
+  printOptions,
+}: {
+  title: string;
+  documents: (PurchaseOrderDocument | CustomerOrderDocument)[];
+  printOptions: ReturnType<typeof usePrintOptions>;
+}) {
   const t = useTranslations('finance');
   if (documents.length === 0) return null;
 
@@ -59,14 +78,14 @@ function DocumentsPrintSection({ title, documents }: { title: string; documents:
       <table>
         <thead>
           <tr>
-            <th>{t('documentType')}</th>
-            <th>{t('documentNumber')}</th>
-            <th>{t('documentDate')}</th>
-            <th>{t('counterparty')}</th>
-            <th>{t('amount')}</th>
-            <th>{t('status')}</th>
-            <th>{t('paid')}</th>
-            <th>{t('remainingBalance')}</th>
+            {printOptions.isColumnVisible('docCounterparty') && <th>{t('counterparty')}</th>}
+            {printOptions.isColumnVisible('docAmount') && <th>{t('amount')}</th>}
+            {printOptions.isColumnVisible('docStatus') && <th>{t('status')}</th>}
+            {printOptions.isColumnVisible('docPaid') && <th>{t('paid')}</th>}
+            {printOptions.isColumnVisible('docRemaining') && <th>{t('remainingBalance')}</th>}
+            {printOptions.isColumnVisible('docType') && <th>{t('documentType')}</th>}
+            {printOptions.isColumnVisible('docNumber') && <th>{t('documentNumber')}</th>}
+            {printOptions.isColumnVisible('docDate') && <th>{t('documentDate')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -75,14 +94,16 @@ function DocumentsPrintSection({ title, documents }: { title: string; documents:
             const remaining = doc.amount ? Math.max(Number(doc.amount) - paidSameCurrency, 0) : 0;
             return (
               <tr key={doc.id}>
-                <td>{t(`documentType${doc.documentType}`)}</td>
-                <td>{doc.documentNumber || '—'}</td>
-                <td>{doc.documentDate ? new Date(doc.documentDate).toLocaleDateString() : '—'}</td>
-                <td>{doc.counterparty?.name ?? '—'}</td>
-                <td>{doc.amount ? formatMoney(Number(doc.amount), doc.currency) : '—'}</td>
-                <td>{doc.paymentStatus === 'NO_AMOUNT' ? t('documentPaymentStatusNO_AMOUNT') : t(`paymentStatus${doc.paymentStatus}`)}</td>
-                <td>{formatMoney(paidSameCurrency, doc.currency)}</td>
-                <td className="font-bold">{formatMoney(remaining, doc.currency)}</td>
+                {printOptions.isColumnVisible('docCounterparty') && <td>{doc.counterparty?.name ?? '—'}</td>}
+                {printOptions.isColumnVisible('docAmount') && <td>{doc.amount ? formatMoney(Number(doc.amount), doc.currency) : '—'}</td>}
+                {printOptions.isColumnVisible('docStatus') && (
+                  <td>{doc.paymentStatus === 'NO_AMOUNT' ? t('documentPaymentStatusNO_AMOUNT') : t(`paymentStatus${doc.paymentStatus}`)}</td>
+                )}
+                {printOptions.isColumnVisible('docPaid') && <td>{formatMoney(paidSameCurrency, doc.currency)}</td>}
+                {printOptions.isColumnVisible('docRemaining') && <td className="font-bold">{formatMoney(remaining, doc.currency)}</td>}
+                {printOptions.isColumnVisible('docType') && <td>{t(`documentType${doc.documentType}`)}</td>}
+                {printOptions.isColumnVisible('docNumber') && <td>{doc.documentNumber || '—'}</td>}
+                {printOptions.isColumnVisible('docDate') && <td>{doc.documentDate ? new Date(doc.documentDate).toLocaleDateString() : '—'}</td>}
               </tr>
             );
           })}
@@ -143,10 +164,12 @@ function LinkedPurchaseOrderFinanceSection({
   purchaseOrderId,
   supplierName,
   orderDate,
+  printOptions,
 }: {
   purchaseOrderId: string;
   supplierName: string;
   orderDate: string;
+  printOptions: ReturnType<typeof usePrintOptions>;
 }) {
   const t = useTranslations('finance');
   const { data: documents } = useFinanceDocuments(purchaseOrderId);
@@ -157,7 +180,7 @@ function LinkedPurchaseOrderFinanceSection({
       <p className="mb-1 font-semibold">
         {supplierName} · {new Date(orderDate).toLocaleDateString()}
       </p>
-      <DocumentsPrintSection title={t('documents')} documents={documents ?? []} />
+      <DocumentsPrintSection title={t('documents')} documents={documents ?? []} printOptions={printOptions} />
       <ExpensesPrintSection title={t('expenses')} expenses={expenses ?? []} />
     </div>
   );
@@ -177,6 +200,14 @@ export function CustomerOrderFinancePrint({ customerOrderId, orderLabel }: { cus
     { id: 'linkedPurchaseOrders', label: t('linkedPurchaseOrders') },
     { id: 'directDocuments', label: t('directDocuments') },
     { id: 'directExpenses', label: t('directExpenses') },
+    { id: 'docCounterparty', label: t('counterparty') },
+    { id: 'docAmount', label: t('amount') },
+    { id: 'docStatus', label: t('status') },
+    { id: 'docPaid', label: t('paid') },
+    { id: 'docRemaining', label: t('remainingBalance') },
+    { id: 'docType', label: t('documentType') },
+    { id: 'docNumber', label: t('documentNumber') },
+    { id: 'docDate', label: t('documentDate') },
   ];
   const printOptions = usePrintOptions({ columns });
 
@@ -196,7 +227,7 @@ export function CustomerOrderFinancePrint({ customerOrderId, orderLabel }: { cus
         <PrintDocumentHeader title={tp('financeTitle')} subtitle={orderLabel} />
         {printOptions.isColumnVisible('summary') && summary && <SummaryPrintBlock summary={summary} />}
         {printOptions.isColumnVisible('directDocuments') && (
-          <DocumentsPrintSection title={t('directDocuments')} documents={directDocuments ?? []} />
+          <DocumentsPrintSection title={t('directDocuments')} documents={directDocuments ?? []} printOptions={printOptions} />
         )}
         {printOptions.isColumnVisible('directExpenses') && (
           <ExpensesPrintSection title={t('directExpenses')} expenses={directExpenses ?? []} />
@@ -210,6 +241,7 @@ export function CustomerOrderFinancePrint({ customerOrderId, orderLabel }: { cus
                 purchaseOrderId={p.purchaseOrder.id}
                 supplierName={p.purchaseOrder.supplierNameSnapshot}
                 orderDate={p.purchaseOrder.orderDate}
+                printOptions={printOptions}
               />
             ))}
           </div>
