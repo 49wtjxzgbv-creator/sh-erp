@@ -33,10 +33,15 @@ describe('CustomerOrdersService', () => {
    */
   function mockProductionOrdersFindMany(rows: any[]) {
     prisma.tenant.productionOrder.findMany.mockImplementation(({ where }: any) => {
-      // getItemProductionTree's own query shape: { OR: [{ customerOrderItemId }, { subAssemblyForItemId }] }
+      // OR-shaped queries from getItemProductionTree ({ customerOrderItemId }/{ subAssemblyForItemId })
+      // and getPayrollFundSummary ({ customerOrderItemId: { in: [...] } }/{ subAssemblyForItemId: { in: [...] } })
       if (where?.OR) {
         return Promise.resolve(
-          rows.filter((r) => where.OR.some((cond: any) => Object.entries(cond).every(([k, v]) => r[k] === v))),
+          rows.filter((r) =>
+            where.OR.some((cond: any) =>
+              Object.entries(cond).every(([k, v]: [string, any]) => (v && typeof v === 'object' && 'in' in v ? v.in.includes(r[k]) : r[k] === v)),
+            ),
+          ),
         );
       }
       const filter = where?.customerOrderItemId;
@@ -217,6 +222,26 @@ describe('CustomerOrdersService', () => {
       expect(assembliesService.getProductionTree).toHaveBeenCalledWith(user, 'a1', 3);
       expect(result.batches).toEqual([{ id: 'po-top', status: 'PLANNED', unitsPlanned: 3 }]);
       expect(result.children[0].batches).toEqual([{ id: 'po-sub', status: 'PLANNED', unitsPlanned: 3 }]);
+    });
+  });
+
+  describe('getPayrollFundSummary', () => {
+    it('estimated sums laborFundEstimate across every node of every item\'s full tree; actual sums frozen laborCostEur from started batches only (PLANNED batches contribute 0)', async () => {
+      assembliesService.getProductionTree.mockImplementation(async (_u: unknown, assemblyId: string) =>
+        assemblyId === 'a1'
+          ? { assemblyId: 'a1', laborFundEstimate: 10, children: [{ assemblyId: 'sub1', laborFundEstimate: 4, children: [] }] }
+          : { assemblyId: 'a2', laborFundEstimate: 5, children: [] },
+      );
+      mockProductionOrdersFindMany([
+        { id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 12 }, // started — counts
+        { id: 'po2', customerOrderItemId: null, subAssemblyForItemId: 'item1', laborCostEur: 3 }, // started sub-assembly batch — counts
+        { id: 'po3', customerOrderItemId: 'item2', subAssemblyForItemId: null, laborCostEur: null }, // still PLANNED — contributes 0
+        { id: 'po-unrelated', customerOrderItemId: 'not-this-order-item', subAssemblyForItemId: null, laborCostEur: 999 }, // excluded
+      ]);
+
+      const result = await service.getPayrollFundSummary(user, 'co1');
+
+      expect(result).toEqual({ estimated: 19, actual: 15 });
     });
   });
 

@@ -12,6 +12,7 @@ import {
   useDeleteCustomerOrder,
   useGiveItemToProduction,
   useGiveAllToProduction,
+  usePayrollFundSummary,
 } from '@/lib/hooks/use-sales';
 import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
@@ -315,6 +316,39 @@ function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) 
   );
 }
 
+/**
+ * "Фонд заробітної плати на все замовлення" (2026-08-26 user request) —
+ * estimated (live BOM labor rates, summed across every item's full
+ * production tree, including sub-assemblies at any depth) vs actual
+ * (frozen `laborCostEur`, summed across every already-started batch tied
+ * to this order). Same estimated/actual pairing already used everywhere
+ * else money is shown on this page.
+ */
+function PayrollFundWidget({ orderId }: { orderId: string }) {
+  const t = useTranslations('sales');
+  const { data: fund } = usePayrollFundSummary(orderId);
+  if (!fund) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('payrollFund')}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex gap-6 pt-0">
+        <div>
+          <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
+          <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>
+          <p className="text-sm font-medium">{formatEur(fund.actual)}</p>
+          <p className="text-[11px] text-muted-foreground">{t('payrollFundActualHint')}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -542,6 +576,7 @@ export default function CustomerOrderDetailPage() {
       </Card>
 
       <FinanceSummaryWidget customerOrderId={order.id} />
+      <PayrollFundWidget orderId={order.id} />
 
       <Card>
         <CardHeader>

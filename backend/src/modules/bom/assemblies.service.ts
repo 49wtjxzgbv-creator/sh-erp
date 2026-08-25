@@ -54,6 +54,8 @@ export interface ProductionTreeNode {
   qtyInStock: number;
   /** qtyInStock >= ceil(qtyNeeded) — same physical-whole-unit rounding start() uses for FIFO sub-assembly consumption. */
   done: boolean;
+  /** This node's own labor fund at current BOM rates: assembly.laborCostPerUnit x qtyNeeded — same "own labor only, not recursive" fund every ProductionOrder freezes at start() (production-orders.service.ts's `ownLabor`). Live/never-frozen until that node's own batch actually starts — see CustomerOrdersService#getPayrollFundSummary for the estimated-vs-actual pairing. */
+  laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
   children: ProductionTreeNode[];
 }
@@ -633,6 +635,7 @@ export class AssembliesService {
       qtyNeeded: qty,
       qtyInStock,
       done: qtyInStock >= Math.ceil(qty),
+      laborFundEstimate: Number(assembly.laborCostPerUnit) * qty,
       children,
     };
   }

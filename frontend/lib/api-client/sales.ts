@@ -196,12 +196,23 @@ export interface ProductionTreeNode {
   qtyNeeded: number;
   qtyInStock: number;
   done: boolean;
+  laborFundEstimate: number;
   batches: Array<{ id: string; status: string; unitsPlanned: number }>;
   children: ProductionTreeNode[];
 }
 
 export function getItemProductionTree(orderId: string, itemId: string): Promise<ProductionTreeNode> {
   return apiClient.get<ProductionTreeNode>(`customer-orders/${orderId}/items/${itemId}/production-tree`);
+}
+
+/** "Фонд заробітної плати на все замовлення" — estimated (live BOM rates, every item's full tree incl. sub-assemblies) vs actual (frozen laborCostEur, started batches only). */
+export interface PayrollFundSummary {
+  estimated: number;
+  actual: number;
+}
+
+export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSummary> {
+  return apiClient.get<PayrollFundSummary>(`customer-orders/${orderId}/payroll-fund`);
 }
 
 export interface ShortageSupplierOption {

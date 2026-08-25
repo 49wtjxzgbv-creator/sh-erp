@@ -460,6 +460,44 @@ export class CustomerOrdersService {
   }
 
   /**
+   * "Фонд заробітної плати на все замовлення" (2026-08-26 user request):
+   * two numbers, same estimated-vs-actual duality as `withPriceTotals`'s
+   * cost totals elsewhere on this order —
+   *  - `estimated`: every node's own `laborFundEstimate` (live BOM rates,
+   *    assembly.laborCostPerUnit x qtyNeeded), summed across every item's
+   *    FULL production tree — виріб AND every підвиріб at any depth, not
+   *    just the top-level line. Never frozen; recomputed fresh every call.
+   *  - `actual`: the REAL committed fund — `laborCostEur` (frozen once a
+   *    batch actually starts, production-orders.service.ts's "Cost
+   *    freezing") summed across every ProductionOrder batch already tied
+   *    to this order, whether via `customerOrderItemId` (an item's own
+   *    "give to production" batches) or `subAssemblyForItemId` (a
+   *    sub-assembly batch planned at order-creation time) — a PLANNED
+   *    batch contributes 0 here (laborCostEur is still null), matching
+   *    `getItemProductionTree`'s own batch-matching rule.
+   */
+  async getPayrollFundSummary(user: RequestUser, orderId: string) {
+    const order = await this.findOne(user, orderId);
+    const items = order.items as any[];
+
+    let estimated = 0;
+    for (const item of items) {
+      const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty));
+      estimated += sumLaborFund(tree);
+    }
+
+    const itemIds = items.map((i) => i.id);
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({
+          where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
+        })
+      : [];
+    const actual = batches.reduce((sum, b) => sum + Number((b as any).laborCostEur ?? 0), 0);
+
+    return { estimated: round2(estimated), actual: round2(actual) };
+  }
+
+  /**
    * Whole-order variant (Phase 1 §6.2's `createProductionOrdersFromCustomerOrder`)
    * — calls `giveItemToProduction` for every line that still has remaining
    * (not-yet-given) quantity, giving each its full remaining amount as one
@@ -475,4 +513,12 @@ export class CustomerOrdersService {
     }
     return results;
   }
+}
+
+function sumLaborFund(node: ProductionTreeNode): number {
+  return node.laborFundEstimate + node.children.reduce((sum, child) => sum + sumLaborFund(child), 0);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

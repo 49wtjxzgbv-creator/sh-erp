@@ -316,8 +316,8 @@ describe('AssembliesService', () => {
     it('builds a real parent -> child tree, each node done when its own IN_STOCK count covers its own needed qty', async () => {
       prisma.tenant.assembly.findUnique
         .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
-        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1' })
-        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null });
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 4 });
       prisma.tenant.finishedGood.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
@@ -332,8 +332,9 @@ describe('AssembliesService', () => {
         qtyNeeded: 2,
         qtyInStock: 2,
         done: true,
+        laborFundEstimate: 20,
         children: [
-          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 2, qtyInStock: 1, done: false, children: [] },
+          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 2, qtyInStock: 1, done: false, laborFundEstimate: 8, children: [] },
         ],
       });
     });

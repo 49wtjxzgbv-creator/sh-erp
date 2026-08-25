@@ -11,6 +11,7 @@ import {
   deleteCustomerOrder,
   giveItemToProduction,
   getItemProductionTree,
+  getPayrollFundSummary,
   giveAllToProduction,
   getShortagePreview,
   createPurchaseOrdersFromShortage,
@@ -117,6 +118,13 @@ export function useItemProductionTree(orderId: string, itemId: string | undefine
     queryKey: ['customer-orders', orderId, 'items', itemId ?? '', 'production-tree'] as const,
     queryFn: () => getItemProductionTree(orderId, itemId as string),
     enabled: enabled && Boolean(itemId),
+  });
+}
+
+export function usePayrollFundSummary(orderId: string) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId, 'payroll-fund'] as const,
+    queryFn: () => getPayrollFundSummary(orderId),
   });
 }
 

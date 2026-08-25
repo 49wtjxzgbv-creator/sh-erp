@@ -89,6 +89,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.getItemProductionTree(user, id, itemId);
   }
 
+  @Get(':id/payroll-fund')
+  @RequirePermissions('customer-orders:read')
+  @ApiOperation({
+    summary:
+      '"Фонд заробітної плати на все замовлення" — estimated (live BOM rates, summed across every item\'s full ' +
+      'production tree including sub-assemblies) vs actual (frozen laborCostEur, summed across every started batch).',
+  })
+  async getPayrollFundSummary(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.customerOrdersService.getPayrollFundSummary(user, id);
+  }
+
   @Post(':id/give-all-to-production')
   @RequirePermissions('customer-orders:manage')
   @ApiOperation({ summary: 'Hand every not-yet-given line off to production in one call.' })
