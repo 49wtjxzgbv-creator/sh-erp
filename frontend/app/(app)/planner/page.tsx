@@ -127,14 +127,18 @@ export default function PlannerPage() {
   // whole-year. `ordersPrintCount` multiplies the chosen scale's single
   // period (only meaningful for week/month) so "3 тижні"/"2 місяці" are one
   // stepper click away instead of needing a full custom-range picker.
-  const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('month');
+  // Defaults deliberately mirror PlannerOrdersTimelineView's own screen
+  // defaults (year scale, dates collapsed) — 2026-08-28 user request: print
+  // should look like the on-screen graph the user is actually looking at,
+  // not some different starting point.
+  const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('year');
   const [ordersPrintAnchor, setOrdersPrintAnchor] = useState(() => new Date());
   const [ordersPrintCount, setOrdersPrintCount] = useState(1);
   // Same "менше — зручніше" idea as the on-screen collapse toggle: the 5
   // date fields are useful but take real width away from the timeline on
   // paper too, and unlike the screen there's no way to expand them back
   // mid-page — so this is a plain show/hide, decided once before printing.
-  const [ordersPrintDatesHidden, setOrdersPrintDatesHidden] = useState(false);
+  const [ordersPrintDatesHidden, setOrdersPrintDatesHidden] = useState(true);
 
   const query: QueryPlannerBoardInput = {
     search: search || undefined,

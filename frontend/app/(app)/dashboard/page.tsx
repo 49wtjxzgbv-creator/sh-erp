@@ -4,15 +4,19 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight, Send } from 'lucide-react';
+import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight, Send, CalendarRange } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { useDashboardSummary, useOperationsTimeline } from '@/lib/hooks/use-dashboard';
+import { usePlannerBoard } from '@/lib/hooks/use-planner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 import { OperationsTimelineSection, OperationsTimelineLegend } from '@/components/domain/dashboard/operations-timeline';
+import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
+import { PlannerOrdersPrintTable } from '@/components/domain/planner/planner-orders-print';
 import type { TimelineStage } from '@/lib/api-client/dashboard';
 
 /**
@@ -34,6 +38,7 @@ export default function DashboardPage() {
   const t = useTranslations('dashboard');
   const tn = useTranslations('nav');
   const tp = useTranslations('print');
+  const tPlanner = useTranslations('planner');
   const router = useRouter();
   const companySlug = useSessionStore((s) => s.companySlug);
   const { data, isLoading, isError } = useDashboardSummary();
@@ -42,6 +47,11 @@ export default function DashboardPage() {
   const from = useMemo(() => new Date(year, 0, 1), [year]);
   const to = useMemo(() => new Date(year, 11, 31, 23, 59, 59), [year]);
   const { data: timeline, isLoading: timelineLoading } = useOperationsTimeline({ from: from.toISOString(), to: to.toISOString() });
+  // "По замовленнях" (2026-08-28 user request — same board data/component
+  // the Planner page's own tab uses, just dropped onto the dashboard ahead
+  // of the purchase-orders timeline so a per-order schedule is visible
+  // without leaving the landing page).
+  const { data: board } = usePlannerBoard({ from: from.toISOString(), to: to.toISOString() });
 
   const stageLabels: Record<TimelineStage, string> = {
     planned: t('stagePlanned'),
@@ -138,6 +148,23 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {board && board.orders.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+                <CalendarRange className="h-4 w-4" />
+              </span>
+              <h3 className="text-sm font-semibold">{tPlanner('ordersTab')}</h3>
+              <Badge variant="outline" className="ml-auto">
+                {board.orders.length}
+              </Badge>
+            </div>
+            <div className="p-3">
+              <PlannerOrdersTimelineView orders={board.orders} year={year} onYearChange={setYear} />
+            </div>
+          </div>
+        )}
+
         {timelineLoading || !timeline ? (
           <Card>
             <CardContent className="py-6">
@@ -187,6 +214,12 @@ export default function DashboardPage() {
           <div className="mb-4">
             <OperationsTimelineLegend labels={stageLabels} />
           </div>
+          {board && board.orders.length > 0 && (
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-semibold">{tPlanner('ordersTab')}</h3>
+              <PlannerOrdersPrintTable orders={board.orders} from={from} to={to} scale="year" datesHidden />
+            </div>
+          )}
           <div className="space-y-4">
             <OperationsTimelineSection
               title={t('timelinePurchaseOrders')}

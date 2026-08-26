@@ -65,7 +65,10 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
   const ts = useTranslations('sales');
   const [scale, setScale] = useState<OrdersScale>('year');
   const [anchor, setAnchor] = useState(() => new Date());
-  const [datesCollapsed, setDatesCollapsed] = useState(false);
+  // Collapsed by default (2026-08-28 user request) — the frozen date grid
+  // is useful but crowds out the timeline the moment this view loads;
+  // staff who want it can expand it themselves via the toggle.
+  const [datesCollapsed, setDatesCollapsed] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const now = useMemo(() => new Date(), []);
 
