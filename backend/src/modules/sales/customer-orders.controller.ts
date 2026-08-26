@@ -5,7 +5,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CustomerOrdersService } from './customer-orders.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
-import { GiveItemToProductionDto } from './dto/give-to-production.dto';
+import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
 import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
 
 @ApiTags('sales')
@@ -76,6 +76,18 @@ export class CustomerOrdersController {
     @Body() dto: GiveItemToProductionDto,
   ) {
     return this.customerOrdersService.giveItemToProduction(user, id, itemId, dto);
+  }
+
+  @Post(':id/items/:itemId/sub-assembly-batches')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({ summary: '"Хід виробництва" — hand a sub-assembly node (at any BOM depth under this item) off to production on demand.' })
+  async giveSubAssemblyToProduction(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: GiveSubAssemblyToProductionDto,
+  ) {
+    return this.customerOrdersService.giveSubAssemblyToProduction(user, id, itemId, dto);
   }
 
   @Get(':id/items/:itemId/production-tree')

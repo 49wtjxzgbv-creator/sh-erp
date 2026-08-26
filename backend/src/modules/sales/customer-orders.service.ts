@@ -9,7 +9,7 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
-import { GiveItemToProductionDto } from './dto/give-to-production.dto';
+import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
 
 /**
  * CustomerOrders.gs (Phase 1 §3.4/§6.2). Order header + line items, and the
@@ -430,6 +430,43 @@ export class CustomerOrdersService {
     });
 
     return { item, productionOrder };
+  }
+
+  /**
+   * "Хід виробництва" per-node give-to-production (2026-08-27 user
+   * request) — replaces the old upfront-at-creation sub-assembly planning
+   * dialog: nothing is planned by default anymore, every node of the
+   * item's production tree (getItemProductionTree) shows its own "Передати
+   * у виробництво" button, callable independently at any depth. Same
+   * mechanism the old dialog used under the hood (subAssemblyForItemId,
+   * never customerOrderItemId — see that field's schema comment), just
+   * triggered on demand instead of bundled into order creation.
+   */
+  async giveSubAssemblyToProduction(user: RequestUser, orderId: string, itemId: string, dto: GiveSubAssemblyToProductionDto) {
+    const order = await this.findOne(user, orderId);
+    const item = (order.items as any[]).find((i) => i.id === itemId);
+    if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
+
+    const productionOrder = await this.productionOrdersService.create(user, {
+      assemblyId: dto.assemblyId,
+      unitsPlanned: dto.qty,
+      subAssemblyForItemId: itemId,
+    });
+
+    if (order.status === 'NEW') {
+      await this.prisma.tenant.customerOrder.update({ where: { id: orderId }, data: { status: 'IN_PRODUCTION' } });
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'customer_order_item.sub_assembly_given_to_production',
+      entityType: 'CustomerOrderItem',
+      entityId: itemId,
+      after: { productionOrderId: productionOrder.id, assemblyId: dto.assemblyId, qty: dto.qty },
+    });
+
+    return productionOrder;
   }
 
   /**

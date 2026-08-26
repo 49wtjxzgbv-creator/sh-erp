@@ -217,6 +217,32 @@ describe('CustomerOrdersService', () => {
     });
   });
 
+  describe('giveSubAssemblyToProduction', () => {
+    it('rejects an item that does not belong to this order', async () => {
+      await expect(service.giveSubAssemblyToProduction(user, 'co1', 'not-an-item', { assemblyId: 'sub1', qty: 4 })).rejects.toThrow(NotFoundException);
+      expect(productionOrdersService.create).not.toHaveBeenCalled();
+    });
+
+    it('plans a batch for the given tree node, linked via subAssemblyForItemId (never customerOrderItemId), moving the order to IN_PRODUCTION', async () => {
+      productionOrdersService.create.mockResolvedValue({ id: 'po-sub', status: 'PLANNED' });
+
+      const result = await service.giveSubAssemblyToProduction(user, 'co1', 'item1', { assemblyId: 'sub1', qty: 4 });
+
+      expect(productionOrdersService.create).toHaveBeenCalledWith(user, { assemblyId: 'sub1', unitsPlanned: 4, subAssemblyForItemId: 'item1' });
+      expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
+      expect(result.id).toBe('po-sub');
+    });
+
+    it('does not re-transition the order status if it is already past NEW', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status: 'IN_PRODUCTION' });
+      productionOrdersService.create.mockResolvedValue({ id: 'po-sub', status: 'PLANNED' });
+
+      await service.giveSubAssemblyToProduction(user, 'co1', 'item1', { assemblyId: 'sub1', qty: 4 });
+
+      expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getItemProductionTree', () => {
     it('rejects an item that does not belong to this order', async () => {
       await expect(service.getItemProductionTree(user, 'co1', 'not-an-item')).rejects.toThrow(NotFoundException);

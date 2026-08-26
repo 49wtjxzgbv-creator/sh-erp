@@ -10,6 +10,7 @@ import {
   completeCustomerOrder,
   deleteCustomerOrder,
   giveItemToProduction,
+  giveSubAssemblyToProduction,
   getItemProductionTree,
   getPayrollFundSummary,
   giveAllToProduction,
@@ -25,6 +26,7 @@ import {
   type CreateCustomerOrderInput,
   type UpdateCustomerOrderInput,
   type GiveItemToProductionInput,
+  type GiveSubAssemblyToProductionInput,
   type PurchaseOrderGroupInput,
   type SaveReservationDecisionInput,
   type QueryShipmentsInput,
@@ -104,10 +106,26 @@ export function useGiveItemToProduction(orderId: string) {
   return useMutation({
     mutationFn: ({ itemId, dto }: { itemId: string; dto?: GiveItemToProductionInput }) =>
       giveItemToProduction(orderId, itemId, dto),
-    onSuccess: () => {
+    onSuccess: (_data, { itemId }) => {
       qc.invalidateQueries({ queryKey: ['customer-orders'] });
       qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
       qc.invalidateQueries({ queryKey: ['production-orders'] });
+      qc.invalidateQueries({ queryKey: ['customer-orders', orderId, 'items', itemId, 'production-tree'] });
+    },
+  });
+}
+
+/** "Хід виробництва" per-node give-to-production — same invalidation as useGiveItemToProduction, since a sub-assembly batch equally moves the order to IN_PRODUCTION and shows up in the same tree/batch lists. */
+export function useGiveSubAssemblyToProduction(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, dto }: { itemId: string; dto: GiveSubAssemblyToProductionInput }) =>
+      giveSubAssemblyToProduction(orderId, itemId, dto),
+    onSuccess: (_data, { itemId }) => {
+      qc.invalidateQueries({ queryKey: ['customer-orders'] });
+      qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
+      qc.invalidateQueries({ queryKey: ['production-orders'] });
+      qc.invalidateQueries({ queryKey: ['customer-orders', orderId, 'items', itemId, 'production-tree'] });
     },
   });
 }

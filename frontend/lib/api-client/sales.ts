@@ -183,6 +183,20 @@ export function giveItemToProduction(
 ): Promise<GiveToProductionResult> {
   return apiClient.post<GiveToProductionResult>(`customer-orders/${orderId}/items/${itemId}/give-to-production`, dto);
 }
+
+export interface GiveSubAssemblyToProductionInput {
+  assemblyId: string;
+  qty: number;
+}
+
+/** "Хід виробництва" per-node give-to-production — a sub-assembly at any BOM depth under this item, given to production on demand (replaces the old at-creation planning dialog). */
+export function giveSubAssemblyToProduction(
+  orderId: string,
+  itemId: string,
+  dto: GiveSubAssemblyToProductionInput,
+): Promise<{ id: string; [key: string]: unknown }> {
+  return apiClient.post<{ id: string; [key: string]: unknown }>(`customer-orders/${orderId}/items/${itemId}/sub-assembly-batches`, dto);
+}
 /** Calls giveItemToProduction for every not-yet-given line; already-given lines are silently skipped. */
 export function giveAllToProduction(orderId: string): Promise<GiveToProductionResult[]> {
   return apiClient.post<GiveToProductionResult[]>(`customer-orders/${orderId}/give-all-to-production`);
