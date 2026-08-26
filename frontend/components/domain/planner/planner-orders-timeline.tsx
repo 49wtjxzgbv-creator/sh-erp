@@ -188,11 +188,12 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
               </button>
               {!datesCollapsed && (
                 <div className="sticky z-30 flex shrink-0 border-r border-border bg-card" style={{ left: LABEL_WIDTH + TOGGLE_WIDTH, width: datesWidth }}>
-                  {[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')].map((label, i) => (
+                  {[t('dateColStart'), t('dateColCompletion'), t('dateColShipment'), t('dateColDelivery'), t('dateColDeadline')].map((label, i) => (
                     <div
                       key={i}
-                      className="flex items-end px-1 pb-2 text-[9px] font-semibold uppercase leading-[1.1] tracking-wide text-muted-foreground"
+                      className="flex items-end overflow-hidden px-1 pb-2 text-[9px] font-semibold uppercase leading-[1.1] tracking-wide text-muted-foreground"
                       style={{ width: DATE_COL_WIDTH }}
+                      title={[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')][i]}
                     >
                       {label}
                     </div>
