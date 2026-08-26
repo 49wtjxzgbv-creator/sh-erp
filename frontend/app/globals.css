@@ -66,6 +66,13 @@
     --ring: 262 83% 58%;
 
     --radius: 0.625rem;
+
+    /* Planner "По замовленнях" timeline bar (2026-08-28) — same 262 accent
+       hue, light at the start of a period deepening to fully saturated at
+       the end, so the bar itself reads as progress rather than a flat
+       block. */
+    --timeline-bar-start: 262 70% 88%;
+    --timeline-bar-end: 262 83% 45%;
   }
 
   .dark {
@@ -105,6 +112,9 @@
     --border: 240 9% 17%;
     --input: 240 9% 18%;
     --ring: 262 83% 67%;
+
+    --timeline-bar-start: 262 35% 32%;
+    --timeline-bar-end: 262 90% 72%;
   }
 }
 
@@ -297,6 +307,36 @@
     background: #eee;
     font-size: 11px;
   }
+  /* "По замовленнях" table (planner-orders-print.tsx, 2026-08-28 redesign —
+   * "щоб були видні числа"): every date gets its own always-visible cell
+   * instead of one crammed text line, mirroring the on-screen frozen-column
+   * layout. */
+  .planner-print-orders-table td,
+  .planner-print-orders-table th {
+    font-size: 11px;
+  }
+  .planner-print-datesgrid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+  }
+  .planner-print-datesgrid .k {
+    display: block;
+    font-size: 7px;
+    text-transform: uppercase;
+    color: #777;
+  }
+  .planner-print-datesgrid .v {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .planner-print-row-warning td {
+    background: #fdf1dc;
+  }
+  .planner-print-row-critical td {
+    background: #fbe6e6;
+  }
   .planner-print-photo {
     display: inline-flex;
     width: 32px;
@@ -451,6 +491,32 @@
 .print-preview-mode .planner-print-order td {
   background: #eee;
   font-size: 11px;
+}
+.print-preview-mode .planner-print-orders-table td,
+.print-preview-mode .planner-print-orders-table th {
+  font-size: 11px;
+}
+.print-preview-mode .planner-print-datesgrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.print-preview-mode .planner-print-datesgrid .k {
+  display: block;
+  font-size: 7px;
+  text-transform: uppercase;
+  color: #777;
+}
+.print-preview-mode .planner-print-datesgrid .v {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+.print-preview-mode .planner-print-row-warning td {
+  background: #fdf1dc;
+}
+.print-preview-mode .planner-print-row-critical td {
+  background: #fbe6e6;
 }
 .print-preview-mode .planner-print-photo {
   display: inline-flex;

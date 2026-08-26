@@ -8,14 +8,25 @@ import { timelineMonthMarks, timelineWeekMarks, timelineDayMarks } from '@/lib/t
 import { cn } from '@/lib/utils';
 import { px } from './planner-gantt';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
-const ROW_HEIGHT = 46;
-const LABEL_WIDTH = 220;
+const ROW_HEIGHT = 92;
+const LABEL_WIDTH = 240;
+const DATE_COL_WIDTH = 96;
+const DATE_FIELDS = ['start', 'completion', 'shipment', 'delivery', 'deadline'] as const;
+const DATES_WIDTH = DATE_COL_WIDTH * DATE_FIELDS.length;
 
 function fmtDate(date: Date): string {
-  return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
+
+const STATUS_BADGE_VARIANT: Record<PlannerOrderNode['status'], 'default' | 'warning' | 'success' | 'destructive'> = {
+  NEW: 'default',
+  IN_PRODUCTION: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'destructive',
+};
 
 type OrdersScale = 'week' | 'month' | 'year';
 const SCALES: OrdersScale[] = ['week', 'month', 'year'];
@@ -36,15 +47,17 @@ const WINDOW_DAYS: Record<'week' | 'month', number> = { week: 90, month: 420 };
 const PAN_STEP_DAYS: Record<'week' | 'month', number> = { week: 7, month: 30 };
 
 /**
- * "По замовленнях" (2026-08-27 user request) — one row per CustomerOrder,
- * plotted by its OWN planning dates (plannedStartAt→plannedCompletionAt as
- * a bar, plannedShipmentAt/plannedDeliveryAt as diamond markers, deadline
- * as a red tick). Originally year-only; scale switching added same day
- * ("не тільки на цілий рік а й менше тиждень місяць") — week/month use a
- * local `anchor` panned independently of the page's shared `year` state,
- * year scale still drives (and is driven by) that shared state so it stays
- * in lockstep with "Друк річний план" and the Gantt/Resources tabs, same
- * convention PlannerGanttChart's own year scale already follows.
+ * "По замовленнях" (2026-08-27, redesigned 2026-08-28 — "не тільки шкала а
+ * весь графік більший", "щоб були видні числа"): every date lives in its
+ * own always-visible column (Початок/Заверш./Відванта./Доставка/Термін) —
+ * frozen alongside the order-name column via a second `position: sticky`
+ * block — instead of being squeezed into hover-only tooltips or a single
+ * text line, which read as "approximate" rather than exact. The wide
+ * scrollable timeline pane to the right keeps the at-a-glance shape (still
+ * one bar + two diamonds + a tick per order, just bigger and with a
+ * gradient bar so the period itself reads clearly), for comparing many
+ * orders' schedules against each other, not for reading a specific date —
+ * that's what the frozen columns are for now.
  */
 export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orders: PlannerOrderNode[]; year: number; onYearChange: (y: number) => void }) {
   const t = useTranslations('planner');
@@ -66,6 +79,7 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
   const days = useMemo(() => (scale === 'week' ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const showToday = now >= viewFrom && now <= viewTo;
   const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay, 600);
+  const frozenWidth = LABEL_WIDTH + DATES_WIDTH;
 
   const rangeLabel = useMemo(() => {
     if (scale === 'year') return String(year);
@@ -138,30 +152,45 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border-l-4 border-secondary-foreground/50 bg-secondary" />{ts('plannedStartAt')} → {ts('plannedCompletionAt')}</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60" />{ts('plannedShipmentAt')}</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 border border-success bg-success/60" />{ts('plannedDeliveryAt')}</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-0.5 bg-destructive" />{ts('deadline')}</span>
+      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded-full bg-[linear-gradient(90deg,hsl(var(--timeline-bar-start)),hsl(var(--timeline-bar-end)))]" />
+          {ts('plannedStartAt')} → {ts('plannedCompletionAt')}
+        </span>
+        <span className="flex items-center gap-2"><span className="h-3 w-3 rotate-45 rounded-sm border border-warning bg-warning/70" />{ts('plannedShipmentAt')}</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-3 rotate-45 rounded-sm border border-success bg-success/70" />{ts('plannedDeliveryAt')}</span>
+        <span className="flex items-center gap-2"><span className="h-3.5 w-1 rounded-sm bg-destructive" />{ts('deadline')}</span>
+        <span className="flex items-center gap-2 text-warning"><span className="h-2.5 w-2.5 rounded-full bg-warning" />{t('riskWarning')}</span>
+        <span className="flex items-center gap-2 text-destructive"><span className="h-2.5 w-2.5 rounded-full bg-destructive" />{t('riskCritical')}</span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border">
-        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
-          <div className="relative" style={{ width: LABEL_WIDTH + canvasWidth }}>
+        <div ref={scrollRef} className="max-h-[75vh] overflow-auto">
+          <div className="relative" style={{ width: frozenWidth + canvasWidth }}>
             <div className="sticky top-0 z-20 flex border-b border-border bg-card">
-              <div className="sticky left-0 z-30 shrink-0 border-r border-border bg-card px-2 pb-1 text-xs font-semibold text-muted-foreground" style={{ width: LABEL_WIDTH }}>
+              <div
+                className="sticky left-0 z-30 flex shrink-0 items-end border-r border-border bg-card px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                style={{ width: LABEL_WIDTH }}
+              >
                 {t('ordersTab')}
               </div>
-              <div className="relative shrink-0" style={{ width: canvasWidth, height: 24 }}>
+              <div className="sticky z-30 flex shrink-0 border-r border-border bg-card" style={{ left: LABEL_WIDTH, width: DATES_WIDTH }}>
+                {[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')].map((label, i) => (
+                  <div key={i} className="flex items-end px-2 pb-2 text-[11px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground" style={{ width: DATE_COL_WIDTH }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              <div className="relative shrink-0" style={{ width: canvasWidth, height: 32 }}>
                 {months.map((m, i) => (
-                  <span key={i} className="absolute top-0 whitespace-nowrap text-xs font-medium" style={{ left: px(m.start, viewFrom, pxPerDay) + 4 }}>
+                  <span key={i} className="absolute top-2 whitespace-nowrap text-sm font-semibold" style={{ left: px(m.start, viewFrom, pxPerDay) + 6 }}>
                     {m.label}
                   </span>
                 ))}
               </div>
             </div>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0" style={{ left: LABEL_WIDTH, width: canvasWidth }}>
+              <div className="pointer-events-none absolute inset-y-0" style={{ left: frozenWidth, width: canvasWidth }}>
                 {scale === 'week' &&
                   days.map((d, i) => <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: px(d, viewFrom, pxPerDay) }} />)}
                 {scale === 'month' &&
@@ -184,55 +213,79 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                 const delivery = order.plan.deliveryAt ? new Date(order.plan.deliveryAt) : null;
                 const deadline = order.deadline ? new Date(order.deadline) : null;
                 const label = `${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`;
-                const datesSummary = [
-                  start && `${ts('plannedStartAt')}: ${fmtDate(start)}`,
-                  completion && `${ts('plannedCompletionAt')}: ${fmtDate(completion)}`,
-                  shipment && `${ts('plannedShipmentAt')}: ${fmtDate(shipment)}`,
-                  delivery && `${ts('plannedDeliveryAt')}: ${fmtDate(delivery)}`,
-                  deadline && `${ts('deadline')}: ${fmtDate(deadline)}`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ');
+                const dateCells = [start, completion, shipment, delivery, deadline];
+                const risk = order.riskLevel;
+                const rowTint = risk === 'critical' ? 'bg-destructive/10' : risk === 'warning' ? 'bg-warning/10' : i % 2 === 1 ? 'bg-muted/10' : undefined;
+                const frozenBg = risk === 'critical' ? 'hsl(var(--destructive) / 0.08)' : risk === 'warning' ? 'hsl(var(--warning) / 0.1)' : i % 2 === 1 ? 'hsl(var(--muted) / 0.3)' : 'hsl(var(--card))';
                 return (
-                  <div key={order.id} className={cn('relative flex border-b border-border/60', i % 2 === 1 && 'bg-muted/10')} style={{ height: ROW_HEIGHT }}>
+                  <div key={order.id} className={cn('relative flex border-b border-border/60', rowTint)} style={{ height: ROW_HEIGHT }}>
                     <Link
                       href={`/sales/${order.id}`}
-                      className="sticky left-0 z-10 flex shrink-0 flex-col justify-center gap-0.5 overflow-hidden border-r border-border bg-card px-2 py-1 text-xs hover:text-primary"
-                      style={{ width: LABEL_WIDTH, backgroundColor: 'hsl(var(--card))' }}
-                      title={datesSummary ? `${label}\n${datesSummary}` : label}
+                      className="sticky left-0 z-10 flex shrink-0 flex-col justify-center gap-1 overflow-hidden border-r border-border px-3 py-2 hover:text-primary"
+                      style={{ width: LABEL_WIDTH, backgroundColor: frozenBg }}
+                      title={label}
                     >
-                      <span className="truncate">{label}</span>
-                      {datesSummary && <span className="truncate text-[10px] text-muted-foreground">{datesSummary}</span>}
+                      <span className="truncate text-sm font-semibold">{label}</span>
+                      <Badge variant={STATUS_BADGE_VARIANT[order.status]} className="w-fit">
+                        {ts(`orderStatus${order.status}`)}
+                      </Badge>
+                      {risk !== 'none' && (
+                        <span className={cn('text-[11px] font-semibold', risk === 'critical' ? 'text-destructive' : 'text-warning')}>
+                          ▲ {t(risk === 'critical' ? 'riskCritical' : 'riskWarning')}
+                        </span>
+                      )}
                     </Link>
+                    <div className="sticky z-10 flex shrink-0 items-center border-r border-border" style={{ left: LABEL_WIDTH, width: DATES_WIDTH, backgroundColor: frozenBg }}>
+                      {DATE_FIELDS.map((field, idx) => {
+                        const d = dateCells[idx];
+                        const isDeadline = field === 'deadline';
+                        return (
+                          <div key={field} className="flex items-center px-2" style={{ width: DATE_COL_WIDTH }}>
+                            {d ? (
+                              <span
+                                className={cn(
+                                  'font-mono text-base font-bold tabular-nums',
+                                  isDeadline && risk !== 'none' ? (risk === 'critical' ? 'text-destructive' : 'text-warning') : 'text-foreground',
+                                )}
+                              >
+                                {fmtDate(d)}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                     <div className="relative flex-1">
                       {start && completion && (
                         <div
-                          className="absolute top-4 h-3.5 rounded-r border-l-4 border-secondary-foreground/50 bg-secondary"
+                          className="absolute top-[35px] h-[18px] rounded-full bg-[linear-gradient(90deg,hsl(var(--timeline-bar-start)),hsl(var(--timeline-bar-end)))] shadow-sm"
                           style={{
                             left: px(start, viewFrom, pxPerDay),
-                            width: Math.max(px(completion, viewFrom, pxPerDay) - px(start, viewFrom, pxPerDay), 4),
+                            width: Math.max(px(completion, viewFrom, pxPerDay) - px(start, viewFrom, pxPerDay), 6),
                           }}
                           title={`${ts('plannedStartAt')}: ${fmtDate(start)} — ${ts('plannedCompletionAt')}: ${fmtDate(completion)}`}
                         />
                       )}
                       {shipment && (
                         <div
-                          className="absolute top-3.5 h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60"
-                          style={{ left: px(shipment, viewFrom, pxPerDay) - 5 }}
+                          className="absolute top-8 h-4 w-4 rotate-45 rounded-[3px] border border-warning bg-warning shadow-sm"
+                          style={{ left: px(shipment, viewFrom, pxPerDay) - 8 }}
                           title={`${ts('plannedShipmentAt')}: ${fmtDate(shipment)}`}
                         />
                       )}
                       {delivery && (
                         <div
-                          className="absolute top-3.5 h-2.5 w-2.5 rotate-45 border border-success bg-success/60"
-                          style={{ left: px(delivery, viewFrom, pxPerDay) - 5 }}
+                          className="absolute top-8 h-4 w-4 rotate-45 rounded-[3px] border border-success bg-success shadow-sm"
+                          style={{ left: px(delivery, viewFrom, pxPerDay) - 8 }}
                           title={`${ts('plannedDeliveryAt')}: ${fmtDate(delivery)}`}
                         />
                       )}
                       {deadline && (
                         <div
-                          className="absolute inset-y-2 w-0.5 bg-destructive"
-                          style={{ left: px(deadline, viewFrom, pxPerDay) }}
+                          className="absolute top-4 w-1 rounded-sm bg-destructive"
+                          style={{ left: px(deadline, viewFrom, pxPerDay), height: ROW_HEIGHT - 32 }}
                           title={`${ts('deadline')}: ${fmtDate(deadline)}`}
                         />
                       )}
