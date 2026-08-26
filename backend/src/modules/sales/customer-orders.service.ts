@@ -74,6 +74,7 @@ export class CustomerOrdersService {
     // needs them, without relying on a returned relation array happening to
     // preserve input order (never a documented guarantee).
     const items = [];
+    let hasSubAssemblyBatches = false;
     for (const itemDto of dto.items) {
       const item = await this.prisma.tenant.customerOrderItem.create({
         data: {
@@ -100,7 +101,19 @@ export class CustomerOrdersService {
           unitsPlanned: sub.qty,
           subAssemblyForItemId: item.id,
         });
+        hasSubAssemblyBatches = true;
       }
+    }
+
+    // Real production work already started (a sub-assembly batch exists)
+    // even though no top-level item has been "given to production" yet —
+    // same status flip giveItemToProduction does, just triggered here
+    // instead. Without this, an order sitting on a live PLANNED/IN_PROGRESS
+    // batch would still read NEW and be invisible to anything that filters
+    // on status (e.g. Production's "По замовленнях" tab).
+    if (hasSubAssemblyBatches) {
+      await this.prisma.tenant.customerOrder.update({ where: { id: order.id }, data: { status: 'IN_PRODUCTION' } });
+      order.status = 'IN_PRODUCTION' as any;
     }
 
     const fullOrder = { ...order, items };

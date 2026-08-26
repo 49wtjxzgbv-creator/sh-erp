@@ -132,6 +132,29 @@ describe('CustomerOrdersService', () => {
       await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
       expect(productionOrdersService.create).not.toHaveBeenCalled();
     });
+
+    it('flips the order to IN_PRODUCTION when a sub-assembly batch is planned at creation (2026-08-27): a real batch already exists even though no top-level item was "given to production"', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
+
+      const result = await service.create(user, {
+        clientName: 'Acme Client',
+        items: [{ assemblyId: 'a1', qty: 3, subAssembliesToProduce: [{ assemblyId: 'sub1', qty: 6 }] }],
+      });
+
+      expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
+      expect(result.status).toBe('IN_PRODUCTION');
+    });
+
+    it('leaves the order NEW when no sub-assembly batch was planned', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
+
+      const result = await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+
+      expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+      expect(result.status).toBe('NEW');
+    });
   });
 
   describe('cancel', () => {
