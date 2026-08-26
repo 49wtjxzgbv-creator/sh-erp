@@ -1556,6 +1556,8 @@
     "yearOverview": "Overview",
     "yearDetail": "Detail",
     "resourcesTab": "Resources",
+    "ordersTab": "By order",
+    "today": "Today",
     "ganttTab": "Chart",
     "resourcesEmpty": "No employees are assigned to any planned production batches.",
     "resourceConflict": "conflict — assigned to multiple batches at once",

@@ -10,6 +10,7 @@ import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useProductionStages } from '@/lib/hooks/use-production';
 import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/planner/planner-gantt';
 import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
+import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -113,7 +114,7 @@ export default function PlannerPage() {
   const [dateTo, setDateTo] = useState('');
   const [pageSize, setPageSize] = useState<'A4' | 'A3'>('A4');
   const [year, setYear] = useState(new Date().getFullYear());
-  const [view, setView] = useState<'gantt' | 'resources'>('gantt');
+  const [view, setView] = useState<'gantt' | 'resources' | 'orders'>('gantt');
   const [printMode, setPrintMode] = useState<'current' | 'year'>('current');
 
   const query: QueryPlannerBoardInput = {
@@ -212,6 +213,13 @@ export default function PlannerPage() {
             >
               {t('resourcesTab')}
             </button>
+            <button
+              type="button"
+              onClick={() => setView('orders')}
+              className={cn('rounded px-2 py-1 text-xs font-medium', view === 'orders' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+            >
+              {t('ordersTab')}
+            </button>
           </div>
           <Select value={pageSize} onValueChange={(v) => setPageSize(v as 'A4' | 'A3')}>
             <SelectTrigger className="w-24">
@@ -302,15 +310,19 @@ export default function PlannerPage() {
         <p className="py-8 text-center text-sm text-muted-foreground no-print">{t('noOrders')}</p>
       ) : (
         <>
-          <div className="no-print flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border border-foreground/40 opacity-60" />{t('planLabel')}</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
-          </div>
+          {view !== 'orders' && (
+            <div className="no-print flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border border-foreground/40 opacity-60" />{t('planLabel')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-foreground/70" />{t('factLabel')}</span>
+            </div>
+          )}
           <div className="no-print" data-tour="planner-board">
             {view === 'gantt' ? (
               <PlannerGanttChart ref={ganttRef} orders={board.orders} stages={stages ?? []} photoByAssembly={photoByAssembly} year={year} onYearChange={setYear} />
-            ) : (
+            ) : view === 'resources' ? (
               <PlannerResourcesView orders={board.orders} problems={board.problems} year={year} />
+            ) : (
+              <PlannerOrdersTimelineView orders={board.orders} year={year} />
             )}
           </div>
 
