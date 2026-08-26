@@ -1530,6 +1530,8 @@
     "prevPeriod": "Previous period",
     "nextPeriod": "Next period",
     "todayButton": "Today",
+    "collapseDates": "Collapse date columns",
+    "expandDates": "Expand date columns",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "ganttSearchPlaceholder": "Search: order, product, article, batch, supplier…",

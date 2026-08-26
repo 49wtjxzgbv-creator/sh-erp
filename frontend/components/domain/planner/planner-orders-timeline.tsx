@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { timelineMonthMarks, timelineWeekMarks, timelineDayMarks } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import { px } from './planner-gantt';
@@ -13,6 +13,7 @@ import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
 const ROW_HEIGHT = 92;
 const LABEL_WIDTH = 240;
+const TOGGLE_WIDTH = 28;
 const DATE_COL_WIDTH = 96;
 const DATE_FIELDS = ['start', 'completion', 'shipment', 'delivery', 'deadline'] as const;
 const DATES_WIDTH = DATE_COL_WIDTH * DATE_FIELDS.length;
@@ -64,6 +65,7 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
   const ts = useTranslations('sales');
   const [scale, setScale] = useState<OrdersScale>('year');
   const [anchor, setAnchor] = useState(() => new Date());
+  const [datesCollapsed, setDatesCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const now = useMemo(() => new Date(), []);
 
@@ -79,7 +81,8 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
   const days = useMemo(() => (scale === 'week' ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const showToday = now >= viewFrom && now <= viewTo;
   const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay, 600);
-  const frozenWidth = LABEL_WIDTH + DATES_WIDTH;
+  const datesWidth = datesCollapsed ? 0 : DATES_WIDTH;
+  const frozenWidth = LABEL_WIDTH + TOGGLE_WIDTH + datesWidth;
 
   const rangeLabel = useMemo(() => {
     if (scale === 'year') return String(year);
@@ -174,19 +177,46 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
               >
                 {t('ordersTab')}
               </div>
-              <div className="sticky z-30 flex shrink-0 border-r border-border bg-card" style={{ left: LABEL_WIDTH, width: DATES_WIDTH }}>
-                {[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')].map((label, i) => (
-                  <div key={i} className="flex items-end px-2 pb-2 text-[11px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground" style={{ width: DATE_COL_WIDTH }}>
-                    {label}
-                  </div>
-                ))}
-              </div>
-              <div className="relative shrink-0" style={{ width: canvasWidth, height: 32 }}>
+              <button
+                type="button"
+                onClick={() => setDatesCollapsed((v) => !v)}
+                className="sticky z-30 flex shrink-0 items-center justify-center border-r border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground"
+                style={{ left: LABEL_WIDTH, width: TOGGLE_WIDTH }}
+                title={datesCollapsed ? t('expandDates') : t('collapseDates')}
+              >
+                {datesCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+              </button>
+              {!datesCollapsed && (
+                <div className="sticky z-30 flex shrink-0 border-r border-border bg-card" style={{ left: LABEL_WIDTH + TOGGLE_WIDTH, width: datesWidth }}>
+                  {[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')].map((label, i) => (
+                    <div
+                      key={i}
+                      className="flex items-end px-2 pb-2 text-[11px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground"
+                      style={{ width: DATE_COL_WIDTH }}
+                    >
+                      {label}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="relative shrink-0" style={{ width: canvasWidth, height: scale === 'year' ? 32 : 46 }}>
                 {months.map((m, i) => (
                   <span key={i} className="absolute top-2 whitespace-nowrap text-sm font-semibold" style={{ left: px(m.start, viewFrom, pxPerDay) + 6 }}>
                     {m.label}
                   </span>
                 ))}
+                {scale === 'week' &&
+                  days.map((d, i) => (
+                    <span key={i} className="absolute top-7 text-xs tabular-nums text-muted-foreground" style={{ left: px(d, viewFrom, pxPerDay) + 3 }}>
+                      {d.getDate()}
+                    </span>
+                  ))}
+                {scale === 'month' &&
+                  weeks.map((w, i) => (
+                    <span key={i} className="absolute top-7 text-xs font-medium tabular-nums text-muted-foreground" style={{ left: px(w, viewFrom, pxPerDay) + 3 }}>
+                      {w.getDate()}
+                    </span>
+                  ))}
               </div>
             </div>
             <div className="relative">
@@ -235,28 +265,35 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                         </span>
                       )}
                     </Link>
-                    <div className="sticky z-10 flex shrink-0 items-center border-r border-border" style={{ left: LABEL_WIDTH, width: DATES_WIDTH, backgroundColor: frozenBg }}>
-                      {DATE_FIELDS.map((field, idx) => {
-                        const d = dateCells[idx];
-                        const isDeadline = field === 'deadline';
-                        return (
-                          <div key={field} className="flex items-center px-2" style={{ width: DATE_COL_WIDTH }}>
-                            {d ? (
-                              <span
-                                className={cn(
-                                  'font-mono text-base font-bold tabular-nums',
-                                  isDeadline && risk !== 'none' ? (risk === 'critical' ? 'text-destructive' : 'text-warning') : 'text-foreground',
-                                )}
-                              >
-                                {fmtDate(d)}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">—</span>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="sticky z-10 flex shrink-0 items-center justify-center border-r border-border" style={{ left: LABEL_WIDTH, width: TOGGLE_WIDTH, backgroundColor: frozenBg }}>
+                      {datesCollapsed && risk !== 'none' && (
+                        <span className={cn('h-2 w-2 rounded-full', risk === 'critical' ? 'bg-destructive' : 'bg-warning')} title={t(risk === 'critical' ? 'riskCritical' : 'riskWarning')} />
+                      )}
                     </div>
+                    {!datesCollapsed && (
+                      <div className="sticky z-10 flex shrink-0 items-center border-r border-border" style={{ left: LABEL_WIDTH + TOGGLE_WIDTH, width: datesWidth, backgroundColor: frozenBg }}>
+                        {DATE_FIELDS.map((field, idx) => {
+                          const d = dateCells[idx];
+                          const isDeadline = field === 'deadline';
+                          return (
+                            <div key={field} className="flex items-center px-2" style={{ width: DATE_COL_WIDTH }}>
+                              {d ? (
+                                <span
+                                  className={cn(
+                                    'font-mono text-base font-bold tabular-nums',
+                                    isDeadline && risk !== 'none' ? (risk === 'critical' ? 'text-destructive' : 'text-warning') : 'text-foreground',
+                                  )}
+                                >
+                                  {fmtDate(d)}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">—</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="relative flex-1">
                       {start && completion && (
                         <div
