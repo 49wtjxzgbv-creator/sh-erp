@@ -35,8 +35,13 @@ interface ItemCtx {
   itemLabel: string;
   qty: number;
   itemDeadline: Date | null;
+  /** This line's own planned window, only if it differs from the order's own (§4) — null falls back to orderPlannedStartAt/orderPlannedCompletionAt in the overdue checks below. */
+  plannedStartAt: Date | null;
+  plannedEndAt: Date | null;
   orderId: string;
   orderDeadline: Date | null;
+  orderPlannedStartAt: Date | null;
+  orderPlannedCompletionAt: Date | null;
   batches: BatchCtx[];
 }
 
@@ -113,6 +118,53 @@ export class PlannerConflictsService {
       return this.problem('warning', 'DEADLINE_RISK', item, batch, `виробництво заплановано на ${batch.scheduledEndAt.toLocaleDateString()}, після дедлайну ${deadline.toLocaleDateString()}`);
     }
     return null;
+  }
+
+  /**
+   * Rule 9 (2026-08-28 user request — "почалось замовлення а ми ще не дали
+   * в роботу"): this line's own planned start (or the order's, if this
+   * line has none) has already passed, and NOTHING has been given to
+   * production for it yet — every batch it has, if any, was cancelled.
+   * Deliberately item-level, not per-batch (checkDeadlineRisk's shape):
+   * there is no batch to attach this problem to when the whole point is
+   * that no batch exists.
+   */
+  checkStartOverdue(item: ItemCtx, now: Date): PlannerProblem | null {
+    const start = item.plannedStartAt ?? item.orderPlannedStartAt;
+    if (!start || start >= now) return null;
+    const givenToProduction = item.batches.some((b) => b.status !== 'CANCELLED');
+    if (givenToProduction) return null;
+    return {
+      severity: 'warning',
+      code: 'START_OVERDUE',
+      message: `${item.itemLabel} → плановий початок (${start.toLocaleDateString()}) уже минув, а виріб досі не передано у виробництво`,
+      entityType: 'CustomerOrderItem',
+      entityId: item.id,
+      orderId: item.orderId,
+    };
+  }
+
+  /**
+   * Rule 10 (2026-08-28 user request — "маємо завершити а ще не
+   * завершили"): this line's own planned completion (or the order's) has
+   * already passed, but production for it isn't actually done — either no
+   * batch was ever started, or at least one is still PLANNED/IN_PROGRESS.
+   * A batch that finished COMPLETED (or was deliberately CANCELLED) no
+   * longer counts as "still pending" even past this date.
+   */
+  checkCompletionOverdue(item: ItemCtx, now: Date): PlannerProblem | null {
+    const end = item.plannedEndAt ?? item.orderPlannedCompletionAt;
+    if (!end || end >= now) return null;
+    const stillPending = item.batches.length === 0 || item.batches.some((b) => b.status === 'PLANNED' || b.status === 'IN_PROGRESS');
+    if (!stillPending) return null;
+    return {
+      severity: 'warning',
+      code: 'COMPLETION_OVERDUE',
+      message: `${item.itemLabel} → планове завершення (${end.toLocaleDateString()}) уже минуло, а виробництво ще не завершено`,
+      entityType: 'CustomerOrderItem',
+      entityId: item.id,
+      orderId: item.orderId,
+    };
   }
 
   /** Rule 8: same employee assigned to two batches (any order) with overlapping planned windows. */

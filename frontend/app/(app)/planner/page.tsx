@@ -12,7 +12,7 @@ import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/
 import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
-import { PlannerOrdersPrintTable } from '@/components/domain/planner/planner-orders-print';
+import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { startOfWeek, startOfMonth } from '@/lib/timeline-utils';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -448,8 +448,11 @@ export default function PlannerPage() {
                   scale={ordersPrintScale}
                   datesHidden={ordersPrintDatesHidden}
                 />
-                <div className="mt-4 text-[9px]">
-                  <strong>{t('legendTitle')}:</strong> {ts('plannedStartAt')} → {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
+                <div className="mt-4">
+                  <strong className="text-[9px]">{t('legendTitle')}:</strong>
+                  <div className="mt-1">
+                    <PlannerOrdersPrintLegend />
+                  </div>
                 </div>
               </>
             ) : (

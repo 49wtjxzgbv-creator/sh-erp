@@ -57,6 +57,51 @@ function fmtDate(date: Date): string {
   return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
+/**
+ * Visual key for the print table's own markers (2026-08-28 user request —
+ * "щоб були написані пояснення до позначок що що означає ромб такий те
+ * червона лінія те"): the on-screen view explains itself via colored swatch
+ * + label pairs right above the table (PlannerOrdersTimelineView's own
+ * legend row); the print output only ever had a bare text list of field
+ * names, no colors — so a reader with just the paper in hand had no way to
+ * decode which shape meant what. Swatch colors are hardcoded to match
+ * MiniBar/MiniMarker/MiniTick exactly (same amber-500/emerald-600/red-600/
+ * gradient), not sourced from CSS custom properties — print output must
+ * stay legible regardless of the viewer's on-screen theme.
+ */
+export function PlannerOrdersPrintLegend() {
+  const ts = useTranslations('sales');
+  const t = useTranslations('planner');
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-[8px]">
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[6px] w-4 rounded-sm" style={{ background: 'linear-gradient(90deg, #ddd0f6, #6423d0)' }} />
+        {ts('plannedStartAt')} → {ts('plannedCompletionAt')}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[7px] w-[7px] rotate-45 bg-amber-500" />
+        {ts('plannedShipmentAt')}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[7px] w-[7px] rotate-45 bg-emerald-600" />
+        {ts('plannedDeliveryAt')}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[10px] w-[2px] bg-red-600" />
+        {ts('deadline')}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[10px] w-[10px] border border-amber-600" style={{ background: '#fdf1dc' }} />
+        {t('riskWarning')}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block h-[10px] w-[10px] border border-red-700" style={{ background: '#fbe6e6' }} />
+        {t('riskCritical')}
+      </span>
+    </div>
+  );
+}
+
 export function PlannerOrdersPrintTable({
   orders,
   from,

@@ -110,8 +110,12 @@ export class PlannerBoardService {
               itemLabel,
               qty: Number(item.qty),
               itemDeadline: item.itemDeadline,
+              plannedStartAt: item.plannedStartAt,
+              plannedEndAt: item.plannedEndAt,
               orderId: order.id,
               orderDeadline: order.deadline,
+              orderPlannedStartAt: order.plannedStartAt,
+              orderPlannedCompletionAt: order.plannedCompletionAt,
               batches: [],
             };
 
@@ -183,6 +187,17 @@ export class PlannerBoardService {
             const fgProblems = this.conflicts.checkFinishedGoodsAwaitingShipment(order.id, finishedGoods.map((fg) => ({ id: fg.id, manufactureDate: fg.manufactureDate, assemblyName })), now);
             allProblems.push(...fgProblems);
 
+            // Rules 9/10 (2026-08-28): item-level, checked once per line
+            // now that itemCtx.batches is fully populated above — "planned
+            // to have started/finished by now, but hasn't" isn't tied to
+            // any one batch (rule 9 fires precisely when there ISN'T one).
+            const overdueProblems: PlannerProblem[] = [];
+            const startOverdue = this.conflicts.checkStartOverdue(itemCtx, now);
+            if (startOverdue) overdueProblems.push(startOverdue);
+            const completionOverdue = this.conflicts.checkCompletionOverdue(itemCtx, now);
+            if (completionOverdue) overdueProblems.push(completionOverdue);
+            allProblems.push(...overdueProblems);
+
             const ordered = Number(item.qty);
             const activeBatches = itemBatches.filter((b) => b.status !== 'CANCELLED');
             const inProduction = activeBatches.reduce((sum, b) => sum + Number(b.unitsPlanned), 0);
@@ -197,7 +212,7 @@ export class PlannerBoardService {
               plan: { startAt: item.plannedStartAt, endAt: item.plannedEndAt, deadline: item.itemDeadline },
               quantitySummary: { ordered, inProduction, completed, remaining: Math.max(ordered - inProduction, 0) },
               batches: batchNodes,
-              problems: [...batchNodes.flatMap((b) => b.problems), ...fgProblems],
+              problems: [...batchNodes.flatMap((b) => b.problems), ...fgProblems, ...overdueProblems],
             };
           });
 

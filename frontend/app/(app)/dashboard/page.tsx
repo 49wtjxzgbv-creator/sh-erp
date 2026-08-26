@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 import { OperationsTimelineSection, OperationsTimelineLegend } from '@/components/domain/dashboard/operations-timeline';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
-import { PlannerOrdersPrintTable } from '@/components/domain/planner/planner-orders-print';
+import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
 import type { TimelineStage } from '@/lib/api-client/dashboard';
 
 /**
@@ -218,6 +218,9 @@ export default function DashboardPage() {
             <div className="mb-4">
               <h3 className="mb-2 text-sm font-semibold">{tPlanner('ordersTab')}</h3>
               <PlannerOrdersPrintTable orders={board.orders} from={from} to={to} scale="year" datesHidden />
+              <div className="mt-1">
+                <PlannerOrdersPrintLegend />
+              </div>
             </div>
           )}
           <div className="space-y-4">
