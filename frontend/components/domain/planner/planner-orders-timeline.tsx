@@ -10,8 +10,12 @@ import { px } from './planner-gantt';
 import { Button } from '@/components/ui/button';
 import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
-const ROW_HEIGHT = 34;
+const ROW_HEIGHT = 46;
 const LABEL_WIDTH = 220;
+
+function fmtDate(date: Date): string {
+  return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
 type OrdersScale = 'week' | 'month' | 'year';
 const SCALES: OrdersScale[] = ['week', 'month', 'year'];
@@ -180,43 +184,57 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                 const delivery = order.plan.deliveryAt ? new Date(order.plan.deliveryAt) : null;
                 const deadline = order.deadline ? new Date(order.deadline) : null;
                 const label = `${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`;
+                const datesSummary = [
+                  start && `${ts('plannedStartAt')}: ${fmtDate(start)}`,
+                  completion && `${ts('plannedCompletionAt')}: ${fmtDate(completion)}`,
+                  shipment && `${ts('plannedShipmentAt')}: ${fmtDate(shipment)}`,
+                  delivery && `${ts('plannedDeliveryAt')}: ${fmtDate(delivery)}`,
+                  deadline && `${ts('deadline')}: ${fmtDate(deadline)}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
                 return (
                   <div key={order.id} className={cn('relative flex border-b border-border/60', i % 2 === 1 && 'bg-muted/10')} style={{ height: ROW_HEIGHT }}>
                     <Link
                       href={`/sales/${order.id}`}
-                      className="sticky left-0 z-10 flex shrink-0 items-center truncate border-r border-border bg-card px-2 text-xs hover:text-primary"
+                      className="sticky left-0 z-10 flex shrink-0 flex-col justify-center gap-0.5 overflow-hidden border-r border-border bg-card px-2 py-1 text-xs hover:text-primary"
                       style={{ width: LABEL_WIDTH, backgroundColor: 'hsl(var(--card))' }}
-                      title={label}
+                      title={datesSummary ? `${label}\n${datesSummary}` : label}
                     >
-                      {label}
+                      <span className="truncate">{label}</span>
+                      {datesSummary && <span className="truncate text-[10px] text-muted-foreground">{datesSummary}</span>}
                     </Link>
                     <div className="relative flex-1">
                       {start && completion && (
                         <div
-                          className="absolute top-2.5 h-3.5 rounded-r border-l-4 border-secondary-foreground/50 bg-secondary"
+                          className="absolute top-4 h-3.5 rounded-r border-l-4 border-secondary-foreground/50 bg-secondary"
                           style={{
                             left: px(start, viewFrom, pxPerDay),
                             width: Math.max(px(completion, viewFrom, pxPerDay) - px(start, viewFrom, pxPerDay), 4),
                           }}
-                          title={`${ts('plannedStartAt')} — ${ts('plannedCompletionAt')}`}
+                          title={`${ts('plannedStartAt')}: ${fmtDate(start)} — ${ts('plannedCompletionAt')}: ${fmtDate(completion)}`}
                         />
                       )}
                       {shipment && (
                         <div
-                          className="absolute top-2 h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60"
+                          className="absolute top-3.5 h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60"
                           style={{ left: px(shipment, viewFrom, pxPerDay) - 5 }}
-                          title={ts('plannedShipmentAt')}
+                          title={`${ts('plannedShipmentAt')}: ${fmtDate(shipment)}`}
                         />
                       )}
                       {delivery && (
                         <div
-                          className="absolute top-2 h-2.5 w-2.5 rotate-45 border border-success bg-success/60"
+                          className="absolute top-3.5 h-2.5 w-2.5 rotate-45 border border-success bg-success/60"
                           style={{ left: px(delivery, viewFrom, pxPerDay) - 5 }}
-                          title={ts('plannedDeliveryAt')}
+                          title={`${ts('plannedDeliveryAt')}: ${fmtDate(delivery)}`}
                         />
                       )}
                       {deadline && (
-                        <div className="absolute inset-y-1 w-0.5 bg-destructive" style={{ left: px(deadline, viewFrom, pxPerDay) }} title={ts('deadline')} />
+                        <div
+                          className="absolute inset-y-2 w-0.5 bg-destructive"
+                          style={{ left: px(deadline, viewFrom, pxPerDay) }}
+                          title={`${ts('deadline')}: ${fmtDate(deadline)}`}
+                        />
                       )}
                     </div>
                   </div>

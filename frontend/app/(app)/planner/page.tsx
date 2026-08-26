@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircle, AlertTriangle, Info, Search, ExternalLink, Printer } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Search, ExternalLink, Printer, ChevronRight, Plus, Minus } from 'lucide-react';
 import Link from 'next/link';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -14,6 +14,7 @@ import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-o
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
 import { PlannerOrdersPrintTable } from '@/components/domain/planner/planner-orders-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { startOfWeek, startOfMonth } from '@/lib/timeline-utils';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -118,6 +119,18 @@ export default function PlannerPage() {
   const [view, setView] = useState<'gantt' | 'resources' | 'orders'>('gantt');
   const [printMode, setPrintMode] = useState<'current' | 'year'>('current');
 
+  // Print range for the "По замовленнях" tab specifically (2026-08-27 user
+  // request — "друкувати не тільки на рік а й на тиждень декілька тижнів
+  // місяць декілька місяців"): independent of printMode above (that stays
+  // for the Gantt/Resources tabs), because "По замовленнях" needs a
+  // period the user can dial in freely rather than just current-filter vs
+  // whole-year. `ordersPrintCount` multiplies the chosen scale's single
+  // period (only meaningful for week/month) so "3 тижні"/"2 місяці" are one
+  // stepper click away instead of needing a full custom-range picker.
+  const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('month');
+  const [ordersPrintAnchor, setOrdersPrintAnchor] = useState(() => new Date());
+  const [ordersPrintCount, setOrdersPrintCount] = useState(1);
+
   const query: QueryPlannerBoardInput = {
     search: search || undefined,
     status,
@@ -184,6 +197,30 @@ export default function PlannerPage() {
     window.setTimeout(() => window.print(), 50);
   }
 
+  const ordersPrintFrom =
+    ordersPrintScale === 'year' ? new Date(year, 0, 1) : ordersPrintScale === 'month' ? startOfMonth(ordersPrintAnchor) : startOfWeek(ordersPrintAnchor);
+  const ordersPrintTo =
+    ordersPrintScale === 'year'
+      ? new Date(year, 11, 31, 23, 59, 59)
+      : ordersPrintScale === 'month'
+        ? new Date(ordersPrintFrom.getFullYear(), ordersPrintFrom.getMonth() + ordersPrintCount, 0, 23, 59, 59)
+        : new Date(ordersPrintFrom.getTime() + ordersPrintCount * 7 * 86400000 - 1000);
+  const ordersPeriodLabel = `${ordersPrintFrom.toLocaleDateString('uk-UA')} — ${ordersPrintTo.toLocaleDateString('uk-UA')}`;
+
+  function panOrdersPrint(dir: 1 | -1) {
+    if (ordersPrintScale === 'year') {
+      setYear(year + dir);
+    } else if (ordersPrintScale === 'week') {
+      setOrdersPrintAnchor(new Date(ordersPrintAnchor.getTime() + dir * ordersPrintCount * 7 * 86400000));
+    } else {
+      setOrdersPrintAnchor(new Date(ordersPrintAnchor.getFullYear(), ordersPrintAnchor.getMonth() + dir * ordersPrintCount, 1));
+    }
+  }
+
+  function handlePrintOrders() {
+    window.setTimeout(() => window.print(), 50);
+  }
+
   return (
     <div className="space-y-4">
       <style>{`
@@ -231,14 +268,62 @@ export default function PlannerPage() {
               <SelectItem value="A3">A3</SelectItem>
             </SelectContent>
           </Select>
-          <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('current')}>
-            <Printer className="mr-2 h-4 w-4" />
-            {t('printButton')}
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('year')}>
-            <Printer className="mr-2 h-4 w-4" />
-            {t('printYearButton')}
-          </Button>
+          {view === 'orders' ? (
+            <>
+              <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                {(['week', 'month', 'year'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setOrdersPrintScale(s)}
+                    className={cn('rounded px-2 py-1 text-xs font-medium', ordersPrintScale === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+                  >
+                    {t(`scale${s[0].toUpperCase()}${s.slice(1)}`)}
+                  </button>
+                ))}
+              </div>
+              {ordersPrintScale !== 'year' && (
+                <div className="flex items-center gap-1 rounded-md border border-border p-0.5" title={t('printRangeCount')}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setOrdersPrintCount((c) => Math.max(1, c - 1))}>
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <span className="min-w-[1.2rem] text-center text-xs font-medium">{ordersPrintCount}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setOrdersPrintCount((c) => Math.min(12, c + 1))}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => panOrdersPrint(-1)} title={t('prevPeriod')}>
+                  <ChevronRight className="h-4 w-4 rotate-180" />
+                </Button>
+                <span className="min-w-[9rem] text-center text-xs">{ordersPeriodLabel}</span>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => panOrdersPrint(1)} title={t('nextPeriod')}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={handlePrintOrders}>
+                <Printer className="mr-2 h-4 w-4" />
+                {t('printButton')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('current')}>
+                <Printer className="mr-2 h-4 w-4" />
+                {t('printButton')}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => handlePrint('year')}>
+                <Printer className="mr-2 h-4 w-4" />
+                {t('printYearButton')}
+              </Button>
+            </>
+          )}
           <PreviewButton />
         </div>
       </div>
@@ -328,13 +413,16 @@ export default function PlannerPage() {
           </div>
 
           <PrintArea>
-            <PrintDocumentHeader title={printMode === 'year' ? `${t('printYearTitle')} ${year}` : t('printTitle')} subtitle={t('printSubtitle')} />
+            <PrintDocumentHeader
+              title={view === 'orders' ? t('printTitle') : printMode === 'year' ? `${t('printYearTitle')} ${year}` : t('printTitle')}
+              subtitle={t('printSubtitle')}
+            />
             <p className="mb-3 text-xs">
-              {t('printPeriod')}: {periodLabel}
+              {t('printPeriod')}: {view === 'orders' ? ordersPeriodLabel : periodLabel}
             </p>
             {view === 'orders' ? (
               <>
-                <PlannerOrdersPrintTable orders={board.orders} from={printFrom} to={printTo} />
+                <PlannerOrdersPrintTable orders={board.orders} from={ordersPrintFrom} to={ordersPrintTo} />
                 <div className="mt-4 text-[9px]">
                   <strong>{t('legendTitle')}:</strong> {ts('plannedStartAt')} → {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
                 </div>

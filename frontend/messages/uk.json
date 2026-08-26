@@ -1662,6 +1662,7 @@
     "legendWarning": "⚠ Попередження",
     "legendCritical": "🔴 Критична проблема",
     "printButton": "Друкувати / PDF",
+    "printRangeCount": "Кількість періодів для друку",
     "openEntity": "Відкрити картку",
     "filterSupplier": "Постачальник",
     "scaleYear": "Рік",

@@ -71,3 +71,16 @@ export function isWeekend(date: Date): boolean {
   const day = date.getDay();
   return day === 0 || day === 6;
 }
+
+/** Monday of the calendar week containing `date`, at midnight — same Monday-alignment convention as timelineWeekMarks. */
+export function startOfWeek(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d;
+}
+
+/** 1st of the calendar month containing `date`, at midnight. */
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
