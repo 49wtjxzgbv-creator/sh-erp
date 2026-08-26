@@ -177,7 +177,12 @@ export default function NewCustomerOrderPage() {
             <Input id="contactPerson" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="deadline">{t('deadline')}</Label>
+            <Label htmlFor="deadline" className="flex items-center gap-1.5">
+              {t('deadline')}
+              <HelpHint title={t('deadline')} note="Можна змінити пізніше.">
+                Кінцевий термін, до якого замовлення має бути повністю виконане — це зобов&apos;язання перед клієнтом, а не внутрішній план. План-графік порівнює цю дату з реальним ходом виробництва і попереджає, якщо є ризик не встигнути.
+              </HelpHint>
+            </Label>
             <Input id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -195,7 +200,12 @@ export default function NewCustomerOrderPage() {
             </Select>
           </div>
           <div className="space-y-1.5" data-tour="sales-form-planned-dates">
-            <Label htmlFor="plannedStartAt">{t('plannedStartAt')}</Label>
+            <Label htmlFor="plannedStartAt" className="flex items-center gap-1.5">
+              {t('plannedStartAt')}
+              <HelpHint title={t('plannedStartAt')} note="Можна змінити пізніше.">
+                Коли планується розпочати виробництво по цьому замовленню. Орієнтир для План-графіка — реальні виробничі партії потім плануються окремо по кожному виробу і можуть відрізнятись.
+              </HelpHint>
+            </Label>
             <Input id="plannedStartAt" type="datetime-local" value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
@@ -208,11 +218,21 @@ export default function NewCustomerOrderPage() {
             <Input id="plannedCompletionAt" type="datetime-local" value={plannedCompletionAt} onChange={(e) => setPlannedCompletionAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="plannedShipmentAt">{t('plannedShipmentAt')}</Label>
+            <Label htmlFor="plannedShipmentAt" className="flex items-center gap-1.5">
+              {t('plannedShipmentAt')}
+              <HelpHint title={t('plannedShipmentAt')} note="Можна змінити пізніше.">
+                Коли планується відвантажити готову продукцію зі складу клієнту. Пізніше, вже після відвантаження, за нею перевіряється реальна дата в модулі &quot;Продажі → Відвантаження&quot;.
+              </HelpHint>
+            </Label>
             <Input id="plannedShipmentAt" type="datetime-local" value={plannedShipmentAt} onChange={(e) => setPlannedShipmentAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="plannedDeliveryAt">{t('plannedDeliveryAt')}</Label>
+            <Label htmlFor="plannedDeliveryAt" className="flex items-center gap-1.5">
+              {t('plannedDeliveryAt')}
+              <HelpHint title={t('plannedDeliveryAt')} note="Можна змінити пізніше.">
+                Коли готова продукція має фактично прибути до клієнта — вже після відвантаження. Орієнтовна дата для План-графіка, ніде більше не перевіряється автоматично.
+              </HelpHint>
+            </Label>
             <Input id="plannedDeliveryAt" type="datetime-local" value={plannedDeliveryAt} onChange={(e) => setPlannedDeliveryAt(e.target.value)} />
           </div>
           <div className="space-y-1.5">

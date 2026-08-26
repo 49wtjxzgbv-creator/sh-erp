@@ -157,6 +157,23 @@
  * default and nothing else in this file has ever needed to fight that.
  */
 @media print {
+  /* Real bug found 2026-08-27: every hand-built Gantt bar/marker/badge in
+   * this app (planner-gantt-print.tsx's MiniBar, planner-orders-print.tsx's
+   * MiniBar/MiniMarker/MiniTick, etc.) is a pure background-color fill with
+   * no border — and browsers strip background colors from real printed
+   * output by default ("print backgrounds" is normally unchecked), unlike
+   * the on-screen `?print=1` preview mode (ordinary CSS on an ordinary
+   * page, never subject to this stripping) that every print view here had
+   * actually been verified through. A real print/"Save as PDF" of any of
+   * these views was silently missing every bar and marker — just row
+   * labels and gridlines — until this forces the browser to honor
+   * background colors regardless of that setting.
+   */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
   body * {
     visibility: hidden;
   }

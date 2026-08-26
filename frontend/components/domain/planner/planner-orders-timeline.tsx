@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ChevronRight } from 'lucide-react';
@@ -15,21 +15,21 @@ const LABEL_WIDTH = 220;
 
 type OrdersScale = 'week' | 'month' | 'year';
 const SCALES: OrdersScale[] = ['week', 'month', 'year'];
-const PX_PER_DAY: Record<OrdersScale, number> = { week: 90, month: 20, year: 2.4 };
-
-function monthRange(anchor: Date): { viewFrom: Date; viewTo: Date } {
-  return { viewFrom: new Date(anchor.getFullYear(), anchor.getMonth(), 1), viewTo: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59) };
-}
-/** Monday-aligned, same convention as lib/timeline-utils.ts#timelineWeekMarks. */
-function weekRange(anchor: Date): { viewFrom: Date; viewTo: Date } {
-  const from = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
-  const day = from.getDay();
-  from.setDate(from.getDate() + (day === 0 ? -6 : 1 - day));
-  const to = new Date(from);
-  to.setDate(to.getDate() + 6);
-  to.setHours(23, 59, 59, 999);
-  return { viewFrom: from, viewTo: to };
-}
+/** Same base px/day as PlannerGanttChart's own week/month scales (BASE_PX_PER_DAY) — familiar zoom level across the module. */
+const PX_PER_DAY: Record<OrdersScale, number> = { week: 34, month: 11, year: 2.4 };
+/**
+ * Window/pan sizing for week and month scale (2026-08-27 fix — "прокрут
+ * продовжувався на наступний місяць а не обмежувався одним"): the visible
+ * canvas is NOT bounded to exactly the current week/month any more, same
+ * as PlannerGanttChart's own non-year scales (WINDOW_DAYS/PAN_STEP_DAYS) —
+ * it's a wide window (~3 months at week scale, ~14 months at month scale)
+ * centered on `anchor`, so dragging/wheeling the scrollbar keeps revealing
+ * further weeks/months on its own; the prev/next buttons and "Сьогодні"
+ * just re-center the same continuous canvas, they don't swap to an
+ * isolated new one.
+ */
+const WINDOW_DAYS: Record<'week' | 'month', number> = { week: 90, month: 420 };
+const PAN_STEP_DAYS: Record<'week' | 'month', number> = { week: 7, month: 30 };
 
 /**
  * "По замовленнях" (2026-08-27 user request) — one row per CustomerOrder,
@@ -47,35 +47,52 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
   const ts = useTranslations('sales');
   const [scale, setScale] = useState<OrdersScale>('year');
   const [anchor, setAnchor] = useState(() => new Date());
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const now = useMemo(() => new Date(), []);
 
   const { viewFrom, viewTo } = useMemo(() => {
     if (scale === 'year') return { viewFrom: new Date(year, 0, 1), viewTo: new Date(year, 11, 31, 23, 59, 59) };
-    if (scale === 'month') return monthRange(anchor);
-    return weekRange(anchor);
+    const windowDays = WINDOW_DAYS[scale];
+    return { viewFrom: new Date(anchor.getTime() - (windowDays / 2) * 86400000), viewTo: new Date(anchor.getTime() + (windowDays / 2) * 86400000) };
   }, [scale, year, anchor]);
 
   const pxPerDay = PX_PER_DAY[scale];
   const months = useMemo(() => timelineMonthMarks(viewFrom, viewTo), [viewFrom, viewTo]);
   const weeks = useMemo(() => (scale === 'month' ? timelineWeekMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const days = useMemo(() => (scale === 'week' ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
-  const now = new Date();
   const showToday = now >= viewFrom && now <= viewTo;
   const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay, 600);
 
   const rangeLabel = useMemo(() => {
     if (scale === 'year') return String(year);
-    if (scale === 'month') return viewFrom.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
-    return `${viewFrom.toLocaleDateString('uk-UA')} – ${viewTo.toLocaleDateString('uk-UA')}`;
-  }, [scale, year, viewFrom, viewTo]);
+    if (scale === 'month') return anchor.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+    return anchor.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+  }, [scale, year, anchor]);
+
+  function scrollToDate(date: Date) {
+    const container = scrollRef.current;
+    if (!container) return;
+    const offset = px(date, viewFrom, pxPerDay);
+    container.scrollTo({ left: Math.max(offset - container.clientWidth / 2, 0), behavior: 'smooth' });
+  }
+
+  // Re-center on the anchor whenever the scale (or, at year scale, the
+  // year) changes — otherwise switching into week/month would start
+  // scrolled to the far-left edge of the wide window (~1.5/7 months in the
+  // past), not at today/the last-panned date.
+  useEffect(() => {
+    scrollToDate(scale === 'year' ? (year === now.getFullYear() ? now : new Date(year, 0, 1)) : anchor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale, year]);
 
   function pan(dir: 1 | -1) {
     if (scale === 'year') onYearChange(year + dir);
-    else if (scale === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
-    else setAnchor(new Date(anchor.getTime() + dir * 7 * 86400000));
+    else setAnchor(new Date(anchor.getTime() + dir * PAN_STEP_DAYS[scale] * 86400000));
   }
   function goToday() {
     setAnchor(now);
     if (scale === 'year') onYearChange(now.getFullYear());
+    else scrollToDate(now);
   }
 
   const rows = useMemo(
@@ -125,24 +142,18 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border">
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
           <div className="relative" style={{ width: LABEL_WIDTH + canvasWidth }}>
             <div className="sticky top-0 z-20 flex border-b border-border bg-card">
               <div className="sticky left-0 z-30 shrink-0 border-r border-border bg-card px-2 pb-1 text-xs font-semibold text-muted-foreground" style={{ width: LABEL_WIDTH }}>
                 {t('ordersTab')}
               </div>
               <div className="relative shrink-0" style={{ width: canvasWidth, height: 24 }}>
-                {scale === 'week'
-                  ? days.map((d, i) => (
-                      <span key={i} className="absolute top-0 text-xs font-medium" style={{ left: px(d, viewFrom, pxPerDay) + 4 }}>
-                        {d.toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric' })}
-                      </span>
-                    ))
-                  : months.map((m, i) => (
-                      <span key={i} className="absolute top-0 text-xs font-medium" style={{ left: px(m.start, viewFrom, pxPerDay) + 4 }}>
-                        {m.label}
-                      </span>
-                    ))}
+                {months.map((m, i) => (
+                  <span key={i} className="absolute top-0 whitespace-nowrap text-xs font-medium" style={{ left: px(m.start, viewFrom, pxPerDay) + 4 }}>
+                    {m.label}
+                  </span>
+                ))}
               </div>
             </div>
             <div className="relative">
