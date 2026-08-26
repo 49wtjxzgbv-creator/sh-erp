@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
+import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
 import type { CustomerOrderStatus } from '@/lib/api-client/sales';
 
 const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
@@ -50,8 +51,9 @@ export default function ProductionByOrderDetailPage() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">{t('productionProgress')}</CardTitle>
+          <ProductionProgressPrint order={order} />
         </CardHeader>
         <CardContent className="space-y-6">
           {(order.items ?? []).map((item) => (

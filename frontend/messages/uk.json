@@ -1102,6 +1102,8 @@
     "specificationTitle": "Специфікація складання",
     "printOrder": "Друкувати замовлення",
     "customerOrderTitle": "Замовлення клієнта",
+    "printProductionProgress": "Друк ходу виробництва",
+    "productionProgressTitle": "Хід виробництва",
     "printFinance": "Друкувати фінансовий звіт",
     "financeTitle": "Фінансовий звіт по замовленню",
     "compositionSectionTitle": "Повний склад замовлення",

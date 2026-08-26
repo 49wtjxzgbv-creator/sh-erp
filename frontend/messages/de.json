@@ -1005,6 +1005,8 @@
     "specificationTitle": "Assembly specification",
     "printOrder": "Print order",
     "customerOrderTitle": "Customer order",
+    "printProductionProgress": "Print production progress",
+    "productionProgressTitle": "Production progress",
     "compositionSectionTitle": "Full order composition",
     "consistsOfTop": "Product «{name}» (qty {qty}) consists of:",
     "consistsOfSub": "Sub-assembly «{name}» (qty {qty}) consists of:",

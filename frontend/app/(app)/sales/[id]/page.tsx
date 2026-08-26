@@ -43,6 +43,7 @@ import {
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
+import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
@@ -310,10 +311,13 @@ function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) 
  */
 function CollapsibleCard({
   title,
+  headerExtra,
   contentClassName,
   children,
 }: {
   title: string;
+  /** Rendered between the title and the chevron — caller must stopPropagation on its own interactive children, since the whole header toggles the card on click. */
+  headerExtra?: React.ReactNode;
   contentClassName?: string;
   children: React.ReactNode;
 }) {
@@ -325,7 +329,10 @@ function CollapsibleCard({
         onClick={() => setOpen((o) => !o)}
       >
         <CardTitle className="text-base">{title}</CardTitle>
-        <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <div className="flex items-center gap-2">
+          {headerExtra}
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        </div>
       </CardHeader>
       {open && <CardContent className={contentClassName}>{children}</CardContent>}
     </Card>
@@ -646,7 +653,15 @@ export default function CustomerOrderDetailPage() {
         </CardContent>
       </Card>
 
-      <CollapsibleCard title={t('productionProgress')} contentClassName="space-y-6">
+      <CollapsibleCard
+        title={t('productionProgress')}
+        headerExtra={
+          <div onClick={(e) => e.stopPropagation()}>
+            <ProductionProgressPrint order={order} />
+          </div>
+        }
+        contentClassName="space-y-6"
+      >
         {(order.items ?? []).map((item) => (
           <div key={item.id} className="space-y-2">
             <div className="text-sm font-medium"><AssemblyCell assemblyId={item.assemblyId} /></div>
