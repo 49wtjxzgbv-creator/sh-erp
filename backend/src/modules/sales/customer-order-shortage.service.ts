@@ -403,9 +403,30 @@ export class CustomerOrderShortageService {
     // none left") so an assembly never referenced this walk costs no query.
     const finishedGoodsAvailable = new Map<string, number>();
     for (const item of items) {
-      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, finishedGoodsAvailable, new Set());
+      // The order's own top-level item is subject to the exact same "don't
+      // build what's already built" rule as any nested sub-assembly (real
+      // gap found live, 2026-08-26, right after fixing the nested case: this
+      // loop used to walk the FULL item.qty unconditionally, so an order for
+      // an assembly that already has finished units sitting in stock still
+      // demanded raw material for every one of them).
+      const stillToBuild = await this.drawFromFinishedGoods(item.assemblyId, Number(item.qty), finishedGoodsAvailable);
+      if (stillToBuild > 0) {
+        await this.walkAssembly(item.assemblyId, stillToBuild, productPool, assemblyBuyPool, finishedGoodsAvailable, new Set());
+      }
     }
     return { productPool, assemblyBuyPool };
+  }
+
+  /** Draws `neededQty` down against `assemblyId`'s shared FinishedGood(IN_STOCK) pool, lazily fetched once per assembly, and returns whatever's left to actually build. */
+  private async drawFromFinishedGoods(assemblyId: string, neededQty: number, finishedGoodsAvailable: Map<string, number>): Promise<number> {
+    if (!finishedGoodsAvailable.has(assemblyId)) {
+      const inStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK' } });
+      finishedGoodsAvailable.set(assemblyId, inStock);
+    }
+    const available = finishedGoodsAvailable.get(assemblyId)!;
+    const fromStock = Math.min(neededQty, available);
+    finishedGoodsAvailable.set(assemblyId, available - fromStock);
+    return neededQty - fromStock;
   }
 
   private async walkAssembly(
@@ -447,14 +468,7 @@ export class CustomerOrderShortageService {
         // material requirement by however many finished units were already
         // on hand. Draw down whatever's already built first; only the
         // shortfall gets exploded into components.
-        if (!finishedGoodsAvailable.has(line.subAssemblyId)) {
-          const inStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId: line.subAssemblyId, status: 'IN_STOCK' } });
-          finishedGoodsAvailable.set(line.subAssemblyId, inStock);
-        }
-        const available = finishedGoodsAvailable.get(line.subAssemblyId)!;
-        const fromStock = Math.min(neededQty, available);
-        finishedGoodsAvailable.set(line.subAssemblyId, available - fromStock);
-        const stillToBuild = neededQty - fromStock;
+        const stillToBuild = await this.drawFromFinishedGoods(line.subAssemblyId, neededQty, finishedGoodsAvailable);
         if (stillToBuild > 0) {
           await this.walkAssembly(line.subAssemblyId, stillToBuild, productPool, assemblyBuyPool, finishedGoodsAvailable, visited);
         }

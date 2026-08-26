@@ -104,7 +104,12 @@ describe('CustomerOrderShortageService', () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'purchasedSub', name: 'Bought Sub', defaultSupplierId: 'sup1' });
       prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'purchasedSub', name: 'Bought Sub', defaultSupplierId: 'sup1' }]);
       prisma.tenant.supplier.findMany.mockResolvedValue([{ id: 'sup1', name: 'Acme Supplier' }]);
-      prisma.tenant.finishedGood.count.mockResolvedValue(1);
+      // Only "purchasedSub" (the bought-whole line, checked for its own
+      // currentStock display) has finished stock — "parent" (the top-level
+      // order item, subject to the SAME finished-goods draw-down as any
+      // nested sub-assembly) must stay at 0, or it would silently absorb
+      // part of the order qty before this test's expected 2*3=6 is reached.
+      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'purchasedSub' ? 1 : 0));
 
       const result = await service.previewShortage(user, 'co1');
 
@@ -139,6 +144,20 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(20);
     });
 
+    it('§ same fix, top-level case: an order for an assembly that already has finished units sitting IN_STOCK only builds (and only demands raw material for) the shortfall — the top-level item is subject to the identical draw-down as any nested sub-assembly', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'topLevel', qty: 10 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 4 }]);
+      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'topLevel' ? 6 : 0)); // 6 of the 10 ordered already sit finished
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 0 }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      // Only the shortfall (10 - 6 = 4) gets built -> 4 * 4 = 16, not 10 * 4 = 40.
+      const bucket = result.groups.find((g) => g.supplierId === null)!;
+      const line = bucket.lines.find((l) => l.productId === 'p1')!;
+      expect(line.neededQty).toBe(16);
+    });
+
     it('§ real bug fixed live on order №441639, 2026-08-26: draws down existing FinishedGood stock of a "made in-house" sub-assembly before exploding it into raw materials — a sub-assembly with 600 units already built and sitting IN_STOCK must not demand components for those 600 all over again', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
@@ -151,7 +170,9 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      prisma.tenant.finishedGood.count.mockResolvedValue(600); // 600 roller strips already built and IN_STOCK
+      // "parent" (the top-level order item) has none finished — only the
+      // nested "rollerStrip" sub-assembly does, per the scenario.
+      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 600 : 0));
       prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
 
       const result = await service.previewShortage(user, 'co1');
@@ -175,7 +196,7 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      prisma.tenant.finishedGood.count.mockResolvedValue(240); // way more in stock than the 10 needed
+      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 240 : 0)); // way more in stock than the 10 needed
       prisma.tenant.product.findMany.mockResolvedValue([]);
 
       const result = await service.previewShortage(user, 'co1');
@@ -202,7 +223,7 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      prisma.tenant.finishedGood.count.mockResolvedValue(600); // only enough to cover ONE of the two 400-unit needs, not both
+      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 600 : 0)); // only enough to cover ONE of the two 400-unit needs, not both
       prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
 
       const result = await service.previewShortage(user, 'co1');
