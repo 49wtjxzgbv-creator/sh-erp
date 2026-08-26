@@ -1,40 +1,82 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { timelineMonthMarks } from '@/lib/timeline-utils';
+import { ChevronRight } from 'lucide-react';
+import { timelineMonthMarks, timelineWeekMarks, timelineDayMarks } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import { px } from './planner-gantt';
+import { Button } from '@/components/ui/button';
 import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
 const ROW_HEIGHT = 34;
 const LABEL_WIDTH = 220;
-const PX_PER_DAY = 2.4;
+
+type OrdersScale = 'week' | 'month' | 'year';
+const SCALES: OrdersScale[] = ['week', 'month', 'year'];
+const PX_PER_DAY: Record<OrdersScale, number> = { week: 90, month: 20, year: 2.4 };
+
+function monthRange(anchor: Date): { viewFrom: Date; viewTo: Date } {
+  return { viewFrom: new Date(anchor.getFullYear(), anchor.getMonth(), 1), viewTo: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59) };
+}
+/** Monday-aligned, same convention as lib/timeline-utils.ts#timelineWeekMarks. */
+function weekRange(anchor: Date): { viewFrom: Date; viewTo: Date } {
+  const from = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  const day = from.getDay();
+  from.setDate(from.getDate() + (day === 0 ? -6 : 1 - day));
+  const to = new Date(from);
+  to.setDate(to.getDate() + 6);
+  to.setHours(23, 59, 59, 999);
+  return { viewFrom: from, viewTo: to };
+}
 
 /**
  * "По замовленнях" (2026-08-27 user request) — one row per CustomerOrder,
- * plotted across a full calendar year by its OWN planning dates
- * (plannedStartAt→plannedCompletionAt as a bar, plannedShipmentAt/
- * plannedDeliveryAt as diamond markers, deadline as a red tick) — every
- * other planner view is keyed off ProductionOrder/stage scheduling
- * instead, so this is the only place these five CustomerOrder fields are
- * visible together on one screen (previously only ever plain text on the
- * order's own detail page, or one bar/one marker buried inside the
- * hierarchical print table). Same year state the Gantt/Resources tabs and
- * "Друк річний план" already share (page.tsx's `year`/`setYear`) — no
- * independent year switcher here, matches PlannerResourcesView's own
- * convention.
+ * plotted by its OWN planning dates (plannedStartAt→plannedCompletionAt as
+ * a bar, plannedShipmentAt/plannedDeliveryAt as diamond markers, deadline
+ * as a red tick). Originally year-only; scale switching added same day
+ * ("не тільки на цілий рік а й менше тиждень місяць") — week/month use a
+ * local `anchor` panned independently of the page's shared `year` state,
+ * year scale still drives (and is driven by) that shared state so it stays
+ * in lockstep with "Друк річний план" and the Gantt/Resources tabs, same
+ * convention PlannerGanttChart's own year scale already follows.
  */
-export function PlannerOrdersTimelineView({ orders, year }: { orders: PlannerOrderNode[]; year: number }) {
+export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orders: PlannerOrderNode[]; year: number; onYearChange: (y: number) => void }) {
   const t = useTranslations('planner');
   const ts = useTranslations('sales');
-  const viewFrom = useMemo(() => new Date(year, 0, 1), [year]);
-  const viewTo = useMemo(() => new Date(year, 11, 31, 23, 59, 59), [year]);
+  const [scale, setScale] = useState<OrdersScale>('year');
+  const [anchor, setAnchor] = useState(() => new Date());
+
+  const { viewFrom, viewTo } = useMemo(() => {
+    if (scale === 'year') return { viewFrom: new Date(year, 0, 1), viewTo: new Date(year, 11, 31, 23, 59, 59) };
+    if (scale === 'month') return monthRange(anchor);
+    return weekRange(anchor);
+  }, [scale, year, anchor]);
+
+  const pxPerDay = PX_PER_DAY[scale];
   const months = useMemo(() => timelineMonthMarks(viewFrom, viewTo), [viewFrom, viewTo]);
+  const weeks = useMemo(() => (scale === 'month' ? timelineWeekMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
+  const days = useMemo(() => (scale === 'week' ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const now = new Date();
   const showToday = now >= viewFrom && now <= viewTo;
-  const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * PX_PER_DAY, 600);
+  const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay, 600);
+
+  const rangeLabel = useMemo(() => {
+    if (scale === 'year') return String(year);
+    if (scale === 'month') return viewFrom.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+    return `${viewFrom.toLocaleDateString('uk-UA')} – ${viewTo.toLocaleDateString('uk-UA')}`;
+  }, [scale, year, viewFrom, viewTo]);
+
+  function pan(dir: 1 | -1) {
+    if (scale === 'year') onYearChange(year + dir);
+    else if (scale === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
+    else setAnchor(new Date(anchor.getTime() + dir * 7 * 86400000));
+  }
+  function goToday() {
+    setAnchor(now);
+    if (scale === 'year') onYearChange(now.getFullYear());
+  }
 
   const rows = useMemo(
     () =>
@@ -48,36 +90,74 @@ export function PlannerOrdersTimelineView({ orders, year }: { orders: PlannerOrd
 
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => pan(-1)} title={t('prevPeriod')}>
+            <ChevronRight className="h-4 w-4 rotate-180" />
+          </Button>
+          <span className="min-w-[9rem] text-center text-sm font-semibold capitalize">{rangeLabel}</span>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => pan(1)} title={t('nextPeriod')}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={goToday}>
+            {t('todayButton')}
+          </Button>
+        </div>
+        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+          {SCALES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScale(s)}
+              className={cn('rounded px-2 py-1 text-xs font-medium', scale === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}
+            >
+              {t(`scale${s[0].toUpperCase()}${s.slice(1)}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm border-l-4 border-secondary-foreground/50 bg-secondary" />{ts('plannedStartAt')} → {ts('plannedCompletionAt')}</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60" />{ts('plannedShipmentAt')}</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 border border-success bg-success/60" />{ts('plannedDeliveryAt')}</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-0.5 bg-destructive" />{ts('deadline')}</span>
       </div>
+
       <div className="overflow-hidden rounded-lg border border-border">
         <div className="max-h-[70vh] overflow-auto">
           <div className="relative" style={{ width: LABEL_WIDTH + canvasWidth }}>
             <div className="sticky top-0 z-20 flex border-b border-border bg-card">
               <div className="sticky left-0 z-30 shrink-0 border-r border-border bg-card px-2 pb-1 text-xs font-semibold text-muted-foreground" style={{ width: LABEL_WIDTH }}>
-                {t('ordersTab')} — {year}
+                {t('ordersTab')}
               </div>
               <div className="relative shrink-0" style={{ width: canvasWidth, height: 24 }}>
-                {months.map((m, i) => (
-                  <span key={i} className="absolute top-0 text-xs font-medium" style={{ left: px(m.start, viewFrom, PX_PER_DAY) + 4 }}>
-                    {m.label}
-                  </span>
-                ))}
+                {scale === 'week'
+                  ? days.map((d, i) => (
+                      <span key={i} className="absolute top-0 text-xs font-medium" style={{ left: px(d, viewFrom, pxPerDay) + 4 }}>
+                        {d.toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric' })}
+                      </span>
+                    ))
+                  : months.map((m, i) => (
+                      <span key={i} className="absolute top-0 text-xs font-medium" style={{ left: px(m.start, viewFrom, pxPerDay) + 4 }}>
+                        {m.label}
+                      </span>
+                    ))}
               </div>
             </div>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0" style={{ left: LABEL_WIDTH, width: canvasWidth }}>
+                {scale === 'week' &&
+                  days.map((d, i) => <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: px(d, viewFrom, pxPerDay) }} />)}
+                {scale === 'month' &&
+                  weeks.map((w, i) => <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: px(w, viewFrom, pxPerDay) }} />)}
                 {months.map((m, i) => (
-                  <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: px(m.start, viewFrom, PX_PER_DAY) }} />
+                  <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: px(m.start, viewFrom, pxPerDay) }} />
                 ))}
                 {showToday && (
-                  <div className="absolute inset-y-0 z-10 w-px bg-primary" style={{ left: px(now, viewFrom, PX_PER_DAY) }}>
+                  <div className="absolute inset-y-0 z-10 w-px bg-primary" style={{ left: px(now, viewFrom, pxPerDay) }}>
                     <span className="absolute -top-0.5 -translate-x-1/2 rounded-b bg-primary px-1 text-[10px] leading-tight text-primary-foreground">
-                      {t('today')}
+                      {t('todayButton')}
                     </span>
                   </div>
                 )}
@@ -104,8 +184,8 @@ export function PlannerOrdersTimelineView({ orders, year }: { orders: PlannerOrd
                         <div
                           className="absolute top-2.5 h-3.5 rounded-r border-l-4 border-secondary-foreground/50 bg-secondary"
                           style={{
-                            left: px(start, viewFrom, PX_PER_DAY),
-                            width: Math.max(px(completion, viewFrom, PX_PER_DAY) - px(start, viewFrom, PX_PER_DAY), 4),
+                            left: px(start, viewFrom, pxPerDay),
+                            width: Math.max(px(completion, viewFrom, pxPerDay) - px(start, viewFrom, pxPerDay), 4),
                           }}
                           title={`${ts('plannedStartAt')} — ${ts('plannedCompletionAt')}`}
                         />
@@ -113,19 +193,19 @@ export function PlannerOrdersTimelineView({ orders, year }: { orders: PlannerOrd
                       {shipment && (
                         <div
                           className="absolute top-2 h-2.5 w-2.5 rotate-45 border border-warning bg-warning/60"
-                          style={{ left: px(shipment, viewFrom, PX_PER_DAY) - 5 }}
+                          style={{ left: px(shipment, viewFrom, pxPerDay) - 5 }}
                           title={ts('plannedShipmentAt')}
                         />
                       )}
                       {delivery && (
                         <div
                           className="absolute top-2 h-2.5 w-2.5 rotate-45 border border-success bg-success/60"
-                          style={{ left: px(delivery, viewFrom, PX_PER_DAY) - 5 }}
+                          style={{ left: px(delivery, viewFrom, pxPerDay) - 5 }}
                           title={ts('plannedDeliveryAt')}
                         />
                       )}
                       {deadline && (
-                        <div className="absolute inset-y-1 w-0.5 bg-destructive" style={{ left: px(deadline, viewFrom, PX_PER_DAY) }} title={ts('deadline')} />
+                        <div className="absolute inset-y-1 w-0.5 bg-destructive" style={{ left: px(deadline, viewFrom, pxPerDay) }} title={ts('deadline')} />
                       )}
                     </div>
                   </div>

@@ -12,6 +12,7 @@ import { PlannerGanttChart, type PlannerGanttHandle } from '@/components/domain/
 import { PlannerResourcesView } from '@/components/domain/planner/planner-resources';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerGanttPrintTable } from '@/components/domain/planner/planner-gantt-print';
+import { PlannerOrdersPrintTable } from '@/components/domain/planner/planner-orders-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -322,7 +323,7 @@ export default function PlannerPage() {
             ) : view === 'resources' ? (
               <PlannerResourcesView orders={board.orders} problems={board.problems} year={year} />
             ) : (
-              <PlannerOrdersTimelineView orders={board.orders} year={year} />
+              <PlannerOrdersTimelineView orders={board.orders} year={year} onYearChange={setYear} />
             )}
           </div>
 
@@ -331,10 +332,21 @@ export default function PlannerPage() {
             <p className="mb-3 text-xs">
               {t('printPeriod')}: {periodLabel}
             </p>
-            <PlannerGanttPrintTable orders={board.orders} photoByAssembly={photoByAssembly} from={printFrom} to={printTo} />
-            <div className="mt-4 text-[9px]">
-              <strong>{t('legendTitle')}:</strong> {t('legendPlan')} · {t('legendFact')} · {t('legendMilestone')} · {t('legendWarning')} · {t('legendCritical')}
-            </div>
+            {view === 'orders' ? (
+              <>
+                <PlannerOrdersPrintTable orders={board.orders} from={printFrom} to={printTo} />
+                <div className="mt-4 text-[9px]">
+                  <strong>{t('legendTitle')}:</strong> {ts('plannedStartAt')} → {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
+                </div>
+              </>
+            ) : (
+              <>
+                <PlannerGanttPrintTable orders={board.orders} photoByAssembly={photoByAssembly} from={printFrom} to={printTo} />
+                <div className="mt-4 text-[9px]">
+                  <strong>{t('legendTitle')}:</strong> {t('legendPlan')} · {t('legendFact')} · {t('legendMilestone')} · {t('legendWarning')} · {t('legendCritical')}
+                </div>
+              </>
+            )}
           </PrintArea>
         </>
       )}
