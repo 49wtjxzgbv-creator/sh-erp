@@ -3,6 +3,7 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
+import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { PurchaseOrdersService } from '../procurement/purchase-orders.service';
 import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
 
@@ -86,6 +87,7 @@ export class CustomerOrderShortageService {
     private readonly prisma: PrismaService,
     private readonly purchaseOrdersService: PurchaseOrdersService,
     private readonly stockReservationService: StockReservationService,
+    private readonly subAssemblyReservationService: SubAssemblyReservationService,
   ) {}
 
   /**
@@ -102,7 +104,7 @@ export class CustomerOrderShortageService {
   async ensureRequirementsAndAutoReserve(user: RequestUser, orderId: string): Promise<void> {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) return;
-    const { productPool } = await this.buildPools(order.items as any[]);
+    const { productPool } = await this.buildPools(user, orderId, order.items as any[]);
     if (productPool.size === 0) return;
 
     const warehouseId = await this.resolveDefaultWarehouseId();
@@ -130,7 +132,7 @@ export class CustomerOrderShortageService {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) throw new CodedNotFoundException('CUSTOMER_ORDER_NOT_FOUND', 'Customer order not found.');
 
-    const { productPool, assemblyBuyPool } = await this.buildPools(order.items as any[]);
+    const { productPool, assemblyBuyPool } = await this.buildPools(user, orderId, order.items as any[]);
     const warehouseId = await this.resolveDefaultWarehouseId();
 
     const products = (await this.prisma.tenant.product.findMany({ where: { id: { in: Array.from(productPool.keys()) } } })) as any[];
@@ -330,7 +332,7 @@ export class CustomerOrderShortageService {
       });
       if (!existing) {
         if (!productPool) {
-          productPool = (await this.buildPools(order.items as any[])).productPool;
+          productPool = (await this.buildPools(user, orderId, order.items as any[])).productPool;
         }
         const requiredQty = productPool.get(decision.productId);
         if (requiredQty === undefined) {
@@ -393,48 +395,81 @@ export class CustomerOrderShortageService {
    * for a cycle. Shared by `previewShortage` and `ensureRequirementsAndAutoReserve` —
    * both need the SAME whole-order pool, never independent per-line totals.
    */
-  private async buildPools(items: Array<{ assemblyId: string; qty: unknown }>): Promise<{ productPool: Map<string, number>; assemblyBuyPool: Map<string, number> }> {
+  private async buildPools(
+    user: RequestUser,
+    orderId: string,
+    items: Array<{ assemblyId: string; qty: unknown }>,
+  ): Promise<{ productPool: Map<string, number>; assemblyBuyPool: Map<string, number> }> {
     const productPool = new Map<string, number>();
     const assemblyBuyPool = new Map<string, number>();
-    // Shared across every item's walk (and every order this runs for, within
-    // one call) — a sub-assembly's IN_STOCK FinishedGood units are a single
-    // physical pool, not one per BOM line that happens to reference it.
-    // Lazily populated (undefined = "not looked up yet", 0 = "looked up,
-    // none left") so an assembly never referenced this walk costs no query.
-    const finishedGoodsAvailable = new Map<string, number>();
+    // This order's own explicit "Зі складу" claims (SubAssemblyReservation,
+    // one row per assembly this order references anywhere in its tree) —
+    // fetched once per assembly and decremented as it's spent, since the
+    // SAME sub-assembly can legitimately show up under more than one branch
+    // of the same order (shared-component pattern, same reasoning as
+    // productPool itself being one pool, not one total per branch).
+    const claimedStock = new Map<string, number>();
     for (const item of items) {
-      // The order's own top-level item is subject to the exact same "don't
-      // build what's already built" rule as any nested sub-assembly (real
-      // gap found live, 2026-08-26, right after fixing the nested case: this
-      // loop used to walk the FULL item.qty unconditionally, so an order for
-      // an assembly that already has finished units sitting in stock still
-      // demanded raw material for every one of them).
-      const stillToBuild = await this.drawFromFinishedGoods(item.assemblyId, Number(item.qty), finishedGoodsAvailable);
+      // The order's own top-level item is subject to the exact same
+      // explicit-claim offset as any nested sub-assembly below — see
+      // drawFromClaimedStock's own comment for why this has to be an
+      // explicit per-order claim, not an automatic "whatever's IN_STOCK"
+      // guess.
+      const stillToBuild = await this.drawFromClaimedStock(user, orderId, item.assemblyId, Number(item.qty), claimedStock);
       if (stillToBuild > 0) {
-        await this.walkAssembly(item.assemblyId, stillToBuild, productPool, assemblyBuyPool, finishedGoodsAvailable, new Set());
+        await this.walkAssembly(user, orderId, item.assemblyId, stillToBuild, productPool, assemblyBuyPool, claimedStock, new Set());
       }
     }
     return { productPool, assemblyBuyPool };
   }
 
-  /** Draws `neededQty` down against `assemblyId`'s shared FinishedGood(IN_STOCK) pool, lazily fetched once per assembly, and returns whatever's left to actually build. */
-  private async drawFromFinishedGoods(assemblyId: string, neededQty: number, finishedGoodsAvailable: Map<string, number>): Promise<number> {
-    if (!finishedGoodsAvailable.has(assemblyId)) {
-      const inStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK' } });
-      finishedGoodsAvailable.set(assemblyId, inStock);
+  /**
+   * Draws `neededQty` down against this ORDER's own explicit "Зі складу"
+   * claim on `assemblyId` (SubAssemblyReservation, made in the "Підвироби"
+   * dialog at order creation — SubAssemblyReservationService's own header
+   * comment has the full design) and returns whatever's left to actually
+   * build.
+   *
+   * Deliberately NOT a blind `FinishedGood.count({status:'IN_STOCK'})`
+   * check — an earlier version of this fix (2026-08-26, live investigation
+   * of order №441639 vs article 249662) did exactly that, and while it
+   * correctly stopped raw material from being demanded for sub-assemblies
+   * already sitting built in the warehouse, the user flagged it live:
+   * nothing on that order ever said "take this one from stock" — the
+   * system must not decide that on its own. It also had a real correctness
+   * gap: `FinishedGood` carries no per-order allocation, so two different
+   * orders' shortage calculations (each run independently) would both see
+   * the SAME full IN_STOCK count and could both "spend" it, double-counting
+   * availability across orders. The explicit per-order claim has neither
+   * problem: it only offsets what THIS order actually committed to, and
+   * SubAssemblyReservationService#getReservedByOthers already gives the
+   * dialog itself the cross-order-aware picture when the claim is made.
+   */
+  private async drawFromClaimedStock(
+    user: RequestUser,
+    orderId: string,
+    assemblyId: string,
+    neededQty: number,
+    claimedStock: Map<string, number>,
+  ): Promise<number> {
+    if (!claimedStock.has(assemblyId)) {
+      const claimed = await this.subAssemblyReservationService.getClaimForOrder(user, orderId, assemblyId);
+      claimedStock.set(assemblyId, claimed);
     }
-    const available = finishedGoodsAvailable.get(assemblyId)!;
+    const available = claimedStock.get(assemblyId)!;
     const fromStock = Math.min(neededQty, available);
-    finishedGoodsAvailable.set(assemblyId, available - fromStock);
+    claimedStock.set(assemblyId, available - fromStock);
     return neededQty - fromStock;
   }
 
   private async walkAssembly(
+    user: RequestUser,
+    orderId: string,
     assemblyId: string,
     qtyOfAssembly: number,
     productPool: Map<string, number>,
     assemblyBuyPool: Map<string, number>,
-    finishedGoodsAvailable: Map<string, number>,
+    claimedStock: Map<string, number>,
     visited: Set<string>,
   ): Promise<void> {
     if (visited.has(assemblyId)) {
@@ -459,18 +494,9 @@ export class CustomerOrderShortageService {
           continue;
         }
 
-        // Real gap found live (2026-08-26, order №441639 vs article 249662):
-        // a sub-assembly with no supplier link was ALWAYS treated as "we
-        // build this from scratch," exploding straight into its raw
-        // materials even when hundreds of it already sit finished in the
-        // warehouse (FinishedGood, status IN_STOCK — e.g. a roller-strip
-        // unit received from a prior production run). That inflated the raw
-        // material requirement by however many finished units were already
-        // on hand. Draw down whatever's already built first; only the
-        // shortfall gets exploded into components.
-        const stillToBuild = await this.drawFromFinishedGoods(line.subAssemblyId, neededQty, finishedGoodsAvailable);
+        const stillToBuild = await this.drawFromClaimedStock(user, orderId, line.subAssemblyId, neededQty, claimedStock);
         if (stillToBuild > 0) {
-          await this.walkAssembly(line.subAssemblyId, stillToBuild, productPool, assemblyBuyPool, finishedGoodsAvailable, visited);
+          await this.walkAssembly(user, orderId, line.subAssemblyId, stillToBuild, productPool, assemblyBuyPool, claimedStock, visited);
         }
       }
     }

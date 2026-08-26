@@ -54,6 +54,14 @@ export class SubAssemblyReservationService {
     await this.prisma.tenant.subAssemblyReservation.deleteMany({ where: { customerOrderId } });
   }
 
+  /** This order's OWN claim on `assemblyId` ("Зі складу" from the Підвироби dialog) — what the shortage calc offsets against instead of exploding into raw materials. Zero when no claim was ever made. */
+  async getClaimForOrder(user: RequestUser, customerOrderId: string, assemblyId: string): Promise<number> {
+    const row = await this.prisma.tenant.subAssemblyReservation.findUnique({
+      where: { companyId_customerOrderId_assemblyId: { companyId: user.companyId, customerOrderId, assemblyId } },
+    } as any);
+    return row ? Number((row as any).qty) : 0;
+  }
+
   /** Sum of every OTHER order's active claim on this assembly — what a new order's own dialog, or a batch's own start(), must treat as unavailable. */
   async getReservedByOthers(user: RequestUser, assemblyId: string, excludeCustomerOrderId?: string): Promise<number> {
     const rows = await this.prisma.tenant.subAssemblyReservation.findMany({

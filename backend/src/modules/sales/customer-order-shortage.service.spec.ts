@@ -6,6 +6,7 @@ describe('CustomerOrderShortageService', () => {
   let prisma: any;
   let purchaseOrdersService: any;
   let stockReservationService: any;
+  let subAssemblyReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -30,7 +31,8 @@ describe('CustomerOrderShortageService', () => {
       release: jest.fn().mockResolvedValue(0),
       getAvailability: jest.fn().mockResolvedValue({ physical: 0, reserved: 0, available: 0 }),
     };
-    service = new CustomerOrderShortageService(prisma, purchaseOrdersService, stockReservationService);
+    subAssemblyReservationService = { getClaimForOrder: jest.fn().mockResolvedValue(0) };
+    service = new CustomerOrderShortageService(prisma, purchaseOrdersService, stockReservationService, subAssemblyReservationService);
   });
 
   describe('previewShortage', () => {
@@ -144,10 +146,10 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(20);
     });
 
-    it('§ same fix, top-level case: an order for an assembly that already has finished units sitting IN_STOCK only builds (and only demands raw material for) the shortfall — the top-level item is subject to the identical draw-down as any nested sub-assembly', async () => {
+    it('§ same fix, top-level case: an order for an assembly the user explicitly marked "Зі складу" (Підвироби dialog) only builds (and only demands raw material for) the shortfall — the top-level item gets the identical draw-down as any nested sub-assembly', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'topLevel', qty: 10 }] });
       prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 4 }]);
-      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'topLevel' ? 6 : 0)); // 6 of the 10 ordered already sit finished
+      subAssemblyReservationService.getClaimForOrder.mockImplementation((_u: any, _o: any, assemblyId: string) => Promise.resolve(assemblyId === 'topLevel' ? 6 : 0)); // 6 of the 10 ordered explicitly claimed from stock
       prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 0 }]);
 
       const result = await service.previewShortage(user, 'co1');
@@ -158,7 +160,7 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(16);
     });
 
-    it('§ real bug fixed live on order №441639, 2026-08-26: draws down existing FinishedGood stock of a "made in-house" sub-assembly before exploding it into raw materials — a sub-assembly with 600 units already built and sitting IN_STOCK must not demand components for those 600 all over again', async () => {
+    it('§ real bug fixed live on order №441639, 2026-08-26 — then corrected same day per live user feedback: draws down a sub-assembly\'s raw material need only against THIS order\'s own explicit "Зі складу" claim (SubAssemblyReservation), never an automatic IN_STOCK guess the order never asked for', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
         if (where.assemblyId === 'parent') {
@@ -170,9 +172,9 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      // "parent" (the top-level order item) has none finished — only the
-      // nested "rollerStrip" sub-assembly does, per the scenario.
-      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 600 : 0));
+      // "parent" (the top-level order item) has no claim — only the nested
+      // "rollerStrip" sub-assembly was explicitly marked "Зі складу" for 600.
+      subAssemblyReservationService.getClaimForOrder.mockImplementation((_u: any, _o: any, assemblyId: string) => Promise.resolve(assemblyId === 'rollerStrip' ? 600 : 0));
       prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
 
       const result = await service.previewShortage(user, 'co1');
@@ -184,7 +186,7 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(9720);
     });
 
-    it('never explodes into raw materials at all when FinishedGood stock alone already covers the full sub-assembly need', async () => {
+    it('never explodes into raw materials at all when the explicit "Зі складу" claim alone already covers the full sub-assembly need', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
         if (where.assemblyId === 'parent') {
@@ -196,7 +198,7 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 240 : 0)); // way more in stock than the 10 needed
+      subAssemblyReservationService.getClaimForOrder.mockImplementation((_u: any, _o: any, assemblyId: string) => Promise.resolve(assemblyId === 'rollerStrip' ? 240 : 0)); // way more claimed than the 10 needed
       prisma.tenant.product.findMany.mockResolvedValue([]);
 
       const result = await service.previewShortage(user, 'co1');
@@ -205,7 +207,33 @@ describe('CustomerOrderShortageService', () => {
       expect(allLines.find((l: any) => l.productId === 'impeller')).toBeUndefined();
     });
 
-    it('shares one FinishedGood stock pool across two order items referencing the same sub-assembly, instead of granting it to each independently', async () => {
+    it('never draws on ANOTHER order\'s claim, nor an automatic IN_STOCK count — with no claim of its own, an order still demands the full raw material even though a sibling order (or plain warehouse stock) has plenty', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
+        if (where.assemblyId === 'parent') {
+          return Promise.resolve([{ componentType: 'ASSEMBLY', subAssemblyId: 'rollerStrip', qtyPerUnit: 10 }]);
+        }
+        if (where.assemblyId === 'rollerStrip') {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'impeller', qtyPerUnit: 27 }]);
+        }
+        return Promise.resolve([]);
+      });
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
+      // getClaimForOrder is scoped to (user, THIS orderId, assemblyId) — the
+      // mock's default (0, from beforeEach) simulates "co1" never having
+      // marked rollerStrip "Зі складу," regardless of how much physical
+      // stock or other orders' claims exist elsewhere.
+      prisma.tenant.finishedGood.count.mockResolvedValue(999); // even if plenty sit IN_STOCK company-wide
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const bucket = result.groups.find((g) => g.supplierId === null)!;
+      const line = bucket.lines.find((l) => l.productId === 'impeller')!;
+      expect(line.neededQty).toBe(270); // full 10 * 27, no offset
+    });
+
+    it('shares one claimed-stock pool across two order items referencing the same sub-assembly, instead of granting it to each independently', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({
         id: 'co1',
         items: [
@@ -223,14 +251,16 @@ describe('CustomerOrderShortageService', () => {
         return Promise.resolve([]);
       });
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
-      prisma.tenant.finishedGood.count.mockImplementation(({ where }: any) => Promise.resolve(where.assemblyId === 'rollerStrip' ? 600 : 0)); // only enough to cover ONE of the two 400-unit needs, not both
+      // This order claimed 600 of "rollerStrip" total (one SubAssemblyReservation
+      // row per (order, assembly) — not one per branch that references it).
+      subAssemblyReservationService.getClaimForOrder.mockImplementation((_u: any, _o: any, assemblyId: string) => Promise.resolve(assemblyId === 'rollerStrip' ? 600 : 0));
       prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
 
       const result = await service.previewShortage(user, 'co1');
 
-      // parentA drains the pool to 200 remaining; parentB's 400 need only
-      // gets 200 from stock, so 200 must still be built -> 200 raw units.
-      // If the pool were wrongly granted fresh per item, this would be 0.
+      // parentA drains the claim to 200 remaining; parentB's 400 need only
+      // gets 200 from the claim, so 200 must still be built -> 200 raw units.
+      // If the claim were wrongly granted fresh per branch, this would be 0.
       const bucket = result.groups.find((g) => g.supplierId === null)!;
       const line = bucket.lines.find((l) => l.productId === 'impeller')!;
       expect(line.neededQty).toBe(200);
