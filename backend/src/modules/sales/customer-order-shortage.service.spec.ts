@@ -139,6 +139,82 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(20);
     });
 
+    it('§ real bug fixed live on order №441639, 2026-08-26: draws down existing FinishedGood stock of a "made in-house" sub-assembly before exploding it into raw materials — a sub-assembly with 600 units already built and sitting IN_STOCK must not demand components for those 600 all over again', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
+        if (where.assemblyId === 'parent') {
+          return Promise.resolve([{ componentType: 'ASSEMBLY', subAssemblyId: 'rollerStrip', qtyPerUnit: 960 }]); // needs 960 roller strips
+        }
+        if (where.assemblyId === 'rollerStrip') {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'impeller', qtyPerUnit: 27 }]);
+        }
+        return Promise.resolve([]);
+      });
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
+      prisma.tenant.finishedGood.count.mockResolvedValue(600); // 600 roller strips already built and IN_STOCK
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      // Only the shortfall (960 - 600 = 360) roller strips get exploded into
+      // raw material -> 360 * 27 = 9720, NOT 960 * 27 = 25920.
+      const bucket = result.groups.find((g) => g.supplierId === null)!;
+      const line = bucket.lines.find((l) => l.productId === 'impeller')!;
+      expect(line.neededQty).toBe(9720);
+    });
+
+    it('never explodes into raw materials at all when FinishedGood stock alone already covers the full sub-assembly need', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'parent', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
+        if (where.assemblyId === 'parent') {
+          return Promise.resolve([{ componentType: 'ASSEMBLY', subAssemblyId: 'rollerStrip', qtyPerUnit: 10 }]);
+        }
+        if (where.assemblyId === 'rollerStrip') {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'impeller', qtyPerUnit: 27 }]);
+        }
+        return Promise.resolve([]);
+      });
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
+      prisma.tenant.finishedGood.count.mockResolvedValue(240); // way more in stock than the 10 needed
+      prisma.tenant.product.findMany.mockResolvedValue([]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const allLines = result.groups.flatMap((g) => g.lines);
+      expect(allLines.find((l: any) => l.productId === 'impeller')).toBeUndefined();
+    });
+
+    it('shares one FinishedGood stock pool across two order items referencing the same sub-assembly, instead of granting it to each independently', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({
+        id: 'co1',
+        items: [
+          { assemblyId: 'parentA', qty: 1 },
+          { assemblyId: 'parentB', qty: 1 },
+        ],
+      });
+      prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) => {
+        if (where.assemblyId === 'parentA' || where.assemblyId === 'parentB') {
+          return Promise.resolve([{ componentType: 'ASSEMBLY', subAssemblyId: 'rollerStrip', qtyPerUnit: 400 }]); // 400 each, 800 total
+        }
+        if (where.assemblyId === 'rollerStrip') {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'impeller', qtyPerUnit: 1 }]);
+        }
+        return Promise.resolve([]);
+      });
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'rollerStrip', name: 'Rollenleiste', defaultSupplierId: null });
+      prisma.tenant.finishedGood.count.mockResolvedValue(600); // only enough to cover ONE of the two 400-unit needs, not both
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'impeller', article: '249662', name: 'Impeller', defaultSupplierId: null, qty: 0 }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      // parentA drains the pool to 200 remaining; parentB's 400 need only
+      // gets 200 from stock, so 200 must still be built -> 200 raw units.
+      // If the pool were wrongly granted fresh per item, this would be 0.
+      const bucket = result.groups.find((g) => g.supplierId === null)!;
+      const line = bucket.lines.find((l) => l.productId === 'impeller')!;
+      expect(line.neededQty).toBe(200);
+    });
+
     it('§ real bug fixed live on order №440172, 2026-08-26: tops up the suggestion against CURRENT availability when a requirement row already exists, instead of echoing the stale persisted qtyFromStock (which made "Забронювати зі складу" a silent no-op after stock grew outside the normal reservation flow)', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 100 }]); // needed = 100

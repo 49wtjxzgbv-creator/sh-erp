@@ -396,8 +396,14 @@ export class CustomerOrderShortageService {
   private async buildPools(items: Array<{ assemblyId: string; qty: unknown }>): Promise<{ productPool: Map<string, number>; assemblyBuyPool: Map<string, number> }> {
     const productPool = new Map<string, number>();
     const assemblyBuyPool = new Map<string, number>();
+    // Shared across every item's walk (and every order this runs for, within
+    // one call) — a sub-assembly's IN_STOCK FinishedGood units are a single
+    // physical pool, not one per BOM line that happens to reference it.
+    // Lazily populated (undefined = "not looked up yet", 0 = "looked up,
+    // none left") so an assembly never referenced this walk costs no query.
+    const finishedGoodsAvailable = new Map<string, number>();
     for (const item of items) {
-      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, new Set());
+      await this.walkAssembly(item.assemblyId, Number(item.qty), productPool, assemblyBuyPool, finishedGoodsAvailable, new Set());
     }
     return { productPool, assemblyBuyPool };
   }
@@ -407,6 +413,7 @@ export class CustomerOrderShortageService {
     qtyOfAssembly: number,
     productPool: Map<string, number>,
     assemblyBuyPool: Map<string, number>,
+    finishedGoodsAvailable: Map<string, number>,
     visited: Set<string>,
   ): Promise<void> {
     if (visited.has(assemblyId)) {
@@ -428,8 +435,28 @@ export class CustomerOrderShortageService {
           (await this.prisma.tenant.assemblySupplier.count({ where: { assemblyId: line.subAssemblyId } })) > 0;
         if (hasSupplierLink) {
           assemblyBuyPool.set(line.subAssemblyId, (assemblyBuyPool.get(line.subAssemblyId) ?? 0) + neededQty);
-        } else {
-          await this.walkAssembly(line.subAssemblyId, neededQty, productPool, assemblyBuyPool, visited);
+          continue;
+        }
+
+        // Real gap found live (2026-08-26, order №441639 vs article 249662):
+        // a sub-assembly with no supplier link was ALWAYS treated as "we
+        // build this from scratch," exploding straight into its raw
+        // materials even when hundreds of it already sit finished in the
+        // warehouse (FinishedGood, status IN_STOCK — e.g. a roller-strip
+        // unit received from a prior production run). That inflated the raw
+        // material requirement by however many finished units were already
+        // on hand. Draw down whatever's already built first; only the
+        // shortfall gets exploded into components.
+        if (!finishedGoodsAvailable.has(line.subAssemblyId)) {
+          const inStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId: line.subAssemblyId, status: 'IN_STOCK' } });
+          finishedGoodsAvailable.set(line.subAssemblyId, inStock);
+        }
+        const available = finishedGoodsAvailable.get(line.subAssemblyId)!;
+        const fromStock = Math.min(neededQty, available);
+        finishedGoodsAvailable.set(line.subAssemblyId, available - fromStock);
+        const stillToBuild = neededQty - fromStock;
+        if (stillToBuild > 0) {
+          await this.walkAssembly(line.subAssemblyId, stillToBuild, productPool, assemblyBuyPool, finishedGoodsAvailable, visited);
         }
       }
     }
