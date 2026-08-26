@@ -8,6 +8,7 @@ import { useCustomerOrders } from '@/lib/hooks/use-sales';
 import type { CustomerOrder, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const PAGE_SIZE = 50;
 
@@ -22,16 +23,22 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
  * "По замовленнях" (2026-08-27 user request) — the rest of the Production
  * module is one flat list of batches (ProductionOrder) with no notion of
  * "which customer order is this for". This tab groups the other direction:
- * pick an order that's actually IN_PRODUCTION and open its FULL production
- * tree (every item, every sub-assembly at any depth) in one place, instead
- * of hunting down individual batches.
+ * pick an order and open its FULL production tree (every item, every
+ * sub-assembly at any depth) in one place, instead of hunting down
+ * individual batches. Defaults to showing every status (not just
+ * IN_PRODUCTION) — since sub-assembly production is no longer planned
+ * automatically at order creation, a freshly created order can sit on
+ * NEW with a fully drawable production tree and nothing given to
+ * production yet; staff need to reach that tree from here too, not only
+ * once something has already been started.
  */
 export default function ProductionByOrderPage() {
   const ts = useTranslations('sales');
   const router = useRouter();
+  const [status, setStatus] = useState<CustomerOrderStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
 
-  const { data, isLoading } = useCustomerOrders({ status: 'IN_PRODUCTION', limit: PAGE_SIZE, offset });
+  const { data, isLoading } = useCustomerOrders({ status, limit: PAGE_SIZE, offset });
 
   const columns = useMemo<ColumnDef<CustomerOrder>[]>(
     () => [
@@ -56,6 +63,19 @@ export default function ProductionByOrderPage() {
 
   return (
     <div className="space-y-4">
+      <Select value={status ?? '__all'} onValueChange={(v) => { setStatus(v === '__all' ? undefined : (v as CustomerOrderStatus)); setOffset(0); }}>
+        <SelectTrigger className="w-48">
+          <SelectValue placeholder={ts('filterByStatus')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">{ts('allStatuses')}</SelectItem>
+          <SelectItem value="NEW">{ts('orderStatusNEW')}</SelectItem>
+          <SelectItem value="IN_PRODUCTION">{ts('orderStatusIN_PRODUCTION')}</SelectItem>
+          <SelectItem value="COMPLETED">{ts('orderStatusCOMPLETED')}</SelectItem>
+          <SelectItem value="CANCELLED">{ts('orderStatusCANCELLED')}</SelectItem>
+        </SelectContent>
+      </Select>
+
       <DataTable
         columns={columns}
         data={data?.items ?? []}
