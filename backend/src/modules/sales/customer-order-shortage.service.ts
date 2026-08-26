@@ -221,8 +221,26 @@ export class CustomerOrderShortageService {
       let reservedQty: number;
       let qtyToPurchase: number;
       if (requirement) {
-        reservedQty = Number(requirement.qtyFromStock);
-        qtyToPurchase = Number(requirement.qtyToPurchase);
+        // Persisted qtyFromStock is a one-time snapshot (set at order
+        // creation, or last time this line was saved) — it does NOT track
+        // stock that arrived afterward through a path that bypasses
+        // StockService#applyMovement's topUp trigger (e.g. a bulk import).
+        // Echoing it verbatim made the "Забронювати зі складу" button a
+        // silent no-op for exactly those rows: same suggested value in ->
+        // same value saved -> zero delta -> nothing reserved, no matter how
+        // many times clicked (real production bug found live on order
+        // №440172, 2026-08-26). Recompute the suggestion against current
+        // availability so the button has something to actually apply.
+        const persisted = Number(requirement.qtyFromStock);
+        const requiredQty = Number(requirement.requiredQty);
+        const outstanding = Math.max(requiredQty - persisted, 0);
+        let extra = 0;
+        if (outstanding > 0) {
+          const availability = await this.stockReservationService.getAvailability(user, productId, warehouseId);
+          extra = Math.max(Math.min(outstanding, availability.available), 0);
+        }
+        reservedQty = persisted + extra;
+        qtyToPurchase = Math.max(requiredQty - reservedQty, 0);
       } else {
         const availability = await this.stockReservationService.getAvailability(user, productId, warehouseId);
         reservedQty = Math.max(Math.min(neededQty, availability.available), 0);

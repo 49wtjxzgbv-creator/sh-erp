@@ -139,6 +139,38 @@ describe('CustomerOrderShortageService', () => {
       expect(line.neededQty).toBe(20);
     });
 
+    it('§ real bug fixed live on order №440172, 2026-08-26: tops up the suggestion against CURRENT availability when a requirement row already exists, instead of echoing the stale persisted qtyFromStock (which made "Забронювати зі складу" a silent no-op after stock grew outside the normal reservation flow)', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 100 }]); // needed = 100
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 300 }]);
+      // A requirement row already exists from order creation, capped at what was available back then (30).
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([{ id: 'req1', productId: 'p1', requiredQty: 100, qtyFromStock: 30, qtyToPurchase: 70 }]);
+      // Stock has since grown outside the normal movement ledger — 65 units are now available warehouse-wide.
+      stockReservationService.getAvailability.mockResolvedValue({ physical: 300, reserved: 235, available: 65 });
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const line = result.groups.flatMap((g) => g.lines).find((l) => l.productId === 'p1')!;
+      // 30 already reserved + min(outstanding=70, available=65) = 95, not the stale 30.
+      expect(line.reservedQty).toBe(95);
+      expect(line.qtyToPurchase).toBe(5);
+      expect(line.sourceRequirementId).toBe('req1');
+    });
+
+    it('leaves the persisted qtyFromStock alone when the requirement is already fully covered', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }]);
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 10 }]);
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([{ id: 'req1', productId: 'p1', requiredQty: 10, qtyFromStock: 10, qtyToPurchase: 0 }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const line = result.groups.flatMap((g) => g.lines).find((l) => l.productId === 'p1')!;
+      expect(line.reservedQty).toBe(10);
+      expect(line.qtyToPurchase).toBe(0);
+      expect(stockReservationService.getAvailability).not.toHaveBeenCalled();
+    });
+
     it('throws ConflictException on a circular BOM instead of recursing forever', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockImplementation(({ where }: any) =>
