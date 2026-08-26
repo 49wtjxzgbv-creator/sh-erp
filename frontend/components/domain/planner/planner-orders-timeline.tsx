@@ -14,7 +14,7 @@ import type { PlannerOrderNode } from '@/lib/api-client/planner';
 const ROW_HEIGHT = 92;
 const LABEL_WIDTH = 240;
 const TOGGLE_WIDTH = 28;
-const DATE_COL_WIDTH = 96;
+const DATE_COL_WIDTH = 68;
 const DATE_FIELDS = ['start', 'completion', 'shipment', 'delivery', 'deadline'] as const;
 const DATES_WIDTH = DATE_COL_WIDTH * DATE_FIELDS.length;
 
@@ -191,7 +191,7 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                   {[ts('plannedStartAt'), ts('plannedCompletionAt'), ts('plannedShipmentAt'), ts('plannedDeliveryAt'), ts('deadline')].map((label, i) => (
                     <div
                       key={i}
-                      className="flex items-end px-2 pb-2 text-[11px] font-semibold uppercase leading-tight tracking-wide text-muted-foreground"
+                      className="flex items-end px-1 pb-2 text-[9px] font-semibold uppercase leading-[1.1] tracking-wide text-muted-foreground"
                       style={{ width: DATE_COL_WIDTH }}
                     >
                       {label}
@@ -276,18 +276,18 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                           const d = dateCells[idx];
                           const isDeadline = field === 'deadline';
                           return (
-                            <div key={field} className="flex items-center px-2" style={{ width: DATE_COL_WIDTH }}>
+                            <div key={field} className="flex items-center px-1" style={{ width: DATE_COL_WIDTH }}>
                               {d ? (
                                 <span
                                   className={cn(
-                                    'font-mono text-base font-bold tabular-nums',
+                                    'font-mono text-xs font-bold tabular-nums',
                                     isDeadline && risk !== 'none' ? (risk === 'critical' ? 'text-destructive' : 'text-warning') : 'text-foreground',
                                   )}
                                 >
                                   {fmtDate(d)}
                                 </span>
                               ) : (
-                                <span className="text-sm text-muted-foreground">—</span>
+                                <span className="text-xs text-muted-foreground">—</span>
                               )}
                             </div>
                           );
