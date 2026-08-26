@@ -25,6 +25,13 @@ function AssemblyArticleCell({ assemblyId, assembliesById }: { assemblyId: strin
   return <>{assembly?.article ?? ''}</>;
 }
 
+/** Per-unit BOM cost (2026-08-27 user request) — the same `costPerUnit` EstimatedPriceCell multiplies by qty, shown here on its own rather than folded into the line total. */
+function UnitPriceCell({ assemblyId }: { assemblyId: string }) {
+  const t = useTranslations('sales');
+  const { data: cost } = useAssemblyCost(assemblyId);
+  return <td>{cost ? formatEur(cost.costPerUnit) : t('pricePending')}</td>;
+}
+
 /** Same estimated/actual split as the order detail page (app/(app)/sales/[id]/page.tsx) — see that file's EstimatedPriceCell/ActualPriceCell for the full rationale, just rendered as plain <td>s here for the print table. */
 function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
   const t = useTranslations('sales');
@@ -124,6 +131,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
   const columns: PrintColumnOption[] = [
     { id: 'assembly', label: t('assembly') },
     { id: 'qty', label: t('qty') },
+    { id: 'unitPrice', label: t('unitPrice') },
     { id: 'estimatedPrice', label: t('estimatedPrice') },
     { id: 'actualPrice', label: t('actualPrice') },
     { id: 'composition', label: t('fullComposition') },
@@ -168,6 +176,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
               {printOptions.isColumnVisible('assembly') && <th>{t('article')}</th>}
               {printOptions.isColumnVisible('assembly') && <th>{t('assembly')}</th>}
               {printOptions.isColumnVisible('qty') && <th>{t('qty')}</th>}
+              {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
               {printOptions.isColumnVisible('estimatedPrice') && <th>{t('estimatedPrice')}</th>}
               {printOptions.isColumnVisible('actualPrice') && <th>{t('actualPrice')}</th>}
             </tr>
@@ -192,6 +201,7 @@ export function CustomerOrderPrint({ order }: { order: CustomerOrder }) {
                   </td>
                 )}
                 {printOptions.isColumnVisible('qty') && <td>{item.qty}</td>}
+                {printOptions.isColumnVisible('unitPrice') && <UnitPriceCell assemblyId={item.assemblyId} />}
                 {printOptions.isColumnVisible('estimatedPrice') && <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />}
                 {printOptions.isColumnVisible('actualPrice') && (
                   <ActualPriceCell batchIds={item.quantitySummary?.batches.map((b) => b.id) ?? []} />
