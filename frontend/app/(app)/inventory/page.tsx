@@ -12,6 +12,7 @@ import { updateProduct } from '@/lib/api-client/catalog';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { WarehouseStock } from '@/lib/api-client/inventory';
 import { DataTable } from '@/components/domain/data-table/data-table';
+import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,23 @@ import { ShortageBreakdownPopover } from '@/components/domain/inventory/shortage
 import { LearnThisButton } from '@/components/domain/training/learn-this-button';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { cn } from '@/lib/utils';
+
+// "приховувати стовпці" (2026-08-28 user request): same reusable
+// ColumnVisibilityMenu/hiddenColumnIds pattern already used on the BOM
+// grid (app/(app)/bom/page.tsx) — a plain Set persisted to localStorage,
+// nothing hidden by default (every column here is load-bearing for
+// day-to-day warehouse work, unlike BOM's optional cost breakdown columns).
+const HIDDEN_COLUMNS_KEY = 'sh-erp-inventory-hidden-columns-v1';
+
+function loadHiddenColumns(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
 
 export default function StockLevelsPage() {
   const t = useTranslations('inventory');
@@ -37,6 +55,36 @@ export default function StockLevelsPage() {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [savingQty, setSavingQty] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(loadHiddenColumns);
+
+  const columnOptions = useMemo(
+    () => [
+      { id: 'photo', label: tCatalog('photo') },
+      { id: 'article', label: tCatalog('article') },
+      { id: 'name', label: tCatalog('name') },
+      { id: 'cell', label: tCatalog('cell') },
+      { id: 'warehouseId', label: t('warehouse') },
+      { id: 'qty', label: t('qty') },
+      { id: 'reservedQty', label: t('reservedQty') },
+      { id: 'availableQty', label: t('availableQty') },
+      { id: 'globalShortageQty', label: t('globalShortageQty') },
+    ],
+    [t, tCatalog],
+  );
+
+  function toggleColumn(id: string) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(Array.from(next)));
+      } catch {
+        // best-effort persistence only
+      }
+      return next;
+    });
+  }
 
   const { data: warehouses } = useWarehouses();
   const { data: levels, isLoading } = useStockLevels({ warehouseId });
@@ -252,6 +300,7 @@ export default function StockLevelsPage() {
               ))}
             </SelectContent>
           </Select>
+          <ColumnVisibilityMenu columns={columnOptions} hidden={hiddenColumns} onToggle={toggleColumn} />
         </div>
         <div className="flex flex-wrap gap-2">
           <LearnThisButton courseId="warehouse" label="Навчитися працювати зі складом" />
@@ -273,7 +322,7 @@ export default function StockLevelsPage() {
       {rowError && <p className="text-sm text-destructive">{rowError}</p>}
 
       <div data-tour="inventory-levels-table">
-        <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} />
+        <DataTable columns={columns} data={filteredLevels} isLoading={isLoading} hiddenColumnIds={hiddenColumns} />
       </div>
 
       {canAdjustStock && (
