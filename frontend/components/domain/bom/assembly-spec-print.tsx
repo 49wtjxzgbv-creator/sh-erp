@@ -118,6 +118,7 @@ export function useOwnCostLines(assembly: { laborCostPerUnit: string; packagingC
 export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { assemblyId: string; qty: number; depth: number; showPrice: boolean }) {
   const t = useTranslations('bom');
   const tp = useTranslations('print');
+  const ts = useTranslations('sales');
   const { data: assembly } = useAssembly(assemblyId);
   const { data: cost } = useAssemblyCost(assemblyId);
   const ownCostLines = useOwnCostLines(assembly);
@@ -171,6 +172,7 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
             <th>{t('component')}</th>
             <th>{t('componentType')}</th>
             <th>{t('qty')}</th>
+            {showPrice && <th>{ts('unitPrice')}</th>}
             {showPrice && <th>{t('cost')}</th>}
           </tr>
         </thead>
@@ -186,6 +188,7 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
               </td>
               <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
               <td>{line.qtyPerUnit * qty}</td>
+              {showPrice && <td>{formatEur(line.unitCost)}</td>}
               {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
             </tr>
           ))}
@@ -196,6 +199,7 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
               <td>{line.label}</td>
               <td>{t('componentTypeOwn')}</td>
               <td>{qty}</td>
+              {showPrice && <td>{formatEur(line.value)}</td>}
               {showPrice && <td>{formatEur(line.value * qty)}</td>}
             </tr>
           ))}
