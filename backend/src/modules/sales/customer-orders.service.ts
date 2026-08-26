@@ -24,6 +24,8 @@ import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/g
  */
 export interface ProductionTreeNodeWithBatches extends ProductionTreeNode {
   batches: Array<{ id: string; status: string; unitsPlanned: number }>;
+  /** Qty chosen for this node in the order-creation "Підвироби" dialog, if any — null when it wasn't marked "Виготовити" there. Purely a pre-fill hint for GiveNodeToProductionButton; never implies a batch already exists. */
+  planned: number | null;
   children: ProductionTreeNodeWithBatches[];
 }
 
@@ -74,7 +76,6 @@ export class CustomerOrdersService {
     // needs them, without relying on a returned relation array happening to
     // preserve input order (never a documented guarantee).
     const items = [];
-    let hasSubAssemblyBatches = false;
     for (const itemDto of dto.items) {
       const item = await this.prisma.tenant.customerOrderItem.create({
         data: {
@@ -84,36 +85,19 @@ export class CustomerOrdersService {
           plannedStartAt: itemDto.plannedStartAt,
           plannedEndAt: itemDto.plannedEndAt,
           itemDeadline: itemDto.itemDeadline,
+          // Sub-assembly choices from the "Підвироби" dialog (2026-08-27
+          // decision): recorded as intent only — NO ProductionOrder is
+          // created and the order's status is NOT touched here. Read back
+          // by getItemProductionTree to pre-fill each node's "Передати у
+          // виробництво" quantity; the batch itself is only ever created
+          // once staff click that button in "Хід виробництва".
+          plannedSubAssemblies:
+            itemDto.subAssembliesToProduce && itemDto.subAssembliesToProduce.length > 0
+              ? (itemDto.subAssembliesToProduce as any)
+              : undefined,
         } as any,
       });
       items.push(item);
-
-      // Sub-assembly batch planning (2026-08-25 user request): plan a
-      // PLANNED production batch now for each sub-assembly the user chose
-      // to make rather than pull from existing finished-goods stock. Linked
-      // via `subAssemblyForItemId` — see ProductionOrder's own schema
-      // comment for why this must never be `customerOrderItemId`
-      // (getItemQuantitySummary/withPriceTotals key strictly off that field
-      // and would double-count these batches against the parent item).
-      for (const sub of itemDto.subAssembliesToProduce ?? []) {
-        await this.productionOrdersService.create(user, {
-          assemblyId: sub.assemblyId,
-          unitsPlanned: sub.qty,
-          subAssemblyForItemId: item.id,
-        });
-        hasSubAssemblyBatches = true;
-      }
-    }
-
-    // Real production work already started (a sub-assembly batch exists)
-    // even though no top-level item has been "given to production" yet —
-    // same status flip giveItemToProduction does, just triggered here
-    // instead. Without this, an order sitting on a live PLANNED/IN_PROGRESS
-    // batch would still read NEW and be invisible to anything that filters
-    // on status (e.g. Production's "По замовленнях" tab).
-    if (hasSubAssemblyBatches) {
-      await this.prisma.tenant.customerOrder.update({ where: { id: order.id }, data: { status: 'IN_PRODUCTION' } });
-      order.status = 'IN_PRODUCTION' as any;
     }
 
     const fullOrder = { ...order, items };
@@ -500,9 +484,13 @@ export class CustomerOrdersService {
       batchesByAssembly.set(b.assemblyId, list);
     }
 
+    const plannedList = ((item as any).plannedSubAssemblies ?? []) as Array<{ assemblyId: string; qty: number }>;
+    const plannedByAssembly = new Map(plannedList.map((p) => [p.assemblyId, p.qty]));
+
     const attachBatches = (node: ProductionTreeNode): ProductionTreeNodeWithBatches => ({
       ...node,
       batches: (batchesByAssembly.get(node.assemblyId) ?? []).map((b) => ({ id: b.id, status: b.status, unitsPlanned: Number(b.unitsPlanned) })),
+      planned: plannedByAssembly.get(node.assemblyId) ?? null,
       children: node.children.map(attachBatches),
     });
 

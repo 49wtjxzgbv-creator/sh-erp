@@ -31,13 +31,15 @@ export function collectAssemblyIds(node: ProductionTreeNode, into: string[]) {
 }
 
 /**
- * Per-node "Передати у виробництво" (2026-08-27 user request) — replaces
- * the old upfront-at-creation sub-assembly planning dialog: nothing is
- * planned by default anymore, every node of the tree (the item itself AND
- * every sub-assembly at any depth) gets its own button here instead. The
+ * Per-node "Передати у виробництво" (2026-08-27 user request) — every node
+ * of the tree (the item itself AND every sub-assembly at any depth) gets
+ * its own button here; a real ProductionOrder is only ever created when
+ * this is clicked. The order-creation "Підвироби" dialog only records
+ * intent (item.plannedSubAssemblies) — `node.planned` pre-fills this
+ * button's qty when present, it never creates anything by itself. The
  * root node (isRoot) reuses the exact same action the Items table's own
  * "Передати у виробництво" button already calls (giveItemToProduction);
- * every other node calls the new per-node endpoint
+ * every other node calls the per-node endpoint
  * (giveSubAssemblyToProduction), linked via subAssemblyForItemId.
  */
 function GiveNodeToProductionButton({
@@ -60,7 +62,7 @@ function GiveNodeToProductionButton({
   const [qty, setQty] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const defaultQty = Math.max(1, Math.ceil(node.qtyNeeded - node.qtyInStock) || Math.ceil(node.qtyNeeded));
+  const defaultQty = node.planned ?? Math.max(1, Math.ceil(node.qtyNeeded - node.qtyInStock) || Math.ceil(node.qtyNeeded));
   const pending = giveItem.isPending || giveSubAssembly.isPending;
 
   async function handleConfirm() {
@@ -157,6 +159,9 @@ function TreeNode({
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={node.done ? 'success' : 'secondary'}>{node.done ? t('productionTreeReady') : t('productionTreeNotReady')}</Badge>
+          {node.planned !== null && node.batches.length === 0 && (
+            <Badge variant="warning">{t('productionTreePlannedQty', { qty: node.planned })}</Badge>
+          )}
           {node.batches.map((b) => (
             <Link key={b.id} href={`/production/${b.id}`}>
               <Badge variant={BATCH_STATUS_VARIANT[b.status as ProductionOrderStatus] ?? 'secondary'} className="hover:underline">
@@ -179,11 +184,13 @@ function TreeNode({
  * as an actual parent -> child chain — цей виріб складається з цього
  * підвиробу, цей підвиріб складається з цих підвиробів, і т.д. — with
  * what's already IN_STOCK lit up green and what still needs producing left
- * grey, plus any already-planned batches linked inline. Nothing is planned
- * automatically anymore (2026-08-27): every node, at any depth, carries its
- * own "Передати у виробництво" button (GiveNodeToProductionButton) so staff
- * decide what to actually start, one node at a time, straight from this
- * tree — replacing the old upfront-at-order-creation planning dialog.
+ * grey, plus any already-planned batches linked inline. No ProductionOrder
+ * is ever created automatically (2026-08-27): every node, at any depth,
+ * carries its own "Передати у виробництво" button
+ * (GiveNodeToProductionButton) so staff decide what to actually start, one
+ * node at a time. A node the order-creation "Підвироби" dialog marked
+ * "Виготовити" just shows a "заплановано" badge and pre-fills that
+ * button's qty — it still requires this explicit click to become a batch.
  */
 export function ProductionProgressTree({ orderId, itemId }: { orderId: string; itemId: string }) {
   const t = useTranslations('sales');

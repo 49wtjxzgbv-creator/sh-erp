@@ -212,6 +212,8 @@ export interface ProductionTreeNode {
   done: boolean;
   laborFundEstimate: number;
   batches: Array<{ id: string; status: string; unitsPlanned: number }>;
+  /** Qty chosen for this node in the order-creation "Підвироби" dialog, if any — null when it wasn't marked "Виготовити" there. */
+  planned: number | null;
   children: ProductionTreeNode[];
 }
 

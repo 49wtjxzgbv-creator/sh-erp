@@ -1901,6 +1901,14 @@ model CustomerOrderItem {
   plannedStartAt  DateTime? @db.Timestamptz(3)
   plannedEndAt    DateTime? @db.Timestamptz(3)
   itemDeadline    DateTime? @db.Timestamptz(3)
+  // Sub-assembly production choices made in the "Підвироби" dialog at order
+  // creation ({ assemblyId, qty }[]) — recorded here as intent ONLY, no
+  // ProductionOrder is created yet. Read back by getItemProductionTree to
+  // pre-fill each node's "Передати у виробництво" quantity, so the actual
+  // batch (and the order's IN_PRODUCTION flip) still only happens once
+  // staff explicitly confirm that button in "Хід виробництва" (2026-08-27
+  // decision: nothing may land in production straight from order creation).
+  plannedSubAssemblies Json? @db.JsonB
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customerOrder    CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order

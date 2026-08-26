@@ -65,9 +65,10 @@ export class CustomerOrderItemDto {
   @ApiPropertyOptional({
     type: [SubAssemblyToProduceDto],
     description:
-      'Sub-assemblies this line needs (recursively) that should each get their own PLANNED production batch now, ' +
-      'linked via ProductionOrder.subAssemblyForItemId — rather than being left to consume from whatever\'s already ' +
-      'IN_STOCK once the parent assembly is started.',
+      'Sub-assemblies (recursively) the user marked "Виготовити" for this line. Recorded as intent only on ' +
+      'CustomerOrderItem.plannedSubAssemblies — no ProductionOrder is created here. The actual batch is only ' +
+      'created later, per node, when staff confirm "Передати у виробництво" in the Хід виробництва tree; this ' +
+      'list just pre-fills that dialog\'s quantity.',
   })
   @IsOptional()
   @IsArray()

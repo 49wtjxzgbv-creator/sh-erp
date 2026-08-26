@@ -110,7 +110,7 @@ describe('CustomerOrdersService', () => {
       expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
     });
 
-    it('sub-assembly batch planning (2026-08-25): plans a PLANNED production batch per requested sub-assembly, linked via subAssemblyForItemId (never customerOrderItemId)', async () => {
+    it('sub-assembly planning (2026-08-27): records the "Підвироби" dialog choices as intent on the item (plannedSubAssemblies) WITHOUT creating any ProductionOrder', async () => {
       prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
       prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
 
@@ -119,21 +119,23 @@ describe('CustomerOrdersService', () => {
         items: [{ assemblyId: 'a1', qty: 3, subAssembliesToProduce: [{ assemblyId: 'sub1', qty: 6 }] }],
       });
 
-      expect(productionOrdersService.create).toHaveBeenCalledWith(user, {
-        assemblyId: 'sub1',
-        unitsPlanned: 6,
-        subAssemblyForItemId: 'item1',
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ plannedSubAssemblies: [{ assemblyId: 'sub1', qty: 6 }] }),
       });
-    });
-
-    it('does not plan any sub-assembly batch when the line has none requested', async () => {
-      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
-      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
-      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
       expect(productionOrdersService.create).not.toHaveBeenCalled();
     });
 
-    it('flips the order to IN_PRODUCTION when a sub-assembly batch is planned at creation (2026-08-27): a real batch already exists even though no top-level item was "given to production"', async () => {
+    it('does not set plannedSubAssemblies when the line has none requested', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
+      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ plannedSubAssemblies: undefined }),
+      });
+      expect(productionOrdersService.create).not.toHaveBeenCalled();
+    });
+
+    it('never flips the order to IN_PRODUCTION at creation, even when sub-assemblies were marked "Виготовити" (2026-08-27 decision — only an explicit "Передати у виробництво" click in Хід виробництва may do that)', async () => {
       prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
       prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
 
@@ -141,16 +143,6 @@ describe('CustomerOrdersService', () => {
         clientName: 'Acme Client',
         items: [{ assemblyId: 'a1', qty: 3, subAssembliesToProduce: [{ assemblyId: 'sub1', qty: 6 }] }],
       });
-
-      expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
-      expect(result.status).toBe('IN_PRODUCTION');
-    });
-
-    it('leaves the order NEW when no sub-assembly batch was planned', async () => {
-      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
-      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
-
-      const result = await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
 
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
       expect(result.status).toBe('NEW');
@@ -271,6 +263,32 @@ describe('CustomerOrdersService', () => {
       expect(assembliesService.getProductionTree).toHaveBeenCalledWith(user, 'a1', 3);
       expect(result.batches).toEqual([{ id: 'po-top', status: 'PLANNED', unitsPlanned: 3 }]);
       expect(result.children[0].batches).toEqual([{ id: 'po-sub', status: 'PLANNED', unitsPlanned: 3 }]);
+    });
+
+    it('attaches the "Підвироби"-dialog planned qty (item.plannedSubAssemblies) per node by assemblyId, null when a node was never marked', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [{ id: 'item1', assemblyId: 'a1', qty: 3, plannedSubAssemblies: [{ assemblyId: 'sub1', qty: 6 }] }, order.items[1]],
+      });
+      assembliesService.getProductionTree.mockResolvedValue({
+        assemblyId: 'a1',
+        name: 'A1',
+        article: null,
+        qtyNeeded: 3,
+        qtyInStock: 0,
+        done: false,
+        children: [
+          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 6, qtyInStock: 0, done: false, children: [] },
+          { assemblyId: 'sub2', name: 'Sub2', article: null, qtyNeeded: 3, qtyInStock: 0, done: false, children: [] },
+        ],
+      });
+      mockProductionOrdersFindMany([]);
+
+      const result = await service.getItemProductionTree(user, 'co1', 'item1');
+
+      expect(result.planned).toBeNull();
+      expect(result.children[0].planned).toBe(6);
+      expect(result.children[1].planned).toBeNull();
     });
   });
 
