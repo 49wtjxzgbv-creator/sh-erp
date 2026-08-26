@@ -1555,6 +1555,7 @@
     "legendCritical": "🔴 Critical problem",
     "printButton": "Print / PDF",
     "printRangeCount": "Number of periods to print",
+    "printHideDates": "Hide dates",
     "openEntity": "Open card",
     "filterSupplier": "Supplier",
     "scaleYear": "Year",

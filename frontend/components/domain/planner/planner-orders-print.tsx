@@ -1,21 +1,26 @@
 import { useTranslations } from 'next-intl';
-import { timelinePercent as percent, timelineMonthMarks as monthMarks } from '@/lib/timeline-utils';
+import { timelinePercent as percent, timelineMonthMarks as monthMarks, timelineWeekMarks as weekMarks, timelineDayMarks as dayMarks } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
 /**
  * Print rendition of the "По замовленнях" tab (2026-08-27, redesigned
- * 2026-08-28 — "щоб були видні числа", "весь графік більший"). Same real-
- * `<table>`-with-repeating-`<thead>` approach as PlannerGanttPrintTable
- * (see that file's header comment for why: sticky/absolute divs don't
- * paginate in print media, a `<thead>` genuinely does) — just flat, one row
- * per order, matching the on-screen simplicity instead of the hierarchical
- * order→item→batch→stage nesting that view prints. Each date now gets its
- * own always-visible grid cell (`.planner-print-datesgrid`, globals.css)
- * instead of one crammed text line — same "explicit column, not a
- * squeezed sentence" fix as the on-screen `PlannerOrdersTimelineView`, and
- * risk rows (order.riskLevel) get the same amber/red tint on paper as they
- * do on screen.
+ * 2026-08-28 twice — "щоб були видні числа", "весь графік більший", then
+ * "при друці не видно числ днів... щоб можна було приховувати блок...
+ * зроби меншим"). Same real-`<table>`-with-repeating-`<thead>` approach as
+ * PlannerGanttPrintTable (see that file's header comment for why:
+ * sticky/absolute divs don't paginate in print media, a `<thead>` genuinely
+ * does) — just flat, one row per order, matching the on-screen simplicity
+ * instead of the hierarchical order→item→batch→stage nesting that view
+ * prints.
+ *
+ * `scale` drives a second calendar-header line, same as the on-screen
+ * timeline: day-of-month numbers under each day (week scale) or week-start
+ * (month scale) gridline — year scale stays month-labels-only, numbering
+ * ~365 individual days at that density would be unreadable. `datesHidden`
+ * mirrors the on-screen collapse toggle (`PlannerOrdersTimelineView`) —
+ * print has no "expand it back" affordance mid-page, so this is a plain
+ * show/hide decided once, before printing, not a live toggle on the page.
  */
 function MonthGrid({ from, to, months }: { from: Date; to: Date; months: { start: Date }[] }) {
   return (
@@ -52,10 +57,24 @@ function fmtDate(date: Date): string {
   return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-export function PlannerOrdersPrintTable({ orders, from, to }: { orders: PlannerOrderNode[]; from: Date; to: Date }) {
+export function PlannerOrdersPrintTable({
+  orders,
+  from,
+  to,
+  scale = 'year',
+  datesHidden = false,
+}: {
+  orders: PlannerOrderNode[];
+  from: Date;
+  to: Date;
+  scale?: 'week' | 'month' | 'year';
+  datesHidden?: boolean;
+}) {
   const t = useTranslations('planner');
   const ts = useTranslations('sales');
   const months = monthMarks(from, to);
+  const days = scale === 'week' ? dayMarks(from, to) : [];
+  const weeks = scale === 'month' ? weekMarks(from, to) : [];
   const sorted = [...orders].sort((a, b) => {
     const aStart = a.plan.startAt ? new Date(a.plan.startAt).getTime() : Infinity;
     const bStart = b.plan.startAt ? new Date(b.plan.startAt).getTime() : Infinity;
@@ -65,16 +84,18 @@ export function PlannerOrdersPrintTable({ orders, from, to }: { orders: PlannerO
   return (
     <table className="planner-print-table planner-print-orders-table">
       <colgroup>
-        <col style={{ width: '18%' }} />
-        <col style={{ width: '32%' }} />
+        <col style={{ width: '16%' }} />
+        {!datesHidden && <col style={{ width: '20%' }} />}
         <col />
       </colgroup>
       <thead>
         <tr>
           <th>{t('ordersTab')}</th>
-          <th>
-            {ts('plannedStartAt')} · {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
-          </th>
+          {!datesHidden && (
+            <th className="text-[8px]">
+              {ts('plannedStartAt')} · {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
+            </th>
+          )}
           <th>
             <div className="relative h-4 w-full">
               {months.map((m, i) => (
@@ -83,6 +104,20 @@ export function PlannerOrdersPrintTable({ orders, from, to }: { orders: PlannerO
                 </span>
               ))}
             </div>
+            {scale !== 'year' && (
+              <div className="relative h-3 w-full">
+                {days.map((d, i) => (
+                  <span key={i} className="absolute top-0 text-[7px]" style={{ left: `${percent(d, from, to)}%` }}>
+                    {d.getDate()}
+                  </span>
+                ))}
+                {weeks.map((w, i) => (
+                  <span key={i} className="absolute top-0 font-medium text-[7px]" style={{ left: `${percent(w, from, to)}%` }}>
+                    {w.getDate()}
+                  </span>
+                ))}
+              </div>
+            )}
           </th>
         </tr>
       </thead>
@@ -108,20 +143,22 @@ export function PlannerOrdersPrintTable({ orders, from, to }: { orders: PlannerO
                   </>
                 )}
               </td>
-              <td>
-                <div className="planner-print-datesgrid">
-                  <div><span className="k">{ts('plannedStartAt')}</span><span className="v">{start ? fmtDate(start) : '—'}</span></div>
-                  <div><span className="k">{ts('plannedCompletionAt')}</span><span className="v">{completion ? fmtDate(completion) : '—'}</span></div>
-                  <div><span className="k">{ts('plannedShipmentAt')}</span><span className="v">{shipment ? fmtDate(shipment) : '—'}</span></div>
-                  <div><span className="k">{ts('plannedDeliveryAt')}</span><span className="v">{delivery ? fmtDate(delivery) : '—'}</span></div>
-                  <div>
-                    <span className="k">{ts('deadline')}</span>
-                    <span className="v" style={{ color: risk !== 'none' ? (risk === 'critical' ? '#b91c1c' : '#b45309') : undefined }}>
-                      {deadline ? fmtDate(deadline) : '—'}
-                    </span>
+              {!datesHidden && (
+                <td>
+                  <div className="planner-print-datesgrid">
+                    <div><span className="k">{ts('plannedStartAt')}</span><span className="v">{start ? fmtDate(start) : '—'}</span></div>
+                    <div><span className="k">{ts('plannedCompletionAt')}</span><span className="v">{completion ? fmtDate(completion) : '—'}</span></div>
+                    <div><span className="k">{ts('plannedShipmentAt')}</span><span className="v">{shipment ? fmtDate(shipment) : '—'}</span></div>
+                    <div><span className="k">{ts('plannedDeliveryAt')}</span><span className="v">{delivery ? fmtDate(delivery) : '—'}</span></div>
+                    <div>
+                      <span className="k">{ts('deadline')}</span>
+                      <span className="v" style={{ color: risk !== 'none' ? (risk === 'critical' ? '#b91c1c' : '#b45309') : undefined }}>
+                        {deadline ? fmtDate(deadline) : '—'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </td>
+                </td>
+              )}
               <td className="relative" style={{ height: 44 }}>
                 <MonthGrid from={from} to={to} months={months} />
                 {start && completion && <MiniBar start={start} end={completion} from={from} to={to} />}

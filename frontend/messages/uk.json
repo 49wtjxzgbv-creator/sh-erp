@@ -1665,6 +1665,7 @@
     "legendCritical": "🔴 Критична проблема",
     "printButton": "Друкувати / PDF",
     "printRangeCount": "Кількість періодів для друку",
+    "printHideDates": "Приховати дати",
     "openEntity": "Відкрити картку",
     "filterSupplier": "Постачальник",
     "scaleYear": "Рік",

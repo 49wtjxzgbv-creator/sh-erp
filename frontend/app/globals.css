@@ -318,17 +318,17 @@
   .planner-print-datesgrid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
+    gap: 2px;
   }
   .planner-print-datesgrid .k {
     display: block;
-    font-size: 7px;
+    font-size: 6px;
     text-transform: uppercase;
     color: #777;
   }
   .planner-print-datesgrid .v {
     display: block;
-    font-size: 12px;
+    font-size: 8px;
     font-weight: 700;
   }
   .planner-print-row-warning td {
@@ -499,17 +499,17 @@
 .print-preview-mode .planner-print-datesgrid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  gap: 2px;
 }
 .print-preview-mode .planner-print-datesgrid .k {
   display: block;
-  font-size: 7px;
+  font-size: 6px;
   text-transform: uppercase;
   color: #777;
 }
 .print-preview-mode .planner-print-datesgrid .v {
   display: block;
-  font-size: 12px;
+  font-size: 8px;
   font-weight: 700;
 }
 .print-preview-mode .planner-print-row-warning td {

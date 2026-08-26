@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircle, AlertTriangle, Info, Search, ExternalLink, Printer, ChevronRight, Plus, Minus } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Search, ExternalLink, Printer, ChevronRight, Plus, Minus, ColumnsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePlannerBoard, usePlannerKpis } from '@/lib/hooks/use-planner';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -130,6 +130,11 @@ export default function PlannerPage() {
   const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('month');
   const [ordersPrintAnchor, setOrdersPrintAnchor] = useState(() => new Date());
   const [ordersPrintCount, setOrdersPrintCount] = useState(1);
+  // Same "менше — зручніше" idea as the on-screen collapse toggle: the 5
+  // date fields are useful but take real width away from the timeline on
+  // paper too, and unlike the screen there's no way to expand them back
+  // mid-page — so this is a plain show/hide, decided once before printing.
+  const [ordersPrintDatesHidden, setOrdersPrintDatesHidden] = useState(false);
 
   const query: QueryPlannerBoardInput = {
     search: search || undefined,
@@ -307,6 +312,16 @@ export default function PlannerPage() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+              <Button
+                type="button"
+                variant={ordersPrintDatesHidden ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setOrdersPrintDatesHidden((v) => !v)}
+                title={t('printHideDates')}
+              >
+                <ColumnsIcon className="mr-2 h-4 w-4" />
+                {t('printHideDates')}
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={handlePrintOrders}>
                 <Printer className="mr-2 h-4 w-4" />
                 {t('printButton')}
@@ -422,7 +437,13 @@ export default function PlannerPage() {
             </p>
             {view === 'orders' ? (
               <>
-                <PlannerOrdersPrintTable orders={board.orders} from={ordersPrintFrom} to={ordersPrintTo} />
+                <PlannerOrdersPrintTable
+                  orders={board.orders}
+                  from={ordersPrintFrom}
+                  to={ordersPrintTo}
+                  scale={ordersPrintScale}
+                  datesHidden={ordersPrintDatesHidden}
+                />
                 <div className="mt-4 text-[9px]">
                   <strong>{t('legendTitle')}:</strong> {ts('plannedStartAt')} → {ts('plannedCompletionAt')} · {ts('plannedShipmentAt')} · {ts('plannedDeliveryAt')} · {ts('deadline')}
                 </div>
