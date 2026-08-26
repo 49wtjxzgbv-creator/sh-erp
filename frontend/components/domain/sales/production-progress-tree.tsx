@@ -18,14 +18,14 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
-const BATCH_STATUS_VARIANT: Record<ProductionOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
+export const BATCH_STATUS_VARIANT: Record<ProductionOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
   PLANNED: 'secondary',
   IN_PROGRESS: 'warning',
   COMPLETED: 'success',
   CANCELLED: 'destructive',
 };
 
-function collectAssemblyIds(node: ProductionTreeNode, into: string[]) {
+export function collectAssemblyIds(node: ProductionTreeNode, into: string[]) {
   into.push(node.assemblyId);
   node.children.forEach((c) => collectAssemblyIds(c, into));
 }
@@ -136,10 +136,6 @@ function TreeNode({
   // unambiguous which branch is whose by then.
   const indent = Math.min(depth, 6) * 16;
 
-  // The root node (depth 0) is the order line's own виріб, not just another
-  // tree entry — a thicker border, bigger photo, and bolder name make it
-  // read as the anchor everything below belongs to, at a glance (2026-08-27
-  // user request).
   const isRoot = depth === 0;
 
   return (
@@ -147,13 +143,12 @@ function TreeNode({
       <div
         className={cn(
           'flex flex-wrap items-center gap-2 rounded-md border p-2',
-          isRoot && 'border-2 p-3 shadow-sm',
-          node.done ? 'border-success/40 bg-success/10' : isRoot ? 'border-primary/50 bg-primary/5' : 'border-border bg-muted/30',
+          node.done ? 'border-success/40 bg-success/10' : 'border-border bg-muted/30',
         )}
       >
-        <Avatar src={photosByAssembly?.[node.assemblyId]?.[0]?.downloadUrl} size={isRoot ? 'lg' : 'md'} />
+        <Avatar src={photosByAssembly?.[node.assemblyId]?.[0]?.downloadUrl} size="md" />
         <div className="min-w-0 flex-1 basis-40">
-          <p className={cn('truncate font-medium', isRoot ? 'text-base font-semibold' : 'text-sm', node.done && 'text-success-foreground')}>
+          <p className={cn('truncate text-sm font-medium', node.done && 'text-success-foreground')}>
             {node.article ? `${node.article} — ${node.name}` : node.name}
           </p>
           <p className="text-xs text-muted-foreground">

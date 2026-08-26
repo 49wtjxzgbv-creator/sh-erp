@@ -664,7 +664,9 @@ export default function CustomerOrderDetailPage() {
       >
         {(order.items ?? []).map((item) => (
           <div key={item.id} className="space-y-2">
-            <div className="text-sm font-medium"><AssemblyCell assemblyId={item.assemblyId} /></div>
+            <div className="rounded-md border-2 border-primary/40 bg-primary/5 p-3">
+              <AssemblyCell assemblyId={item.assemblyId} size="lg" textClassName="text-base font-semibold" />
+            </div>
             <ProductionProgressTree orderId={order.id} itemId={item.id} />
           </div>
         ))}
