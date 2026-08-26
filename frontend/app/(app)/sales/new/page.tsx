@@ -30,6 +30,8 @@ interface EditableItemRow {
   itemDeadline: string;
   /** "Виготовити" decisions made in SubAssemblyPlanningDialog for this row's assembly — undefined means "not decided yet / use from stock for everything". */
   subAssembliesToProduce?: SubAssemblyToProduceInput[];
+  /** "Зі складу" decisions from the same dialog — claims IN_STOCK finished goods via SubAssemblyReservation. */
+  subAssembliesFromStock?: SubAssemblyToProduceInput[];
 }
 
 let rowKeySeq = 0;
@@ -129,6 +131,7 @@ export default function NewCustomerOrderPage() {
         plannedEndAt: fromDatetimeLocalValue(row.plannedEndAt),
         itemDeadline: fromDatetimeLocalValue(row.itemDeadline),
         subAssembliesToProduce: row.subAssembliesToProduce?.length ? row.subAssembliesToProduce : undefined,
+        subAssembliesFromStock: row.subAssembliesFromStock?.length ? row.subAssembliesFromStock : undefined,
       });
     }
 
@@ -289,7 +292,13 @@ export default function NewCustomerOrderPage() {
                       <TableCell>
                         <AssemblyPicker
                           value={row.assemblyId}
-                          onChange={(id) => updateRow(row.key, { assemblyId: id, subAssembliesToProduce: id === row.assemblyId ? row.subAssembliesToProduce : undefined })}
+                          onChange={(id) =>
+                            updateRow(row.key, {
+                              assemblyId: id,
+                              subAssembliesToProduce: id === row.assemblyId ? row.subAssembliesToProduce : undefined,
+                              subAssembliesFromStock: id === row.assemblyId ? row.subAssembliesFromStock : undefined,
+                            })
+                          }
                         />
                       </TableCell>
                       <TableCell>
@@ -330,8 +339,10 @@ export default function NewCustomerOrderPage() {
                         {hasSubAssembliesResults[i]?.data === true && (
                           <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setPlanningRowKey(row.key)}>
                             <Layers className="mr-2 h-4 w-4" />
-                            {row.subAssembliesToProduce?.length
-                              ? t('subAssemblyPlannedBadge', { count: row.subAssembliesToProduce.length })
+                            {(row.subAssembliesToProduce?.length ?? 0) + (row.subAssembliesFromStock?.length ?? 0) > 0
+                              ? t('subAssemblyPlannedBadge', {
+                                  count: (row.subAssembliesToProduce?.length ?? 0) + (row.subAssembliesFromStock?.length ?? 0),
+                                })
                               : t('subAssemblyPlanningButton')}
                           </Button>
                         )}
@@ -367,7 +378,9 @@ export default function NewCustomerOrderPage() {
           assemblyId={planningRow.assemblyId}
           qty={Number(planningRow.qty) || 1}
           initialDecisions={planningRow.subAssembliesToProduce}
-          onConfirm={(decisions) => updateRow(planningRow.key, { subAssembliesToProduce: decisions })}
+          onConfirm={({ toProduce, fromStock }) =>
+            updateRow(planningRow.key, { subAssembliesToProduce: toProduce, subAssembliesFromStock: fromStock })
+          }
         />
       )}
     </div>

@@ -7,6 +7,7 @@ describe('ProductionOrdersService', () => {
   let audit: any;
   let stock: any;
   let stockReservationService: any;
+  let subAssemblyReservationService: any;
   let finishedGoodsService: any;
   let productionExecutionsService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
@@ -47,9 +48,13 @@ describe('ProductionOrdersService', () => {
       getReservedForOrder: jest.fn().mockResolvedValue({ fromStock: 0, fromPurchase: 0 }),
       consume: jest.fn().mockResolvedValue(0),
     };
+    subAssemblyReservationService = {
+      getReservedByOthers: jest.fn().mockResolvedValue(0),
+      consume: jest.fn().mockResolvedValue(undefined),
+    };
     finishedGoodsService = { generateSerialNumbers: jest.fn().mockResolvedValue(['SN-000001', 'SN-000002']) };
     productionExecutionsService = { remove: jest.fn().mockResolvedValue(undefined), void_: jest.fn().mockResolvedValue(undefined) };
-    service = new ProductionOrdersService(prisma, audit, stock, stockReservationService, finishedGoodsService, productionExecutionsService);
+    service = new ProductionOrdersService(prisma, audit, stock, stockReservationService, subAssemblyReservationService, finishedGoodsService, productionExecutionsService);
 
     // findOne() default plumbing for most tests
     prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder });
@@ -282,6 +287,20 @@ describe('ProductionOrdersService', () => {
       expect(stock.applyMovement).not.toHaveBeenCalled();
     });
 
+    it('§2026-08-27: rejects an ASSEMBLY line whose physical stock is enough but already claimed by another order\'s "Зі складу" reservation', async () => {
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+        id: 'v1',
+        components: [{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }],
+      });
+      // need 2; physical 3 but 2 already claimed by another order and this batch has no order of its own => available = 1 < 2
+      prisma.tenant.finishedGood.count.mockResolvedValue(3);
+      subAssemblyReservationService.getReservedByOthers.mockResolvedValue(2);
+
+      await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
+      expect(subAssemblyReservationService.getReservedByOthers).toHaveBeenCalledWith(user, 'sub1');
+      expect(stock.applyMovement).not.toHaveBeenCalled();
+    });
+
     it('rejects starting an order that is not PLANNED', async () => {
       prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'COMPLETED' });
       await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
@@ -428,6 +447,20 @@ describe('ProductionOrdersService', () => {
       await service.start(user, 'po1', {}); // baseOrder has no customerOrderItemId
       expect(stockReservationService.getReservedForOrder).not.toHaveBeenCalled();
       expect(stockReservationService.consume).not.toHaveBeenCalled();
+    });
+
+    it('§2026-08-27: a batch linked to a customer order shrinks THAT ORDER\'s own SubAssemblyReservation as sub-assembly units are consumed', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, customerOrderItemId: 'item1' });
+      prisma.tenant.customerOrderItem.findUnique.mockResolvedValue({ id: 'item1', customerOrderId: 'co1' });
+
+      await service.start(user, 'po1', {});
+
+      expect(subAssemblyReservationService.consume).toHaveBeenCalledWith(user, 'co1', 'sub1', 2);
+    });
+
+    it('an ad-hoc batch with no linked customer order never touches any SubAssemblyReservation', async () => {
+      await service.start(user, 'po1', {}); // baseOrder has no customerOrderItemId
+      expect(subAssemblyReservationService.consume).not.toHaveBeenCalled();
     });
   });
 

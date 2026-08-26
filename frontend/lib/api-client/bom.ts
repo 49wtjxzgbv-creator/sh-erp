@@ -195,6 +195,13 @@ export function checkAssemblyAvailability(assemblyId: string, qty: number): Prom
   return apiClient.post<AvailabilityResult>(`assemblies/${assemblyId}/check-availability`, { qty });
 }
 
+export interface SubAssemblyReservationBreakdownLine {
+  customerOrderId: string;
+  orderNumber: string | null;
+  clientName: string;
+  qty: number;
+}
+
 export interface SubAssemblyNeed {
   assemblyId: string;
   name: string;
@@ -203,6 +210,10 @@ export interface SubAssemblyNeed {
   qtyNeeded: number;
   /** Current IN_STOCK FinishedGood count. */
   qtyInStock: number;
+  /** Sum of every OTHER order's "Зі складу" claim on this assembly, already sitting in qtyInStock. */
+  reservedByOthers: number;
+  /** Per-order breakdown backing reservedByOthers. */
+  reservedBreakdown: SubAssemblyReservationBreakdownLine[];
 }
 
 /** Every distinct sub-assembly needed to build `qty` units of this assembly, at any BOM depth. */

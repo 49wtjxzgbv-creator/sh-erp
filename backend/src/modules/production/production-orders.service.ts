@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { StockService } from '../inventory/stock.service';
+import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import {
   CreateProductionOrderDto,
   QueryProductionOrdersDto,
@@ -51,6 +52,7 @@ export class ProductionOrdersService {
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
     private readonly stockReservationService: StockReservationService,
+    private readonly subAssemblyReservationService: SubAssemblyReservationService,
     private readonly finishedGoodsService: FinishedGoodsService,
     private readonly productionExecutionsService: ProductionExecutionsService,
   ) {}
@@ -401,9 +403,18 @@ export class ProductionOrdersService {
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
         const needed = unitsPlanned * qtyPerUnit;
         assemblyLines.push({ subAssemblyId: line.subAssemblyId, needed });
-        const available = await this.prisma.tenant.finishedGood.count({
+        const physical = await this.prisma.tenant.finishedGood.count({
           where: { assemblyId: line.subAssemblyId, status: 'IN_STOCK' },
         });
+        // §2026-08-27: "Зі складу" claims from OTHER orders' own
+        // "Підвироби" dialog must not be eaten by this batch — same
+        // otherReserved subtraction the PRODUCT branch above does. This
+        // order's OWN claim (if any) counts as available to itself, so it
+        // is deliberately excluded here.
+        const otherReserved = customerOrderId
+          ? await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId, customerOrderId)
+          : await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId);
+        const available = Math.max(physical - otherReserved, 0);
         if (available < Math.ceil(needed)) {
           shortages.push({ kind: 'ASSEMBLY', subAssemblyId: line.subAssemblyId, needed, available });
         }
@@ -536,6 +547,12 @@ export class ProductionOrdersService {
         lineTotalEur: lineLocalCost,
         consumedFinishedGoodIds: consumedIds,
       });
+      // These units are now physically gone from IN_STOCK — shrink this
+      // order's own "Зі складу" claim (if any) so it stops counting
+      // against remaining stock for everyone else too (2026-08-27).
+      if (customerOrderId && consumedIds.length > 0) {
+        await this.subAssemblyReservationService.consume(user, customerOrderId, subAssemblyId, consumedIds.length);
+      }
     }
 
     if (pickListRows.length > 0) {

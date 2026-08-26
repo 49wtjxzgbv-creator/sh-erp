@@ -99,8 +99,10 @@ export interface CustomerOrderItemInput {
   plannedStartAt?: string;
   plannedEndAt?: string;
   itemDeadline?: string;
-  /** Sub-assemblies (recursively, at any BOM depth) chosen to get their own PLANNED production batch now, rather than being left to consume from existing finished-goods stock. */
+  /** Sub-assemblies (recursively, at any BOM depth) the user marked "Виготовити" — recorded as intent only (CustomerOrderItem.plannedSubAssemblies), no batch is created here. */
   subAssembliesToProduce?: SubAssemblyToProduceInput[];
+  /** Sub-assemblies the user marked "Зі складу" — claims IN_STOCK finished goods via SubAssemblyReservation, visible to later orders' own "Підвироби" dialog. */
+  subAssembliesFromStock?: SubAssemblyToProduceInput[];
 }
 
 export interface CreateCustomerOrderInput {

@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService, ProductionTreeNode } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
+import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
@@ -37,6 +38,7 @@ export class CustomerOrdersService {
     private readonly productionOrdersService: ProductionOrdersService,
     private readonly assembliesService: AssembliesService,
     private readonly stockReservationService: StockReservationService,
+    private readonly subAssemblyReservationService: SubAssemblyReservationService,
     private readonly shortageService: CustomerOrderShortageService,
   ) {}
 
@@ -98,6 +100,14 @@ export class CustomerOrdersService {
         } as any,
       });
       items.push(item);
+
+      // "Зі складу" choices from the same dialog (2026-08-27): claim
+      // IN_STOCK finished-goods units via SubAssemblyReservation so a
+      // LATER order's own dialog sees this stock was already spoken for —
+      // see SubAssemblyReservationService's header comment.
+      for (const sub of itemDto.subAssembliesFromStock ?? []) {
+        await this.subAssemblyReservationService.reserve(user, order.id, sub.assemblyId, sub.qty);
+      }
     }
 
     const fullOrder = { ...order, items };
@@ -296,6 +306,7 @@ export class CustomerOrdersService {
       throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_CANCEL_TERMINAL', `Cannot cancel a ${order.status} order.`);
     }
     await this.stockReservationService.releaseAllForOrder(user, id);
+    await this.subAssemblyReservationService.releaseAllForOrder(user, id);
     const updated = await this.prisma.tenant.customerOrder.update({ where: { id }, data: { status: 'CANCELLED' } });
     await this.auditService.record({
       companyId: user.companyId,
@@ -332,6 +343,7 @@ export class CustomerOrdersService {
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     await this.stockReservationService.releaseAllForOrder(user, id);
+    await this.subAssemblyReservationService.releaseAllForOrder(user, id);
     await this.prisma.tenant.customerOrder.delete({ where: { id } });
     await this.auditService.record({
       companyId: user.companyId,

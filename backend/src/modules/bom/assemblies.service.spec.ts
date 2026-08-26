@@ -7,6 +7,7 @@ describe('AssembliesService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
+  let subAssemblyReservationService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -37,7 +38,8 @@ describe('AssembliesService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn() };
-    service = new AssembliesService(prisma, audit, stock);
+    subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]) };
+    service = new AssembliesService(prisma, audit, stock, subAssemblyReservationService);
   });
 
   describe('setComponents — validation, versioning, cycle detection', () => {
@@ -286,11 +288,34 @@ describe('AssembliesService', () => {
 
       expect(result).toEqual(
         expect.arrayContaining([
-          { assemblyId: 'sub1', name: 'Sub One', article: 'S1', qtyNeeded: 5, qtyInStock: 1 },
-          { assemblyId: 'sub2', name: 'Sub Two', article: 'S2', qtyNeeded: 1, qtyInStock: 0 },
+          { assemblyId: 'sub1', name: 'Sub One', article: 'S1', qtyNeeded: 5, qtyInStock: 1, reservedByOthers: 0, reservedBreakdown: [] },
+          { assemblyId: 'sub2', name: 'Sub Two', article: 'S2', qtyNeeded: 1, qtyInStock: 0, reservedByOthers: 0, reservedBreakdown: [] },
         ]),
       );
       expect(result).toHaveLength(2);
+    });
+
+    it('sums reservedByOthers from the breakdown returned by SubAssemblyReservationService (2026-08-27)', async () => {
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }]).mockResolvedValueOnce([]);
+      prisma.tenant.assembly.findUnique.mockResolvedValueOnce({ id: 'a1', components: [] }).mockResolvedValueOnce({ id: 'sub1', name: 'Sub One', article: 'S1' });
+      prisma.tenant.finishedGood.count.mockResolvedValueOnce(5);
+      subAssemblyReservationService.getBreakdown.mockResolvedValueOnce([
+        { customerOrderId: 'co-other', orderNumber: '№42', clientName: 'Other Client', qty: 3 },
+      ]);
+
+      const result = await service.listSubAssembliesNeeded(user, 'a1', 1);
+
+      expect(result).toEqual([
+        {
+          assemblyId: 'sub1',
+          name: 'Sub One',
+          article: 'S1',
+          qtyNeeded: 1,
+          qtyInStock: 5,
+          reservedByOthers: 3,
+          reservedBreakdown: [{ customerOrderId: 'co-other', orderNumber: '№42', clientName: 'Other Client', qty: 3 }],
+        },
+      ]);
     });
 
     it('returns an empty list for an assembly with no sub-assembly components', async () => {

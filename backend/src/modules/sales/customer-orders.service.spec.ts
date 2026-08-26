@@ -8,6 +8,7 @@ describe('CustomerOrdersService', () => {
   let productionOrdersService: any;
   let assembliesService: any;
   let stockReservationService: any;
+  let subAssemblyReservationService: any;
   let shortageService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
@@ -68,8 +69,9 @@ describe('CustomerOrdersService', () => {
       getProductionTree: jest.fn(),
     };
     stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
+    subAssemblyReservationService = { reserve: jest.fn().mockResolvedValue(undefined), releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
-    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, shortageService);
+    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, subAssemblyReservationService, shortageService);
 
     // Default baseline matching `order` above: item2 already has its full
     // qty (2) given to production via one batch, item1 has none yet — the
@@ -147,6 +149,25 @@ describe('CustomerOrdersService', () => {
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
       expect(result.status).toBe('NEW');
     });
+
+    it('"Зі складу" choices (2026-08-27): claims a SubAssemblyReservation per line, separate from plannedSubAssemblies', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
+
+      await service.create(user, {
+        clientName: 'Acme Client',
+        items: [{ assemblyId: 'a1', qty: 3, subAssembliesFromStock: [{ assemblyId: 'sub2', qty: 4 }] }],
+      });
+
+      expect(subAssemblyReservationService.reserve).toHaveBeenCalledWith(user, 'co1', 'sub2', 4);
+    });
+
+    it('claims nothing when the line has no "Зі складу" choices', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
+      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+      expect(subAssemblyReservationService.reserve).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancel', () => {
@@ -159,6 +180,7 @@ describe('CustomerOrdersService', () => {
       prisma.tenant.customerOrder.update.mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancel(user, 'co1');
       expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'CANCELLED' } });
     });
   });
@@ -171,6 +193,7 @@ describe('CustomerOrdersService', () => {
       const deleteCallOrder = prisma.tenant.customerOrder.delete.mock.invocationCallOrder[0];
 
       expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
       expect(prisma.tenant.customerOrder.delete).toHaveBeenCalledWith({ where: { id: 'co1' } });
       expect(releaseCallOrder).toBeLessThan(deleteCallOrder);
     });

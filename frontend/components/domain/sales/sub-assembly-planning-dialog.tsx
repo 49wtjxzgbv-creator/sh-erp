@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSubAssembliesNeeded } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import type { SubAssemblyReservationBreakdownLine } from '@/lib/api-client/bom';
 import type { SubAssemblyToProduceInput } from '@/lib/api-client/sales';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,8 @@ interface Row {
   article: string | null;
   qtyNeeded: number;
   qtyInStock: number;
+  reservedByOthers: number;
+  reservedBreakdown: SubAssemblyReservationBreakdownLine[];
   produce: boolean;
   qty: string;
 }
@@ -28,7 +31,7 @@ export interface SubAssemblyPlanningDialogProps {
   qty: number;
   /** Re-applied onto the fetched list when reopening for the same row, so edits aren't lost. */
   initialDecisions?: SubAssemblyToProduceInput[];
-  onConfirm: (decisions: SubAssemblyToProduceInput[]) => void;
+  onConfirm: (decisions: { toProduce: SubAssemblyToProduceInput[]; fromStock: SubAssemblyToProduceInput[] }) => void;
 }
 
 /**
@@ -36,10 +39,13 @@ export interface SubAssemblyPlanningDialogProps {
  * as an OPT-IN button rather than an auto-opened dialog — see
  * sales/new/page.tsx's "Підвироби" button). Per distinct sub-assembly, the
  * user picks "Виготовити" or "Зі складу" (2026-08-27 decision: this only
- * records intent — saved onto CustomerOrderItem.plannedSubAssemblies at
- * order creation, no ProductionOrder is created here. It pre-fills the qty
- * on that node's own "Передати у виробництво" button in "Хід виробництва",
- * where the batch is actually created, one node at a time, explicitly).
+ * records intent — saved onto CustomerOrderItem.plannedSubAssemblies (for
+ * "Виготовити") or claimed via SubAssemblyReservation (for "Зі складу") at
+ * order creation, no ProductionOrder is created here. "Виготовити" pre-fills
+ * the qty on that node's own "Передати у виробництво" button in "Хід
+ * виробництва", where the batch is actually created, one node at a time,
+ * explicitly. "Зі складу" just reserves the shelf units against other
+ * orders' own copy of this same dialog — see reservedByOthers below).
  */
 export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty, initialDecisions, onConfirm }: SubAssemblyPlanningDialogProps) {
   const t = useTranslations('sales');
@@ -60,13 +66,16 @@ export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty,
           setRows(
             list.map((line) => {
               const preset = initialByAssembly.get(line.assemblyId);
-              const shortfall = Math.max(0, Math.ceil(line.qtyNeeded - line.qtyInStock));
+              const available = Math.max(0, line.qtyInStock - line.reservedByOthers);
+              const shortfall = Math.max(0, Math.ceil(line.qtyNeeded - available));
               return {
                 assemblyId: line.assemblyId,
                 name: line.name,
                 article: line.article,
                 qtyNeeded: line.qtyNeeded,
                 qtyInStock: line.qtyInStock,
+                reservedByOthers: line.reservedByOthers,
+                reservedBreakdown: line.reservedBreakdown,
                 produce: preset !== undefined ? true : shortfall > 0,
                 qty: String(preset ?? (shortfall > 0 ? shortfall : Math.ceil(line.qtyNeeded))),
               };
@@ -83,10 +92,13 @@ export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty,
   }
 
   function handleConfirm() {
-    const decisions: SubAssemblyToProduceInput[] = rows
+    const toProduce: SubAssemblyToProduceInput[] = rows
       .filter((r) => r.produce && Number(r.qty) > 0)
       .map((r) => ({ assemblyId: r.assemblyId, qty: Math.ceil(Number(r.qty)) }));
-    onConfirm(decisions);
+    const fromStock: SubAssemblyToProduceInput[] = rows
+      .filter((r) => !r.produce && r.qtyNeeded > 0)
+      .map((r) => ({ assemblyId: r.assemblyId, qty: Math.ceil(r.qtyNeeded) }));
+    onConfirm({ toProduce, fromStock });
     onOpenChange(false);
   }
 
@@ -99,50 +111,62 @@ export function SubAssemblyPlanningDialog({ open, onOpenChange, assemblyId, qty,
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{t('subAssemblyPlanningDescription')}</p>
           {needed.isPending && <p className="text-sm text-muted-foreground">{tc('loading')}</p>}
-          {rows.map((row) => (
-            <div key={row.assemblyId} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
-              <Avatar src={photosByAssembly?.[row.assemblyId]?.[0]?.downloadUrl} size="md" />
-              <div className="min-w-0 flex-1 basis-40">
-                <p className="truncate text-sm font-medium">{row.article ? `${row.article} — ${row.name}` : row.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t('subAssemblyNeeded', { qty: row.qtyNeeded })} · {t('subAssemblyInStock', { qty: row.qtyInStock })}
-                  {row.qtyInStock >= row.qtyNeeded && (
-                    <Badge variant="success" className="ml-2">
-                      {t('subAssemblySufficient')}
-                    </Badge>
+          {rows.map((row) => {
+            const available = Math.max(0, row.qtyInStock - row.reservedByOthers);
+            return (
+              <div key={row.assemblyId} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
+                <Avatar src={photosByAssembly?.[row.assemblyId]?.[0]?.downloadUrl} size="md" />
+                <div className="min-w-0 flex-1 basis-40">
+                  <p className="truncate text-sm font-medium">{row.article ? `${row.article} — ${row.name}` : row.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('subAssemblyNeeded', { qty: row.qtyNeeded })} · {t('subAssemblyInStock', { qty: row.qtyInStock })}
+                    {available >= row.qtyNeeded && (
+                      <Badge variant="success" className="ml-2">
+                        {t('subAssemblySufficient')}
+                      </Badge>
+                    )}
+                  </p>
+                  {row.reservedByOthers > 0 && (
+                    <p className="text-xs text-warning">
+                      {t('subAssemblyReservedByOthers', { qty: row.reservedByOthers })}
+                      {': '}
+                      {row.reservedBreakdown
+                        .map((b) => `${b.orderNumber ? `№${b.orderNumber}` : b.clientName} — ${b.qty}`)
+                        .join(', ')}
+                    </p>
                   )}
-                </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={row.produce ? 'default' : 'outline'}
+                    onClick={() => updateRow(row.assemblyId, { produce: true })}
+                  >
+                    {t('subAssemblyProduce')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!row.produce ? 'default' : 'outline'}
+                    onClick={() => updateRow(row.assemblyId, { produce: false })}
+                  >
+                    {t('subAssemblyFromStock')}
+                  </Button>
+                  {row.produce && (
+                    <Input
+                      type="number"
+                      step="1"
+                      min={1}
+                      value={row.qty}
+                      onChange={(e) => updateRow(row.assemblyId, { qty: e.target.value })}
+                      className="w-20"
+                    />
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={row.produce ? 'default' : 'outline'}
-                  onClick={() => updateRow(row.assemblyId, { produce: true })}
-                >
-                  {t('subAssemblyProduce')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={!row.produce ? 'default' : 'outline'}
-                  onClick={() => updateRow(row.assemblyId, { produce: false })}
-                >
-                  {t('subAssemblyFromStock')}
-                </Button>
-                {row.produce && (
-                  <Input
-                    type="number"
-                    step="1"
-                    min={1}
-                    value={row.qty}
-                    onChange={(e) => updateRow(row.assemblyId, { qty: e.target.value })}
-                    className="w-20"
-                  />
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <DialogFooter>
           <DialogClose asChild>

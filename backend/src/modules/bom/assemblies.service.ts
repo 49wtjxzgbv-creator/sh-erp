@@ -5,6 +5,7 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
+import { SubAssemblyReservationService, SubAssemblyReservationBreakdownLine } from '../inventory/sub-assembly-reservation.service';
 import { AssemblyComponentLineDto, SetAssemblyComponentsDto } from './dto/assembly-component.dto';
 import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
@@ -42,6 +43,10 @@ export interface SubAssemblyNeed {
   qtyNeeded: number;
   /** Current IN_STOCK FinishedGood count for this sub-assembly. */
   qtyInStock: number;
+  /** Sum of every OTHER (already-existing) order's "Зі складу" claim on this assembly — see SubAssemblyReservation. */
+  reservedByOthers: number;
+  /** Per-order breakdown backing reservedByOthers, for "заброньовано для замовлення №..." display. */
+  reservedBreakdown: SubAssemblyReservationBreakdownLine[];
 }
 
 export interface ProductionTreeNode {
@@ -89,6 +94,7 @@ export class AssembliesService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
+    private readonly subAssemblyReservationService: SubAssemblyReservationService,
   ) {}
 
   // ============================================================
@@ -561,7 +567,9 @@ export class AssembliesService {
     for (const [subAssemblyId, qtyNeeded] of needs) {
       const sub = await this.prisma.tenant.assembly.findUnique({ where: { id: subAssemblyId } });
       const qtyInStock = await this.prisma.tenant.finishedGood.count({ where: { assemblyId: subAssemblyId, status: 'IN_STOCK' } });
-      results.push({ assemblyId: subAssemblyId, name: sub?.name ?? subAssemblyId, article: sub?.article ?? null, qtyNeeded, qtyInStock });
+      const reservedBreakdown = await this.subAssemblyReservationService.getBreakdown(user, subAssemblyId);
+      const reservedByOthers = reservedBreakdown.reduce((sum, r) => sum + r.qty, 0);
+      results.push({ assemblyId: subAssemblyId, name: sub?.name ?? subAssemblyId, article: sub?.article ?? null, qtyNeeded, qtyInStock, reservedByOthers, reservedBreakdown });
     }
     return results;
   }

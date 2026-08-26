@@ -76,6 +76,20 @@ export class CustomerOrderItemDto {
   @Type(() => SubAssemblyToProduceDto)
   subAssembliesToProduce?: SubAssemblyToProduceDto[];
 
+  @ApiPropertyOptional({
+    type: [SubAssemblyToProduceDto],
+    description:
+      'Sub-assemblies (recursively) the user marked "Зі складу" for this line. Claims `qty` of that assembly\'s ' +
+      'IN_STOCK finished goods via SubAssemblyReservation, so a LATER order\'s own "Підвироби" dialog can see it ' +
+      'was already spoken for — see SubAssemblyReservationService\'s own header comment for why this is ' +
+      'best-effort, not a hard atomic guarantee.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SubAssemblyToProduceDto)
+  subAssembliesFromStock?: SubAssemblyToProduceDto[];
+
   @ApiPropertyOptional({ description: 'Planned start for this line, only if it differs from the order\'s own. Never auto-derived — left null shows as "не заплановано".' })
   @IsOptional()
   @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : value))

@@ -738,6 +738,7 @@
     "subAssemblyNeeded": "Потрібно: {qty}",
     "subAssemblyInStock": "На складі: {qty}",
     "subAssemblySufficient": "достатньо на складі",
+    "subAssemblyReservedByOthers": "Заброньовано для інших замовлень: {qty}",
     "subAssemblyProduce": "Виготовити",
     "subAssemblyFromStock": "Зі складу",
     "subAssemblyPlannedBadge": "Заплановано підвиробів: {count}",
