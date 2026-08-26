@@ -29,7 +29,8 @@ describe('ProductionOrdersService', () => {
         productionOrderWorker: { createMany: jest.fn(), deleteMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         product: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
         warehouseStock: { findUnique: jest.fn().mockResolvedValue(null) },
-        customerOrderItem: { findUnique: jest.fn() },
+        customerOrderItem: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+        customerOrder: { findMany: jest.fn().mockResolvedValue([]) },
         finishedGood: { count: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn(), updateMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
         productionOrderPickListItem: { createMany: jest.fn(), deleteMany: jest.fn() },
         payrollEntry: { createMany: jest.fn() },
@@ -92,6 +93,41 @@ describe('ProductionOrdersService', () => {
       expect(prisma.tenant.productionOrderWorker.createMany).toHaveBeenCalledWith({
         data: [{ productionOrderId: 'po1', employeeId: 'e1', percent: 60 }, { productionOrderId: 'po1', employeeId: 'e2', percent: 40 }],
       });
+    });
+  });
+
+  describe('query', () => {
+    it('resolves the linked CustomerOrder via customerOrderItemId (a "give to production" batch)', async () => {
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ ...baseOrder, customerOrderItemId: 'item1', subAssemblyForItemId: null }]);
+      prisma.tenant.productionOrder.count.mockResolvedValue(1);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1', customerOrderId: 'co1' }]);
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([{ id: 'co1', clientName: 'Acme', orderNumber: '441639' }]);
+
+      const result = await service.query(user, {});
+
+      expect(prisma.tenant.customerOrderItem.findMany).toHaveBeenCalledWith({ where: { id: { in: ['item1'] } }, select: { id: true, customerOrderId: true } });
+      expect(result.items[0].customerOrder).toEqual({ id: 'co1', clientName: 'Acme', orderNumber: '441639' });
+    });
+
+    it('resolves the linked CustomerOrder via subAssemblyForItemId (a sub-assembly batch) when customerOrderItemId is null', async () => {
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ ...baseOrder, customerOrderItemId: null, subAssemblyForItemId: 'item2' }]);
+      prisma.tenant.productionOrder.count.mockResolvedValue(1);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item2', customerOrderId: 'co2' }]);
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([{ id: 'co2', clientName: 'Beta', orderNumber: null }]);
+
+      const result = await service.query(user, {});
+
+      expect(result.items[0].customerOrder).toEqual({ id: 'co2', clientName: 'Beta', orderNumber: null });
+    });
+
+    it('leaves customerOrder null for a batch with neither link set, without querying either table', async () => {
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ ...baseOrder, customerOrderItemId: null, subAssemblyForItemId: null }]);
+      prisma.tenant.productionOrder.count.mockResolvedValue(1);
+
+      const result = await service.query(user, {});
+
+      expect(prisma.tenant.customerOrderItem.findMany).not.toHaveBeenCalled();
+      expect(result.items[0].customerOrder).toBeNull();
     });
   });
 

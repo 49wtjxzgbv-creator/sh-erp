@@ -60,6 +60,23 @@ export default function ProductionOrdersPage() {
       },
       { accessorKey: 'unitsPlanned', header: t('unitsPlanned') },
       {
+        id: 'customerOrder',
+        header: t('customerOrder'),
+        cell: ({ row }) => {
+          const order = row.original.customerOrder;
+          if (!order) return <span className="text-muted-foreground">—</span>;
+          return (
+            <Link
+              href={`/sales/${order.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-primary hover:underline"
+            >
+              {order.clientName}{order.orderNumber ? ` — № ${order.orderNumber}` : ''}
+            </Link>
+          );
+        },
+      },
+      {
         accessorKey: 'status',
         header: t('status'),
         cell: ({ getValue }) => {

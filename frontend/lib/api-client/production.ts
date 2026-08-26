@@ -93,6 +93,10 @@ export interface ProductionOrder {
   completedAt: string | null;
   /** This batch's parent order line (План-графік §1) — null for production orders not created via "give to production". One CustomerOrderItem can have many batches. */
   customerOrderItemId: string | null;
+  /** Set instead of customerOrderItemId for a sub-assembly batch planned from the "Хід виробництва" tree or at order creation — never both at once. */
+  subAssemblyForItemId: string | null;
+  /** Only present on query() rows (2026-08-27) — the sales order this batch belongs to, resolved server-side via whichever of customerOrderItemId/subAssemblyForItemId is set. Null for an ad-hoc batch with no linked order. */
+  customerOrder?: { id: string; clientName: string; orderNumber: string | null } | null;
   /** Only present on findOne (create/query rows don't include these). */
   workers?: ProductionOrderWorker[];
   pickListItems?: ProductionOrderPickListItem[];

@@ -355,6 +355,7 @@
     "newOrder": "New order",
     "orderHeader": "Order",
     "assembly": "Assembly",
+    "customerOrder": "Sales order",
     "unitsPlanned": "Units planned",
     "comment": "Comment",
     "workers": "Workers",

@@ -205,7 +205,35 @@ export class ProductionOrdersService {
       this.prisma.tenant.productionOrder.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip }),
       this.prisma.tenant.productionOrder.count({ where }),
     ]);
-    return { items, total, limit: take, offset: skip };
+    return { items: await this.withCustomerOrderRef(items as any[]), total, limit: take, offset: skip };
+  }
+
+  /**
+   * "Який продаж це замовлення?" (2026-08-27 user request) — a batch links
+   * to its parent CustomerOrder only indirectly, via whichever of
+   * `customerOrderItemId` (a "give to production" batch) or
+   * `subAssemblyForItemId` (a sub-assembly batch — see that field's own
+   * schema comment) is set, never both. Resolved here, batched to 2 extra
+   * round trips regardless of page size, so the list view can show/link
+   * "which sales order" without an N+1 request per row.
+   */
+  private async withCustomerOrderRef(orders: any[]) {
+    const itemIds = Array.from(new Set(orders.map((o) => o.customerOrderItemId ?? o.subAssemblyForItemId).filter((id): id is string => Boolean(id))));
+    const orderItems = itemIds.length
+      ? await this.prisma.tenant.customerOrderItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, customerOrderId: true } })
+      : [];
+    const orderIdByItemId = new Map(orderItems.map((i) => [i.id, i.customerOrderId]));
+    const customerOrderIds = Array.from(new Set(orderItems.map((i) => i.customerOrderId)));
+    const customerOrders = customerOrderIds.length
+      ? await this.prisma.tenant.customerOrder.findMany({ where: { id: { in: customerOrderIds } }, select: { id: true, clientName: true, orderNumber: true } })
+      : [];
+    const customerOrderById = new Map(customerOrders.map((c) => [c.id, c]));
+
+    return orders.map((o) => {
+      const itemId = o.customerOrderItemId ?? o.subAssemblyForItemId;
+      const customerOrderId = itemId ? orderIdByItemId.get(itemId) : undefined;
+      return { ...o, customerOrder: customerOrderId ? (customerOrderById.get(customerOrderId) ?? null) : null };
+    });
   }
 
   async setWorkers(user: RequestUser, id: string, dto: SetProductionOrderWorkersDto) {
