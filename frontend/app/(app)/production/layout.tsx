@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const TABS = [
   { href: '/production', labelKey: 'orders' },
+  { href: '/production/by-order', labelKey: 'byOrder' },
   { href: '/production/schedule', labelKey: 'schedule' },
   { href: '/production/stages', labelKey: 'stages' },
   { href: '/production/finished-goods', labelKey: 'finishedGoods' },

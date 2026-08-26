@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ChevronDown } from 'lucide-react';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCustomerOrder,
@@ -14,12 +15,11 @@ import {
   useGiveAllToProduction,
   usePayrollFundSummary,
 } from '@/lib/hooks/use-sales';
-import { useAssembly, useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
+import { useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
-import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useCustomerOrderFinanceSummary } from '@/lib/hooks/use-finance';
 import { formatMoney } from '@/lib/finance-format';
-import { formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
+import { cn, formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import type { CustomerOrder, CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
@@ -29,7 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import {
   Dialog,
@@ -44,22 +43,9 @@ import {
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
+import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
-
-/** CustomerOrderItem only carries a raw assemblyId — resolve to a real name/photo, same fix as the print view and other order lists. */
-function AssemblyCell({ assemblyId }: { assemblyId: string }) {
-  const { data: assembly } = useAssembly(assemblyId);
-  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
-  return (
-    <div className="flex items-center gap-2.5">
-      <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />
-      <span className="max-w-[320px] truncate" title={assembly?.name ?? assemblyId}>
-        {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
-      </span>
-    </div>
-  );
-}
 
 /** Live BOM cost × qty — recomputed fresh every load, same "never frozen" estimate the creation form (sales/new) already shows, since nothing about this line is frozen until its production order actually starts. */
 function EstimatedPriceCell({ assemblyId, qty }: { assemblyId: string; qty: number }) {
@@ -317,6 +303,36 @@ function FinanceSummaryWidget({ customerOrderId }: { customerOrderId: string }) 
 }
 
 /**
+ * Collapsed-by-default Card (2026-08-27 user request — the payroll fund
+ * and production progress blocks were pushing the items table too far down
+ * the page). Click the header to toggle; no persistence across reloads,
+ * same "starts fresh" behavior as everything else on this page.
+ */
+function CollapsibleCard({
+  title,
+  contentClassName,
+  children,
+}: {
+  title: string;
+  contentClassName?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card>
+      <CardHeader
+        className="flex cursor-pointer select-none flex-row items-center justify-between space-y-0"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <CardTitle className="text-base">{title}</CardTitle>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </CardHeader>
+      {open && <CardContent className={contentClassName}>{children}</CardContent>}
+    </Card>
+  );
+}
+
+/**
  * "Фонд заробітної плати на все замовлення" (2026-08-26 user request) —
  * estimated (live BOM labor rates, summed across every item's full
  * production tree, including sub-assemblies at any depth) vs actual
@@ -330,22 +346,17 @@ function PayrollFundWidget({ orderId }: { orderId: string }) {
   if (!fund) return null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t('payrollFund')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-x-6 gap-y-2 pt-0">
-        <div>
-          <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
-          <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>
-          <p className="text-sm font-medium">{formatEur(fund.actual)}</p>
-          <p className="text-[11px] text-muted-foreground">{t('payrollFundActualHint')}</p>
-        </div>
-      </CardContent>
-    </Card>
+    <CollapsibleCard title={t('payrollFund')} contentClassName="flex flex-wrap gap-x-6 gap-y-2">
+      <div>
+        <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
+        <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>
+        <p className="text-sm font-medium">{formatEur(fund.actual)}</p>
+        <p className="text-[11px] text-muted-foreground">{t('payrollFundActualHint')}</p>
+      </div>
+    </CollapsibleCard>
   );
 }
 
@@ -635,19 +646,14 @@ export default function CustomerOrderDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('productionProgress')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {(order.items ?? []).map((item) => (
-            <div key={item.id} className="space-y-2">
-              <div className="text-sm font-medium"><AssemblyCell assemblyId={item.assemblyId} /></div>
-              <ProductionProgressTree orderId={order.id} itemId={item.id} />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <CollapsibleCard title={t('productionProgress')} contentClassName="space-y-6">
+        {(order.items ?? []).map((item) => (
+          <div key={item.id} className="space-y-2">
+            <div className="text-sm font-medium"><AssemblyCell assemblyId={item.assemblyId} /></div>
+            <ProductionProgressTree orderId={order.id} itemId={item.id} />
+          </div>
+        ))}
+      </CollapsibleCard>
 
       <EditCustomerOrderDialog open={editOpen} onOpenChange={setEditOpen} order={order} />
     </div>

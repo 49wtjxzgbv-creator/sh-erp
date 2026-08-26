@@ -337,6 +337,8 @@
   "production": {
     "title": "Виробництво",
     "orders": "Замовлення",
+    "byOrder": "По замовленнях",
+    "viewInSales": "Переглянути в продажах",
     "stages": "Етапи",
     "finishedGoods": "Готова продукція",
     "qcChecklist": "Чек-лист ОТК",
