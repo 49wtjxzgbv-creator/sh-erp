@@ -54,8 +54,8 @@ export default function BomPage() {
 
   const columnOptions = useMemo(
     () => [
-      { id: 'name', label: t('name') },
       { id: 'article', label: t('article') },
+      { id: 'name', label: t('name') },
       { id: 'laborCostPerUnit', label: t('laborCostPerUnit') },
       { id: 'note', label: t('note') },
       { id: 'packagingCostPerUnit', label: t('packagingCostPerUnit') },
@@ -108,8 +108,8 @@ export default function BomPage() {
         header: '',
         cell: ({ row }) => <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="xl" />,
       },
-      { accessorKey: 'name', header: t('name') },
       { accessorKey: 'article', header: t('article'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
+      { accessorKey: 'name', header: t('name') },
       {
         accessorKey: 'laborCostPerUnit',
         header: t('laborCostPerUnit'),

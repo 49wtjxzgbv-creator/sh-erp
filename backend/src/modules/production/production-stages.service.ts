@@ -69,16 +69,25 @@ export class ProductionStagesService {
   }
 
   /**
-   * Hard delete — a stage is pure configuration metadata, not referenced by
-   * FK from anywhere (ProductionOrderStageEvent stores a plain `stageIndex`
-   * integer snapshot, not a relation, precisely so a later stage-list edit
-   * never corrupts historical events). Renumbers remaining stages so
-   * sortOrder stays contiguous.
+   * Hard delete. Historical progress (ProductionOrderStageEvent) stores a
+   * plain `stageIndex` integer snapshot, not a relation, precisely so a
+   * later stage-list edit never corrupts historical events — that part of
+   * the original claim holds. But ProductionOrderStagePlan (the
+   * План-графік/Planner schedule, added after this comment was first
+   * written) DOES hold a real FK to the stage with the Prisma default
+   * (`onDelete: Restrict`), so any stage assigned to an order's schedule
+   * used to fail deletion with a raw, untranslated Postgres FK-violation
+   * 500. ProductionOrderStagePlan only carries planned dates + sort order
+   * (no financial/audit data — that's the decoupled stage-index snapshot
+   * above), so it's safe to drop those planning rows here: deleting a
+   * stage from the catalog just removes it from any order's schedule.
+   * Renumbers remaining stages so sortOrder stays contiguous.
    */
   async remove(user: RequestUser, id: string) {
     const stage = await this.prisma.tenant.productionStage.findUnique({ where: { id } });
     if (!stage) throw new CodedNotFoundException('PRODUCTION_STAGE_NOT_FOUND', 'Production stage not found.');
 
+    await this.prisma.tenant.productionOrderStagePlan.deleteMany({ where: { productionStageId: id } });
     await this.prisma.tenant.productionStage.delete({ where: { id } });
 
     const remaining = await this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
