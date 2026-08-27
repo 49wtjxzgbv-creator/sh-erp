@@ -43,6 +43,8 @@ export interface Assembly {
   packagingCostPerUnit: DecimalString;
   deliveryCostPerUnit: DecimalString;
   otherCostPerUnit: DecimalString;
+  /** Quotations module (2026-08-27) — the sale-price starting point for BASE_PRICE-method quotation lines. Independent of cost (laborCostPerUnit etc.) and of Product.sellPriceEur (a cost input, not a retail price) — null until someone sets it. */
+  baseSalePriceEur: DecimalString | null;
   defaultSupplierId: string | null;
   createdAt: string;
   updatedAt: string;

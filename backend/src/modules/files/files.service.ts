@@ -256,6 +256,61 @@ export class FilesService {
     return { fileAssetId: fileAsset.id };
   }
 
+  /**
+   * Plain create, not an upsert — unlike `ingestPhotoAsset` (idempotent
+   * re-import keyed on `legacyId`), a system-generated document like a
+   * rendered quotation PDF has no external stable id to upsert against and
+   * no "re-run" concept: a new render is always a genuinely new FileAsset
+   * row and a new object, even if it happens to represent the same
+   * quotation version being re-fetched (never called for that — see
+   * QuotationsService#send, which generates a PDF exactly once, at the
+   * moment a version is locked). Unlike `ingestPhotoAsset` (called from a
+   * background job with no ambient request), this is always called from
+   * inside an already-active request (`QuotationsService#send`, itself
+   * inside `TenantScopeInterceptor`'s transaction) — so it writes via
+   * `this.prisma.tenant` directly rather than opening a second, nested
+   * `runInTenantTransaction`, exactly like `createPresignedUpload` above.
+   */
+  async storeGeneratedAsset(input: {
+    companyId: string;
+    actorUserId: string;
+    domain: FileDomain;
+    entityType: string;
+    entityId: string;
+    originalName: string;
+    mimeType: string;
+    bytes: Buffer;
+  }): Promise<{ fileAssetId: string }> {
+    const safeName = sanitizeFilename(input.originalName);
+    const storageKey = `tenants/${input.companyId}/${input.domain.toLowerCase()}/${input.entityType.toLowerCase()}/${input.entityId}/${randomUUID()}-${safeName}`;
+
+    await this.r2.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: storageKey,
+        Body: input.bytes,
+        ContentType: input.mimeType,
+        ContentLength: input.bytes.byteLength,
+      }),
+    );
+
+    const fileAsset = await this.prisma.tenant.fileAsset.create({
+      data: {
+        companyId: input.companyId,
+        domain: input.domain,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        storageKey,
+        originalName: safeName,
+        mimeType: input.mimeType,
+        sizeBytes: input.bytes.byteLength,
+        uploadedById: input.actorUserId,
+      },
+    });
+
+    return { fileAssetId: fileAsset.id };
+  }
+
   async getDownloadUrl(user: RequestUser, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');

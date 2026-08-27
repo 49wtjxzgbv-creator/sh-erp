@@ -81,4 +81,11 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // against them was failing in production exactly like Team's was.
   'SupplierConnection',
   'SupplierInviteToken',
+  // Quotations module (2026-08-27/28)
+  'Customer',
+  'CompanyDocumentCounter',
+  'QuotationTemplate',
+  'Quotation',
+  'QuotationVersion',
+  'QuotationVersionItem',
 ]);

@@ -41,6 +41,7 @@
     "nodemailer": "^6.9.15",
     "occt-import-js": "^0.0.23",
     "pino-http": "^10.3.0",
+    "playwright": "^1.62.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "uuid": "^10.0.0"

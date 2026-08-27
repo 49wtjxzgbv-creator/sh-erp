@@ -89,6 +89,24 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'finance:manage', resource: 'finance', action: 'manage', description: 'Create/edit PO financial documents, expenses, and record payments.' },
   { key: 'finance:delete', resource: 'finance', action: 'delete', description: 'Delete a PO financial document, expense, or payment — admin-only, not granted to any default role besides Admin.' },
 
+  // Customers — lightweight counterparty directory (2026-08-27, Quotations
+  // module), same read/write shape as suppliers:read/suppliers:write.
+  { key: 'customers:read', resource: 'customers', action: 'read', description: 'View the customer directory.' },
+  { key: 'customers:write', resource: 'customers', action: 'write', description: 'Create/edit/delete customers.' },
+
+  // Quotations (2026-08-27) — commercial proposals, independent of and
+  // prior to CustomerOrder. `quotations:manage` covers the whole editable
+  // lifecycle (create/edit items+terms/send/duplicate/new-version); below-
+  // cost approval and viewing internal cost/margin figures are split into
+  // their own admin-sensitive keys, same rationale as `reports:valuation`
+  // and `finance:*` — a quote's cost basis and margin are exactly the kind
+  // of figure that must never leak to an ordinary sales user's screen.
+  { key: 'quotations:read', resource: 'quotations', action: 'read', description: 'View quotations (client-facing fields only, unless quotations:view-margin is also granted).' },
+  { key: 'quotations:manage', resource: 'quotations', action: 'manage', description: 'Create/edit quotation items and terms, send, duplicate, create a new version.' },
+  { key: 'quotations:approve-below-cost', resource: 'quotations', action: 'approve-below-cost', description: 'Approve a quotation line priced below its cost snapshot — admin-only, not granted to any default role besides Admin.' },
+  { key: 'quotations:view-margin', resource: 'quotations', action: 'view-margin', description: 'View a quotation\'s internal cost/base-price/margin figures — admin-only, not granted to any default role besides Admin.' },
+  { key: 'quotations:convert', resource: 'quotations', action: 'convert', description: 'Convert an accepted quotation into a customer order.' },
+
   // Sales
   { key: 'customer-orders:read', resource: 'customer-orders', action: 'read', description: 'View customer orders.' },
   { key: 'customer-orders:manage', resource: 'customer-orders', action: 'manage', description: 'Create/edit customer orders, give lines to production, preview and create shortage-driven purchase orders.' },
@@ -152,6 +170,8 @@ export const DEFAULT_ROLES = [
     name: 'Sales',
     permissions: [
       'products:read', 'assemblies:read', 'customer-orders:read', 'customer-orders:manage',
+      'customers:read', 'customers:write',
+      'quotations:read', 'quotations:manage', 'quotations:convert',
       'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use',
     ],
   },
@@ -159,7 +179,7 @@ export const DEFAULT_ROLES = [
     name: 'Viewer',
     permissions: [
       'products:read', 'assemblies:read', 'stock:read', 'production-orders:read',
-      'customer-orders:read', 'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'reports:read',
+      'customer-orders:read', 'customers:read', 'quotations:read', 'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'reports:read',
       // AI: legacy matrix grants viewer both simple + full assistant use, just
       // never `ai:use-critical-actions` (viewer can't confirm mutating actions).
       'ai:use',

@@ -195,6 +195,14 @@ model Company {
   productionExecutionAllocations ProductionExecutionAllocation[]
   payrollPeriods                 PayrollPeriod[]
 
+  // Quotations module (2026-08-27)
+  customers               Customer[]
+  quotations              Quotation[]
+  quotationVersions       QuotationVersion[]
+  quotationVersionItems   QuotationVersionItem[]
+  quotationTemplates      QuotationTemplate[]
+  companyDocumentCounters CompanyDocumentCounter[]
+
   @@map("companies")
 }
 
@@ -597,6 +605,12 @@ enum FileDomain {
   // should use FINANCE_DOCUMENT; PURCHASE_INVOICE remains only for
   // whatever already relies on it.
   FINANCE_DOCUMENT
+  // Quotations module (2026-08-28) — entityType "QuotationVersion", entityId
+  // = QuotationVersion.id. System-generated (Playwright-rendered), never a
+  // human upload — see QuotationPdfService. Deliberately its own value, not
+  // reused from CUSTOMER_ORDER_DOCUMENT (wrong entity family) or
+  // FINANCE_DOCUMENT (that one is specifically PO financial paperwork).
+  QUOTATION_DOCUMENT
 }
 
 enum FileConversionStatus {
@@ -1281,6 +1295,19 @@ model Assembly {
   deliveryCostPerUnit  Decimal @default(0) @db.Decimal(14, 2)
   otherCostPerUnit     Decimal @default(0) @db.Decimal(14, 2)
 
+  // Quotations module (2026-08-27): the customer-facing SALE price —
+  // deliberately separate from the four *CostPerUnit fields above (which
+  // together make up cost, computed live by
+  // AssembliesService#calcAssemblyCostRecursive) and from
+  // Product.sellPriceEur (a raw-material COST input to that same
+  // calculation, confusingly named but never a retail price). Nullable:
+  // most assemblies have never had a sale price defined, and a Quotation
+  // line must not silently substitute cost for price when this is unset —
+  // the pricing-method picker falls back to COST_PLUS_MARGIN/CUSTOM instead
+  // (see QuotationVersionItem.pricingSource). Never read by cost/valuation
+  // calculations anywhere else in the app.
+  baseSalePriceEur Decimal? @db.Decimal(14, 2)
+
   // Production-labor module (2026-08-24): whether a single worker is
   // allowed to execute this assembly alone, or a team/multiple workers is
   // required. A soft rule enforced only at ProductionExecution#confirm
@@ -1868,16 +1895,36 @@ model QcCheckResult {
 // ============================================================================
 
 model CustomerOrder {
-  id            String                @id @default(uuid()) @db.Uuid
-  companyId     String                @db.Uuid
-  orderNumber   String?
-  clientName    String
-  contactPerson String?
-  deadline      DateTime?             @db.Timestamptz(3)
-  priority      CustomerOrderPriority @default(NORMAL)
-  status        CustomerOrderStatus   @default(NEW)
-  comment       String?
-  createdById   String                @db.Uuid
+  id                       String                @id @default(uuid()) @db.Uuid
+  companyId                String                @db.Uuid
+  orderNumber              String?
+  clientName               String
+  contactPerson            String?
+  // Quotations module (2026-08-27): OPTIONAL link to the new Customer
+  // directory — deliberately additive, not a replacement for clientName.
+  // 41 files across the app read clientName directly (planner, search,
+  // dashboard timeline, AI tools, production, finance, legacy-import); a
+  // scan confirmed none of them would survive a hard cutover to a
+  // customerId join, and re-plumbing all 41 is explicitly out of scope
+  // here. Every CustomerOrder created before this field existed keeps
+  // customerId = null and clientName as its only record — nothing about
+  // that changes. When a real Customer IS picked (new orders, or
+  // Quotation → CustomerOrder conversion), clientName is still written
+  // (as the same kind of point-in-time snapshot it always was), so every
+  // existing reader keeps working unmodified; customerId is purely
+  // additive for whichever new code wants the real relationship.
+  customerId               String?               @db.Uuid
+  // Quotations module (2026-08-27): set only when this order was created
+  // via "Створити замовлення" from an accepted Quotation — see
+  // QuotationsService#convertToOrder. Never set any other way, never
+  // required.
+  sourceQuotationId        String?               @db.Uuid
+  sourceQuotationVersionId String?               @db.Uuid
+  deadline                 DateTime?             @db.Timestamptz(3)
+  priority                 CustomerOrderPriority @default(NORMAL)
+  status                   CustomerOrderStatus   @default(NEW)
+  comment                  String?
+  createdById              String                @db.Uuid
 
   // Planning targets for the order as a whole — never auto-derived, set
   // only when the user enters them; aggregate views fall back to
@@ -1900,6 +1947,9 @@ model CustomerOrder {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   company                 Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customer                Customer?                  @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict) // composite, optional — see customerId's own comment. Restrict (not SetNull): companyId is a required column in this same composite FK, so Postgres can't SET NULL on it — matches this schema's usual "Restrict is the safe default for an optional-but-meaningful reference" convention.
+  sourceQuotation         Quotation?                 @relation(fields: [companyId, sourceQuotationId], references: [companyId, id], onDelete: Restrict)
+  sourceQuotationVersion  QuotationVersion?          @relation(fields: [companyId, sourceQuotationVersionId], references: [companyId, id], onDelete: Restrict)
   items                   CustomerOrderItem[]
   finishedGoods           FinishedGood[]
   shipments               Shipment[]
@@ -1913,6 +1963,7 @@ model CustomerOrder {
   @@unique([companyId, id]) // composite-FK target for CustomerOrderItem.customerOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, status])
+  @@index([companyId, customerId])
   @@map("customer_orders")
 }
 
@@ -2955,4 +3006,299 @@ enum ImportJobStatus {
   VERIFYING
   COMPLETED
   FAILED
+}
+
+// ============================================================================
+// SECTION: Quotations  (module: QuotationsModule) — new, 2026-08-27
+//
+// A commercial offer that exists BEFORE a CustomerOrder, not a variant of
+// one (per explicit user decision: "КП ≠ CustomerOrder"). Deliberately
+// mirrors two precedents already in this schema rather than inventing new
+// shapes: AssemblyVersion/AssemblyVersionComponent for "freeze a whole
+// tree at a point in time, never update it again" (→ QuotationVersion/
+// QuotationVersionItem), and Supplier for "lightweight tenant-scoped
+// counterparty directory" (→ Customer).
+// ============================================================================
+
+// Deliberately additive alongside CustomerOrder.clientName, not a
+// replacement — see CustomerOrder.customerId's own comment for why a full
+// cutover is out of scope. Mirrors Supplier's shape closely; Quotations is
+// the first REQUIRED consumer, CustomerOrder.customerId stays optional.
+model Customer {
+  id            String  @id @default(uuid()) @db.Uuid
+  companyId     String  @db.Uuid
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?
+
+  legacyId String?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrders CustomerOrder[]
+  quotations     Quotation[]
+
+  @@unique([companyId, id]) // composite-FK target for Quotation.customer / CustomerOrder.customer
+  @@index([companyId])
+  @@map("customers")
+}
+
+// Atomic per-company document numbering (Phase 2 §16 — no prior mechanism
+// existed anywhere in this codebase; every existing "number" field,
+// orderNumber included, is free-typed by the user). One row per
+// (companyId, counterKey); `counterKey` embeds the reset boundary
+// directly ("QUOTATION_2026") so a new year is just a new row starting
+// at 0 via the upsert's INSERT branch — no separate "reset the counter"
+// code path to get wrong. The single atomic
+// `INSERT ... ON CONFLICT ... DO UPDATE SET lastValue = lastValue + 1
+// RETURNING lastValue` this row exists for is what actually makes
+// concurrent creation safe; the row itself carries no other meaning.
+model CompanyDocumentCounter {
+  companyId  String @db.Uuid
+  counterKey String
+  lastValue  Int    @default(0)
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@id([companyId, counterKey])
+  @@map("company_document_counters")
+}
+
+// Design settings ONLY — logo/colour/visible blocks/header/footer text.
+// Deliberately carries no pricing data (user's explicit §10 requirement:
+// "Шаблон НЕ повинен зберігати актуальні ціни виробів"). Never read
+// directly when rendering an already-SENT version's PDF — QuotationVersion
+// snapshots the resolved config at send time (see its own comment);
+// `QuotationVersion.templateId` is an informational pointer only.
+model QuotationTemplate {
+  id        String  @id @default(uuid()) @db.Uuid
+  companyId String  @db.Uuid
+  name      String
+  isDefault Boolean @default(false)
+
+  accentColor        String? // hex, e.g. "#6423d0"
+  printLogoFileId    String? @db.Uuid // FileAsset id, domain=BRANDING — falls back to CompanyBranding.printLogoFileId when null, same bare-UUID-reference convention CompanyBranding itself uses (no formal Prisma relation to FileAsset anywhere in this schema)
+  companyDetailsText String? // free-text "реквізити компанії" block — no structured legal-entity model exists yet, and adding one is out of scope here
+  headerText         String?
+  footerText         String?
+
+  // Which optional blocks render — payment/delivery/installation terms,
+  // notes, signature, etc. A flat Json map, not one boolean column per
+  // block, because this list is expected to grow (§9 "архітектура має
+  // дозволити додати нові блоки пізніше") and a new block must never need
+  // a migration just to become toggleable.
+  visibleBlocks Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@map("quotation_templates")
+}
+
+model Quotation {
+  id         String          @id @default(uuid()) @db.Uuid
+  companyId  String          @db.Uuid
+  number     String // "КП-2026-0001" — generated once via CompanyDocumentCounter, immutable after creation, never user-typed
+  customerId String          @db.Uuid
+  status     QuotationStatus @default(DRAFT)
+
+  // Set once, by "Дублювати" (§11) — points at the ORIGINAL Quotation this
+  // one was copied from. A genuinely different operation from
+  // QuotationVersion (a new document, new number, new id, fresh DRAFT —
+  // not a new version of the old one).
+  duplicatedFromId String? @db.Uuid
+
+  // Set once "Створити замовлення" succeeds — presence alone blocks
+  // re-conversion (§12); the specific version used is on the created
+  // CustomerOrder itself (CustomerOrder.sourceQuotationVersionId), not
+  // repeated here.
+  convertedCustomerOrderId String? @db.Uuid
+
+  createdById String    @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customer       Customer           @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  duplicatedFrom Quotation?         @relation("QuotationDuplicates", fields: [companyId, duplicatedFromId], references: [companyId, id])
+  duplicates     Quotation[]        @relation("QuotationDuplicates")
+  versions       QuotationVersion[]
+  customerOrders CustomerOrder[] // back-relation from CustomerOrder.sourceQuotation — normally at most one, once convertedCustomerOrderId is set
+
+  @@unique([companyId, id]) // composite-FK target for QuotationVersion.quotation / CustomerOrder.sourceQuotation
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  // No EXPIRED here, deliberately: it's a computed display state
+  // (validUntil < now() AND status IN (SENT, VIEWED)), never persisted —
+  // same "obtain, don't store" reasoning as Planner's riskLevel elsewhere
+  // in this codebase. Persisting it would mean either a background job to
+  // flip it (one more moving part to keep correct) or a stale value the
+  // moment nobody looks — a live computation has neither failure mode,
+  // and per user's own instruction "не допускай автоматичної зміни
+  // історичних даних" this status is exactly the kind of thing that must
+  // never silently rewrite a row nobody touched.
+}
+
+// Immutable once its lifecycle timestamps below start filling in — mirrors
+// AssemblyVersion's own "no updatedAt/deletedAt" immutability, with one
+// deliberate exception: the 4 *At timestamps are append-only status
+// milestones (never unset, never rewritten), not content edits. While a
+// version has none of them set, it IS the live DRAFT and its own items are
+// still freely editable; the moment `sentAt` is set, this row (and its
+// items) never changes again — further edits happen only via a NEW
+// QuotationVersion (§6 "v1 → SENT, v2 → DRAFT").
+//
+// Every field a client-facing PDF re-render would need is captured here
+// directly, per user's explicit §5 requirement that a templateId/assemblyId
+// POINTER alone is not enough — changing the Assembly, its name, its cost,
+// its base price, the template, the company logo, or company settings
+// later must NEVER alter what this version would render as.
+model QuotationVersion {
+  id            String @id @default(uuid()) @db.Uuid
+  companyId     String @db.Uuid
+  quotationId   String @db.Uuid
+  versionNumber Int // 1, 2, 3... per quotationId — the highest number for a given Quotation is its "current" version; no separate pointer field needed
+
+  sentAt     DateTime? @db.Timestamptz(3)
+  viewedAt   DateTime? @db.Timestamptz(3)
+  acceptedAt DateTime? @db.Timestamptz(3)
+  rejectedAt DateTime? @db.Timestamptz(3)
+
+  validUntil DateTime? @db.Timestamptz(3)
+
+  currency          String  @default("EUR") // one currency per version — see Finance module's own currency-snapshot precedent; no conversion, service layer only
+  paymentTerms      String?
+  deliveryTerms     String?
+  installationTerms String?
+  notes             String?
+
+  // Computed once, at the moment this version is fixed (send, or "create
+  // new version" save) — never re-derived from live item data afterward,
+  // same "locked at this moment" philosophy as
+  // OrderMaterialRequirement.requiredQty elsewhere in this schema.
+  subtotal       Decimal @db.Decimal(14, 2) // sum of item subtotals, before discount
+  discountAmount Decimal @default(0) @db.Decimal(14, 2) // sum of item discountAmounts
+  total          Decimal @db.Decimal(14, 2)
+
+  // Template — informational pointer only (templateId), authoritative
+  // rendering config frozen into templateSnapshot/companySnapshot at the
+  // moment this version was fixed. See QuotationTemplate's own comment.
+  templateId       String? @db.Uuid
+  templateSnapshot Json? // {accentColor, printLogoFileId, headerText, footerText, visibleBlocks}
+  companySnapshot  Json? // {name, companyDetailsText} — company-level facts that could otherwise drift out from under an old PDF
+
+  // Set once the PDF for THIS version has actually been generated and
+  // stored (§17 — SENT must not succeed without one). FileAsset id, bare
+  // reference, same convention as CompanyBranding's *FileId fields — never
+  // overwritten; a later version gets its own new file, this one's stays
+  // exactly as generated.
+  pdfFileId String? @db.Uuid
+
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  quotation      Quotation              @relation(fields: [companyId, quotationId], references: [companyId, id], onDelete: Cascade)
+  items          QuotationVersionItem[]
+  customerOrders CustomerOrder[] // back-relation from CustomerOrder.sourceQuotationVersion
+
+  @@unique([quotationId, versionNumber])
+  @@unique([companyId, id]) // composite-FK target for QuotationVersionItem.quotationVersion / CustomerOrder.sourceQuotationVersion
+  @@index([companyId, quotationId])
+  @@map("quotation_versions")
+}
+
+// One line of a QuotationVersion — fully self-contained snapshot per
+// user's §5/§13: assemblyId/productId are reference-only pointers for
+// "open the original" / conversion convenience, never re-read for
+// pricing, naming, or description once this row exists.
+model QuotationVersionItem {
+  id                 String @id @default(uuid()) @db.Uuid
+  companyId          String @db.Uuid
+  quotationVersionId String @db.Uuid
+  sortOrder          Int
+
+  kind       QuotationItemKind
+  assemblyId String?           @db.Uuid
+  productId  String?           @db.Uuid
+
+  nameSnapshot        String
+  descriptionSnapshot String?
+
+  quantity Decimal @db.Decimal(14, 3)
+  unit     String  @default("шт") // snapshot of the label text, not an FK to CompanyUnit — same reasoning as nameSnapshot: a later CompanyUnit rename must not alter this row
+
+  // §7/§8: how unitPrice below was arrived at, kept alongside the inputs
+  // that produced it so the editor can show the full derivation
+  // (собівартість → базова ціна → метод → ціна до знижки → знижка →
+  // фінальна ціна → маржа), not just the final number.
+  pricingSource     PricingSource
+  costSnapshot      Decimal?      @db.Decimal(14, 2) // internal only — never rendered in the client PDF
+  basePriceSnapshot Decimal?      @db.Decimal(14, 2) // internal only — Assembly.baseSalePriceEur at the moment this line was priced, null unless pricingSource pulled from it
+  // The % actually entered for MARKUP_PERCENT (cost or base price × (1 + p))
+  // or COST_PLUS_MARGIN (cost / (1 - p)) — same column for both since
+  // pricingSource already disambiguates which formula it fed; keeping one
+  // column instead of two mostly-mutually-exclusive ones.
+  pricingPercent    Decimal?      @db.Decimal(6, 3)
+
+  unitPrice Decimal @db.Decimal(14, 2) // per-unit price BEFORE discount — the pricing formula's result, or the CUSTOM entry directly
+  currency  String  @default("EUR")
+
+  discountPercent Decimal @default(0) @db.Decimal(6, 3)
+  discountAmount  Decimal @default(0) @db.Decimal(14, 2) // stored, not just derived from discountPercent — supports an absolute-amount discount entry too, and freezes the exact figure regardless of later rounding-rule changes
+
+  subtotal Decimal @db.Decimal(14, 2) // unitPrice * quantity
+  total    Decimal @db.Decimal(14, 2) // subtotal - discountAmount — "Фінальна ціна" (line total); маржа/маржа% are computed on read from total/costSnapshot/quantity, never stored
+
+  // §4: explicit, permissioned override for selling under cost — never an
+  // automatic block. Absence of approval when unitPrice/total implies a
+  // below-cost sale is what the UI's warning is keyed on; this flag is
+  // what actually lets the version be sent anyway.
+  belowCostApproved     Boolean @default(false)
+  belowCostApprovedById String? @db.Uuid
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  quotationVersion QuotationVersion @relation(fields: [companyId, quotationVersionId], references: [companyId, id], onDelete: Cascade)
+
+  @@index([companyId, quotationVersionId])
+  @@map("quotation_version_items")
+}
+
+enum QuotationItemKind {
+  ASSEMBLY
+  PRODUCT
+  SERVICE
+  DELIVERY
+  INSTALLATION
+  CUSTOM
+}
+
+enum PricingSource {
+  BASE_PRICE
+  MARKUP_PERCENT
+  COST_PLUS_MARGIN
+  CUSTOM
 }

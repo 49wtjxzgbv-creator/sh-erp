@@ -118,6 +118,17 @@ export class CreateCustomerOrderDto extends ExtraCostsDto {
   @IsString()
   orderNumber?: string;
 
+  // Quotations module (2026-08-27): optional link to the new Customer
+  // directory — see CustomerOrder.customerId's own schema.prisma comment.
+  // clientName stays required and independent on this DTO (not derived
+  // from customerId server-side) so every existing caller that never heard
+  // of Customer keeps working unmodified; the frontend's CustomerPicker
+  // fills clientName from the chosen Customer.name itself when this is set.
+  @ApiPropertyOptional({ description: 'Optional Customer directory link.' })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
   @ApiProperty()
   @IsString()
   @MinLength(1)
@@ -196,6 +207,11 @@ export class CustomerOrderHeaderDto extends ExtraCostsDto {
   @IsOptional()
   @IsString()
   orderNumber?: string;
+
+  @ApiPropertyOptional({ description: 'Optional Customer directory link.' })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

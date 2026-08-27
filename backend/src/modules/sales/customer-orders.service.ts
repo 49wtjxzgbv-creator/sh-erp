@@ -54,6 +54,7 @@ export class CustomerOrdersService {
     const order = await this.prisma.tenant.customerOrder.create({
       data: {
         orderNumber: dto.orderNumber,
+        customerId: dto.customerId,
         clientName: dto.clientName,
         contactPerson: dto.contactPerson,
         deadline: dto.deadline,
