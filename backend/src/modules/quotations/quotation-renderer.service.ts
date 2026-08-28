@@ -109,18 +109,34 @@ export class QuotationRendererService {
     line-height: 1.45;
     margin: 0;
   }
-  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid ${accent}; padding-bottom: 10px; margin-bottom: 18px; }
+  .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 2px solid ${accent}; padding-bottom: 10px; margin-bottom: 18px; }
   .header .brand { display: flex; align-items: center; gap: 14px; }
   .header .brand img { max-height: 42px; max-width: 150px; object-fit: contain; }
   .header .brand-divider { width: 1px; height: 34px; background: #dddddd; }
   .header .doc-meta { text-align: right; font-size: 11px; color: #555555; }
   .header .doc-title { font-size: 14pt; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
   .company-details { font-size: 10.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
-  .parties { display: flex; gap: 24px; margin-bottom: 18px; }
-  .party { flex: 1; border: 1px solid #e2e2e2; border-radius: 4px; padding: 10px 12px; }
+  .parties { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px; }
+  .party { flex: 1; min-width: 200px; border: 1px solid #e2e2e2; border-radius: 4px; padding: 10px 12px; }
   .party h3 { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #888888; font-weight: 600; }
   .party .line { font-size: 11.5px; margin-bottom: 2px; }
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 4px; }
+  /*
+   * On-screen only (the iframe preview and, if ever printed directly from a
+   * browser, this same rule — @page's margin above is the only thing that
+   * differs for the real PDF, which QuotationPdfService always renders at a
+   * fixed A4-width Chromium viewport regardless of the viewer's device, so
+   * this never affects the actual PDF file). The table's five columns
+   * (#, qty, price, discount, total) already reserve 24 + 90*4 = 384px as
+   * fixed widths, leaving only "Позиція" (photo + name) elastic — on a
+   * narrow phone that column can be squeezed to zero, forcing the
+   * fixed-size item photo to overflow into neighboring cells ("все на
+   * купі", reported directly by a user on iPhone Pro Max). Wrapping the
+   * table in its own horizontally-scrollable strip with a min-width lets
+   * a narrow viewport scroll sideways to read it intact instead of the
+   * columns colliding.
+   */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 4px; }
+  table { width: 100%; min-width: 520px; border-collapse: collapse; table-layout: fixed; margin-bottom: 0; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; }
   th, td { border: 1px solid #999999; padding: 6px 8px; font-size: 11px; vertical-align: top; }
@@ -172,19 +188,21 @@ export class QuotationRendererService {
     </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th class="col-idx">#</th>
-        <th>Позиція</th>
-        <th class="col-num">Кількість</th>
-        <th class="col-num">Ціна</th>
-        <th class="col-num">Знижка</th>
-        <th class="col-num">Сума</th>
-      </tr>
-    </thead>
-    <tbody>${itemRows}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-idx">#</th>
+          <th>Позиція</th>
+          <th class="col-num">Кількість</th>
+          <th class="col-num">Ціна</th>
+          <th class="col-num">Знижка</th>
+          <th class="col-num">Сума</th>
+        </tr>
+      </thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+  </div>
 
   <div class="totals">
     <div class="row"><span>Разом до знижки</span><span>${money(data.subtotal)}</span></div>
