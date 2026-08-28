@@ -341,15 +341,15 @@ function RequisitesCard({ t, tc }: { t: ReturnType<typeof useTranslations>; tc: 
     setSaved(false);
     try {
       await updateRequisites.mutateAsync({
-        legalName: legalName || undefined,
-        taxId: taxId || undefined,
-        legalAddress: legalAddress || undefined,
-        phone: phone || undefined,
-        email: email || undefined,
-        bankName: bankName || undefined,
-        bankIban: bankIban || undefined,
-        bankMfo: bankMfo || undefined,
-        website: website || undefined,
+        legalName: legalName || null,
+        taxId: taxId || null,
+        legalAddress: legalAddress || null,
+        phone: phone || null,
+        email: email || null,
+        bankName: bankName || null,
+        bankIban: bankIban || null,
+        bankMfo: bankMfo || null,
+        website: website || null,
       });
       setSaved(true);
     } catch (err) {

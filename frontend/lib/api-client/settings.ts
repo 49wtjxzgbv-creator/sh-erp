@@ -79,16 +79,17 @@ export interface CompanyRequisites {
   updatedAt: string;
 }
 
+/** `undefined`/omitted = leave as-is, `null` = clear the field — see update-requisites.dto.ts's own header comment. The form always submits the full current state, so callers should pass null (not omit) for a field the user cleared. */
 export interface UpdateCompanyRequisitesInput {
-  legalName?: string;
-  taxId?: string;
-  legalAddress?: string;
-  phone?: string;
-  email?: string;
-  bankName?: string;
-  bankIban?: string;
-  bankMfo?: string;
-  website?: string;
+  legalName?: string | null;
+  taxId?: string | null;
+  legalAddress?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  bankName?: string | null;
+  bankIban?: string | null;
+  bankMfo?: string | null;
+  website?: string | null;
 }
 
 /** Same "no permission guard on GET" shape as getCompanyBranding above — requisites feed into the Quotation PDF's company-details block, so any authenticated user who can view a KП needs to be able to read them, not just settings:manage. */

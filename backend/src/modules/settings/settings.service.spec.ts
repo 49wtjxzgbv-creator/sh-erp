@@ -63,4 +63,17 @@ describe('SettingsService', () => {
     });
     expect(result).toBe(requisites);
   });
+
+  it('updateRequisites() passes an explicit null through as a real clear, not a no-op', async () => {
+    const requisites = { companyId: 'c1', legalName: null };
+    prisma.tenant.companyRequisites.upsert.mockResolvedValue(requisites);
+
+    await service.updateRequisites(user, { legalName: null });
+
+    expect(prisma.tenant.companyRequisites.upsert).toHaveBeenCalledWith({
+      where: { companyId: 'c1' },
+      update: { legalName: null },
+      create: { legalName: null },
+    });
+  });
 });
