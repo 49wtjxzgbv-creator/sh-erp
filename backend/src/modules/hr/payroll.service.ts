@@ -6,6 +6,23 @@ import { AuditService } from '../audit/audit.service';
 import { PayrollSummaryQueryDto, QueryPayrollEntriesDto, RecordPayrollEntryDto } from './dto/payroll-entry.dto';
 import { PayrollPeriodsService } from './payroll-periods.service';
 
+/**
+ * One (employee, article) bucket of PIECEWORK output for the period — "яку
+ * кількість якого артикулу зробив" (2026-08-28 user request). `assemblyId
+ * null` is the real "no article" bucket: a WorkTask-based PIECEWORK entry
+ * (general labor, never linked to a ProductionOrder/Assembly at all — see
+ * WorkTaskItem.customerOrderItemId's own schema comment) or a
+ * ProductionOrder whose Assembly was hard-deleted after the fact. Never
+ * dropped silently — always present under `article: null` instead.
+ */
+export interface PayrollArticleLine {
+  assemblyId: string | null;
+  assemblyName: string | null;
+  article: string | null;
+  unitsProduced: number;
+  amount: number;
+}
+
 export interface PayrollSummaryLine {
   employeeId: string;
   employeeName: string;
@@ -15,6 +32,7 @@ export interface PayrollSummaryLine {
   penalties: number;
   netTotal: number;
   defectCount: number;
+  byArticle: PayrollArticleLine[];
 }
 
 /**
@@ -113,6 +131,22 @@ export class PayrollService {
       this.prisma.tenant.qcCheck.findMany({ where: { result: 'REWORK' } }),
     ]);
 
+    // Article breakdown for PIECEWORK entries: PayrollEntry only carries
+    // productionOrderId, never assemblyId/article directly — resolved here
+    // via ProductionOrder -> Assembly, batched (same "fetch once, join in
+    // memory" discipline as the defect-count join above) rather than
+    // per-entry.
+    const productionOrderIds = Array.from(new Set((entries as any[]).map((e) => e.productionOrderId).filter((id): id is string => Boolean(id))));
+    const productionOrders = productionOrderIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } }, select: { id: true, assemblyId: true } })
+      : [];
+    const assemblyIdByOrderId = new Map((productionOrders as any[]).map((o) => [o.id, o.assemblyId]));
+    const assemblyIds = Array.from(new Set((productionOrders as any[]).map((o) => o.assemblyId)));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
     const reworkFinishedGoodIds = new Set((reworkChecks as any[]).map((c) => c.finishedGoodId));
 
     // productionOrderId -> count of that order's finished goods with a REWORK check
@@ -136,6 +170,7 @@ export class PayrollService {
     }
 
     const summaryByEmployee = new Map<string, PayrollSummaryLine>();
+    const articlesByEmployee = new Map<string, Map<string, PayrollArticleLine>>();
     const employeeById = new Map<string, any>();
     for (const e of employees as any[]) employeeById.set(e.id, e);
 
@@ -150,16 +185,43 @@ export class PayrollService {
           penalties: 0,
           netTotal: 0,
           defectCount: defectCountByEmployee.get(employeeId) ?? 0,
+          byArticle: [],
         });
       }
       return summaryByEmployee.get(employeeId)!;
     };
 
+    const GENERAL_WORK_KEY = '__general__';
+    const ensureArticleLine = (employeeId: string, assemblyId: string | null): PayrollArticleLine => {
+      let byArticle = articlesByEmployee.get(employeeId);
+      if (!byArticle) {
+        byArticle = new Map();
+        articlesByEmployee.set(employeeId, byArticle);
+      }
+      const key = assemblyId ?? GENERAL_WORK_KEY;
+      if (!byArticle.has(key)) {
+        const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
+        byArticle.set(key, {
+          assemblyId,
+          assemblyName: assembly?.name ?? null,
+          article: assembly?.article ?? null,
+          unitsProduced: 0,
+          amount: 0,
+        });
+      }
+      return byArticle.get(key)!;
+    };
+
     for (const entry of entries as any[]) {
       const line = ensureLine(entry.employeeId);
       const amount = Number(entry.amount);
-      if (entry.type === 'PIECEWORK') line.piecework += amount;
-      else if (entry.type === 'ADVANCE') line.advances += amount;
+      if (entry.type === 'PIECEWORK') {
+        line.piecework += amount;
+        const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
+        const articleLine = ensureArticleLine(entry.employeeId, assemblyId);
+        articleLine.unitsProduced += Number(entry.unitsProduced ?? 0);
+        articleLine.amount += amount;
+      } else if (entry.type === 'ADVANCE') line.advances += amount;
       else if (entry.type === 'BONUS') line.bonuses += amount;
       else if (entry.type === 'PENALTY') line.penalties += amount;
       line.netTotal += amount;
@@ -168,6 +230,17 @@ export class PayrollService {
     // Include employees with a defect count but zero payroll entries in the period too, so the report never silently drops them.
     for (const employeeId of defectCountByEmployee.keys()) {
       ensureLine(employeeId);
+    }
+
+    for (const [employeeId, line] of summaryByEmployee) {
+      const byArticle = articlesByEmployee.get(employeeId);
+      line.byArticle = byArticle
+        ? Array.from(byArticle.values()).sort((a, b) => {
+            if (a.assemblyId === null) return 1; // general work (no article) always sorts last
+            if (b.assemblyId === null) return -1;
+            return (a.article ?? '').localeCompare(b.article ?? '');
+          })
+        : [];
     }
 
     return Array.from(summaryByEmployee.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName));

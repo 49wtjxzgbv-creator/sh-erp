@@ -15,6 +15,8 @@ describe('PayrollService', () => {
         productionOrderWorker: { findMany: jest.fn().mockResolvedValue([]) },
         finishedGood: { findMany: jest.fn().mockResolvedValue([]) },
         qcCheck: { findMany: jest.fn().mockResolvedValue([]) },
+        productionOrder: { findMany: jest.fn().mockResolvedValue([]) },
+        assembly: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -107,6 +109,49 @@ describe('PayrollService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].defectCount).toBe(1);
       expect(result[0].netTotal).toBe(0);
+    });
+  });
+
+  describe('getPayrollSummaryReport — per-article breakdown (2026-08-28 user request)', () => {
+    it('resolves a PIECEWORK entry\'s article via ProductionOrder -> Assembly and sums units/amount per (employee, article)', async () => {
+      prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 60, unitsProduced: 2, productionOrderId: 'po1' }, // second batch of the same article
+      ]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1' }]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'a1', name: 'Widget', article: 'W-1' }]);
+
+      const [line] = await service.getPayrollSummaryReport(user, {});
+
+      expect(line.byArticle).toEqual([
+        { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 6, amount: 160 },
+      ]);
+    });
+
+    it('buckets a PIECEWORK entry with no productionOrderId (WorkTask-based general labor) under a null-article "general work" line, sorted last', async () => {
+      prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 30, unitsProduced: null, productionOrderId: null },
+      ]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1' }]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'a1', name: 'Widget', article: 'W-1' }]);
+
+      const [line] = await service.getPayrollSummaryReport(user, {});
+
+      expect(line.byArticle).toHaveLength(2);
+      expect(line.byArticle[0].article).toBe('W-1');
+      expect(line.byArticle[1]).toEqual({ assemblyId: null, assemblyName: null, article: null, unitsProduced: 0, amount: 30 });
+    });
+
+    it('never lets ADVANCE/BONUS/PENALTY entries leak into the article breakdown', async () => {
+      prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([{ employeeId: 'e1', type: 'BONUS', amount: 50 }]);
+
+      const [line] = await service.getPayrollSummaryReport(user, {});
+
+      expect(line.byArticle).toEqual([]);
     });
   });
 });

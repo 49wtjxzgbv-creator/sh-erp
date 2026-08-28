@@ -134,6 +134,15 @@ export function queryPayrollEntries(query: QueryPayrollEntriesInput = {}): Promi
   return apiClient.get<PaginatedPayrollEntries>('payroll/entries', { query: query as Record<string, string | number> });
 }
 
+/** One (employee, article) bucket of PIECEWORK output for the period. `assemblyId: null` is the real "no article" bucket — general labor never linked to a ProductionOrder/Assembly. */
+export interface PayrollArticleLine {
+  assemblyId: string | null;
+  assemblyName: string | null;
+  article: string | null;
+  unitsProduced: number;
+  amount: number;
+}
+
 export interface PayrollSummaryLine {
   employeeId: string;
   employeeName: string;
@@ -144,6 +153,7 @@ export interface PayrollSummaryLine {
   penalties: number;
   netTotal: number;
   defectCount: number;
+  byArticle: PayrollArticleLine[];
 }
 
 export interface PayrollSummaryQuery {
