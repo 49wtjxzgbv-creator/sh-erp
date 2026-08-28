@@ -449,6 +449,21 @@ describe('ProductionOrdersService', () => {
       expect(stockReservationService.consume).not.toHaveBeenCalled();
     });
 
+    it('real bug (2026-08-28): a sub-assembly batch (subAssemblyForItemId, not customerOrderItemId) finds its OWN reservation instead of being treated as ad-hoc', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, customerOrderItemId: null, subAssemblyForItemId: 'item1' });
+      prisma.tenant.customerOrderItem.findUnique.mockResolvedValue({ id: 'item1', customerOrderId: 'co1' });
+      // needed = 6 (unitsPlanned 2 * qtyPerUnit 3); this batch's own order (co1) already
+      // reserved all of it via subAssemblyForItemId — before the fix this was invisible to
+      // start() (which only ever checked customerOrderItemId), so the batch was falsely
+      // treated as ad-hoc with no reservation of its own.
+      stockReservationService.getReservedForOrder.mockResolvedValue({ fromStock: 6, fromPurchase: 0 });
+
+      await service.start(user, 'po1', {});
+
+      expect(stockReservationService.getReservedForOrder).toHaveBeenCalledWith(user, 'co1', 'p1', 'wDefault');
+      expect(stockReservationService.consume).toHaveBeenCalledWith(user, { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', source: 'STOCK' }, 6);
+    });
+
     it('§2026-08-27: a batch linked to a customer order shrinks THAT ORDER\'s own SubAssemblyReservation as sub-assembly units are consumed', async () => {
       prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, customerOrderItemId: 'item1' });
       prisma.tenant.customerOrderItem.findUnique.mockResolvedValue({ id: 'item1', customerOrderId: 'co1' });

@@ -219,6 +219,27 @@ export class ProductionOrdersService {
    * round trips regardless of page size, so the list view can show/link
    * "which sales order" without an N+1 request per row.
    */
+  /**
+   * Same dual-field resolution as withCustomerOrderRef's own comment
+   * (`customerOrderItemId` for a "give to production" batch,
+   * `subAssemblyForItemId` for a sub-assembly batch, never both) — needed
+   * here too so start()'s availability check can find THIS order's own
+   * stock reservation (excluding it from "otherReserved") and so a
+   * cancelled sub-assembly batch's reversed consumption gets preferentially
+   * re-reserved for the right customer order. Before this fix, both call
+   * sites only ever checked `customerOrderItemId`, so every sub-assembly
+   * production batch was treated as a plain ad-hoc order with no
+   * reservation of its own — even when its raw materials were already
+   * legitimately reserved for the customer order it exists to fulfill,
+   * making start() falsely report a shortage (real bug, 2026-08-28).
+   */
+  private async resolveCustomerOrderId(order: { customerOrderItemId: string | null; subAssemblyForItemId: string | null }): Promise<string | null> {
+    const itemId = order.customerOrderItemId ?? order.subAssemblyForItemId;
+    if (!itemId) return null;
+    const item = await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: itemId } });
+    return item?.customerOrderId ?? null;
+  }
+
   private async withCustomerOrderRef(orders: any[]) {
     const itemIds = Array.from(new Set(orders.map((o) => o.customerOrderItemId ?? o.subAssemblyForItemId).filter((id): id is string => Boolean(id))));
     const orderItems = itemIds.length
@@ -363,10 +384,7 @@ export class ProductionOrdersService {
     // out as material is actually consumed below. Reservations are a
     // shared pool for the WHOLE order (CustomerOrderShortageService's own
     // design), so only the order id is needed, not the specific line.
-    const orderItem = order.customerOrderItemId
-      ? await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: order.customerOrderItemId } })
-      : null;
-    const customerOrderId = orderItem?.customerOrderId ?? null;
+    const customerOrderId = await this.resolveCustomerOrderId(order);
 
     // ---- Pass 1: check availability for every line before consuming anything ----
     const shortages: ShortageLine[] = [];
@@ -703,10 +721,7 @@ export class ProductionOrdersService {
     // batch's customer-order reservation the same way any other stock
     // increase does (StockReservationService#topUp) — no manual
     // reservation surgery needed. ----
-    const orderItem = order.customerOrderItemId
-      ? await this.prisma.tenant.customerOrderItem.findUnique({ where: { id: order.customerOrderItemId } })
-      : null;
-    const customerOrderId = orderItem?.customerOrderId ?? undefined;
+    const customerOrderId = (await this.resolveCustomerOrderId(order)) ?? undefined;
 
     const consumptionMovements = await this.prisma.tenant.stockMovement.findMany({
       where: { sourceType: 'ProductionOrder', sourceId: id, type: 'PRODUCTION_CONSUMPTION' },
