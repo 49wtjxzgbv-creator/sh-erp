@@ -100,7 +100,7 @@ export function PricingMethodField({
           <div className="space-y-0.5">
             <p className="text-xs text-destructive">{t('noBasePriceWarning')}</p>
             {assemblyId && (
-              <Link href={`/bom/${assemblyId}`} target="_blank" className="text-xs text-primary hover:underline">
+              <Link href={`/bom/${assemblyId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
                 {t('setBasePriceLink')}
               </Link>
             )}
