@@ -171,4 +171,41 @@ describe('StockService', () => {
       );
     });
   });
+
+  describe('getLevels — zero-row synthesis scope (2026-08-28 fix)', () => {
+    it('does NOT synthesize a zero row for every catalog product when browsing a specific NON-default warehouse — only real WarehouseStock rows show', async () => {
+      prisma.tenant.warehouse.findFirst = jest.fn().mockResolvedValueOnce({ id: 'wDefault' });
+      prisma.tenant.warehouseStock.findMany = jest.fn().mockResolvedValue([{ productId: 'p1', warehouseId: 'w2', qty: '5', reservedQty: '0' }]);
+      prisma.tenant.product.findMany = jest.fn().mockResolvedValue([{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }]);
+
+      const result = await service.getLevels(user, { warehouseId: 'w2' });
+
+      expect(prisma.tenant.product.findMany).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      expect(result[0].productId).toBe('p1');
+    });
+
+    it('still synthesizes zero rows for every un-stocked product when browsing "all warehouses" (no warehouseId filter)', async () => {
+      prisma.tenant.warehouse.findFirst = jest.fn().mockResolvedValueOnce({ id: 'wDefault' });
+      prisma.tenant.warehouseStock.findMany = jest.fn().mockResolvedValue([]);
+      prisma.tenant.product.findMany = jest.fn().mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+
+      const result = await service.getLevels(user, {});
+
+      expect(prisma.tenant.product.findMany).toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result.every((r: any) => r.warehouseId === 'wDefault')).toBe(true);
+    });
+
+    it('still synthesizes zero rows when the default warehouse itself is explicitly browsed', async () => {
+      prisma.tenant.warehouse.findFirst = jest.fn().mockResolvedValueOnce({ id: 'wDefault' });
+      prisma.tenant.warehouseStock.findMany = jest.fn().mockResolvedValue([]);
+      prisma.tenant.product.findMany = jest.fn().mockResolvedValue([{ id: 'p1' }]);
+
+      const result = await service.getLevels(user, { warehouseId: 'wDefault' });
+
+      expect(prisma.tenant.product.findMany).toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+    });
+  });
 });

@@ -210,11 +210,23 @@ export class StockService {
     // A WarehouseStock row is only ever materialized reactively, by
     // recordMovement's upsert (see this file's header comment) — a product
     // that has never had a single movement (e.g. just created in Catalog)
-    // has no row anywhere and would otherwise be silently absent from this
-    // list instead of showing up with qty 0. Synthesize a zero row for
-    // every such product, attributed to whichever warehouse is being
-    // browsed (the explicit filter, or the company's default warehouse
-    // when browsing "all warehouses").
+    // has no row anywhere and would otherwise be silently absent from the
+    // "all warehouses" / main-warehouse view instead of showing up with
+    // qty 0. Synthesize a zero row for every such product, but ONLY for
+    // that aggregate/main view — attributing it to the default warehouse.
+    //
+    // A specific NON-default warehouse (a satellite location, a van, a
+    // showroom — anything the user created themselves) must show only
+    // products that actually have a real WarehouseStock row there. Without
+    // this guard, browsing any such warehouse synthesized a zero row for
+    // literally every product in the whole catalog, making an empty
+    // warehouse look like it held everything the main warehouse does —
+    // reported directly by a user (2026-08-28): "той склад теж показує
+    // все, а не тільки те, що ми туди додали."
+    if (query.warehouseId && query.warehouseId !== defaultWarehouseId) {
+      return existing;
+    }
+
     const targetWarehouseId = query.warehouseId ?? defaultWarehouseId;
     if (!targetWarehouseId) return existing;
 
