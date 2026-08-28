@@ -11,6 +11,8 @@ import {
   useUpdateCompanySettings,
   useCompanyBranding,
   useUpdateCompanyBranding,
+  useCompanyRequisites,
+  useUpdateCompanyRequisites,
 } from '@/lib/hooks/use-settings';
 import { useChangeOwnPassword } from '@/lib/hooks/use-users';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -34,6 +36,7 @@ export default function SettingsPage() {
       <h1 className="text-xl font-semibold">{t('title')}</h1>
       {canManageSettings && <GeneralSettingsCard t={t} tc={tc} />}
       {canManageSettings && companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
+      {canManageSettings && <RequisitesCard t={t} tc={tc} />}
       {canManageImport && <LegacyImportCard t={t} />}
       <ChangePasswordCard t={t} tc={tc} />
     </div>
@@ -290,6 +293,126 @@ function BrandingCard({
           />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * "Реквізити компанії" — legal/contact/bank details, distinct from
+ * GeneralSettingsCard (operational config) and BrandingCard (logos). Feeds
+ * the Quotation PDF's company-details block when no per-template override
+ * is set (QuotationsService#renderVersionHtml's own fallback) — this is the
+ * one place that block's text actually comes from for most companies.
+ */
+function RequisitesCard({ t, tc }: { t: ReturnType<typeof useTranslations>; tc: ReturnType<typeof useTranslations> }) {
+  const apiErrorMessage = useApiErrorMessage();
+  const { data: requisites, isLoading } = useCompanyRequisites();
+  const updateRequisites = useUpdateCompanyRequisites();
+
+  const [legalName, setLegalName] = useState('');
+  const [taxId, setTaxId] = useState('');
+  const [legalAddress, setLegalAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankIban, setBankIban] = useState('');
+  const [bankMfo, setBankMfo] = useState('');
+  const [website, setWebsite] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!requisites) return;
+    setLegalName(requisites.legalName ?? '');
+    setTaxId(requisites.taxId ?? '');
+    setLegalAddress(requisites.legalAddress ?? '');
+    setPhone(requisites.phone ?? '');
+    setEmail(requisites.email ?? '');
+    setBankName(requisites.bankName ?? '');
+    setBankIban(requisites.bankIban ?? '');
+    setBankMfo(requisites.bankMfo ?? '');
+    setWebsite(requisites.website ?? '');
+  }, [requisites]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    try {
+      await updateRequisites.mutateAsync({
+        legalName: legalName || undefined,
+        taxId: taxId || undefined,
+        legalAddress: legalAddress || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        bankName: bankName || undefined,
+        bankIban: bankIban || undefined,
+        bankMfo: bankMfo || undefined,
+        website: website || undefined,
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  if (isLoading) {
+    return <LoadingBlock />;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('requisites')}</CardTitle>
+        <CardDescription>{t('requisitesDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="legalName">{t('legalName')}</Label>
+              <Input id="legalName" value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="taxId">{t('taxId')}</Label>
+              <Input id="taxId" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone">{t('phone')}</Label>
+              <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="legalAddress">{t('legalAddress')}</Label>
+              <Input id="legalAddress" value={legalAddress} onChange={(e) => setLegalAddress(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="requisitesEmail">{t('email')}</Label>
+              <Input id="requisitesEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="website">{t('website')}</Label>
+              <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bankName">{t('bankName')}</Label>
+              <Input id="bankName" value={bankName} onChange={(e) => setBankName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bankIban">{t('bankIban')}</Label>
+              <Input id="bankIban" value={bankIban} onChange={(e) => setBankIban(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bankMfo">{t('bankMfo')}</Label>
+              <Input id="bankMfo" value={bankMfo} onChange={(e) => setBankMfo(e.target.value)} />
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {saved && !error && <p className="text-sm text-success">{t('saveSuccess')}</p>}
+          <Button type="submit" loading={updateRequisites.isPending}>
+            {tc('save')}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );

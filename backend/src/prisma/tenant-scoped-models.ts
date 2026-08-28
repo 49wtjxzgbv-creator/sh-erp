@@ -37,6 +37,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'PayrollEntry',
   'CompanySettings',
   'CompanyBranding',
+  'CompanyRequisites',
   'CompanyAiSettings',
   'PendingAiAction',
   'AiUsageLog',

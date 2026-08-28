@@ -84,11 +84,13 @@ export class QuotationItemInputDto {
   @IsString()
   unit?: string;
 
-  @ApiProperty({ enum: ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'] })
-  @IsIn(['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'])
+  @ApiProperty({
+    enum: ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'],
+  })
+  @IsIn(['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'])
   pricingSource!: string;
 
-  @ApiPropertyOptional({ description: 'Required for MARKUP_PERCENT/COST_PLUS_MARGIN.' })
+  @ApiPropertyOptional({ description: 'Required for MARKUP_PERCENT/COST_PLUS_MARGIN/LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN.' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

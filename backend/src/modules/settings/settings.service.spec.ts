@@ -11,6 +11,7 @@ describe('SettingsService', () => {
       tenant: {
         companySettings: { findUniqueOrThrow: jest.fn(), update: jest.fn() },
         companyBranding: { findUnique: jest.fn(), upsert: jest.fn() },
+        companyRequisites: { findUnique: jest.fn(), upsert: jest.fn() },
       },
     };
     audit = { record: jest.fn() };
@@ -47,5 +48,19 @@ describe('SettingsService', () => {
       create: { siteLogoFileId: 'f1' },
     });
     expect(result).toBe(branding);
+  });
+
+  it('updateRequisites() upserts (requisites row may not exist yet)', async () => {
+    const requisites = { companyId: 'c1', legalName: 'ТОВ Приклад' };
+    prisma.tenant.companyRequisites.upsert.mockResolvedValue(requisites);
+
+    const result = await service.updateRequisites(user, { legalName: 'ТОВ Приклад' });
+
+    expect(prisma.tenant.companyRequisites.upsert).toHaveBeenCalledWith({
+      where: { companyId: 'c1' },
+      update: { legalName: 'ТОВ Приклад' },
+      create: { legalName: 'ТОВ Приклад' },
+    });
+    expect(result).toBe(requisites);
   });
 });

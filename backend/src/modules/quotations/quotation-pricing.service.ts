@@ -9,6 +9,8 @@ export interface ComputeItemPricingInput {
   basePrice: number | null;
   /** costSnapshot — required for MARKUP_PERCENT and COST_PLUS_MARGIN. Never required for BASE_PRICE/CUSTOM, but still carried through for the belowCost check below when known. */
   cost: number | null;
+  /** Assembly.laborCostPerUnit — required for LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN. Unlike `cost`, this is never "unknown" for a real ASSEMBLY line (the field defaults to 0, not unset) — null here means "not applicable" (kind other than ASSEMBLY, which has no labor-cost concept). */
+  laborCost: number | null;
   /** The % entered for MARKUP_PERCENT or COST_PLUS_MARGIN — same field, disambiguated by pricingSource (see this service's own header comment for why these two formulas must never be conflated). */
   pricingPercent: number | null;
   /** The manually-entered price for CUSTOM. */
@@ -34,19 +36,26 @@ export interface ComputedItemPricing {
  * to be gotten subtly wrong and hardest to spot in review once buried in a
  * bigger method — has nothing else to distract from it.
  *
- * The four pricing methods (explicit user decision, 2026-08-27):
- *   BASE_PRICE:        unitPrice = basePrice, unchanged
- *   MARKUP_PERCENT:    unitPrice = cost × (1 + p/100)       — e.g. 25% ⇒ cost × 1.25
- *   COST_PLUS_MARGIN:  unitPrice = cost / (1 - p/100)       — e.g. 25% ⇒ cost / 0.75
- *   CUSTOM:            unitPrice = customUnitPrice, as entered
+ * The six pricing methods (explicit user decision, 2026-08-27; the two
+ * LABOR_* methods added 2026-08-28):
+ *   BASE_PRICE:              unitPrice = basePrice, unchanged
+ *   MARKUP_PERCENT:          unitPrice = cost × (1 + p/100)            — e.g. 25% ⇒ cost × 1.25
+ *   COST_PLUS_MARGIN:        unitPrice = cost / (1 - p/100)            — e.g. 25% ⇒ cost / 0.75
+ *   LABOR_MARKUP_PERCENT:    unitPrice = laborCost × (1 + p/100)       — same formula as MARKUP_PERCENT, labor cost only
+ *   LABOR_COST_PLUS_MARGIN:  unitPrice = laborCost / (1 - p/100)       — same formula as COST_PLUS_MARGIN, labor cost only
+ *   CUSTOM:                  unitPrice = customUnitPrice, as entered
  *
  * MARKUP_PERCENT and COST_PLUS_MARGIN are NOT interchangeable — a markup
  * multiplies cost up; a margin target divides cost by the fraction of
  * revenue that ISN'T cost, which is a strictly larger number for the same
  * percent (25% markup on €8000 is €10000; 25% margin on €8000 is
  * €10666.67, since €8000 must be exactly 75% of the resulting price, not
- * 80%). Both key off `cost`, never off `basePrice` — only BASE_PRICE ever
- * reads basePrice.
+ * 80%). Same relationship holds between the two LABOR_* variants. All four
+ * markup/margin methods key off `cost` or `laborCost`, never `basePrice` —
+ * only BASE_PRICE ever reads basePrice. The below-cost check further down
+ * always compares against the FULL assembly cost regardless of which
+ * method priced the line — pricing off labor content alone must never
+ * silently hide a sale that doesn't even cover materials.
  *
  * Discount is applied AFTER the pricing formula produces unitPrice, never
  * folded into it (§5 requirement) — subtotal = unitPrice × quantity is the
@@ -103,6 +112,17 @@ export class QuotationPricingService {
         }
         return round2(input.cost! / (1 - input.pricingPercent! / 100));
       }
+      case 'LABOR_MARKUP_PERCENT': {
+        this.requireLaborCostAndPercent(input);
+        return round2(input.laborCost! * (1 + input.pricingPercent! / 100));
+      }
+      case 'LABOR_COST_PLUS_MARGIN': {
+        this.requireLaborCostAndPercent(input);
+        if (input.pricingPercent! >= 100) {
+          throw new CodedBadRequestException('QUOTATION_ITEM_MARGIN_TOO_HIGH', 'Margin percent must be less than 100 — a 100%+ margin implies an infinite or negative price.');
+        }
+        return round2(input.laborCost! / (1 - input.pricingPercent! / 100));
+      }
       case 'CUSTOM': {
         if (input.customUnitPrice === null) {
           throw new CodedBadRequestException('QUOTATION_ITEM_NO_CUSTOM_PRICE', 'Custom pricing was selected but no price was entered.');
@@ -115,6 +135,15 @@ export class QuotationPricingService {
   private requireCostAndPercent(input: ComputeItemPricingInput): void {
     if (input.cost === null) {
       throw new CodedBadRequestException('QUOTATION_ITEM_NO_COST', 'This line has no known cost — markup/margin pricing needs a cost basis.');
+    }
+    if (input.pricingPercent === null) {
+      throw new CodedBadRequestException('QUOTATION_ITEM_NO_PRICING_PERCENT', 'A percent value is required for this pricing method.');
+    }
+  }
+
+  private requireLaborCostAndPercent(input: ComputeItemPricingInput): void {
+    if (input.laborCost === null) {
+      throw new CodedBadRequestException('QUOTATION_ITEM_NO_LABOR_COST', 'This line has no labor cost basis — labor-based pricing only applies to assemblies.');
     }
     if (input.pricingPercent === null) {
       throw new CodedBadRequestException('QUOTATION_ITEM_NO_PRICING_PERCENT', 'A percent value is required for this pricing method.');

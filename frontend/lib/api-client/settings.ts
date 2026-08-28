@@ -63,3 +63,39 @@ export function getCompanyBranding(): Promise<CompanyBranding | null> {
 export function updateCompanyBranding(dto: UpdateCompanyBrandingInput): Promise<CompanyBranding> {
   return apiClient.patch<CompanyBranding>('company-settings/branding', dto);
 }
+
+export interface CompanyRequisites {
+  companyId: string;
+  legalName: string | null;
+  taxId: string | null;
+  legalAddress: string | null;
+  phone: string | null;
+  email: string | null;
+  bankName: string | null;
+  bankIban: string | null;
+  bankMfo: string | null;
+  website: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateCompanyRequisitesInput {
+  legalName?: string;
+  taxId?: string;
+  legalAddress?: string;
+  phone?: string;
+  email?: string;
+  bankName?: string;
+  bankIban?: string;
+  bankMfo?: string;
+  website?: string;
+}
+
+/** Same "no permission guard on GET" shape as getCompanyBranding above — requisites feed into the Quotation PDF's company-details block, so any authenticated user who can view a KП needs to be able to read them, not just settings:manage. */
+export function getCompanyRequisites(): Promise<CompanyRequisites | null> {
+  return apiClient.get<CompanyRequisites | null>('company-settings/requisites');
+}
+
+export function updateCompanyRequisites(dto: UpdateCompanyRequisitesInput): Promise<CompanyRequisites> {
+  return apiClient.patch<CompanyRequisites>('company-settings/requisites', dto);
+}

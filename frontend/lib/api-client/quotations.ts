@@ -18,7 +18,7 @@ import type { Customer } from './customers';
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED';
 export type QuotationItemKind = 'ASSEMBLY' | 'PRODUCT' | 'SERVICE' | 'DELIVERY' | 'INSTALLATION' | 'CUSTOM';
-export type PricingSource = 'BASE_PRICE' | 'MARKUP_PERCENT' | 'COST_PLUS_MARGIN' | 'CUSTOM';
+export type PricingSource = 'BASE_PRICE' | 'MARKUP_PERCENT' | 'COST_PLUS_MARGIN' | 'LABOR_MARKUP_PERCENT' | 'LABOR_COST_PLUS_MARGIN' | 'CUSTOM';
 
 export interface QuotationVersionItem {
   id: string;

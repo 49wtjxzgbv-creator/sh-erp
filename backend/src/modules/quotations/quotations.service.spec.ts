@@ -16,6 +16,7 @@ function makeFakePrisma() {
     role: new Map<string, any>(),
     customerOrder: new Map<string, any>(),
     companyBranding: new Map<string, any>(),
+    companyRequisites: new Map<string, any>(),
   };
   let n = 0;
   const nextId = (prefix: string) => `${prefix}-${++n}`;
@@ -42,6 +43,9 @@ function makeFakePrisma() {
     },
     companyBranding: {
       findUnique: jest.fn(({ where: { companyId } }: any) => Promise.resolve(db.companyBranding.get(companyId) ?? null)),
+    },
+    companyRequisites: {
+      findUnique: jest.fn(({ where: { companyId } }: any) => Promise.resolve(db.companyRequisites.get(companyId) ?? null)),
     },
     role: {
       findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(db.role.get(id) ?? null)),
@@ -194,6 +198,22 @@ describe('QuotationsService', () => {
       expect(Number(item.basePriceSnapshot)).toBe(12000);
       expect(Number(item.unitPrice)).toBe(10000); // 8000 * 1.25 — markup, not margin
       expect(saved.currentVersion.total).toBe(10000);
+    });
+
+    it('LABOR_MARKUP_PERCENT prices off Assembly.laborCostPerUnit, not the full assembly cost', async () => {
+      const { service, db, assemblies } = makeService();
+      db.assembly.set('asm-1', { id: 'asm-1', name: 'Cabinet X', baseSalePriceEur: 12000, laborCostPerUnit: 2000 });
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-1', costPerUnit: 8000, breakdown: [] });
+
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      const saved = await service.saveItems(user, q.id, {
+        items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-1', quantity: 1, pricingSource: 'LABOR_MARKUP_PERCENT', pricingPercent: 25 }],
+      } as any);
+
+      const item = saved.currentVersion.items[0];
+      expect(Number(item.laborCostSnapshot)).toBe(2000);
+      expect(Number(item.costSnapshot)).toBe(8000); // full cost still snapshotted, for the below-cost check
+      expect(Number(item.unitPrice)).toBe(2500); // 2000 * 1.25, not 8000 * 1.25
     });
 
     it('a stray belowCostApproved on the input is ignored — resolveItem always starts a fresh item unapproved', async () => {
@@ -409,6 +429,31 @@ describe('QuotationsService', () => {
       const html = await service.previewHtml(user, q.id);
       expect(html).toBe('<html>fake</html>');
       expect(renderer.renderHtml).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to Settings → Реквізити when no template overrides companyDetailsText', async () => {
+      const { service, db, renderer } = makeService();
+      db.companyRequisites.set('c1', { legalName: 'ТОВ Приклад', taxId: '12345678', legalAddress: null, phone: '+380001234567', email: null, bankName: null, bankIban: null, bankMfo: null, website: null });
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'CUSTOM', nameSnapshot: 'X', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10 }] } as any);
+
+      await service.previewHtml(user, q.id);
+
+      expect(renderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({ companyDetailsText: expect.stringContaining('ТОВ Приклад, ЄДРПОУ/ІПН: 12345678') }),
+      );
+    });
+
+    it('a template with its own companyDetailsText wins over Реквізити', async () => {
+      const { service, db, renderer } = makeService();
+      db.companyRequisites.set('c1', { legalName: 'ТОВ Приклад', taxId: null, legalAddress: null, phone: null, email: null, bankName: null, bankIban: null, bankMfo: null, website: null });
+      db.quotationTemplate.set('tpl-1', { id: 'tpl-1', isDefault: true, companyDetailsText: 'Custom template text' });
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'CUSTOM', nameSnapshot: 'X', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10 }] } as any);
+
+      await service.previewHtml(user, q.id);
+
+      expect(renderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ companyDetailsText: 'Custom template text' }));
     });
   });
 

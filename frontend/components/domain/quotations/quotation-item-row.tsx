@@ -41,7 +41,7 @@ export interface QuotationItemDraft {
 const ITEM_KINDS: QuotationItemKind[] = ['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'];
 
 function allowedSourcesForKind(kind: QuotationItemKind): PricingSource[] {
-  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'];
+  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'];
   if (kind === 'PRODUCT') return ['MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'];
   return ['CUSTOM'];
 }
@@ -78,13 +78,14 @@ export function QuotationItemRow({
 
   const cost = item.kind === 'ASSEMBLY' ? assemblyCost?.costPerUnit ?? null : item.kind === 'PRODUCT' ? toNumber(product?.sellPriceEur) : null;
   const basePrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.baseSalePriceEur ?? null) : null;
+  const laborCost = item.kind === 'ASSEMBLY' ? toNumber(assembly?.laborCostPerUnit ?? null) : null;
   // Existence of the id (not the display label) is what actually matters —
   // `entityLabel` is only ever populated by the picker's own onChange, so an
   // ASSEMBLY/PRODUCT line hydrated fresh from a saved quotation would show
   // a false "name required" warning if this checked the label instead.
   const hasTarget = item.kind === 'ASSEMBLY' ? Boolean(item.assemblyId) : item.kind === 'PRODUCT' ? Boolean(item.productId) : Boolean(item.nameSnapshot);
 
-  const livePrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice);
+  const livePrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost);
   const subtotal = livePrice !== null ? livePrice * item.quantity : null;
   const discountAmount = subtotal !== null ? subtotal * ((item.discountPercent ?? 0) / 100) : null;
   const lineTotal = subtotal !== null && discountAmount !== null ? subtotal - discountAmount : null;
@@ -213,6 +214,7 @@ export function QuotationItemRow({
                 customUnitPrice={item.customUnitPrice}
                 cost={cost}
                 basePrice={basePrice}
+                laborCost={laborCost}
                 currency={currency}
                 canViewMargin={canViewMargin}
                 disabled={!editable}

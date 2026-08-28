@@ -24,6 +24,7 @@ export function computeLivePrice(
   basePrice: number | null,
   pricingPercent: number | undefined,
   customUnitPrice: number | undefined,
+  laborCost: number | null = null,
 ): number | null {
   switch (pricingSource) {
     case 'BASE_PRICE':
@@ -32,6 +33,10 @@ export function computeLivePrice(
       return cost !== null && pricingPercent !== undefined ? round2(cost * (1 + pricingPercent / 100)) : null;
     case 'COST_PLUS_MARGIN':
       return cost !== null && pricingPercent !== undefined && pricingPercent < 100 ? round2(cost / (1 - pricingPercent / 100)) : null;
+    case 'LABOR_MARKUP_PERCENT':
+      return laborCost !== null && pricingPercent !== undefined ? round2(laborCost * (1 + pricingPercent / 100)) : null;
+    case 'LABOR_COST_PLUS_MARGIN':
+      return laborCost !== null && pricingPercent !== undefined && pricingPercent < 100 ? round2(laborCost / (1 - pricingPercent / 100)) : null;
     case 'CUSTOM':
       return customUnitPrice ?? null;
   }
@@ -48,6 +53,8 @@ export interface PricingMethodFieldProps {
   /** null = unknown/not resolved yet; also null (hidden) without quotations:view-margin — see this component's own render logic for the distinction via `canViewMargin`. */
   cost: number | null;
   basePrice: number | null;
+  /** Assembly.laborCostPerUnit — the basis for LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN. Unlike `cost`, never "unknown" for a real ASSEMBLY item (defaults to 0); null means "not applicable" (non-ASSEMBLY kind). */
+  laborCost: number | null;
   currency: string;
   canViewMargin: boolean;
   disabled?: boolean;
@@ -58,7 +65,14 @@ export interface PricingMethodFieldProps {
   onChange: (patch: { pricingSource?: PricingSource; pricingPercent?: number; customUnitPrice?: number }) => void;
 }
 
-const ALL_SOURCES: PricingSource[] = ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'];
+const ALL_SOURCES: PricingSource[] = [
+  'BASE_PRICE',
+  'MARKUP_PERCENT',
+  'COST_PLUS_MARGIN',
+  'LABOR_MARKUP_PERCENT',
+  'LABOR_COST_PLUS_MARGIN',
+  'CUSTOM',
+];
 
 export function PricingMethodField({
   pricingSource,
@@ -66,6 +80,7 @@ export function PricingMethodField({
   customUnitPrice,
   cost,
   basePrice,
+  laborCost,
   currency,
   canViewMargin,
   disabled,
@@ -74,7 +89,7 @@ export function PricingMethodField({
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
-  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice);
+  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost);
   const isBelowCost = canViewMargin && cost !== null && livePrice !== null && livePrice < cost;
 
   return (
@@ -123,6 +138,23 @@ export function PricingMethodField({
           <span className="text-xs text-muted-foreground">%</span>
           {cost === null && !canViewMargin && <span className="text-xs text-muted-foreground">{t('costHiddenNote')}</span>}
           {cost === null && canViewMargin && <span className="text-xs text-destructive">{t('noCostWarning')}</span>}
+        </div>
+      )}
+
+      {(pricingSource === 'LABOR_MARKUP_PERCENT' || pricingSource === 'LABOR_COST_PLUS_MARGIN') && (
+        <div className="flex items-center gap-1.5">
+          <Input
+            type="number"
+            step="0.1"
+            min={0}
+            max={pricingSource === 'LABOR_COST_PLUS_MARGIN' ? 99.9 : undefined}
+            className="h-8 w-20 text-xs"
+            value={pricingPercent ?? ''}
+            disabled={disabled}
+            onChange={(e) => onChange({ pricingPercent: e.target.value === '' ? undefined : Number(e.target.value) })}
+          />
+          <span className="text-xs text-muted-foreground">%</span>
+          {canViewMargin && laborCost !== null && <span className="text-xs text-muted-foreground">{t('laborCostLabel')}: {formatMoney(laborCost, currency)}</span>}
         </div>
       )}
 

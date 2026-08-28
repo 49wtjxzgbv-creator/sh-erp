@@ -261,6 +261,7 @@ export class QuotationsService {
     let nameSnapshot = dto.nameSnapshot;
     let cost: number | null = null;
     let basePrice: number | null = null;
+    let laborCost: number | null = null;
 
     if (dto.kind === 'ASSEMBLY') {
       if (!dto.assemblyId) throw new CodedBadRequestException('QUOTATION_ITEM_ASSEMBLY_ID_REQUIRED', 'assemblyId is required for kind=ASSEMBLY.');
@@ -268,6 +269,7 @@ export class QuotationsService {
       if (!assembly) throw new CodedNotFoundException('QUOTATION_ITEM_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
       nameSnapshot = nameSnapshot ?? assembly.name;
       basePrice = assembly.baseSalePriceEur !== null ? Number(assembly.baseSalePriceEur) : null;
+      laborCost = Number(assembly.laborCostPerUnit);
       const costResult = await this.assembliesService.calculateCost(user, dto.assemblyId);
       cost = costResult.costPerUnit;
     } else if (dto.kind === 'PRODUCT') {
@@ -285,6 +287,7 @@ export class QuotationsService {
       quantity: dto.quantity,
       basePrice,
       cost,
+      laborCost,
       pricingPercent: dto.pricingPercent ?? null,
       customUnitPrice: dto.customUnitPrice ?? null,
       discountPercent: dto.discountPercent ?? 0,
@@ -303,6 +306,7 @@ export class QuotationsService {
       pricingSource: dto.pricingSource,
       costSnapshot: cost,
       basePriceSnapshot: basePrice,
+      laborCostSnapshot: laborCost,
       pricingPercent: dto.pricingPercent ?? null,
       unitPrice: pricing.unitPrice,
       currency,
@@ -461,6 +465,10 @@ export class QuotationsService {
     // documented in this schema's own comment on printLogoFileId from day
     // one but never wired up until a real user reported the gap.
     const branding = await this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } });
+    // Same fallback shape as the logo above: Settings → "Реквізити компанії"
+    // is what actually fills in the PDF's company-details block for anyone
+    // who hasn't hand-written a per-template override.
+    const requisites = await this.prisma.tenant.companyRequisites.findUnique({ where: { companyId: user.companyId } });
 
     const templateSnapshot = template
       ? {
@@ -471,7 +479,10 @@ export class QuotationsService {
           visibleBlocks: template.visibleBlocks,
         }
       : null;
-    const companySnapshot = { name: company?.name ?? '', companyDetailsText: template?.companyDetailsText ?? null };
+    const companySnapshot = {
+      name: company?.name ?? '',
+      companyDetailsText: template?.companyDetailsText || formatRequisitesText(requisites),
+    };
 
     const logoFileId = template?.printLogoFileId ?? branding?.printLogoFileId ?? null;
     const logoUrl = logoFileId ? (await this.filesService.getDownloadUrl(user, logoFileId).catch(() => null))?.downloadUrl ?? null : null;
@@ -786,4 +797,28 @@ export class QuotationsService {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * Renders Settings → "Реквізити компанії" into the same free-text block a
+ * QuotationTemplate.companyDetailsText override would occupy (see
+ * QuotationRendererService's `.company-details` — `white-space: pre-line`,
+ * so `\n` here is a real line break in the PDF). Returns null when nothing
+ * is filled in yet, same as an unset template override — the renderer
+ * already omits the whole block in that case.
+ */
+function formatRequisitesText(r: { legalName: string | null; taxId: string | null; legalAddress: string | null; phone: string | null; email: string | null; bankName: string | null; bankIban: string | null; bankMfo: string | null; website: string | null } | null): string | null {
+  if (!r) return null;
+  const lines: string[] = [];
+  if (r.legalName) lines.push(r.taxId ? `${r.legalName}, ЄДРПОУ/ІПН: ${r.taxId}` : r.legalName);
+  else if (r.taxId) lines.push(`ЄДРПОУ/ІПН: ${r.taxId}`);
+  if (r.legalAddress) lines.push(r.legalAddress);
+  const contact = [r.phone, r.email].filter(Boolean).join('   ');
+  if (contact) lines.push(contact);
+  if (r.bankName || r.bankIban || r.bankMfo) {
+    const bank = [r.bankName, r.bankIban ? `IBAN: ${r.bankIban}` : null, r.bankMfo ? `МФО: ${r.bankMfo}` : null].filter(Boolean).join(', ');
+    lines.push(bank);
+  }
+  if (r.website) lines.push(r.website);
+  return lines.length > 0 ? lines.join('\n') : null;
 }

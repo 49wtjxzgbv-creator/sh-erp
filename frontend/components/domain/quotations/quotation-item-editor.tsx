@@ -58,7 +58,8 @@ export function QuotationLiveTotals({ items, currency }: { items: QuotationItemD
           ? toNumber(productsById?.get(item.productId)?.sellPriceEur ?? null)
           : null;
     const basePrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.baseSalePriceEur ?? null) : null;
-    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice);
+    const laborCost = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.laborCostPerUnit ?? null) : null;
+    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost);
     if (unitPrice === null) return;
     const lineSubtotal = unitPrice * item.quantity;
     const lineDiscount = lineSubtotal * ((item.discountPercent ?? 0) / 100);

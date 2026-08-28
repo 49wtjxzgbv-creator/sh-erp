@@ -126,6 +126,7 @@ model Company {
   roles                Role[]
   settings             CompanySettings?
   branding             CompanyBranding?
+  requisites           CompanyRequisites?
   aiSettings           CompanyAiSettings?
   subscription         CompanySubscription?
   featureFlagOverrides CompanyFeatureFlagOverride[]
@@ -2696,6 +2697,33 @@ model CompanyBranding {
   @@map("company_branding")
 }
 
+// Legal/contact requisites for this tenant's own company — distinct from
+// CompanyBranding (logos) and CompanySettings (operational config): this is
+// the "who we are on paper" block used on client-facing documents (Quotation
+// PDF footer today, see QuotationsService#renderVersionHtml's fallback when
+// a QuotationTemplate has no companyDetailsText override of its own).
+// Same 1:1-per-company, all-optional, upsert-tolerant shape as
+// CompanyBranding — most companies won't fill every field in immediately.
+model CompanyRequisites {
+  companyId     String  @id @db.Uuid
+  legalName     String?
+  taxId         String? // ЄДРПОУ/ІПН — no format validation, differs by legal entity type
+  legalAddress  String?
+  phone         String?
+  email         String?
+  bankName      String?
+  bankIban      String?
+  bankMfo       String?
+  website       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@map("company_requisites")
+}
+
 // ============================================================================
 // SECTION: AI  (module: AiModule) — Gemini.gs, AI_FullAssistant.gs
 // ============================================================================
@@ -3256,13 +3284,15 @@ model QuotationVersionItem {
   // (собівартість → базова ціна → метод → ціна до знижки → знижка →
   // фінальна ціна → маржа), not just the final number.
   pricingSource     PricingSource
-  costSnapshot      Decimal?      @db.Decimal(14, 2) // internal only — never rendered in the client PDF
-  basePriceSnapshot Decimal?      @db.Decimal(14, 2) // internal only — Assembly.baseSalePriceEur at the moment this line was priced, null unless pricingSource pulled from it
-  // The % actually entered for MARKUP_PERCENT (cost or base price × (1 + p))
-  // or COST_PLUS_MARGIN (cost / (1 - p)) — same column for both since
-  // pricingSource already disambiguates which formula it fed; keeping one
-  // column instead of two mostly-mutually-exclusive ones.
-  pricingPercent    Decimal?      @db.Decimal(6, 3)
+  costSnapshot       Decimal?      @db.Decimal(14, 2) // internal only — never rendered in the client PDF
+  basePriceSnapshot  Decimal?      @db.Decimal(14, 2) // internal only — Assembly.baseSalePriceEur at the moment this line was priced, null unless pricingSource pulled from it
+  laborCostSnapshot  Decimal?      @db.Decimal(14, 2) // internal only — Assembly.laborCostPerUnit at the moment this line was priced (null for non-ASSEMBLY kinds; a real ASSEMBLY line always has one, since the field defaults to 0 rather than being unset)
+  // The % actually entered for MARKUP_PERCENT/LABOR_MARKUP_PERCENT (cost or
+  // base price × (1 + p)) or COST_PLUS_MARGIN/LABOR_COST_PLUS_MARGIN
+  // (cost / (1 - p)) — same column for all four since pricingSource already
+  // disambiguates which formula it fed; keeping one column instead of four
+  // mostly-mutually-exclusive ones.
+  pricingPercent     Decimal?      @db.Decimal(6, 3)
 
   unitPrice Decimal @db.Decimal(14, 2) // per-unit price BEFORE discount — the pricing formula's result, or the CUSTOM entry directly
   currency  String  @default("EUR")
@@ -3300,5 +3330,12 @@ enum PricingSource {
   BASE_PRICE
   MARKUP_PERCENT
   COST_PLUS_MARGIN
+  // Same markup/margin formulas as MARKUP_PERCENT/COST_PLUS_MARGIN, but keyed
+  // off Assembly.laborCostPerUnit alone rather than the full assembly cost
+  // (materials + labor + packaging + delivery + other) — for pricing off
+  // labor content specifically. ASSEMBLY items only (Product has no labor
+  // cost field) — see QuotationPricingService's own header comment.
+  LABOR_MARKUP_PERCENT
+  LABOR_COST_PLUS_MARGIN
   CUSTOM
 }

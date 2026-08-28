@@ -3,6 +3,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateCompanyBrandingDto } from './dto/update-branding.dto';
+import { UpdateCompanyRequisitesDto } from './dto/update-requisites.dto';
 import { UpdateCompanySettingsDto } from './dto/update-settings.dto';
 
 @Injectable()
@@ -56,5 +57,27 @@ export class SettingsService {
       after: branding,
     });
     return branding;
+  }
+
+  async getRequisites(user: RequestUser) {
+    return this.prisma.tenant.companyRequisites.findUnique({ where: { companyId: user.companyId } });
+  }
+
+  /** upsert — same "row may not exist yet" tolerance as updateBranding. */
+  async updateRequisites(user: RequestUser, dto: UpdateCompanyRequisitesDto) {
+    const requisites = await this.prisma.tenant.companyRequisites.upsert({
+      where: { companyId: user.companyId },
+      update: dto as any,
+      create: { ...dto } as any,
+    });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'company_requisites.updated',
+      entityType: 'CompanyRequisites',
+      entityId: user.companyId,
+      after: requisites,
+    });
+    return requisites;
   }
 }

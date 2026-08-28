@@ -8,6 +8,7 @@ describe('QuotationPricingService', () => {
     quantity: 1,
     basePrice: null,
     cost: null,
+    laborCost: null,
     pricingPercent: null,
     customUnitPrice: 100,
     discountPercent: 0,
@@ -70,6 +71,32 @@ describe('QuotationPricingService', () => {
 
     it('throws when cost is unknown — margin needs a cost basis, same as markup', () => {
       expect(() => service.computeItemPricing(base({ pricingSource: 'COST_PLUS_MARGIN', cost: null, pricingPercent: 25 }))).toThrow();
+    });
+  });
+
+  describe('LABOR_MARKUP_PERCENT — same formula as MARKUP_PERCENT, keyed off laborCost instead of full cost', () => {
+    it('25% markup on labor cost €2000 → €2500, independent of the (much higher) full cost', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'LABOR_MARKUP_PERCENT', laborCost: 2000, cost: 8000, pricingPercent: 25 }));
+      expect(result.unitPrice).toBe(2500);
+    });
+
+    it('throws when laborCost is unknown (non-ASSEMBLY line) — cost alone is not a substitute', () => {
+      expect(() => service.computeItemPricing(base({ pricingSource: 'LABOR_MARKUP_PERCENT', laborCost: null, cost: 8000, pricingPercent: 25 }))).toThrow();
+    });
+  });
+
+  describe('LABOR_COST_PLUS_MARGIN — same formula as COST_PLUS_MARGIN, keyed off laborCost instead of full cost', () => {
+    it('25% margin on labor cost €2000 → €2666.67 (2000 / 0.75), not €2500', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'LABOR_COST_PLUS_MARGIN', laborCost: 2000, pricingPercent: 25 }));
+      expect(result.unitPrice).toBe(2666.67);
+    });
+
+    it('rejects a margin of 100% or more, same guard as COST_PLUS_MARGIN', () => {
+      expect(() => service.computeItemPricing(base({ pricingSource: 'LABOR_COST_PLUS_MARGIN', laborCost: 2000, pricingPercent: 100 }))).toThrow();
+    });
+
+    it('throws when laborCost is unknown', () => {
+      expect(() => service.computeItemPricing(base({ pricingSource: 'LABOR_COST_PLUS_MARGIN', laborCost: null, pricingPercent: 25 }))).toThrow();
     });
   });
 
