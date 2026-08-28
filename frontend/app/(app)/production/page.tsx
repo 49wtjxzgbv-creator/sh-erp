@@ -33,9 +33,16 @@ function AssemblyNameCell({ assemblyId }: { assemblyId: string }) {
   return <span className="max-w-[300px] truncate block" title={assembly?.name ?? assemblyId}>{assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}</span>;
 }
 
+/** useAssembly here dedupes against AssemblyNameCell's identical call for the same row — no extra request, just cache reuse. */
 function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {
   const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
-  return <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />;
+  const { data: assembly } = useAssembly(assemblyId);
+  return (
+    <div className="flex items-center gap-2">
+      <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />
+      {assembly?.article && <span className="text-xs text-muted-foreground whitespace-nowrap">{assembly.article}</span>}
+    </div>
+  );
 }
 
 export default function ProductionOrdersPage() {
