@@ -123,7 +123,7 @@ export function QuotationItemRow({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="space-y-1.5">
             <Select value={item.kind} onValueChange={(v) => handleKindChange(v as QuotationItemKind)} disabled={!editable}>
-              <SelectTrigger className="h-8 w-48 text-xs">
+              <SelectTrigger className="h-8 w-full text-xs sm:w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
