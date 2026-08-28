@@ -160,6 +160,22 @@ export default function PayrollSummaryPage() {
       {data && data.length > 0 && (
         <PrintArea>
           <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
+          <table className="mb-6 w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-black text-left">
+                <th className="py-1 font-semibold">{t('employee')}</th>
+                <th className="py-1 text-right font-semibold">{t('netTotal')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((line) => (
+                <tr key={line.employeeId} className="border-b border-gray-300">
+                  <td className="py-1">{line.employeeName}</td>
+                  <td className="py-1 text-right font-medium tabular-nums">{formatEur(line.netTotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="space-y-5">
             {data.map((line) => (
               <PayrollEmployeePrintBlock key={line.employeeId} line={line} t={t} articleLabel={articleLabel} />
