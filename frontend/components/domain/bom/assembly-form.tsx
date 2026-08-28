@@ -24,6 +24,7 @@ const assemblySchema = z.object({
   packagingCostPerUnit: z.coerce.number().min(0).optional().or(z.literal('')),
   deliveryCostPerUnit: z.coerce.number().min(0).optional().or(z.literal('')),
   otherCostPerUnit: z.coerce.number().min(0).optional().or(z.literal('')),
+  baseSalePriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
 });
 type AssemblyFormValues = z.infer<typeof assemblySchema>;
 
@@ -37,6 +38,7 @@ export function assemblyToFormValues(assembly?: Assembly): Partial<AssemblyFormV
     packagingCostPerUnit: toNumber(assembly.packagingCostPerUnit) ?? undefined,
     deliveryCostPerUnit: toNumber(assembly.deliveryCostPerUnit) ?? undefined,
     otherCostPerUnit: toNumber(assembly.otherCostPerUnit) ?? undefined,
+    baseSalePriceEur: toNumber(assembly.baseSalePriceEur) ?? undefined,
   };
 }
 
@@ -83,6 +85,7 @@ export function AssemblyForm({
       packagingCostPerUnit: numeric(values.packagingCostPerUnit),
       deliveryCostPerUnit: numeric(values.deliveryCostPerUnit),
       otherCostPerUnit: numeric(values.otherCostPerUnit),
+      baseSalePriceEur: numeric(values.baseSalePriceEur),
     });
   }
 
@@ -172,6 +175,19 @@ export function AssemblyForm({
           <div className="space-y-1.5">
             <Label htmlFor="otherCostPerUnit">{t('otherCostPerUnit')}</Label>
             <Input id="otherCostPerUnit" type="number" step="any" {...register('otherCostPerUnit')} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('pricingHeader')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1.5 sm:max-w-xs">
+            <Label htmlFor="baseSalePriceEur">{t('baseSalePriceEur')}</Label>
+            <Input id="baseSalePriceEur" type="number" step="any" {...register('baseSalePriceEur')} />
+            <p className="text-xs text-muted-foreground">{t('baseSalePriceEurHint')}</p>
           </div>
         </CardContent>
       </Card>

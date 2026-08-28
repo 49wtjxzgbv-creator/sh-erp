@@ -15,6 +15,7 @@ function makeFakePrisma() {
     company: new Map<string, any>(),
     role: new Map<string, any>(),
     customerOrder: new Map<string, any>(),
+    companyBranding: new Map<string, any>(),
   };
   let n = 0;
   const nextId = (prefix: string) => `${prefix}-${++n}`;
@@ -38,6 +39,9 @@ function makeFakePrisma() {
     },
     company: {
       findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(db.company.get(id) ?? null)),
+    },
+    companyBranding: {
+      findUnique: jest.fn(({ where: { companyId } }: any) => Promise.resolve(db.companyBranding.get(companyId) ?? null)),
     },
     role: {
       findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(db.role.get(id) ?? null)),
@@ -155,7 +159,10 @@ function makeService() {
     }),
   };
   const renderer = { renderHtml: jest.fn(() => '<html>fake</html>') };
-  const files = { getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://files.example.com/logo.png' }) };
+  const files = {
+    getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://files.example.com/logo.png' }),
+    listForEntities: jest.fn().mockResolvedValue({}),
+  };
 
   const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any);
   return { service, db, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, nextId };

@@ -437,6 +437,8 @@ export class QuotationsService {
     },
     items: Array<{
       kind: string;
+      assemblyId: string | null;
+      productId: string | null;
       nameSnapshot: string;
       descriptionSnapshot: string | null;
       quantity: unknown;
@@ -452,6 +454,13 @@ export class QuotationsService {
       ? await this.prisma.tenant.quotationTemplate.findUnique({ where: { id: version.templateId } })
       : await this.prisma.tenant.quotationTemplate.findFirst({ where: { isDefault: true } });
     const company = await this.prisma.tenant.company.findUnique({ where: { id: user.companyId } });
+    // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId)
+    // — a QuotationTemplate can override it per-template, but most companies
+    // never create a template at all, so this fallback is what actually
+    // makes the branding settings page's logo show up on a real KП. Was
+    // documented in this schema's own comment on printLogoFileId from day
+    // one but never wired up until a real user reported the gap.
+    const branding = await this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } });
 
     const templateSnapshot = template
       ? {
@@ -464,9 +473,44 @@ export class QuotationsService {
       : null;
     const companySnapshot = { name: company?.name ?? '', companyDetailsText: template?.companyDetailsText ?? null };
 
-    const logoUrl = template?.printLogoFileId
-      ? (await this.filesService.getDownloadUrl(user, template.printLogoFileId).catch(() => null))?.downloadUrl ?? null
-      : null;
+    const logoFileId = template?.printLogoFileId ?? branding?.printLogoFileId ?? null;
+    const logoUrl = logoFileId ? (await this.filesService.getDownloadUrl(user, logoFileId).catch(() => null))?.downloadUrl ?? null : null;
+
+    // Article/photo are resolved LIVE (not frozen at save time like price)
+    // — same "cosmetic, not financial" tier as the logo above. A later
+    // rename/re-photograph shows up on an already-SENT version's re-render;
+    // that's an accepted tradeoff, not a snapshot-integrity violation, since
+    // nothing here affects what the client is actually being charged.
+    const renderItems = await Promise.all(
+      items.map(async (i) => {
+        let article: string | null = null;
+        let photoUrl: string | null = null;
+        if (i.kind === 'ASSEMBLY' && i.assemblyId) {
+          const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: i.assemblyId } });
+          article = assembly?.article ?? null;
+          const photos = await this.filesService.listForEntities(user, 'Assembly', [i.assemblyId], ['ASSEMBLY_PHOTO']);
+          photoUrl = photos[i.assemblyId]?.[0]?.downloadUrl ?? null;
+        } else if (i.kind === 'PRODUCT' && i.productId) {
+          const product = await this.prisma.tenant.product.findUnique({ where: { id: i.productId } });
+          article = product?.article ?? null;
+          const photos = await this.filesService.listForEntities(user, 'Product', [i.productId], ['PRODUCT_PHOTO']);
+          photoUrl = photos[i.productId]?.[0]?.downloadUrl ?? null;
+        }
+        return {
+          kind: i.kind,
+          nameSnapshot: i.nameSnapshot,
+          descriptionSnapshot: i.descriptionSnapshot,
+          quantity: Number(i.quantity),
+          unit: i.unit,
+          unitPrice: Number(i.unitPrice),
+          discountPercent: Number(i.discountPercent),
+          discountAmount: Number(i.discountAmount),
+          total: Number(i.total),
+          article,
+          photoUrl,
+        };
+      }),
+    );
 
     const html = this.rendererService.renderHtml({
       number: quotation.number,
@@ -480,17 +524,7 @@ export class QuotationsService {
         email: customer?.email ?? null,
         address: customer?.address ?? null,
       },
-      items: items.map((i) => ({
-        kind: i.kind,
-        nameSnapshot: i.nameSnapshot,
-        descriptionSnapshot: i.descriptionSnapshot,
-        quantity: Number(i.quantity),
-        unit: i.unit,
-        unitPrice: Number(i.unitPrice),
-        discountPercent: Number(i.discountPercent),
-        discountAmount: Number(i.discountAmount),
-        total: Number(i.total),
-      })),
+      items: renderItems,
       subtotal: Number(version.subtotal),
       discountAmount: Number(version.discountAmount),
       total: Number(version.total),
@@ -498,7 +532,6 @@ export class QuotationsService {
       deliveryTerms: version.deliveryTerms,
       installationTerms: version.installationTerms,
       notes: version.notes,
-      companyName: companySnapshot.name,
       companyDetailsText: companySnapshot.companyDetailsText,
       accentColor: templateSnapshot?.accentColor ?? null,
       logoUrl,

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import type { PricingSource } from '@/lib/api-client/quotations';
 import { formatMoney } from '@/lib/finance-format';
@@ -52,6 +53,8 @@ export interface PricingMethodFieldProps {
   disabled?: boolean;
   /** Which methods make sense for this item's kind — BASE_PRICE only exists for ASSEMBLY (Assembly.baseSalePriceEur), MARKUP_PERCENT/COST_PLUS_MARGIN need a cost basis (ASSEMBLY/PRODUCT only) — see this file's own header comment. */
   allowedSources: PricingSource[];
+  /** Only present for kind=ASSEMBLY — lets the "no base price set" warning link straight to where a manager can actually go set it, instead of just naming the problem. */
+  assemblyId?: string;
   onChange: (patch: { pricingSource?: PricingSource; pricingPercent?: number; customUnitPrice?: number }) => void;
 }
 
@@ -67,6 +70,7 @@ export function PricingMethodField({
   canViewMargin,
   disabled,
   allowedSources,
+  assemblyId,
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
@@ -87,12 +91,20 @@ export function PricingMethodField({
           ))}
         </SelectContent>
       </Select>
+      <p className="text-[11px] leading-snug text-muted-foreground">{t(`pricingSource${pricingSource}Explanation`)}</p>
 
       {pricingSource === 'BASE_PRICE' && (
         basePrice !== null ? (
           <p className="text-xs text-muted-foreground">{t('basePriceIs')}: {formatMoney(basePrice, currency)}</p>
         ) : (
-          <p className="text-xs text-destructive">{t('noBasePriceWarning')}</p>
+          <div className="space-y-0.5">
+            <p className="text-xs text-destructive">{t('noBasePriceWarning')}</p>
+            {assemblyId && (
+              <Link href={`/bom/${assemblyId}`} target="_blank" className="text-xs text-primary hover:underline">
+                {t('setBasePriceLink')}
+              </Link>
+            )}
+          </div>
         )
       )}
 

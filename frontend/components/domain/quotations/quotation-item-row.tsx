@@ -217,6 +217,7 @@ export function QuotationItemRow({
                 canViewMargin={canViewMargin}
                 disabled={!editable}
                 allowedSources={allowedSourcesForKind(item.kind)}
+                assemblyId={item.kind === 'ASSEMBLY' ? item.assemblyId : undefined}
                 onChange={onChange}
               />
               <p className="text-sm font-semibold">

@@ -50,6 +50,18 @@ export class CreateAssemblyDto {
 
   @ApiPropertyOptional({
     description:
+      'Quotations module (2026-08-27) — the sale-price starting point for BASE_PRICE-method quotation lines. ' +
+      'Independent of the cost fields above and of Product.sellPriceEur (a cost input, not a retail price). ' +
+      'Leave unset if this assembly is only ever priced per-quotation via markup/margin/custom.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  baseSalePriceEur?: number;
+
+  @ApiPropertyOptional({
+    description:
       'Set when this assembly is purchased finished from a supplier rather than manufactured in-house ' +
       '(Phase 1 §3.3). This only affects the Sales module\'s purchasing/shortage-grouping logic (Phase 1 §6.3) — ' +
       'BOM cost calculation and produce-time consumption in this module always flatten all the way down to real ' +

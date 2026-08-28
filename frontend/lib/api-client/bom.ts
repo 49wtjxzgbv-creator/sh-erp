@@ -61,6 +61,7 @@ export interface CreateAssemblyInput {
   packagingCostPerUnit?: number;
   deliveryCostPerUnit?: number;
   otherCostPerUnit?: number;
+  baseSalePriceEur?: number;
   defaultSupplierId?: string;
 }
 export type UpdateAssemblyInput = Partial<CreateAssemblyInput>;

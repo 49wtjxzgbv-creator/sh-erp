@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PLATFORM_LOGO_DATA_URI } from './platform-logo';
 
 export interface QuotationRenderItem {
   kind: string;
@@ -10,6 +11,9 @@ export interface QuotationRenderItem {
   discountPercent: number;
   discountAmount: number;
   total: number;
+  /** ASSEMBLY/PRODUCT lines only — resolved live from the current Assembly/Product at render time (not frozen at save-time like price), same "cosmetic, not financial" tier as the header logo. */
+  article: string | null;
+  photoUrl: string | null;
 }
 
 export interface QuotationRenderData {
@@ -26,9 +30,9 @@ export interface QuotationRenderData {
   deliveryTerms: string | null;
   installationTerms: string | null;
   notes: string | null;
-  companyName: string;
   companyDetailsText: string | null;
   accentColor: string | null;
+  /** The company's own uploaded print logo (Settings → Branding → "Логотип друку", QuotationTemplate.printLogoFileId falling back to CompanyBranding.printLogoFileId — see QuotationsService#renderVersionHtml). Rendered NEXT TO the platform logo, never instead of it. */
   logoUrl: string | null;
   visibleBlocks: Record<string, boolean>;
 }
@@ -66,8 +70,13 @@ export class QuotationRendererService {
         <tr>
           <td class="col-idx">${i + 1}</td>
           <td>
-            <div class="item-name">${escapeHtml(item.nameSnapshot)}</div>
-            ${item.descriptionSnapshot ? `<div class="item-desc">${escapeHtml(item.descriptionSnapshot)}</div>` : ''}
+            <div class="item-row">
+              ${item.photoUrl ? `<img class="item-photo" src="${escapeAttr(item.photoUrl)}" alt="" />` : ''}
+              <div class="item-text">
+                <div class="item-name">${item.article ? `<span class="item-article">${escapeHtml(item.article)}</span> — ` : ''}${escapeHtml(item.nameSnapshot)}</div>
+                ${item.descriptionSnapshot ? `<div class="item-desc">${escapeHtml(item.descriptionSnapshot)}</div>` : ''}
+              </div>
+            </div>
           </td>
           <td class="col-num">${formatQty(item.quantity)} ${escapeHtml(item.unit)}</td>
           <td class="col-num">${money(item.unitPrice)}</td>
@@ -101,9 +110,9 @@ export class QuotationRendererService {
     margin: 0;
   }
   .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid ${accent}; padding-bottom: 10px; margin-bottom: 18px; }
-  .header .brand { display: flex; align-items: center; gap: 10px; }
-  .header img { max-height: 42px; max-width: 160px; object-fit: contain; }
-  .header .company-name { font-size: 15pt; font-weight: 700; color: #222222; }
+  .header .brand { display: flex; align-items: center; gap: 14px; }
+  .header .brand img { max-height: 42px; max-width: 150px; object-fit: contain; }
+  .header .brand-divider { width: 1px; height: 34px; background: #dddddd; }
   .header .doc-meta { text-align: right; font-size: 11px; color: #555555; }
   .header .doc-title { font-size: 14pt; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
   .company-details { font-size: 10.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
@@ -119,6 +128,10 @@ export class QuotationRendererService {
   .col-idx { width: 24px; text-align: center; }
   .col-num { width: 90px; text-align: right; white-space: nowrap; }
   .col-total { font-weight: 600; }
+  .item-row { display: flex; gap: 8px; align-items: flex-start; }
+  .item-photo { width: 36px; height: 36px; object-fit: cover; border-radius: 3px; border: 1px solid #dddddd; flex-shrink: 0; }
+  .item-text { min-width: 0; }
+  .item-article { color: #888888; font-weight: 400; }
   .item-name { font-weight: 600; }
   .item-desc { color: #666666; font-size: 10px; margin-top: 2px; }
   .totals { width: 260px; margin-left: auto; margin-top: 10px; font-size: 11.5px; }
@@ -128,14 +141,16 @@ export class QuotationRendererService {
   .term-block { margin-bottom: 10px; }
   .term-block h4 { margin: 0 0 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #888888; font-weight: 600; }
   .term-block p { margin: 0; font-size: 11px; white-space: pre-line; }
-  .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #dddddd; font-size: 9.5px; color: #999999; }
+  .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #dddddd; text-align: center; }
+  .footer-brand { margin: 0; font-size: 10.5px; font-weight: 600; color: #777777; }
+  .footer-tagline { margin: 2px 0 0; font-size: 8.5px; color: #aaaaaa; }
 </style>
 </head>
 <body>
   <div class="header">
     <div class="brand">
-      ${data.logoUrl ? `<img src="${escapeAttr(data.logoUrl)}" alt="" />` : ''}
-      <div class="company-name">${escapeHtml(data.companyName)}</div>
+      <img src="${PLATFORM_LOGO_DATA_URI}" alt="" />
+      ${data.logoUrl ? `<span class="brand-divider"></span><img src="${escapeAttr(data.logoUrl)}" alt="" />` : ''}
     </div>
     <div class="doc-meta">
       <div class="doc-title">Комерційна пропозиція № ${escapeHtml(data.number)}</div>
@@ -179,7 +194,10 @@ export class QuotationRendererService {
 
   ${termsBlocks ? `<div class="terms">${termsBlocks}</div>` : ''}
 
-  <div class="footer">${escapeHtml(data.companyName)} · Комерційна пропозиція № ${escapeHtml(data.number)}</div>
+  <div class="footer">
+    <p class="footer-brand">sh-erp.com</p>
+    <p class="footer-tagline">by Shyryng</p>
+  </div>
 </body>
 </html>`;
   }
