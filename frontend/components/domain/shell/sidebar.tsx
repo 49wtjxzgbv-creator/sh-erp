@@ -42,12 +42,12 @@ import { Logo } from '@/components/domain/shell/logo';
  */
 export const NAV_ITEMS = [
   { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
+  { href: '/production-plan', labelKey: 'productionPlan', icon: ClipboardCheck },
   { href: '/planner', labelKey: 'planner', icon: CalendarClock },
   { href: '/catalog', labelKey: 'catalog', icon: Package },
   { href: '/inventory', labelKey: 'inventory', icon: Warehouse },
   { href: '/bom', labelKey: 'bom', icon: ListTree },
   { href: '/production', labelKey: 'production', icon: Factory },
-  { href: '/production-plan', labelKey: 'productionPlan', icon: ClipboardCheck },
   { href: '/procurement', labelKey: 'procurement', icon: Truck },
   { href: '/finance', labelKey: 'finance', icon: Wallet, permission: 'finance:read' },
   { href: '/sales', labelKey: 'sales', icon: ShoppingCart },
