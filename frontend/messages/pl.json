@@ -1046,6 +1046,8 @@
     "customerOrderTitle": "Customer order",
     "printProductionProgress": "Print production progress",
     "productionProgressTitle": "Production progress",
+    "printPayrollEstimate": "Drukuj szacunek",
+    "payrollEstimateTitle": "Szacunek według produktu (aktualne stawki)",
     "compositionSectionTitle": "Full order composition",
     "consistsOfTop": "Product «{name}» (qty {qty}) consists of:",
     "consistsOfSub": "Sub-assembly «{name}» (qty {qty}) consists of:",

@@ -115,7 +115,7 @@ export function ProductionPlanOrderDetail({ orderId }: { orderId: string }) {
         </TabsContent>
 
         <TabsContent value="payroll">
-          <PayrollFundWidget orderId={order.id} defaultOpen />
+          <PayrollFundWidget orderId={order.id} defaultOpen orderLabel={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`} />
         </TabsContent>
 
         <TabsContent value="payroll-by-employee">

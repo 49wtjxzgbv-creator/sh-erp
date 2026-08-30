@@ -487,7 +487,7 @@ export default function CustomerOrderDetailPage() {
       </Card>
 
       <FinanceSummaryWidget customerOrderId={order.id} />
-      <PayrollFundWidget orderId={order.id} />
+      <PayrollFundWidget orderId={order.id} orderLabel={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`} />
 
       <Card>
         <CardHeader>

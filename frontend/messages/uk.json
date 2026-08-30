@@ -1143,6 +1143,8 @@
     "customerOrderTitle": "Замовлення клієнта",
     "printProductionProgress": "Друк ходу виробництва",
     "productionProgressTitle": "Хід виробництва",
+    "printPayrollEstimate": "Друкувати оцінку",
+    "payrollEstimateTitle": "Оцінка по виробах (за поточними ставками)",
     "printFinance": "Друкувати фінансовий звіт",
     "financeTitle": "Фінансовий звіт по замовленню",
     "compositionSectionTitle": "Повний склад замовлення",

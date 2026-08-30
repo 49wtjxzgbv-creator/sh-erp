@@ -8,6 +8,7 @@ import { formatEur } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
+import { PayrollFundEstimatePrint } from '@/components/domain/sales/payroll-fund-estimate-print';
 
 /**
  * "Фонд заробітної плати на все замовлення" (2026-08-26 user request) —
@@ -33,7 +34,7 @@ import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
  * tree with its own estimated labor cost — same photo+article row
  * convention as the byArticle table below it.
  */
-export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; defaultOpen?: boolean }) {
+export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderId: string; defaultOpen?: boolean; orderLabel?: string }) {
   const t = useTranslations('sales');
   const { data: fund } = usePayrollFundSummary(orderId);
   const assemblyIds = useMemo(() => {
@@ -66,7 +67,10 @@ export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; d
 
       {fund.estimatedByArticle.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
+          <div className="no-print flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
+            <PayrollFundEstimatePrint lines={fund.estimatedByArticle} photosByAssembly={photosByAssembly} subtitle={orderLabel} />
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
