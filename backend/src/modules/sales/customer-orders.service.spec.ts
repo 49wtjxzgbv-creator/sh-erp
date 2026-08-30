@@ -321,8 +321,15 @@ describe('CustomerOrdersService', () => {
     it('estimated sums laborFundEstimate across every node of every item\'s full tree; actual sums frozen laborCostEur from started batches only (PLANNED batches contribute 0)', async () => {
       assembliesService.getProductionTree.mockImplementation(async (_u: unknown, assemblyId: string) =>
         assemblyId === 'a1'
-          ? { assemblyId: 'a1', laborFundEstimate: 10, children: [{ assemblyId: 'sub1', laborFundEstimate: 4, children: [] }] }
-          : { assemblyId: 'a2', laborFundEstimate: 5, children: [] },
+          ? {
+              assemblyId: 'a1',
+              name: 'Widget',
+              article: 'W-1',
+              qtyNeeded: 2,
+              laborFundEstimate: 10,
+              children: [{ assemblyId: 'sub1', name: 'Sub', article: 'S-1', qtyNeeded: 4, laborFundEstimate: 4, children: [] }],
+            }
+          : { assemblyId: 'a2', name: 'Gadget', article: 'G-1', qtyNeeded: 1, laborFundEstimate: 5, children: [] },
       );
       mockProductionOrdersFindMany([
         { id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 12 }, // started — counts
@@ -333,7 +340,15 @@ describe('CustomerOrdersService', () => {
 
       const result = await service.getPayrollFundSummary(user, 'co1');
 
-      expect(result).toEqual({ estimated: 19, actual: 15, earnedActual: 0, byArticle: [] });
+      expect(result.estimated).toBe(19);
+      expect(result.actual).toBe(15);
+      expect(result.earnedActual).toBe(0);
+      expect(result.byArticle).toEqual([]);
+      expect(result.estimatedByArticle).toEqual([
+        { assemblyId: 'a2', assemblyName: 'Gadget', article: 'G-1', qtyNeeded: 1, estimatedAmount: 5 },
+        { assemblyId: 'sub1', assemblyName: 'Sub', article: 'S-1', qtyNeeded: 4, estimatedAmount: 4 },
+        { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', qtyNeeded: 2, estimatedAmount: 10 },
+      ]);
     });
 
     it('earnedActual/byArticle (2026-08-30): sums REAL PayrollEntry PIECEWORK rows for this order\'s batches, grouped by article via each batch\'s own assemblyId', async () => {

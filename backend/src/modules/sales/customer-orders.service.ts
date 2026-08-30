@@ -32,6 +32,15 @@ export interface ProductionTreeNodeWithBatches extends ProductionTreeNode {
   children: ProductionTreeNodeWithBatches[];
 }
 
+/** "Оцінено (за поточними ставками)" breakdown (2026-08-30 user request) — every distinct assembly across every item's full production tree, with its own qtyNeeded/laborFundEstimate at current BOM rates. */
+export interface PayrollEstimatedArticleLine {
+  assemblyId: string;
+  assemblyName: string;
+  article: string | null;
+  qtyNeeded: number;
+  estimatedAmount: number;
+}
+
 @Injectable()
 export class CustomerOrdersService {
   constructor(
@@ -587,6 +596,12 @@ export class CustomerOrdersService {
    *    assembly.laborCostPerUnit x qtyNeeded), summed across every item's
    *    FULL production tree — виріб AND every підвиріб at any depth, not
    *    just the top-level line. Never frozen; recomputed fresh every call.
+   *  - `estimatedByArticle` (2026-08-30 user request — click-to-expand
+   *    breakdown under "Оцінено (за поточними ставками)"): the same walk,
+   *    but keeping every distinct assembly's own qtyNeeded/laborFundEstimate
+   *    instead of folding into one number (collectLaborFundByArticle —
+   *    same recursion as sumLaborFund). An assembly reused in more than one
+   *    branch/item is summed into a single row, not duplicated.
    *  - `actual`: the REAL committed fund — `laborCostEur` (frozen once a
    *    batch actually starts, production-orders.service.ts's "Cost
    *    freezing") summed across every ProductionOrder batch already tied
@@ -613,10 +628,15 @@ export class CustomerOrdersService {
     const items = order.items as any[];
 
     let estimated = 0;
+    const estimatedByArticleMap = new Map<string, PayrollEstimatedArticleLine>();
     for (const item of items) {
       const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty));
       estimated += sumLaborFund(tree);
+      collectLaborFundByArticle(tree, estimatedByArticleMap);
     }
+    const estimatedByArticle = Array.from(estimatedByArticleMap.values())
+      .map((line) => ({ ...line, qtyNeeded: round2(line.qtyNeeded), estimatedAmount: round2(line.estimatedAmount) }))
+      .sort((a, b) => (a.article ?? '').localeCompare(b.article ?? ''));
 
     const itemIds = items.map((i) => i.id);
     const batches = itemIds.length
@@ -660,7 +680,7 @@ export class CustomerOrdersService {
       return (a.article ?? '').localeCompare(b.article ?? '');
     });
 
-    return { estimated: round2(estimated), actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
+    return { estimated: round2(estimated), estimatedByArticle, actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
   }
 
   /**
@@ -739,6 +759,32 @@ export class CustomerOrdersService {
 
 function sumLaborFund(node: ProductionTreeNode): number {
   return node.laborFundEstimate + node.children.reduce((sum, child) => sum + sumLaborFund(child), 0);
+}
+
+/**
+ * Walks a production tree (виріб + every підвиріб at any depth), adding
+ * each node's OWN qtyNeeded/laborFundEstimate into `map`, keyed by
+ * assemblyId — the same assembly can legitimately appear more than once
+ * (reused in two branches of one item's tree, or across two different
+ * items on the same order), so qty/amount are summed rather than
+ * overwritten. Mirrors sumLaborFund's own recursion, just collecting
+ * per-node instead of folding into one total.
+ */
+function collectLaborFundByArticle(node: ProductionTreeNode, map: Map<string, PayrollEstimatedArticleLine>): void {
+  const existing = map.get(node.assemblyId);
+  if (existing) {
+    existing.qtyNeeded += node.qtyNeeded;
+    existing.estimatedAmount += node.laborFundEstimate;
+  } else {
+    map.set(node.assemblyId, {
+      assemblyId: node.assemblyId,
+      assemblyName: node.name,
+      article: node.article,
+      qtyNeeded: node.qtyNeeded,
+      estimatedAmount: node.laborFundEstimate,
+    });
+  }
+  for (const child of node.children) collectLaborFundByArticle(child, map);
 }
 
 function round2(n: number): number {

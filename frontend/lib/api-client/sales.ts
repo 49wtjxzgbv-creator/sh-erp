@@ -240,8 +240,18 @@ export interface PayrollFundArticleLine {
   amount: number;
 }
 
+/** "Оцінено (за поточними ставками)" click-to-expand breakdown (2026-08-30) — every distinct assembly across the order's full production tree, with its own qty/estimated labor cost at current BOM rates. */
+export interface PayrollEstimatedArticleLine {
+  assemblyId: string;
+  assemblyName: string;
+  article: string | null;
+  qtyNeeded: number;
+  estimatedAmount: number;
+}
+
 export interface PayrollFundSummary {
   estimated: number;
+  estimatedByArticle: PayrollEstimatedArticleLine[];
   actual: number;
   /** "Скільки вже зароблено працівниками" — the real PayrollEntry (PIECEWORK) ledger for this order's batches, distinct from `actual` (the frozen laborCostEur estimate). */
   earnedActual: number;

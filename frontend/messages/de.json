@@ -681,6 +681,8 @@
     "payrollFundUnitsProduced": "Menge",
     "payrollFundGeneralWork": "Allgemeine Arbeit (ohne Artikel)",
     "payrollFundProducedByWorkers": "Von Mitarbeitern hergestellt",
+    "payrollFundEstimatedByArticle": "Schätzung nach Produkt (aktuelle Sätze)",
+    "payrollFundQtyNeeded": "Benötigt",
     "cancelOrder": "Cancel order",
     "cancelConfirmTitle": "Cancel this order?",
     "completeOrder": "Complete order",

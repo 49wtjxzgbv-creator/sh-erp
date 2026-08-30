@@ -778,6 +778,8 @@
     "payrollFundUnitsProduced": "Кількість",
     "payrollFundGeneralWork": "Загальні роботи (без артикулу)",
     "payrollFundProducedByWorkers": "Виготовлено працівниками",
+    "payrollFundEstimatedByArticle": "Оцінка по виробах (за поточними ставками)",
+    "payrollFundQtyNeeded": "Потрібно",
     "cancelOrder": "Скасувати замовлення",
     "cancelConfirmTitle": "Скасувати це замовлення?",
     "completeOrder": "Завершити замовлення",
