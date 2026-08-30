@@ -47,11 +47,11 @@ export const NAV_ITEMS = [
   { href: '/catalog', labelKey: 'catalog', icon: Package },
   { href: '/bom', labelKey: 'bom', icon: ListTree },
   { href: '/inventory', labelKey: 'inventory', icon: Warehouse },
-  { href: '/production', labelKey: 'production', icon: Factory },
+  { href: '/quotations', labelKey: 'quotations', icon: FileText, permission: 'quotations:read' },
+  { href: '/sales', labelKey: 'sales', icon: ShoppingCart },
   { href: '/procurement', labelKey: 'procurement', icon: Truck },
   { href: '/finance', labelKey: 'finance', icon: Wallet, permission: 'finance:read' },
-  { href: '/sales', labelKey: 'sales', icon: ShoppingCart },
-  { href: '/quotations', labelKey: 'quotations', icon: FileText, permission: 'quotations:read' },
+  { href: '/production', labelKey: 'production', icon: Factory },
   // `employees:manage`/`payroll:manage` gate EVERY route in this module,
   // including plain GET — there is no read-only view a restricted role
   // could land on, so hide the entry point outright rather than let it
