@@ -11,6 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
 import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
+import { FinanceSummaryWidget } from '@/components/domain/sales/finance-summary-widget';
+import { PayrollFundWidget } from '@/components/domain/sales/payroll-fund-widget';
 import { OrderProductionUnitsTable } from '@/components/domain/production/order-production-units-table';
 import type { CustomerOrderStatus } from '@/lib/api-client/sales';
 
@@ -33,6 +35,7 @@ export default function ProductionPlanDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tp = useTranslations('production');
+  const tFin = useTranslations('finance');
 
   const { data: order, isLoading } = useCustomerOrder(params.id);
   const { data: units, isLoading: unitsLoading } = useOrderProductionUnits(params.id);
@@ -59,6 +62,8 @@ export default function ProductionPlanDetailPage() {
           <TabsTrigger value="progress">{t('productionProgress')}</TabsTrigger>
           <TabsTrigger value="in-progress">{tp('inProgressTab')}</TabsTrigger>
           <TabsTrigger value="ready">{tp('readyTab')}</TabsTrigger>
+          <TabsTrigger value="finance">{tFin('financeSummary')}</TabsTrigger>
+          <TabsTrigger value="payroll">{tp('payrollTab')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="progress">
@@ -100,6 +105,14 @@ export default function ProductionPlanDetailPage() {
               <OrderProductionUnitsTable lines={units?.ready ?? []} isLoading={unitsLoading} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="finance">
+          <FinanceSummaryWidget customerOrderId={order.id} />
+        </TabsContent>
+
+        <TabsContent value="payroll">
+          <PayrollFundWidget orderId={order.id} defaultOpen />
         </TabsContent>
       </Tabs>
     </div>

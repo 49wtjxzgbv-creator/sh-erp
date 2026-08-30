@@ -516,7 +516,8 @@
     "percentComplete": "% complete",
     "scheduleByOrders": "Schedule by orders",
     "inProgressTab": "In progress",
-    "readyTab": "Completed"
+    "readyTab": "Completed",
+    "payrollTab": "Payroll"
   },
   "procurement": {
     "title": "Procurement",

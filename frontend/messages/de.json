@@ -516,7 +516,8 @@
     "percentComplete": "% fertig",
     "scheduleByOrders": "Zeitplan nach Aufträgen",
     "inProgressTab": "In Arbeit",
-    "readyTab": "Fertiggestellt"
+    "readyTab": "Fertiggestellt",
+    "payrollTab": "Lohn"
   },
   "procurement": {
     "title": "Procurement",

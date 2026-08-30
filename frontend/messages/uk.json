@@ -521,7 +521,8 @@
     "percentComplete": "% виконано",
     "scheduleByOrders": "Графік по замовленнях",
     "inProgressTab": "В роботі",
-    "readyTab": "Що зроблено"
+    "readyTab": "Що зроблено",
+    "payrollTab": "Зарплата"
   },
   "procurement": {
     "title": "Закупівлі",
