@@ -327,6 +327,10 @@ export class ProductionExecutionsService {
       include: { allocations: true },
     });
 
+    if (execution.productionOrderId) {
+      await this.stampConfirmedFinishedGoods(execution.productionOrderId, id, Number(execution.qtyCompleted ?? 0));
+    }
+
     await this.auditService.record({
       companyId: user.companyId,
       actorUserId: user.userId,
@@ -336,6 +340,34 @@ export class ProductionExecutionsService {
       after: updated,
     });
     return updated;
+  }
+
+  /**
+   * Склад "В роботі" → "Готова продукція" (2026-08-30 user request): a
+   * confirmed execution's own `qtyCompleted` is a genuine INCREMENT over
+   * whatever was confirmed before (enforced by computeAndValidateProductAmount's
+   * `confirmedQty + qtyCompleted <= unitsPlanned` invariant), so it FIFO-
+   * matches against this order's oldest still-unstamped IN_STOCK units —
+   * same "oldest first, no other identity to match on" convention already
+   * used for sub-assembly FIFO consumption elsewhere in this codebase. Units
+   * are otherwise interchangeable within a batch (all frozen at the same
+   * per-unit cost at start()), so which SPECIFIC serials get stamped by
+   * which execution is not meaningful beyond "the batch is now this much
+   * further confirmed" — reversed in full by void_() below.
+   */
+  private async stampConfirmedFinishedGoods(productionOrderId: string, executionId: string, qtyCompleted: number): Promise<void> {
+    const qty = Math.floor(qtyCompleted);
+    if (qty <= 0) return;
+    const candidates = await this.prisma.tenant.finishedGood.findMany({
+      where: { productionOrderId, status: 'IN_STOCK', confirmedByExecutionId: null },
+      orderBy: { manufactureDate: 'asc' },
+      take: qty,
+    });
+    if (candidates.length === 0) return;
+    await this.prisma.tenant.finishedGood.updateMany({
+      where: { id: { in: candidates.map((c) => c.id) } },
+      data: { confirmedByExecutionId: executionId },
+    });
   }
 
   /**
@@ -375,6 +407,16 @@ export class ProductionExecutionsService {
       data: { status: 'VOIDED', note: dto.note !== undefined ? dto.note : execution.note },
       include: { allocations: true },
     });
+
+    if (execution.productionOrderId) {
+      // Un-stamp — this voided execution no longer confirms anyone's labor
+      // on those units, so they go back to "В роботі" until re-confirmed
+      // (by this same batch's next execution, e.g. via correct() below).
+      await this.prisma.tenant.finishedGood.updateMany({
+        where: { confirmedByExecutionId: id },
+        data: { confirmedByExecutionId: null },
+      });
+    }
 
     await this.auditService.record({
       companyId: user.companyId,

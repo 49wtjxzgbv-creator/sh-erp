@@ -234,6 +234,8 @@
     "stockHistory": "Історія руху",
     "finishedGoods": "Готова продукція",
     "backToFinishedGoodsSummary": "← До готової продукції",
+    "inProgress": "В роботі",
+    "backToInProgressSummary": "← До «В роботі»",
     "warehouses": "Склади",
     "sessions": "Інвентаризації",
     "newWarehouse": "Новий склад",

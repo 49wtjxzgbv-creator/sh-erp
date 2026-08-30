@@ -9,8 +9,25 @@ import { ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
 export interface QueryFinishedGoodsInput {
   assemblyId?: string;
   status?: string;
+  scope?: 'IN_PROGRESS' | 'READY';
   limit?: number;
   offset?: number;
+}
+
+/**
+ * Склад "В роботі" vs "Готова продукція" split (2026-08-30 user request) —
+ * see FinishedGood.confirmedByExecutionId's own schema comment for the full
+ * reasoning. A purchased unit (no productionOrderId at all) has no labor to
+ * confirm, so it's READY immediately; a manufactured one is IN_PROGRESS
+ * until ProductionExecutionsService#confirm() stamps it.
+ */
+function applyFinishedGoodScope(where: Prisma.FinishedGoodWhereInput, scope: 'IN_PROGRESS' | 'READY' | undefined): void {
+  if (scope === 'IN_PROGRESS') {
+    where.productionOrderId = { not: null };
+    where.confirmedByExecutionId = null;
+  } else if (scope === 'READY') {
+    where.OR = [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }];
+  }
 }
 
 /**
@@ -42,6 +59,7 @@ export class FinishedGoodsService {
     const where: Prisma.FinishedGoodWhereInput = {};
     if (query.assemblyId) where.assemblyId = query.assemblyId;
     if (query.status) where.status = query.status as any;
+    applyFinishedGoodScope(where, query.scope);
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
@@ -53,18 +71,22 @@ export class FinishedGoodsService {
   }
 
   /**
-   * "Склад → Готова продукція" (2026-08-25 user request): one row per
-   * Assembly with its IN_STOCK count, instead of the flat per-serial list
-   * (`query` above) — the flat list stays for a full-detail/all-statuses
-   * view, this is the "what's actually on the shelf, grouped by article"
-   * view. No materialized per-assembly table exists (unlike WarehouseStock
-   * for products), so this is a real Prisma `groupBy` computed on read —
-   * fine at this scale (grouped by distinct assembly, not by unit).
+   * "Склад → В роботі / Готова продукція" (2026-08-25, split 2026-08-30):
+   * one row per Assembly with its IN_STOCK count for the given `scope`,
+   * instead of the flat per-serial list (`query` above) — the flat list
+   * stays for a full-detail/all-statuses view, this is the "what's actually
+   * on the shelf, grouped by article" view. No materialized per-assembly
+   * table exists (unlike WarehouseStock for products), so this is a real
+   * Prisma `groupBy` computed on read — fine at this scale (grouped by
+   * distinct assembly, not by unit). `scope` omitted = old unfiltered
+   * behavior (every IN_STOCK unit, in-progress or ready alike).
    */
-  async summaryByAssembly(user: RequestUser) {
+  async summaryByAssembly(user: RequestUser, scope?: 'IN_PROGRESS' | 'READY') {
+    const where: Prisma.FinishedGoodWhereInput = { status: 'IN_STOCK' };
+    applyFinishedGoodScope(where, scope);
     const grouped = await this.prisma.tenant.finishedGood.groupBy({
       by: ['assemblyId'],
-      where: { status: 'IN_STOCK' },
+      where,
       _count: { _all: true },
     });
     return grouped.map((g) => ({ assemblyId: g.assemblyId, qty: g._count._all }));

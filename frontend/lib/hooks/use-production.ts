@@ -37,6 +37,7 @@ import {
   type ProductionOrderWorkerInput,
   type StartProductionOrderInput,
   type QueryFinishedGoodsInput,
+  type FinishedGoodScope,
   type ReceivePurchasedFinishedGoodsInput,
   type RecordQcCheckInput,
   type CreateProductionScheduleSlotInput,
@@ -50,7 +51,7 @@ const orderKey = (id: string) => ['production-orders', id] as const;
 const stagesKey = ['production-stages'] as const;
 const finishedGoodsKey = (query: QueryFinishedGoodsInput) => ['finished-goods', query] as const;
 const finishedGoodKey = (id: string) => ['finished-goods', id] as const;
-const finishedGoodsSummaryKey = ['finished-goods', 'summary'] as const;
+const finishedGoodsSummaryKey = (scope?: FinishedGoodScope) => ['finished-goods', 'summary', scope ?? null] as const;
 const checklistKey = ['qc-checklist-items'] as const;
 const qcChecksKey = (finishedGoodId: string) => ['qc-checks', 'finished-good', finishedGoodId] as const;
 const scheduleKey = (query: ProductionScheduleQuery) => ['production-schedule', query] as const;
@@ -216,8 +217,8 @@ export function useFinishedGood(id: string | undefined) {
   });
 }
 
-export function useFinishedGoodsSummary() {
-  return useQuery({ queryKey: finishedGoodsSummaryKey, queryFn: () => getFinishedGoodsSummary() });
+export function useFinishedGoodsSummary(scope?: FinishedGoodScope) {
+  return useQuery({ queryKey: finishedGoodsSummaryKey(scope), queryFn: () => getFinishedGoodsSummary(scope) });
 }
 
 export function useDeleteFinishedGood() {

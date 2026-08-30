@@ -257,9 +257,13 @@ export function deleteProductionStage(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`production-stages/${id}`);
 }
 
+/** Склад tabs (2026-08-30): IN_PROGRESS = manufactured but not yet worker-confirmed; READY = purchased, or manufactured+confirmed. Omit for the old unfiltered view. */
+export type FinishedGoodScope = 'IN_PROGRESS' | 'READY';
+
 export interface QueryFinishedGoodsInput {
   assemblyId?: string;
   status?: FinishedGoodStatus;
+  scope?: FinishedGoodScope;
   limit?: number;
   offset?: number;
 }
@@ -284,9 +288,9 @@ export interface FinishedGoodsSummaryLine {
   qty: number;
 }
 
-/** One row per Assembly with its IN_STOCK count — the grouped "Склад → Готова продукція" view, distinct from queryFinishedGoods' flat per-serial list. */
-export function getFinishedGoodsSummary(): Promise<FinishedGoodsSummaryLine[]> {
-  return apiClient.get<FinishedGoodsSummaryLine[]>('finished-goods/summary');
+/** One row per Assembly with its IN_STOCK count — the grouped "Склад → В роботі / Готова продукція" view, distinct from queryFinishedGoods' flat per-serial list. */
+export function getFinishedGoodsSummary(scope?: FinishedGoodScope): Promise<FinishedGoodsSummaryLine[]> {
+  return apiClient.get<FinishedGoodsSummaryLine[]>('finished-goods/summary', { query: scope ? { scope } : undefined });
 }
 
 /** IN_STOCK only, and only if it has no QC checks or shipment records attached — 409 otherwise. */

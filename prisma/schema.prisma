@@ -1669,6 +1669,23 @@ model FinishedGood {
   unitCostLocalEur            Decimal            @db.Decimal(14, 2)
   unitCostGermanEur           Decimal            @db.Decimal(14, 2)
   consumedInProductionOrderId String?            @db.Uuid // set when used as a sub-assembly component of a parent (Phase 1 FIFO consumption) — deliberately not a Prisma relation, same rationale as the other FIFO/snapshot fields
+  // Склад: "В роботі" vs "Готова продукція" (2026-08-30 user request) — a
+  // manufactured unit (productionOrderId set) starts here as null the
+  // instant its batch is started (ProductionOrdersService#start() creates
+  // ALL of a batch's units up front, before anyone has actually done the
+  // work) and only gets stamped once a worker's completion is actually
+  // confirmed AND paid — ProductionExecutionsService#confirm() FIFO-matches
+  // its own qtyCompleted against this order's oldest still-unstamped
+  // IN_STOCK units (same FIFO-by-manufactureDate convention as
+  // consumedInProductionOrderId above), reversed by void_() if the
+  // confirmation is later voided. Deliberately not a Prisma relation, same
+  // rationale as consumedInProductionOrderId. A PURCHASED unit
+  // (productionOrderId null, FinishedGoodsService#receivePurchased) has no
+  // labor to confirm at all — it counts as "Готова продукція" immediately,
+  // which callers implement as `productionOrderId IS NULL OR
+  // confirmedByExecutionId IS NOT NULL`, never by null-checking this column
+  // alone.
+  confirmedByExecutionId      String?            @db.Uuid
 
   legacyId String?
 
@@ -1688,6 +1705,7 @@ model FinishedGood {
   @@index([companyId, assemblyId])
   @@index([customerOrderId])
   @@index([consumedInProductionOrderId])
+  @@index([confirmedByExecutionId])
   @@map("finished_goods")
 }
 

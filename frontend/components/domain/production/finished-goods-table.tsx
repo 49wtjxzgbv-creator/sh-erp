@@ -7,7 +7,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { useFinishedGoods } from '@/lib/hooks/use-production';
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import type { FinishedGood, FinishedGoodStatus } from '@/lib/api-client/production';
+import type { FinishedGood, FinishedGoodStatus, FinishedGoodScope } from '@/lib/api-client/production';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
@@ -36,17 +36,19 @@ function AssemblyPhotoCell({ assemblyId }: { assemblyId: string }) {
 
 /**
  * Flat per-serial finished-goods list, with a status filter — the shared
- * body behind both Виробництво → Готова продукція (no `assemblyId`, every
- * unit of every assembly) and Склад → Готова продукція's drill-down (one
- * assembly's units only, reached by clicking its grouped summary row).
+ * body behind Виробництво → Готова продукція (no `assemblyId`/`scope`,
+ * every unit of every assembly regardless of confirmation) and Склад →
+ * В роботі / Готова продукція's drill-downs (one assembly's units only,
+ * reached by clicking a grouped summary row, `scope` matching whichever
+ * tab it was clicked from).
  */
-export function FinishedGoodsTable({ assemblyId }: { assemblyId?: string }) {
+export function FinishedGoodsTable({ assemblyId, scope }: { assemblyId?: string; scope?: FinishedGoodScope }) {
   const t = useTranslations('production');
   const router = useRouter();
   const [status, setStatus] = useState<FinishedGoodStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
 
-  const { data, isLoading } = useFinishedGoods({ assemblyId, status, limit: PAGE_SIZE, offset });
+  const { data, isLoading } = useFinishedGoods({ assemblyId, status, scope, limit: PAGE_SIZE, offset });
 
   const columns = useMemo<ColumnDef<FinishedGood>[]>(
     () => [

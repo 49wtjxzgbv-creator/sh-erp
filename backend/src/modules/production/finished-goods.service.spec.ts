@@ -11,7 +11,7 @@ describe('FinishedGoodsService', () => {
     prisma = {
       tenant: {
         $executeRaw: jest.fn(),
-        finishedGood: { count: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), createMany: jest.fn(), delete: jest.fn(), groupBy: jest.fn() },
+        finishedGood: { count: jest.fn(), findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), createMany: jest.fn(), delete: jest.fn(), groupBy: jest.fn() },
         assembly: { findUnique: jest.fn() },
         qcCheck: { count: jest.fn().mockResolvedValue(0) },
         shipmentItem: { count: jest.fn().mockResolvedValue(0) },
@@ -70,8 +70,26 @@ describe('FinishedGoodsService', () => {
     });
   });
 
+  describe('query — scope filter (2026-08-30)', () => {
+    it('applies the same IN_PROGRESS/READY where-clause shape as summaryByAssembly', async () => {
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([]);
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
+      await service.query(user, { scope: 'IN_PROGRESS' });
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productionOrderId: { not: null }, confirmedByExecutionId: null } }),
+      );
+    });
+
+    it('leaves the where clause untouched when scope is omitted', async () => {
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([]);
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
+      await service.query(user, { assemblyId: 'a1' });
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { assemblyId: 'a1' } }));
+    });
+  });
+
   describe('summaryByAssembly', () => {
-    it('returns one { assemblyId, qty } line per assembly, counting only IN_STOCK units', async () => {
+    it('returns one { assemblyId, qty } line per assembly, counting only IN_STOCK units, when scope is omitted (old unfiltered behavior)', async () => {
       prisma.tenant.finishedGood.groupBy.mockResolvedValue([
         { assemblyId: 'a1', _count: { _all: 3 } },
         { assemblyId: 'a2', _count: { _all: 1 } },
@@ -86,6 +104,26 @@ describe('FinishedGoodsService', () => {
         { assemblyId: 'a1', qty: 3 },
         { assemblyId: 'a2', qty: 1 },
       ]);
+    });
+
+    it('Склад "В роботі" (2026-08-30): scope=IN_PROGRESS filters to manufactured units not yet worker-confirmed', async () => {
+      prisma.tenant.finishedGood.groupBy.mockResolvedValue([]);
+      await service.summaryByAssembly(user, 'IN_PROGRESS');
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith({
+        by: ['assemblyId'],
+        where: { status: 'IN_STOCK', productionOrderId: { not: null }, confirmedByExecutionId: null },
+        _count: { _all: true },
+      });
+    });
+
+    it('Склад "Готова продукція" (2026-08-30): scope=READY includes purchased units (no productionOrderId) OR manufactured-and-confirmed units', async () => {
+      prisma.tenant.finishedGood.groupBy.mockResolvedValue([]);
+      await service.summaryByAssembly(user, 'READY');
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith({
+        by: ['assemblyId'],
+        where: { status: 'IN_STOCK', OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }] },
+        _count: { _all: true },
+      });
     });
   });
 

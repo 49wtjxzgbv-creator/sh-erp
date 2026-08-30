@@ -10,33 +10,25 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FinishedGoodsSummaryLine } from '@/lib/api-client/production';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Avatar } from '@/components/ui/avatar';
-import { ReceivePurchasedFinishedGoodsDialog } from '@/components/domain/production/receive-purchased-finished-goods-dialog';
-import { useHasPermission } from '@/lib/hooks/use-roles';
 
 /**
- * "Склад → Готова продукція" (2026-08-25 user request, split 2026-08-30):
- * готова продукція is physically warehouse stock, so it should be browsable
- * from here too — not only via Виробництво → Готова продукція's flat
- * per-serial list. One row per Assembly (photo/article/name/qty), never one
- * row per serial — clicking a row drills into the per-serial list
- * (finished-goods/[assemblyId]), which reuses the exact same columns the
- * Production tab's flat list has.
- *
- * `scope: 'READY'` (2026-08-30): this tab genuinely means "finished" now —
- * a purchased unit (never had labor to confirm) or a manufactured unit
- * whose worker completion has actually been confirmed (and paid). A
- * manufactured-but-unconfirmed unit lives in the sibling "В роботі" tab
- * (/inventory/in-progress) instead — see FinishedGood.confirmedByExecutionId's
- * own schema comment for why the old unfiltered view was misleading (every
- * unit gets created IN_STOCK the instant its batch is merely *started*).
+ * "Склад → В роботі" (2026-08-30 user request, split off the previously
+ * misleadingly-named "Готова продукція"): manufactured units that were
+ * created the instant their batch was *started* (ProductionOrdersService
+ * #start() generates all of a batch's IN_STOCK units up front, before
+ * anyone has actually confirmed doing the work) but whose worker completion
+ * has not yet been confirmed via ProductionExecutionsService#confirm() —
+ * see FinishedGood.confirmedByExecutionId's own schema comment. Once
+ * confirmed (and paid), a unit moves to the sibling "Готова продукція" tab
+ * (/inventory/finished-goods) instead — same grouped-by-assembly shape,
+ * same drill-down pattern, just the other half of the split.
  */
-export default function FinishedGoodsSummaryPage() {
+export default function InProgressGoodsSummaryPage() {
   const t = useTranslations('production');
   const tCatalog = useTranslations('catalog');
   const router = useRouter();
-  const canReceivePurchased = useHasPermission('finished-goods:manage');
 
-  const { data: lines, isLoading } = useFinishedGoodsSummary('READY');
+  const { data: lines, isLoading } = useFinishedGoodsSummary('IN_PROGRESS');
   const assemblyIds = useMemo(() => (lines ?? []).map((l) => l.assemblyId), [lines]);
   const { data: assembliesById } = useAssembliesByIds(assemblyIds);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
@@ -71,16 +63,11 @@ export default function FinishedGoodsSummaryPage() {
 
   return (
     <div className="space-y-4">
-      {canReceivePurchased && (
-        <div className="flex justify-end">
-          <ReceivePurchasedFinishedGoodsDialog />
-        </div>
-      )}
       <DataTable
         columns={columns}
         data={lines ?? []}
         isLoading={isLoading}
-        onRowClick={(line) => router.push(`/inventory/finished-goods/${line.assemblyId}`)}
+        onRowClick={(line) => router.push(`/inventory/in-progress/${line.assemblyId}`)}
       />
     </div>
   );

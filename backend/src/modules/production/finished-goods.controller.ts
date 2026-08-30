@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/commo
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { QueryFinishedGoodsDto, ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
+import { QueryFinishedGoodsDto, QueryFinishedGoodsSummaryDto, ReceivePurchasedFinishedGoodsDto } from './dto/finished-goods.dto';
 import { FinishedGoodsService } from './finished-goods.service';
 
 @ApiTags('production')
@@ -19,9 +19,9 @@ export class FinishedGoodsController {
 
   @Get('summary')
   @RequirePermissions('finished-goods:read')
-  @ApiOperation({ summary: 'One row per Assembly with its IN_STOCK count — "Склад → Готова продукція" grouped view, distinct from the flat per-serial list above.' })
-  async summary(@CurrentUser() user: RequestUser) {
-    return this.finishedGoodsService.summaryByAssembly(user);
+  @ApiOperation({ summary: 'One row per Assembly with its IN_STOCK count — "Склад → В роботі / Готова продукція" grouped views, distinct from the flat per-serial list above.' })
+  async summary(@CurrentUser() user: RequestUser, @Query() query: QueryFinishedGoodsSummaryDto) {
+    return this.finishedGoodsService.summaryByAssembly(user, query.scope);
   }
 
   @Get(':id')

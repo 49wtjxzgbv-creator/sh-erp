@@ -47,6 +47,7 @@ describe('ProductionExecutionsService', () => {
         productionOrder: { findUnique: jest.fn().mockResolvedValue(startedOrder) },
         assembly: { findUnique: jest.fn().mockResolvedValue(soloAllowedAssembly) },
         workTask: { findUnique: jest.fn().mockResolvedValue(openWorkTask) },
+        finishedGood: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       },
     };
     audit = { record: jest.fn() };
@@ -247,6 +248,44 @@ describe('ProductionExecutionsService', () => {
       payrollPeriods.assertDateNotClosed.mockRejectedValue(new ConflictException('closed'));
       await expect(service.confirm(user, 'ex1')).rejects.toThrow(ConflictException);
     });
+
+    it('Склад "В роботі"→"Готова продукція" (2026-08-30): FIFO-stamps this order\'s oldest unconfirmed IN_STOCK units, up to floor(qtyCompleted)', async () => {
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([{ id: 'fg1' }, { id: 'fg2' }, { id: 'fg3' }, { id: 'fg4' }, { id: 'fg5' }]);
+      await service.confirm(user, 'ex1'); // draftProductExecution.qtyCompleted = 5
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith({
+        where: { productionOrderId: 'po1', status: 'IN_STOCK', confirmedByExecutionId: null },
+        orderBy: { manufactureDate: 'asc' },
+        take: 5,
+      });
+      expect(prisma.tenant.finishedGood.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['fg1', 'fg2', 'fg3', 'fg4', 'fg5'] } },
+        data: { confirmedByExecutionId: 'ex1' },
+      });
+    });
+
+    it('rounds a fractional qtyCompleted down (floor) rather than stamping a partial unit', async () => {
+      prisma.tenant.productionExecution.findUnique.mockResolvedValue({ ...draftProductExecution, qtyCompleted: 5.7 });
+      await service.confirm(user, 'ex1');
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 5 }));
+    });
+
+    it('never touches FinishedGood for a GENERAL (WorkTask) execution — no productionOrderId at all', async () => {
+      prisma.tenant.productionExecution.findUnique.mockResolvedValue({
+        ...draftProductExecution,
+        productionOrderId: null,
+        workTaskId: 'wt1',
+        totalAmount: 50,
+      });
+      await service.confirm(user, 'ex1');
+      expect(prisma.tenant.finishedGood.findMany).not.toHaveBeenCalled();
+      expect(prisma.tenant.finishedGood.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('skips the update call entirely when there are no unconfirmed units left to stamp (defensive — should not happen given the qty invariant)', async () => {
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([]);
+      await service.confirm(user, 'ex1');
+      expect(prisma.tenant.finishedGood.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   // ============================================================
@@ -280,6 +319,20 @@ describe('ProductionExecutionsService', () => {
       expect(prisma.tenant.productionExecution.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'ex1' }, data: expect.objectContaining({ status: 'VOIDED' }) }),
       );
+    });
+
+    it('Склад (2026-08-30): un-stamps every FinishedGood this execution had confirmed, sending them back to "В роботі"', async () => {
+      await service.void_(user, 'ex1', {});
+      expect(prisma.tenant.finishedGood.updateMany).toHaveBeenCalledWith({
+        where: { confirmedByExecutionId: 'ex1' },
+        data: { confirmedByExecutionId: null },
+      });
+    });
+
+    it('never touches FinishedGood when voiding a GENERAL (WorkTask) execution', async () => {
+      prisma.tenant.productionExecution.findUnique.mockResolvedValue({ ...confirmedExecution, productionOrderId: null, workTaskId: 'wt1' });
+      await service.void_(user, 'ex1', {});
+      expect(prisma.tenant.finishedGood.updateMany).not.toHaveBeenCalled();
     });
   });
 

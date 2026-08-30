@@ -233,6 +233,8 @@
     "stockHistory": "Movement history",
     "finishedGoods": "Fertigwaren",
     "backToFinishedGoodsSummary": "← Zurück zu den Fertigwaren",
+    "inProgress": "In Arbeit",
+    "backToInProgressSummary": "← Zurück zu In Arbeit",
     "warehouses": "Warehouses",
     "sessions": "Stocktakes",
     "newWarehouse": "New warehouse",
