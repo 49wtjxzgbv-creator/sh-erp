@@ -12,6 +12,8 @@ import { DataTable } from '@/components/domain/data-table/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
+import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
+import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 
 const PAGE_SIZE = 50;
 
@@ -51,6 +53,8 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
 export function ProductionPlanOrdersList({ basePath, title }: { basePath: string; title?: string }) {
   const ts = useTranslations('sales');
   const tp = useTranslations('production');
+  const tPlanner = useTranslations('planner');
+  const tPrint = useTranslations('print');
   const router = useRouter();
   const [status, setStatus] = useState<CustomerOrderStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
@@ -58,9 +62,9 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
 
   const { data, isLoading } = useCustomerOrders({ status, limit: PAGE_SIZE, offset });
 
-  const from = useMemo(() => new Date(year, 0, 1).toISOString(), [year]);
-  const to = useMemo(() => new Date(year, 11, 31, 23, 59, 59).toISOString(), [year]);
-  const { data: board } = usePlannerBoard({ from, to });
+  const yearStart = useMemo(() => new Date(year, 0, 1), [year]);
+  const yearEnd = useMemo(() => new Date(year, 11, 31, 23, 59, 59), [year]);
+  const { data: board } = usePlannerBoard({ from: yearStart.toISOString(), to: yearEnd.toISOString() });
 
   const columns = useMemo<ColumnDef<CustomerOrder>[]>(
     () => [
@@ -114,25 +118,42 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
       />
 
       {board && board.orders.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-              <CalendarRange className="h-4 w-4" />
-            </span>
-            <h3 className="text-sm font-semibold">{tp('scheduleByOrders')}</h3>
-            <Badge variant="outline" className="ml-auto">
-              {board.orders.length}
-            </Badge>
+        <>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+                <CalendarRange className="h-4 w-4" />
+              </span>
+              <h3 className="text-sm font-semibold">{tp('scheduleByOrders')}</h3>
+              <Badge variant="outline">{board.orders.length}</Badge>
+              <div className="ml-auto flex items-center gap-2">
+                <PrintButton label={tPrint('printAction')} />
+                <PreviewButton />
+              </div>
+            </div>
+            <div className="p-3">
+              <PlannerOrdersTimelineView
+                orders={board.orders}
+                year={year}
+                onYearChange={setYear}
+                getHref={(order) => `${basePath}/${order.id}`}
+              />
+            </div>
           </div>
-          <div className="p-3">
-            <PlannerOrdersTimelineView
-              orders={board.orders}
-              year={year}
-              onYearChange={setYear}
-              getHref={(order) => `${basePath}/${order.id}`}
-            />
-          </div>
-        </div>
+
+          <PrintArea>
+            {/* Landscape — same as Планер's own "По замовленнях" print (this table is a wide month-by-month calendar, cramped in portrait). */}
+            <style>{`@page { size: landscape; margin: 10mm; }`}</style>
+            <PrintDocumentHeader title={tp('scheduleByOrders')} subtitle={String(year)} />
+            <PlannerOrdersPrintTable orders={board.orders} from={yearStart} to={yearEnd} scale="year" />
+            <div className="mt-4">
+              <strong className="text-[9px]">{tPlanner('legendTitle')}:</strong>
+              <div className="mt-1">
+                <PlannerOrdersPrintLegend />
+              </div>
+            </div>
+          </PrintArea>
+        </>
       )}
     </div>
   );
