@@ -60,6 +60,8 @@ describe('CustomerOrdersService', () => {
         customerOrderItem: { create: jest.fn(), update: jest.fn() },
         productionOrder: { findMany: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0) },
+        payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
+        assembly: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -331,7 +333,44 @@ describe('CustomerOrdersService', () => {
 
       const result = await service.getPayrollFundSummary(user, 'co1');
 
-      expect(result).toEqual({ estimated: 19, actual: 15 });
+      expect(result).toEqual({ estimated: 19, actual: 15, earnedActual: 0, byArticle: [] });
+    });
+
+    it('earnedActual/byArticle (2026-08-30): sums REAL PayrollEntry PIECEWORK rows for this order\'s batches, grouped by article via each batch\'s own assemblyId', async () => {
+      assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
+      mockProductionOrdersFindMany([
+        { id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 12, assemblyId: 'a1' },
+        { id: 'po2', customerOrderItemId: null, subAssemblyForItemId: 'item1', laborCostEur: 3, assemblyId: 'sub1' },
+      ]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
+        { employeeId: 'e2', type: 'PIECEWORK', amount: 20, unitsProduced: 2, productionOrderId: 'po1' }, // same article, different worker — merged
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 30, unitsProduced: 1, productionOrderId: 'po2' },
+      ]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([
+        { id: 'a1', name: 'Widget', article: 'W-1' },
+        { id: 'sub1', name: 'Sub', article: 'S-1' },
+      ]);
+
+      const result = await service.getPayrollFundSummary(user, 'co1');
+
+      expect(result.earnedActual).toBe(150);
+      expect(result.byArticle).toEqual([
+        { assemblyId: 'sub1', assemblyName: 'Sub', article: 'S-1', unitsProduced: 1, amount: 30 },
+        { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 6, amount: 120 },
+      ]);
+      expect(prisma.tenant.payrollEntry.findMany).toHaveBeenCalledWith({
+        where: { type: 'PIECEWORK', productionOrderId: { in: ['po1', 'po2'] } },
+      });
+    });
+
+    it('never lets ADVANCE/BONUS/PENALTY entries leak into earnedActual/byArticle (fund summary is piecework-only)', async () => {
+      assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
+      mockProductionOrdersFindMany([{ id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 0, assemblyId: 'a1' }]);
+      // The real query already filters type: 'PIECEWORK' server-side — this
+      // confirms the WHERE clause itself, not just in-memory filtering.
+      await service.getPayrollFundSummary(user, 'co1');
+      expect(prisma.tenant.payrollEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ type: 'PIECEWORK' }) }));
     });
   });
 

@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
+import { PayrollArticleLine } from '../hr/payroll.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
@@ -526,6 +527,18 @@ export class CustomerOrdersService {
    *    sub-assembly batch planned at order-creation time) — a PLANNED
    *    batch contributes 0 here (laborCostEur is still null), matching
    *    `getItemProductionTree`'s own batch-matching rule.
+   *  - `earnedActual`/`byArticle` (2026-08-30 user request): "скільки вже
+   *    зароблено працівниками" — the REAL PayrollEntry ledger (type
+   *    PIECEWORK) for this order's batches, not the frozen laborCostEur
+   *    estimate above. These two numbers can legitimately differ (piecework
+   *    is split across workers by allocation percentage, confirmations can
+   *    be partial), so both are returned rather than one replacing the
+   *    other. `byArticle` mirrors payroll.service.ts#getPayrollSummaryReport's
+   *    (employeeId, assemblyId) breakdown, scoped to just this order and
+   *    grouped by article only (no employee split needed here) — the
+   *    `assemblyId` for each entry is read straight off `batches` (already
+   *    fetched below), no extra ProductionOrder round trip needed unlike
+   *    the global report.
    */
   async getPayrollFundSummary(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
@@ -545,7 +558,41 @@ export class CustomerOrdersService {
       : [];
     const actual = batches.reduce((sum, b) => sum + Number((b as any).laborCostEur ?? 0), 0);
 
-    return { estimated: round2(estimated), actual: round2(actual) };
+    const productionOrderIds = batches.map((b) => b.id);
+    const assemblyIdByOrderId = new Map(batches.map((b) => [b.id, (b as any).assemblyId as string]));
+    const payrollEntries = productionOrderIds.length
+      ? await this.prisma.tenant.payrollEntry.findMany({ where: { type: 'PIECEWORK', productionOrderId: { in: productionOrderIds } } })
+      : [];
+
+    const assemblyIds = Array.from(new Set(Array.from(assemblyIdByOrderId.values())));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
+    const GENERAL_WORK_KEY = '__general__';
+    const byArticleMap = new Map<string, PayrollArticleLine>();
+    let earnedActual = 0;
+    for (const entry of payrollEntries as any[]) {
+      const amount = Number(entry.amount);
+      earnedActual += amount;
+      const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
+      const key = assemblyId ?? GENERAL_WORK_KEY;
+      if (!byArticleMap.has(key)) {
+        const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
+        byArticleMap.set(key, { assemblyId, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
+      }
+      const line = byArticleMap.get(key)!;
+      line.unitsProduced += Number(entry.unitsProduced ?? 0);
+      line.amount += amount;
+    }
+    const byArticle = Array.from(byArticleMap.values()).sort((a, b) => {
+      if (a.assemblyId === null) return 1;
+      if (b.assemblyId === null) return -1;
+      return (a.article ?? '').localeCompare(b.article ?? '');
+    });
+
+    return { estimated: round2(estimated), actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
   }
 
   /**

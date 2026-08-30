@@ -346,23 +346,62 @@ function CollapsibleCard({
  * (frozen `laborCostEur`, summed across every already-started batch tied
  * to this order). Same estimated/actual pairing already used everywhere
  * else money is shown on this page.
+ *
+ * `earnedActual`/`byArticle` (2026-08-30 user request): "скільки вже
+ * зароблено працівниками" — the REAL PayrollEntry ledger for this order's
+ * batches, distinct from `actual` above (the frozen laborCostEur estimate
+ * — these can differ). Below it, which article/how many units/for what sum
+ * were actually produced so far.
  */
 function PayrollFundWidget({ orderId }: { orderId: string }) {
   const t = useTranslations('sales');
   const { data: fund } = usePayrollFundSummary(orderId);
   if (!fund) return null;
 
+  function articleLabel(line: { assemblyName: string | null; article: string | null }): string {
+    if (!line.assemblyName && !line.article) return t('payrollFundGeneralWork');
+    return line.article ? `${line.assemblyName ?? ''} (${line.article})` : (line.assemblyName ?? '');
+  }
+
   return (
-    <CollapsibleCard title={t('payrollFund')} contentClassName="flex flex-wrap gap-x-6 gap-y-2">
-      <div>
-        <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
-        <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
+    <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <div>
+          <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
+          <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>
+          <p className="text-sm font-medium">{formatEur(fund.actual)}</p>
+          <p className="text-[11px] text-muted-foreground">{t('payrollFundActualHint')}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t('payrollFundEarned')}</p>
+          <p className="text-sm font-medium">{formatEur(fund.earnedActual)}</p>
+        </div>
       </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>
-        <p className="text-sm font-medium">{formatEur(fund.actual)}</p>
-        <p className="text-[11px] text-muted-foreground">{t('payrollFundActualHint')}</p>
-      </div>
+      {fund.byArticle.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('payrollFundArticle')}</TableHead>
+              <TableHead>{t('payrollFundUnitsProduced')}</TableHead>
+              <TableHead>{t('payrollFundEarned')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {fund.byArticle.map((line) => (
+              <TableRow key={line.assemblyId ?? 'general'}>
+                <TableCell className="max-w-[280px] truncate" title={articleLabel(line)}>
+                  {articleLabel(line)}
+                </TableCell>
+                <TableCell>{line.unitsProduced || '—'}</TableCell>
+                <TableCell>{formatEur(line.amount)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </CollapsibleCard>
   );
 }

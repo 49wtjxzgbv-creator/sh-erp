@@ -224,9 +224,21 @@ export function getItemProductionTree(orderId: string, itemId: string): Promise<
 }
 
 /** "Фонд заробітної плати на все замовлення" — estimated (live BOM rates, every item's full tree incl. sub-assemblies) vs actual (frozen laborCostEur, started batches only). */
+/** Mirrors PayrollArticleLine in lib/api-client/hr.ts — same shape, kept local per this file's own no-cross-import convention. */
+export interface PayrollFundArticleLine {
+  assemblyId: string | null;
+  assemblyName: string | null;
+  article: string | null;
+  unitsProduced: number;
+  amount: number;
+}
+
 export interface PayrollFundSummary {
   estimated: number;
   actual: number;
+  /** "Скільки вже зароблено працівниками" — the real PayrollEntry (PIECEWORK) ledger for this order's batches, distinct from `actual` (the frozen laborCostEur estimate). */
+  earnedActual: number;
+  byArticle: PayrollFundArticleLine[];
 }
 
 export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSummary> {
