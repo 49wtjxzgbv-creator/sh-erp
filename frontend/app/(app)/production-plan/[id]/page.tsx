@@ -22,13 +22,14 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
 };
 
 /**
- * Full production tree for every item on this order (2026-08-27 user
- * request) — the same ProductionProgressTree already shown (collapsed by
- * default) on the Sales order page, surfaced here directly and expanded,
- * reachable from Production's "По замовленнях" tab for staff who live in
- * Production rather than Sales.
+ * "План виробництва" order detail (2026-08-30) — three blocks/tabs: the
+ * existing full BOM production tree ("Хід виробництва", same
+ * ProductionProgressTree the Sales order page shows collapsed), "В роботі"
+ * (manufactured, not yet confirmed by a worker), and "Що зроблено"
+ * (purchased outright or manufactured-and-confirmed) — both sourced from
+ * CustomerOrdersService#getOrderProductionUnits.
  */
-export default function ProductionByOrderDetailPage() {
+export default function ProductionPlanDetailPage() {
   const params = useParams<{ id: string }>();
   const t = useTranslations('sales');
   const tp = useTranslations('production');

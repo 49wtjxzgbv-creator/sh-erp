@@ -39,22 +39,18 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
 };
 
 /**
- * "По замовленнях" (2026-08-27 user request) — the rest of the Production
- * module is one flat list of batches (ProductionOrder) with no notion of
- * "which customer order is this for". This tab groups the other direction:
- * pick an order and open its FULL production tree (every item, every
- * sub-assembly at any depth) in one place, instead of hunting down
- * individual batches. Defaults to showing every status (not just
- * IN_PRODUCTION) — since sub-assembly production is no longer planned
- * automatically at order creation, a freshly created order can sit on
- * NEW with a fully drawable production tree and nothing given to
- * production yet; staff need to reach that tree from here too, not only
- * once something has already been started.
+ * "План виробництва" (2026-08-30 user request) — own top-level sidebar
+ * module, not a tab inside Виробництво (moved out of production/by-order
+ * after the user pointed out it belonged in the left nav, not buried in
+ * Production's own tab strip). Every customer order with its production
+ * completion % (server-aggregated — see CustomerOrdersService#
+ * withProductionProgress), plus the same per-order Gantt the dashboard and
+ * Планер already use, retargeted to open this module's own detail page.
  */
-export default function ProductionByOrderPage() {
+export default function ProductionPlanPage() {
+  const t = useTranslations('productionPlan');
   const ts = useTranslations('sales');
   const tp = useTranslations('production');
-  const tPlanner = useTranslations('planner');
   const router = useRouter();
   const [status, setStatus] = useState<CustomerOrderStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
@@ -64,10 +60,6 @@ export default function ProductionByOrderPage() {
 
   const from = useMemo(() => new Date(year, 0, 1).toISOString(), [year]);
   const to = useMemo(() => new Date(year, 11, 31, 23, 59, 59).toISOString(), [year]);
-  // "нище графік по замовленнях" (2026-08-30 user request) — reuses the
-  // dashboard's own per-order Gantt (PlannerOrdersTimelineView/
-  // usePlannerBoard) rather than building a second, cruder chart; only the
-  // row-label click target changes (this module's own detail page, not Sales).
   const { data: board } = usePlannerBoard({ from, to });
 
   const columns = useMemo<ColumnDef<CustomerOrder>[]>(
@@ -98,6 +90,8 @@ export default function ProductionByOrderPage() {
 
   return (
     <div className="space-y-4">
+      <h1 className="text-xl font-semibold">{t('title')}</h1>
+
       <Select value={status ?? '__all'} onValueChange={(v) => { setStatus(v === '__all' ? undefined : (v as CustomerOrderStatus)); setOffset(0); }}>
         <SelectTrigger className="w-48">
           <SelectValue placeholder={ts('filterByStatus')} />
@@ -115,7 +109,7 @@ export default function ProductionByOrderPage() {
         columns={columns}
         data={data?.items ?? []}
         isLoading={isLoading}
-        onRowClick={(order) => router.push(`/production/by-order/${order.id}`)}
+        onRowClick={(order) => router.push(`/production-plan/${order.id}`)}
         pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
       />
 
@@ -135,7 +129,7 @@ export default function ProductionByOrderPage() {
               orders={board.orders}
               year={year}
               onYearChange={setYear}
-              getHref={(order) => `/production/by-order/${order.id}`}
+              getHref={(order) => `/production-plan/${order.id}`}
             />
           </div>
         </div>

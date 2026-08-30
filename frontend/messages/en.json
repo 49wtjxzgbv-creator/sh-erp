@@ -53,6 +53,7 @@
     "inventory": "Inventory",
     "bom": "Bill of Materials",
     "production": "Production",
+    "productionPlan": "Production Plan",
     "procurement": "Procurement",
     "sales": "Sales",
     "hr": "HR",
@@ -352,7 +353,6 @@
   "production": {
     "title": "Production",
     "orders": "Orders",
-    "byOrder": "By order",
     "viewInSales": "View in sales",
     "stages": "Stages",
     "finishedGoods": "Finished goods",
@@ -1509,6 +1509,9 @@
     "PAYROLL_PERIOD_ALREADY_CLOSED": "This payroll period is already closed.",
     "PAYROLL_PERIOD_ALREADY_OPEN": "This payroll period is already open.",
     "PAYROLL_PERIOD_CLOSED": "This date falls inside a closed payroll period."
+  },
+  "productionPlan": {
+    "title": "Production Plan"
   },
   "planner": {
     "title": "Schedule",

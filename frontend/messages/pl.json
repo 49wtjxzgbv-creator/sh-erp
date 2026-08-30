@@ -53,6 +53,7 @@
     "inventory": "Magazyn",
     "bom": "Specyfikacje (BOM)",
     "production": "Produkcja",
+    "productionPlan": "Plan produkcji",
     "procurement": "Zakupy",
     "sales": "Sprzedaż",
     "hr": "Kadry",
@@ -352,7 +353,6 @@
   "production": {
     "title": "Production",
     "orders": "Orders",
-    "byOrder": "By order",
     "viewInSales": "View in sales",
     "stages": "Stages",
     "finishedGoods": "Finished goods",
@@ -1509,6 +1509,9 @@
     "PAYROLL_PERIOD_ALREADY_CLOSED": "Ten okres rozliczeniowy jest już zamknięty.",
     "PAYROLL_PERIOD_ALREADY_OPEN": "Ten okres rozliczeniowy jest już otwarty.",
     "PAYROLL_PERIOD_CLOSED": "Ta data należy do zamkniętego okresu rozliczeniowego."
+  },
+  "productionPlan": {
+    "title": "Plan produkcji"
   },
   "planner": {
     "title": "Schedule",

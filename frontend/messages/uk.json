@@ -53,6 +53,7 @@
     "inventory": "Склад",
     "bom": "Специфікації (BOM)",
     "production": "Виробництво",
+    "productionPlan": "План виробництва",
     "procurement": "Закупівлі",
     "finance": "Фінанси",
     "sales": "Продажі",
@@ -354,7 +355,6 @@
   "production": {
     "title": "Виробництво",
     "orders": "Замовлення",
-    "byOrder": "По замовленнях",
     "viewInSales": "Переглянути в продажах",
     "stages": "Етапи",
     "finishedGoods": "Готова продукція",
@@ -1619,6 +1619,9 @@
     "PAYROLL_PERIOD_ALREADY_CLOSED": "Цей розрахунковий період уже закритий.",
     "PAYROLL_PERIOD_ALREADY_OPEN": "Цей розрахунковий період уже відкритий.",
     "PAYROLL_PERIOD_CLOSED": "Ця дата належить закритому розрахунковому періоду."
+  },
+  "productionPlan": {
+    "title": "План виробництва"
   },
   "planner": {
     "title": "План-графік",

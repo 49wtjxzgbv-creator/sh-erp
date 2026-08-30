@@ -53,6 +53,7 @@
     "inventory": "Lager",
     "bom": "Stücklisten (BOM)",
     "production": "Produktion",
+    "productionPlan": "Produktionsplan",
     "procurement": "Beschaffung",
     "sales": "Vertrieb",
     "hr": "Personal",
@@ -352,7 +353,6 @@
   "production": {
     "title": "Production",
     "orders": "Orders",
-    "byOrder": "By order",
     "viewInSales": "View in sales",
     "stages": "Stages",
     "finishedGoods": "Finished goods",
@@ -1509,6 +1509,9 @@
     "PAYROLL_PERIOD_ALREADY_CLOSED": "Dieser Abrechnungszeitraum ist bereits geschlossen.",
     "PAYROLL_PERIOD_ALREADY_OPEN": "Dieser Abrechnungszeitraum ist bereits offen.",
     "PAYROLL_PERIOD_CLOSED": "Dieses Datum liegt innerhalb eines geschlossenen Abrechnungszeitraums."
+  },
+  "productionPlan": {
+    "title": "Produktionsplan"
   },
   "planner": {
     "title": "Schedule",
