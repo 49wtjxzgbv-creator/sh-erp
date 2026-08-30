@@ -1,12 +1,14 @@
 /**
  * One-off correction (2026-08-31, explicit user request — "я змінив
  * вартість деяких виробів, перерахуй заморожену вартість партій і
- * зарплату відповідно до нових цін"): labor-cost freezing at
- * ProductionOrdersService#start() is deliberate (its own header comment)
- * — editing an Assembly's laborCostPerUnit after a batch has already
- * started, and after workers have already been confirmed/paid against it,
- * does NOT retroactively change what's frozen or what was paid. The user
- * explicitly asked for exactly that to be redone, once, for one order.
+ * зарплату відповідно до нових цін", re-run the same day after a second
+ * round of price edits): labor-cost freezing at ProductionOrdersService#
+ * start() is deliberate (its own header comment) — editing an Assembly's
+ * laborCostPerUnit after a batch has already started, and after workers
+ * have already been confirmed/paid against it, does NOT retroactively
+ * change what's frozen or what was paid. The user explicitly asked for
+ * exactly that to be redone, manually, for one order — potentially more
+ * than once as prices keep changing, so this must be safely RE-RUNNABLE.
  *
  * For every batch (ProductionOrder) tied to the given order's items
  * (top-level OR sub-assembly, any depth) that is already STARTED
@@ -15,17 +17,25 @@
  *  1. Re-freezes laborCostEur/totalLocalCostEur/totalGermanCostEur/
  *     fullCostEur on the ProductionOrder — same ownLabor/totalLocalCostEur
  *     formula start() itself uses (materials/packaging/delivery/other stay
- *     untouched, only the labor component moves).
- *  2. For every CONFIRMED execution against that batch, recomputes what
- *     its totalAmount would be at the new rate (same qtyCompleted/
- *     unitsPlanned x laborCostEur formula computeAndValidateProductAmount
- *     uses) and, for each of that execution's ORIGINAL allocations, issues
- *     a new correcting PayrollEntry (type PIECEWORK, unitsProduced: 0 — no
- *     new output, purely a price correction on already-produced units) for
- *     that allocation's same proportional share of the delta (new - old).
- *     sourceAllocationId is left null — it's @unique and already claimed by
- *     the original entry, same convention ProductionExecutionsService#void_
- *     already uses — the comment carries the traceback instead.
+ *     untouched, only the labor component moves) — AND ProductionExecution.
+ *     totalAmount on every CONFIRMED execution against it, for consistency
+ *     (2026-08-31 fix — the first run of this script left totalAmount
+ *     stale, which would have double-corrected on any second run; see (2)).
+ *  2. For every CONFIRMED execution, recomputes what its totalAmount
+ *     SHOULD be at the new rate, and for each of that execution's ORIGINAL
+ *     allocations, issues a new correcting PayrollEntry (type PIECEWORK,
+ *     unitsProduced: 0 — no new output, purely a price correction) for the
+ *     gap between that and what's ACTUALLY been paid so far. "Actually
+ *     paid so far" is computed by querying PayrollEntry directly — the
+ *     original entry (via sourceAllocationId, still @unique to it) PLUS
+ *     every prior correction this same script already issued for this
+ *     exact allocation (matched via the allocation id embedded in the
+ *     comment — sourceAllocationId itself is left null on correction rows,
+ *     same convention ProductionExecutionsService#void_ already uses,
+ *     since it's @unique and already claimed by the original entry) —
+ *     NEVER by trusting execution.totalAmount as a running balance, which
+ *     is exactly the mistake that caused a duplicate correction on the
+ *     second run before this fix.
  *
  * Read-only by default (DRY_RUN unless APPLY=1). Scoped to one company AND
  * one order explicitly — never a blind company-wide rate reconciliation;
@@ -102,19 +112,32 @@ async function run(prisma: PrismaClient) {
       });
 
       for (const execution of executions) {
+        // originalExecTotal (the value execution.totalAmount held when it
+        // was first confirmed) is used ONLY to derive each allocation's
+        // fixed split ratio (percent/hours never change with the rate) —
+        // never as a "how much is already paid" balance, which is what the
+        // pre-fix version got wrong on a second run.
+        const originalExecTotal = Number(execution.totalAmount);
         const qtyCompleted = Number(execution.qtyCompleted ?? 0);
-        const oldExecTotal = Number(execution.totalAmount);
         const newExecTotal = round2(unitsPlanned > 0 ? (qtyCompleted / unitsPlanned) * newLabor : 0);
-        const execDelta = newExecTotal - oldExecTotal;
-        if (Math.abs(execDelta) < 0.005) continue;
 
         for (const allocation of execution.allocations) {
-          const share = oldExecTotal !== 0 ? Number(allocation.amount) / oldExecTotal : 1 / execution.allocations.length;
-          const correction = round2(execDelta * share);
+          const shareFraction = originalExecTotal !== 0 ? Number(allocation.amount) / originalExecTotal : 1 / execution.allocations.length;
+          const correctAllocationTotal = round2(newExecTotal * shareFraction);
+
+          const [originalEntry, priorCorrections] = await Promise.all([
+            tx.payrollEntry.findUnique({ where: { sourceAllocationId: allocation.id } }),
+            tx.payrollEntry.findMany({
+              where: { productionOrderId: batch.id, sourceAllocationId: null, comment: { contains: allocation.id } },
+            }),
+          ]);
+          const alreadyPaid = Number(originalEntry?.amount ?? 0) + priorCorrections.reduce((sum, e) => sum + Number(e.amount), 0);
+
+          const correction = round2(correctAllocationTotal - alreadyPaid);
           if (Math.abs(correction) < 0.005) continue;
 
           console.log(
-            `    execution ${execution.id}, employee ${allocation.employeeId}: ${APPLY ? 'creating' : 'would create'} correction €${correction.toFixed(2)}`,
+            `    execution ${execution.id}, employee ${allocation.employeeId}: ${APPLY ? 'creating' : 'would create'} correction €${correction.toFixed(2)} (already paid €${alreadyPaid.toFixed(2)}, correct total €${correctAllocationTotal.toFixed(2)})`,
           );
           if (APPLY) {
             await tx.payrollEntry.create({
@@ -125,13 +148,17 @@ async function run(prisma: PrismaClient) {
                 productionOrderId: batch.id,
                 unitsProduced: 0,
                 amount: correction,
-                comment: `Коригування ставки праці для ${assembly.article ?? assembly.name} (замовлення ${orderNumber}): ${round2(oldLabor / unitsPlanned).toFixed(2)}€ → ${assembly.laborCostPerUnit}€/од. Оригінальне виконання ${execution.id}, розподіл ${allocation.id}.`,
+                comment: `Коригування ставки праці для ${assembly.article ?? assembly.name} (замовлення ${orderNumber}) до ${assembly.laborCostPerUnit}€/од. Оригінальне виконання ${execution.id}, розподіл ${allocation.id}.`,
                 createdById: execution.confirmedById ?? execution.recordedById,
               } as any,
             });
           }
           totalCorrectionAmount += correction;
           correctionRows += 1;
+        }
+
+        if (APPLY && Math.abs(newExecTotal - originalExecTotal) >= 0.005) {
+          await tx.productionExecution.update({ where: { id: execution.id }, data: { totalAmount: newExecTotal } });
         }
       }
     }
