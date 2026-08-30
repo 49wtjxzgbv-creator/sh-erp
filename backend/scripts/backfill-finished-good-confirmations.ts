@@ -15,10 +15,19 @@
  * (confirmedAt asc) — so a batch confirmed in two separate executions gets
  * its units split the same way live confirms would have split them.
  *
- * Idempotent — only ever writes rows where confirmedByExecutionId IS NULL
- * (findMany's own where clause), so re-running is always safe and a mix of
- * old (backfilled) and new (live-stamped) confirmations never double-counts.
+ * Idempotent (2026-08-31 fix — a real double-stamping incident on prod: this
+ * script was applied twice, once 2026-08-30 and once 2026-08-31, and each
+ * run independently found "still-unstamped" candidates and stamped them
+ * under the SAME execution.id it had already used in the prior run —
+ * doubling the confirmed count for any batch with enough spare unconfirmed
+ * inventory to make that possible; see fix-duplicate-finished-good-
+ * confirmations.ts for the one-off correction of the resulting bad data).
+ * Now explicitly skips an execution that already has ANY FinishedGood
+ * stamped with its id — the ONLY reliable "have I already run for this
+ * execution" signal — rather than just checking whether candidates exist,
+ * which says nothing about whether THIS execution already claimed some.
  *
+
  * Read-only by default (DRY_RUN unless APPLY=1). RLS-protected tables need
  * `app.current_company_id` set first — same SET LOCAL-inside-one-transaction
  * pattern as reconcile-reserved-qty.ts, scoped per company explicitly
@@ -51,6 +60,9 @@ async function backfillCompany(prisma: PrismaClient, companyId: string) {
     for (const execution of executions) {
       const qty = Math.floor(Number(execution.qtyCompleted ?? 0));
       if (qty <= 0) continue;
+
+      const alreadyStamped = await tx.finishedGood.count({ where: { confirmedByExecutionId: execution.id } });
+      if (alreadyStamped > 0) continue;
 
       const candidates = await tx.finishedGood.findMany({
         where: { productionOrderId: execution.productionOrderId!, confirmedByExecutionId: null },
