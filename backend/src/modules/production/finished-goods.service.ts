@@ -21,7 +21,7 @@ export interface QueryFinishedGoodsInput {
  * confirm, so it's READY immediately; a manufactured one is IN_PROGRESS
  * until ProductionExecutionsService#confirm() stamps it.
  */
-function applyFinishedGoodScope(where: Prisma.FinishedGoodWhereInput, scope: 'IN_PROGRESS' | 'READY' | undefined): void {
+export function applyFinishedGoodScope(where: Prisma.FinishedGoodWhereInput, scope: 'IN_PROGRESS' | 'READY' | undefined): void {
   if (scope === 'IN_PROGRESS') {
     where.productionOrderId = { not: null };
     where.confirmedByExecutionId = null;

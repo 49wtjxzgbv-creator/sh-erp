@@ -85,6 +85,13 @@ export interface CustomerOrder {
    */
   estimatedTotal?: number | null;
   actualTotal?: number | null;
+  /**
+   * "План виробництва" (2026-08-30) — present only on query() list rows.
+   * Ready units (confirmed-by-execution FinishedGood, across every item's
+   * top-level batches) / ordered qty, rounded, capped at 100. null when the
+   * order has no items at all — shows as "—", not 0%.
+   */
+  percentComplete?: number | null;
 }
 
 export interface SubAssemblyToProduceInput {
@@ -243,6 +250,25 @@ export interface PayrollFundSummary {
 
 export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSummary> {
   return apiClient.get<PayrollFundSummary>(`customer-orders/${orderId}/payroll-fund`);
+}
+
+/** "План виробництва" → order detail page: one row per assembly actually seen in production for this order (any depth — top-level items AND sub-assembly batches). */
+export interface OrderProductionUnitLine {
+  assemblyId: string;
+  assemblyName: string | null;
+  article: string | null;
+  qty: number;
+}
+
+export interface OrderProductionUnits {
+  /** Manufactured, not yet confirmed by a worker (still "В роботі"). */
+  inProgress: OrderProductionUnitLine[];
+  /** Purchased outright, or manufactured and confirmed ("Що зроблено" / готово). */
+  ready: OrderProductionUnitLine[];
+}
+
+export function getOrderProductionUnits(orderId: string): Promise<OrderProductionUnits> {
+  return apiClient.get<OrderProductionUnits>(`customer-orders/${orderId}/production-units`);
 }
 
 export interface ShortageSupplierOption {

@@ -3,13 +3,15 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useCustomerOrder } from '@/lib/hooks/use-sales';
+import { useCustomerOrder, useOrderProductionUnits } from '@/lib/hooks/use-sales';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
 import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
+import { OrderProductionUnitsTable } from '@/components/domain/production/order-production-units-table';
 import type { CustomerOrderStatus } from '@/lib/api-client/sales';
 
 const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
@@ -32,6 +34,7 @@ export default function ProductionByOrderDetailPage() {
   const tp = useTranslations('production');
 
   const { data: order, isLoading } = useCustomerOrder(params.id);
+  const { data: units, isLoading: unitsLoading } = useOrderProductionUnits(params.id);
 
   if (isLoading || !order) {
     return <LoadingBlock />;
@@ -50,22 +53,54 @@ export default function ProductionByOrderDetailPage() {
         </Link>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base">{t('productionProgress')}</CardTitle>
-          <ProductionProgressPrint order={order} />
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {(order.items ?? []).map((item) => (
-            <div key={item.id} className="space-y-2">
-              <div className="rounded-md border-2 border-primary/40 bg-primary/5 p-3">
-                <AssemblyCell assemblyId={item.assemblyId} size="lg" textClassName="text-base font-semibold" />
-              </div>
-              <ProductionProgressTree orderId={order.id} itemId={item.id} />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="progress">
+        <TabsList>
+          <TabsTrigger value="progress">{t('productionProgress')}</TabsTrigger>
+          <TabsTrigger value="in-progress">{tp('inProgressTab')}</TabsTrigger>
+          <TabsTrigger value="ready">{tp('readyTab')}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="progress">
+          <Card>
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-base">{t('productionProgress')}</CardTitle>
+              <ProductionProgressPrint order={order} />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {(order.items ?? []).map((item) => (
+                <div key={item.id} className="space-y-2">
+                  <div className="rounded-md border-2 border-primary/40 bg-primary/5 p-3">
+                    <AssemblyCell assemblyId={item.assemblyId} size="lg" textClassName="text-base font-semibold" />
+                  </div>
+                  <ProductionProgressTree orderId={order.id} itemId={item.id} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="in-progress">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{tp('inProgressTab')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OrderProductionUnitsTable lines={units?.inProgress ?? []} isLoading={unitsLoading} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ready">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{tp('readyTab')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OrderProductionUnitsTable lines={units?.ready ?? []} isLoading={unitsLoading} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

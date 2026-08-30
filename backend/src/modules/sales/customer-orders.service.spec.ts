@@ -59,7 +59,7 @@ describe('CustomerOrdersService', () => {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
         customerOrderItem: { create: jest.fn(), update: jest.fn() },
         productionOrder: { findMany: jest.fn() },
-        finishedGood: { count: jest.fn().mockResolvedValue(0) },
+        finishedGood: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
         payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
         assembly: { findMany: jest.fn().mockResolvedValue([]) },
       },
@@ -418,6 +418,85 @@ describe('CustomerOrdersService', () => {
 
       expect(items[0].estimatedTotal).toBeNull();
       expect(items[0].actualTotal).toBeNull();
+    });
+  });
+
+  describe('query — percentComplete (2026-08-30, "План виробництва" list)', () => {
+    it('percent = confirmed-and-paid FinishedGood units / ordered qty, scoped to each item\'s OWN top-level batches only', async () => {
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([
+        { id: 'co1', items: [{ id: 'line1', assemblyId: 'a1', qty: 10 }] },
+      ]);
+      prisma.tenant.customerOrder.count.mockResolvedValue(1);
+      assembliesService.calculateCost.mockResolvedValue({ costPerUnit: 1, breakdown: [] });
+      // Only the top-level batch (customerOrderItemId) counts — a sub-assembly
+      // batch (subAssemblyForItemId) must never leak into this %.
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([
+        { id: 'po1', customerOrderItemId: 'line1', totalLocalCostEur: null },
+        { id: 'po-sub', customerOrderItemId: null, subAssemblyForItemId: 'line1', totalLocalCostEur: null },
+      ]);
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([
+        { productionOrderId: 'po1' },
+        { productionOrderId: 'po1' },
+        { productionOrderId: 'po1' },
+        { productionOrderId: 'po-sub' }, // confirmed sub-assembly unit — must not count toward line1's own %
+      ]);
+
+      const { items } = await service.query(user, {});
+
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productionOrderId: { in: ['po1', 'po-sub'] }, confirmedByExecutionId: { not: null } } }),
+      );
+      expect(items[0].percentComplete).toBe(30); // 3 confirmed on po1 / 10 ordered = 30%, po-sub's unit excluded
+    });
+
+    it('is null (not 0) when nothing is ordered yet, and caps at 100 rather than overshooting', async () => {
+      prisma.tenant.customerOrder.findMany.mockResolvedValueOnce([{ id: 'co-empty', items: [] }]);
+      prisma.tenant.customerOrder.count.mockResolvedValueOnce(1);
+      const empty = await service.query(user, {});
+      expect(empty.items[0].percentComplete).toBeNull();
+
+      prisma.tenant.customerOrder.findMany.mockResolvedValueOnce([{ id: 'co2', items: [{ id: 'line1', assemblyId: 'a1', qty: 2 }] }]);
+      prisma.tenant.customerOrder.count.mockResolvedValueOnce(1);
+      assembliesService.calculateCost.mockResolvedValue({ costPerUnit: 1, breakdown: [] });
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1', customerOrderItemId: 'line1', totalLocalCostEur: null }]);
+      // More confirmed units than were ever ordered (e.g. a correction/rework churn) — % must not exceed 100.
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([{ productionOrderId: 'po1' }, { productionOrderId: 'po1' }, { productionOrderId: 'po1' }]);
+      const over = await service.query(user, {});
+      expect(over.items[0].percentComplete).toBe(100);
+    });
+  });
+
+  describe('getOrderProductionUnits (2026-08-30): "В роботі" / "Що зроблено" tabs', () => {
+    it('splits every batch\'s (top-level AND sub-assembly) FinishedGood units into inProgress/ready buckets, grouped by article', async () => {
+      mockProductionOrdersFindMany([
+        { id: 'po-top', customerOrderItemId: 'item1', assemblyId: 'a-top' },
+        { id: 'po-sub', customerOrderItemId: null, subAssemblyForItemId: 'item1', assemblyId: 'a-sub' },
+      ]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([
+        { id: 'a-top', name: 'Top Assembly', article: 'T-1' },
+        { id: 'a-sub', name: 'Sub Assembly', article: 'S-1' },
+      ]);
+      prisma.tenant.finishedGood.groupBy.mockImplementation(({ where }: any) => {
+        const scoped = where.AND[1];
+        // IN_PROGRESS branch sets confirmedByExecutionId: null; READY sets an OR clause
+        const isReady = Boolean(scoped.OR);
+        return Promise.resolve(isReady ? [{ assemblyId: 'a-top', _count: { _all: 4 } }] : [{ assemblyId: 'a-sub', _count: { _all: 6 } }]);
+      });
+
+      const result = await service.getOrderProductionUnits(user, 'co1');
+
+      expect(result.ready).toEqual([{ assemblyId: 'a-top', assemblyName: 'Top Assembly', article: 'T-1', qty: 4 }]);
+      expect(result.inProgress).toEqual([{ assemblyId: 'a-sub', assemblyName: 'Sub Assembly', article: 'S-1', qty: 6 }]);
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ AND: [{ productionOrderId: { in: ['po-top', 'po-sub'] } }, expect.anything()] }) }),
+      );
+    });
+
+    it('returns empty buckets, without querying FinishedGood at all, when the order has no production batches yet', async () => {
+      mockProductionOrdersFindMany([]);
+      const result = await service.getOrderProductionUnits(user, 'co1');
+      expect(result).toEqual({ inProgress: [], ready: [] });
+      expect(prisma.tenant.finishedGood.groupBy).not.toHaveBeenCalled();
     });
   });
 

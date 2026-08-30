@@ -13,6 +13,7 @@ import {
   giveSubAssemblyToProduction,
   getItemProductionTree,
   getPayrollFundSummary,
+  getOrderProductionUnits,
   giveAllToProduction,
   getShortagePreview,
   createPurchaseOrdersFromShortage,
@@ -143,6 +144,14 @@ export function usePayrollFundSummary(orderId: string) {
   return useQuery({
     queryKey: ['customer-orders', orderId, 'payroll-fund'] as const,
     queryFn: () => getPayrollFundSummary(orderId),
+  });
+}
+
+/** "План виробництва" order detail page — "В роботі" / "Що зроблено" tabs. */
+export function useOrderProductionUnits(orderId: string) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId, 'production-units'] as const,
+    queryFn: () => getOrderProductionUnits(orderId),
   });
 }
 

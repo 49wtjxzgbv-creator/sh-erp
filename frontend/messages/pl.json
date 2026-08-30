@@ -512,7 +512,11 @@
     "addTagAction": "Dodaj pozycję",
     "selectCustomerOrderPlaceholder": "Szukaj zamówienia po numerze…",
     "selectItemPlaceholder": "Wybierz pozycję zamówienia",
-    "removeTagAction": "Usuń"
+    "removeTagAction": "Usuń",
+    "percentComplete": "% ukończenia",
+    "scheduleByOrders": "Harmonogram według zamówień",
+    "inProgressTab": "W trakcie",
+    "readyTab": "Wykonano"
   },
   "procurement": {
     "title": "Procurement",

@@ -60,7 +60,18 @@ const PAN_STEP_DAYS: Record<'week' | 'month', number> = { week: 7, month: 30 };
  * orders' schedules against each other, not for reading a specific date —
  * that's what the frozen columns are for now.
  */
-export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orders: PlannerOrderNode[]; year: number; onYearChange: (y: number) => void }) {
+export function PlannerOrdersTimelineView({
+  orders,
+  year,
+  onYearChange,
+  getHref,
+}: {
+  orders: PlannerOrderNode[];
+  year: number;
+  onYearChange: (y: number) => void;
+  /** Row-label click target — defaults to the Sales order page (dashboard's own usage); "План виробництва" (2026-08-30) passes its own detail page instead. */
+  getHref?: (order: PlannerOrderNode) => string;
+}) {
   const t = useTranslations('planner');
   const ts = useTranslations('sales');
   const [scale, setScale] = useState<OrdersScale>('year');
@@ -254,7 +265,7 @@ export function PlannerOrdersTimelineView({ orders, year, onYearChange }: { orde
                 return (
                   <div key={order.id} className={cn('relative flex border-b border-border/60', rowTint)} style={{ height: ROW_HEIGHT }}>
                     <Link
-                      href={`/sales/${order.id}`}
+                      href={getHref ? getHref(order) : `/sales/${order.id}`}
                       className="sticky left-0 z-10 flex shrink-0 flex-col justify-center gap-1 overflow-hidden border-r border-border px-3 py-2 hover:text-primary"
                       style={{ width: LABEL_WIDTH, backgroundColor: frozenBg }}
                       title={label}

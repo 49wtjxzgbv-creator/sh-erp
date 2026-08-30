@@ -517,7 +517,11 @@
     "addTagAction": "Додати позицію",
     "selectCustomerOrderPlaceholder": "Пошук замовлення за номером…",
     "selectItemPlaceholder": "Оберіть позицію замовлення",
-    "removeTagAction": "Прибрати"
+    "removeTagAction": "Прибрати",
+    "percentComplete": "% виконано",
+    "scheduleByOrders": "Графік по замовленнях",
+    "inProgressTab": "В роботі",
+    "readyTab": "Що зроблено"
   },
   "procurement": {
     "title": "Закупівлі",

@@ -512,7 +512,11 @@
     "addTagAction": "Add item",
     "selectCustomerOrderPlaceholder": "Search order by number…",
     "selectItemPlaceholder": "Select an order item",
-    "removeTagAction": "Remove"
+    "removeTagAction": "Remove",
+    "percentComplete": "% complete",
+    "scheduleByOrders": "Schedule by orders",
+    "inProgressTab": "In progress",
+    "readyTab": "Completed"
   },
   "procurement": {
     "title": "Procurement",

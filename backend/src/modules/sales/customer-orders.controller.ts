@@ -112,6 +112,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.getPayrollFundSummary(user, id);
   }
 
+  @Get(':id/production-units')
+  @RequirePermissions('customer-orders:read')
+  @ApiOperation({
+    summary:
+      '"В роботі" / "Що зроблено" for Виробництво → По замовленнях: every FinishedGood unit traceable to this ' +
+      'order\'s production (any depth — top-level items AND sub-assembly batches), split by worker confirmation.',
+  })
+  async getOrderProductionUnits(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.customerOrdersService.getOrderProductionUnits(user, id);
+  }
+
   @Post(':id/give-all-to-production')
   @RequirePermissions('customer-orders:manage')
   @ApiOperation({ summary: 'Hand every not-yet-given line off to production in one call.' })

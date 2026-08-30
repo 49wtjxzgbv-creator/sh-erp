@@ -9,6 +9,7 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { PayrollArticleLine } from '../hr/payroll.service';
+import { applyFinishedGoodScope } from '../production/finished-goods.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
@@ -180,7 +181,74 @@ export class CustomerOrdersService {
       this.prisma.tenant.customerOrder.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include: { items: true } }),
       this.prisma.tenant.customerOrder.count({ where }),
     ]);
-    return { items: await this.withPriceTotals(user, orders as any[]), total, limit: take, offset: skip };
+    const withCosts = await this.withPriceTotals(user, orders as any[]);
+    const withProgress = await this.withProductionProgress(withCosts, orders as any[]);
+    return { items: withProgress, total, limit: take, offset: skip };
+  }
+
+  /**
+   * "% виконано" for the "План виробництва" list (2026-08-30 user request)
+   * — batched across the whole page (2 round trips regardless of order/line
+   * count), same discipline as withPriceTotals just above. Scoped to each
+   * item's OWN top-level batches (customerOrderItemId) — sub-assembly
+   * batches (subAssemblyForItemId) aren't counted toward this %, since it
+   * measures progress on the ORDERED product itself, not an implementation
+   * detail one level down (that's what drilling into "Хід виробництва" is
+   * for). "Ready" means confirmedByExecutionId IS NOT NULL — a worker's
+   * completion was actually confirmed and paid — regardless of the unit's
+   * current status (IN_STOCK/SHIPPED/CONSUMED all still count; once
+   * genuinely built and paid for, shipping it away doesn't undo that).
+   * Deliberately NOT getItemQuantitySummary's older "completed" (any
+   * FinishedGood row, any confirmation state) — kept consistent with this
+   * session's Склад "В роботі"/"Готова продукція" split instead.
+   */
+  private async withProductionProgress<T extends Record<string, any>>(
+    orders: T[],
+    originalWithItems: Array<{ id: string; items: { id: string; qty: Prisma.Decimal }[] }>,
+  ): Promise<Array<T & { percentComplete: number | null }>> {
+    const itemsByOrderId = new Map(originalWithItems.map((o) => [o.id, o.items]));
+    const allItems = originalWithItems.flatMap((o) => o.items);
+    const itemIds = allItems.map((i) => i.id);
+
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({
+          where: { customerOrderItemId: { in: itemIds } },
+          select: { id: true, customerOrderItemId: true },
+        })
+      : [];
+    const batchIdsByItem = new Map<string, string[]>();
+    for (const b of batches as any[]) {
+      if (!b.customerOrderItemId) continue;
+      const arr = batchIdsByItem.get(b.customerOrderItemId) ?? [];
+      arr.push(b.id);
+      batchIdsByItem.set(b.customerOrderItemId, arr);
+    }
+
+    const allBatchIds = (batches as any[]).map((b) => b.id);
+    const readyGoods = allBatchIds.length
+      ? await this.prisma.tenant.finishedGood.findMany({
+          where: { productionOrderId: { in: allBatchIds }, confirmedByExecutionId: { not: null } },
+          select: { productionOrderId: true },
+        })
+      : [];
+    const readyCountByBatch = new Map<string, number>();
+    for (const g of readyGoods as any[]) {
+      readyCountByBatch.set(g.productionOrderId, (readyCountByBatch.get(g.productionOrderId) ?? 0) + 1);
+    }
+
+    return orders.map((order) => {
+      const items = itemsByOrderId.get(order.id) ?? [];
+      let ordered = 0;
+      let ready = 0;
+      for (const item of items) {
+        ordered += Number(item.qty);
+        for (const batchId of batchIdsByItem.get(item.id) ?? []) {
+          ready += readyCountByBatch.get(batchId) ?? 0;
+        }
+      }
+      const percentComplete = ordered > 0 ? Math.min(100, Math.round((ready / ordered) * 100)) : null;
+      return { ...order, percentComplete };
+    });
   }
 
   /**
@@ -593,6 +661,62 @@ export class CustomerOrdersService {
     });
 
     return { estimated: round2(estimated), actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
+  }
+
+  /**
+   * "В роботі" / "Що зроблено" tabs on Виробництво → По замовленнях → order
+   * detail (2026-08-30 user request) — every FinishedGood unit genuinely
+   * traceable to THIS order's production, split the same way Склад's
+   * "В роботі"/"Готова продукція" tabs are (applyFinishedGoodScope,
+   * confirmedByExecutionId). Unlike getPayrollFundSummary's byArticle
+   * (piecework payroll, order-level fund pool) and unlike
+   * withProductionProgress's percentComplete (top-level items only), this
+   * includes EVERY batch tied to the order at ANY depth — both
+   * customerOrderItemId (top-level "give to production") and
+   * subAssemblyForItemId (sub-assembly batches) — so a viewer sees the
+   * whole tree's real unit-level state, not just the finished top-level
+   * product.
+   */
+  async getOrderProductionUnits(user: RequestUser, orderId: string) {
+    const order = await this.findOne(user, orderId);
+    const itemIds = (order.items as any[]).map((i) => i.id);
+
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({
+          where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
+        })
+      : [];
+    const assemblyIdByOrderId = new Map((batches as any[]).map((b) => [b.id, b.assemblyId as string]));
+    const batchIds = (batches as any[]).map((b) => b.id);
+
+    const assemblyIds = Array.from(new Set(Array.from(assemblyIdByOrderId.values())));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
+    const buildBucket = async (scope: 'IN_PROGRESS' | 'READY') => {
+      if (batchIds.length === 0) return [];
+      // applyFinishedGoodScope assigns straight onto `productionOrderId`/`OR`
+      // keys of whatever object it's given — calling it on the SAME object
+      // that already carries our own `productionOrderId: {in: batchIds}`
+      // would silently clobber that constraint (last write wins on a
+      // shared key), so the batch filter is composed via a separate `AND`
+      // branch instead of a merged top-level `where`.
+      const scoped: any = {};
+      applyFinishedGoodScope(scoped, scope);
+      const where: any = { AND: [{ productionOrderId: { in: batchIds } }, scoped] };
+      const grouped = await this.prisma.tenant.finishedGood.groupBy({ by: ['assemblyId'], where, _count: { _all: true } });
+      return (grouped as any[])
+        .map((g) => {
+          const assembly = assemblyById.get(g.assemblyId);
+          return { assemblyId: g.assemblyId, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null, qty: g._count._all };
+        })
+        .sort((a, b) => (a.article ?? '').localeCompare(b.article ?? ''));
+    };
+
+    const [inProgress, ready] = await Promise.all([buildBucket('IN_PROGRESS'), buildBucket('READY')]);
+    return { inProgress, ready };
   }
 
   /**

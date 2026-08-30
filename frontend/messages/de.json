@@ -512,7 +512,11 @@
     "addTagAction": "Position hinzufügen",
     "selectCustomerOrderPlaceholder": "Auftrag nach Nummer suchen…",
     "selectItemPlaceholder": "Auftragsposition auswählen",
-    "removeTagAction": "Entfernen"
+    "removeTagAction": "Entfernen",
+    "percentComplete": "% fertig",
+    "scheduleByOrders": "Zeitplan nach Aufträgen",
+    "inProgressTab": "In Arbeit",
+    "readyTab": "Fertiggestellt"
   },
   "procurement": {
     "title": "Procurement",
