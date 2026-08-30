@@ -71,15 +71,18 @@ export function PayrollFundEstimatePrint({
                 <td>{formatEur(line.estimatedAmount)}</td>
               </tr>
             ))}
-          </tbody>
-          <tfoot>
+            {/* A `<tfoot>` row repeats on every printed page once the table
+                spans more than one (same browser behavior as `<thead>`) —
+                "щоб при друці він був не на кожній сторінці, а в кінці
+                списка" (2026-08-31). A plain last `<tbody>` row prints
+                exactly once, at the true end of the list. */}
             <tr>
-              <td colSpan={3} style={{ textAlign: 'right', fontWeight: 700 }}>
+              <td colSpan={3} style={{ textAlign: 'right', fontWeight: 700, borderTop: '2px solid #333' }}>
                 {t('payrollFundEstimatedTotal')}
               </td>
-              <td style={{ fontWeight: 700 }}>{formatEur(total)}</td>
+              <td style={{ fontWeight: 700, borderTop: '2px solid #333' }}>{formatEur(total)}</td>
             </tr>
-          </tfoot>
+          </tbody>
         </table>
         <p style={{ marginTop: 6, fontSize: 10, color: '#666' }}>{t('payrollFundEstimatedHint')}</p>
       </PrintArea>
