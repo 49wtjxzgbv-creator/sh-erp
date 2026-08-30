@@ -59,7 +59,19 @@ export interface ProductionTreeNode {
   qtyInStock: number;
   /** qtyInStock >= ceil(qtyNeeded) — same physical-whole-unit rounding start() uses for FIFO sub-assembly consumption. */
   done: boolean;
-  /** This node's own labor fund at current BOM rates: assembly.laborCostPerUnit x qtyNeeded — same "own labor only, not recursive" fund every ProductionOrder freezes at start() (production-orders.service.ts's `ownLabor`). Live/never-frozen until that node's own batch actually starts — see CustomerOrdersService#getPayrollFundSummary for the estimated-vs-actual pairing. */
+  /**
+   * This node's own labor fund at current BOM rates: assembly.laborCostPerUnit
+   * x the SHORTFALL only — max(qtyNeeded - qtyInStock, 0), not the raw
+   * qtyNeeded (2026-08-30 fix — "Оцінка по виробах" was showing a full labor
+   * estimate for sub-assemblies that already have enough stock on hand,
+   * purchased ready-made or otherwise, so nobody will actually be paid to
+   * make more of them for this order). Same "own labor only, not recursive"
+   * fund every ProductionOrder freezes at start() (production-orders.service.ts's
+   * `ownLabor`), same global (not order-reserved) stock count `done` already
+   * uses above. Live/never-frozen until that node's own batch actually
+   * starts — see CustomerOrdersService#getPayrollFundSummary for the
+   * estimated-vs-actual pairing.
+   */
   laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
   children: ProductionTreeNode[];
@@ -643,7 +655,7 @@ export class AssembliesService {
       qtyNeeded: qty,
       qtyInStock,
       done: qtyInStock >= Math.ceil(qty),
-      laborFundEstimate: Number(assembly.laborCostPerUnit) * qty,
+      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyInStock, 0),
       children,
     };
   }

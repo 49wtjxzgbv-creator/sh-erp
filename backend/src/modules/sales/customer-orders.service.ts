@@ -601,15 +601,21 @@ export class CustomerOrdersService {
    * two numbers, same estimated-vs-actual duality as `withPriceTotals`'s
    * cost totals elsewhere on this order —
    *  - `estimated`: every node's own `laborFundEstimate` (live BOM rates,
-   *    assembly.laborCostPerUnit x qtyNeeded), summed across every item's
-   *    FULL production tree — виріб AND every підвиріб at any depth, not
-   *    just the top-level line. Never frozen; recomputed fresh every call.
-   *  - `estimatedByArticle` (2026-08-30 user request — click-to-expand
-   *    breakdown under "Оцінено (за поточними ставками)"): the same walk,
-   *    but keeping every distinct assembly's own qtyNeeded/laborFundEstimate
-   *    instead of folding into one number (collectLaborFundByArticle —
-   *    same recursion as sumLaborFund). An assembly reused in more than one
-   *    branch/item is summed into a single row, not duplicated.
+   *    assembly.laborCostPerUnit x the SHORTFALL not already covered by
+   *    stock — see ProductionTreeNode.laborFundEstimate's own 2026-08-30
+   *    fix comment; a node with enough IN_STOCK units already, purchased
+   *    ready-made or previously manufactured, contributes 0 here even
+   *    though qtyNeeded is nonzero), summed across every item's FULL
+   *    production tree — виріб AND every підвиріб at any depth, not just
+   *    the top-level line. Never frozen; recomputed fresh every call.
+   *  - `estimatedByArticle` (2026-08-30 user request — breakdown under
+   *    "Оцінено (за поточними ставками)"): the same walk, but keeping every
+   *    distinct assembly's own qtyNeeded (the FULL requirement, not the
+   *    stock-adjusted shortfall — useful on its own) and laborFundEstimate
+   *    (the shortfall-based one) instead of folding into one number
+   *    (collectLaborFundByArticle — same recursion as sumLaborFund). An
+   *    assembly reused in more than one branch/item is summed into a single
+   *    row, not duplicated.
    *  - `actual`: the REAL committed fund — `laborCostEur` (frozen once a
    *    batch actually starts, production-orders.service.ts's "Cost
    *    freezing") summed across every ProductionOrder batch already tied

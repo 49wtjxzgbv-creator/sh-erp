@@ -51,6 +51,7 @@ export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; d
         <div>
           <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
           <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
+          <p className="text-[11px] text-muted-foreground">{t('payrollFundEstimatedHint')}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">{t('payrollFundActual')}</p>

@@ -677,6 +677,7 @@
     "payrollFundEstimated": "Estimated (current rates)",
     "payrollFundActual": "Actually committed",
     "payrollFundActualHint": "Sum of frozen labor funds (laborCostEur) across every batch already started — both the item and its sub-assemblies",
+    "payrollFundEstimatedHint": "Berücksichtigt bereits vorhandenen Bestand (fertig gekauft oder zuvor hergestellt) — dafür wird keine Arbeit geschätzt",
     "payrollFundEarned": "Von Mitarbeitern verdient",
     "payrollFundArticle": "Artikel",
     "payrollFundUnitsProduced": "Menge",

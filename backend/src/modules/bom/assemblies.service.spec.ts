@@ -338,7 +338,7 @@ describe('AssembliesService', () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });
     });
 
-    it('builds a real parent -> child tree, each node done when its own IN_STOCK count covers its own needed qty', async () => {
+    it('builds a real parent -> child tree, each node done when its own IN_STOCK count covers its own needed qty; laborFundEstimate only counts the shortfall not already covered by stock (2026-08-30 fix)', async () => {
       prisma.tenant.assembly.findUnique
         .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
         .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
@@ -357,9 +357,18 @@ describe('AssembliesService', () => {
         qtyNeeded: 2,
         qtyInStock: 2,
         done: true,
-        laborFundEstimate: 20,
+        laborFundEstimate: 0, // needed 2, already have 2 in stock (bought or made) — nothing left to pay labor for
         children: [
-          { assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 2, qtyInStock: 1, done: false, laborFundEstimate: 8, children: [] },
+          {
+            assemblyId: 'sub1',
+            name: 'Sub1',
+            article: null,
+            qtyNeeded: 2,
+            qtyInStock: 1,
+            done: false,
+            laborFundEstimate: 4, // needed 2, only 1 in stock — labor estimate covers just the missing 1, not the full 2
+            children: [],
+          },
         ],
       });
     });
