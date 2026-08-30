@@ -1,11 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { usePayrollFundSummary } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { cn, formatEur } from '@/lib/utils';
+import { formatEur } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
@@ -29,15 +28,14 @@ import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
  * order detail page can show it too — `defaultOpen` lets that standalone-
  * tab caller start expanded (the Sales page still starts collapsed).
  *
- * `estimatedByArticle` click-to-expand (2026-08-30 user request): clicking
- * "Оцінено (за поточними ставками)" reveals every виріб in this order's
- * production tree with its own estimated labor cost — same photo+article
- * row convention as the byArticle table below it.
+ * `estimatedByArticle` (2026-08-30 user request, always expanded per
+ * follow-up — no click needed): every виріб in this order's production
+ * tree with its own estimated labor cost — same photo+article row
+ * convention as the byArticle table below it.
  */
 export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; defaultOpen?: boolean }) {
   const t = useTranslations('sales');
   const { data: fund } = usePayrollFundSummary(orderId);
-  const [estimatedOpen, setEstimatedOpen] = useState(false);
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();
     for (const l of fund?.byArticle ?? []) if (l.assemblyId) ids.add(l.assemblyId);
@@ -51,17 +49,7 @@ export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; d
     <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3" defaultOpen={defaultOpen}>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <div>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-left"
-            onClick={() => setEstimatedOpen((o) => !o)}
-            disabled={fund.estimatedByArticle.length === 0}
-          >
-            <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
-            {fund.estimatedByArticle.length > 0 && (
-              <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform', estimatedOpen && 'rotate-180')} />
-            )}
-          </button>
+          <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>
           <p className="text-sm font-medium">{formatEur(fund.estimated)}</p>
         </div>
         <div>
@@ -75,7 +63,7 @@ export function PayrollFundWidget({ orderId, defaultOpen }: { orderId: string; d
         </div>
       </div>
 
-      {estimatedOpen && fund.estimatedByArticle.length > 0 && (
+      {fund.estimatedByArticle.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
           <Table>
