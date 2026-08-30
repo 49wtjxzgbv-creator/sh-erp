@@ -19,10 +19,13 @@ export function PayrollFundEstimatePrint({
   lines,
   photosByAssembly,
   subtitle,
+  total,
 }: {
   lines: PayrollEstimatedArticleLine[];
   photosByAssembly: Record<string, { downloadUrl: string }[]> | undefined;
   subtitle?: string;
+  /** Same `fund.estimated` figure the on-screen "Оцінено (за поточними ставками)" shows — passed in rather than re-summed here so the printed total always matches it exactly (per-line amounts are independently rounded, so summing them here could drift by a cent). */
+  total: number;
 }) {
   const t = useTranslations('sales');
   const tCatalog = useTranslations('catalog');
@@ -69,7 +72,16 @@ export function PayrollFundEstimatePrint({
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3} style={{ textAlign: 'right', fontWeight: 700 }}>
+                {t('payrollFundEstimatedTotal')}
+              </td>
+              <td style={{ fontWeight: 700 }}>{formatEur(total)}</td>
+            </tr>
+          </tfoot>
         </table>
+        <p style={{ marginTop: 6, fontSize: 10, color: '#666' }}>{t('payrollFundEstimatedHint')}</p>
       </PrintArea>
     </>
   );

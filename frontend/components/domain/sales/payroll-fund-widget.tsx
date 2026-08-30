@@ -81,7 +81,7 @@ export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderI
               outside .print-area--active). */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="no-print text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
-            <PayrollFundEstimatePrint lines={fund.estimatedByArticle} photosByAssembly={photosByAssembly} subtitle={orderLabel} />
+            <PayrollFundEstimatePrint lines={fund.estimatedByArticle} photosByAssembly={photosByAssembly} subtitle={orderLabel} total={fund.estimated} />
           </div>
           <Table>
             <TableHeader>

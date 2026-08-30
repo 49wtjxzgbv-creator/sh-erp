@@ -776,6 +776,7 @@
     "payrollFundActual": "Закладено фактично",
     "payrollFundActualHint": "Сума заморожених фондів (laborCostEur) уже запущених у виробництво партій — і виробу, і підвиробів",
     "payrollFundEstimatedHint": "Враховує вже наявний запас (куплений готовий або виготовлений раніше) — для нього праця не рахується",
+    "payrollFundEstimatedTotal": "Загалом оцінено (за поточними ставками)",
     "payrollFundEarned": "Зароблено працівниками",
     "payrollFundArticle": "Артикул",
     "payrollFundUnitsProduced": "Кількість",
