@@ -18,6 +18,7 @@ import {
 import { useAssemblyCost, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductionOrdersByIds } from '@/lib/hooks/use-production';
 import { useCustomerOrderFinanceSummary } from '@/lib/hooks/use-finance';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatMoney } from '@/lib/finance-format';
 import { cn, formatEur, toDatetimeLocalValue, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -25,6 +26,7 @@ import { toNumber } from '@/lib/api-client/decimal';
 import type { CustomerOrder, CustomerOrderItem, CustomerOrderStatus } from '@/lib/api-client/sales';
 import type { ProductionOrderStatus } from '@/lib/api-client/production';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -350,18 +352,17 @@ function CollapsibleCard({
  * `earnedActual`/`byArticle` (2026-08-30 user request): "скільки вже
  * зароблено працівниками" — the REAL PayrollEntry ledger for this order's
  * batches, distinct from `actual` above (the frozen laborCostEur estimate
- * — these can differ). Below it, which article/how many units/for what sum
- * were actually produced so far.
+ * — these can differ). Below it, "Виготовлено працівниками": which
+ * article/how many units/for what sum were actually produced so far, each
+ * row led by the assembly's own photo + article (same photo+article-before-
+ * name convention as product-picker.tsx), not just a name string.
  */
 function PayrollFundWidget({ orderId }: { orderId: string }) {
   const t = useTranslations('sales');
   const { data: fund } = usePayrollFundSummary(orderId);
+  const assemblyIds = (fund?.byArticle ?? []).map((l) => l.assemblyId).filter((id): id is string => Boolean(id));
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
   if (!fund) return null;
-
-  function articleLabel(line: { assemblyName: string | null; article: string | null }): string {
-    if (!line.assemblyName && !line.article) return t('payrollFundGeneralWork');
-    return line.article ? `${line.assemblyName ?? ''} (${line.article})` : (line.assemblyName ?? '');
-  }
 
   return (
     <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3">
@@ -381,26 +382,41 @@ function PayrollFundWidget({ orderId }: { orderId: string }) {
         </div>
       </div>
       {fund.byArticle.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('payrollFundArticle')}</TableHead>
-              <TableHead>{t('payrollFundUnitsProduced')}</TableHead>
-              <TableHead>{t('payrollFundEarned')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {fund.byArticle.map((line) => (
-              <TableRow key={line.assemblyId ?? 'general'}>
-                <TableCell className="max-w-[280px] truncate" title={articleLabel(line)}>
-                  {articleLabel(line)}
-                </TableCell>
-                <TableCell>{line.unitsProduced || '—'}</TableCell>
-                <TableCell>{formatEur(line.amount)}</TableCell>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">{t('payrollFundProducedByWorkers')}</p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('payrollFundArticle')}</TableHead>
+                <TableHead>{t('payrollFundUnitsProduced')}</TableHead>
+                <TableHead>{t('payrollFundEarned')}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {fund.byArticle.map((line) => (
+                <TableRow key={line.assemblyId ?? 'general'}>
+                  <TableCell>
+                    {line.assemblyId ? (
+                      <div className="flex items-center gap-2">
+                        <Avatar src={photosByAssembly?.[line.assemblyId]?.[0]?.downloadUrl} size="sm" />
+                        <div className="min-w-0">
+                          {line.article && <p className="truncate text-xs text-muted-foreground">{line.article}</p>}
+                          <p className="max-w-[240px] truncate text-sm" title={line.assemblyName ?? undefined}>
+                            {line.assemblyName}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{t('payrollFundGeneralWork')}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{line.unitsProduced || '—'}</TableCell>
+                  <TableCell>{formatEur(line.amount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </CollapsibleCard>
   );

@@ -673,6 +673,7 @@
     "payrollFundArticle": "Indeks",
     "payrollFundUnitsProduced": "Ilość",
     "payrollFundGeneralWork": "Prace ogólne (bez indeksu)",
+    "payrollFundProducedByWorkers": "Wyprodukowane przez pracowników",
     "cancelOrder": "Cancel order",
     "cancelConfirmTitle": "Cancel this order?",
     "completeOrder": "Complete order",

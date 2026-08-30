@@ -673,6 +673,7 @@
     "payrollFundArticle": "Article",
     "payrollFundUnitsProduced": "Quantity",
     "payrollFundGeneralWork": "General work (no article)",
+    "payrollFundProducedByWorkers": "Produced by workers",
     "cancelOrder": "Cancel order",
     "cancelConfirmTitle": "Cancel this order?",
     "completeOrder": "Complete order",
