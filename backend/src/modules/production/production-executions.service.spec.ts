@@ -249,16 +249,29 @@ describe('ProductionExecutionsService', () => {
       await expect(service.confirm(user, 'ex1')).rejects.toThrow(ConflictException);
     });
 
-    it('Склад "В роботі"→"Готова продукція" (2026-08-30): FIFO-stamps this order\'s oldest unconfirmed IN_STOCK units, up to floor(qtyCompleted)', async () => {
+    it('Склад "В роботі"→"Готова продукція" (2026-08-30): FIFO-stamps this order\'s oldest unconfirmed units, up to floor(qtyCompleted)', async () => {
       prisma.tenant.finishedGood.findMany.mockResolvedValue([{ id: 'fg1' }, { id: 'fg2' }, { id: 'fg3' }, { id: 'fg4' }, { id: 'fg5' }]);
       await service.confirm(user, 'ex1'); // draftProductExecution.qtyCompleted = 5
       expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith({
-        where: { productionOrderId: 'po1', status: 'IN_STOCK', confirmedByExecutionId: null },
+        where: { productionOrderId: 'po1', confirmedByExecutionId: null },
         orderBy: { manufactureDate: 'asc' },
         take: 5,
       });
       expect(prisma.tenant.finishedGood.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['fg1', 'fg2', 'fg3', 'fg4', 'fg5'] } },
+        data: { confirmedByExecutionId: 'ex1' },
+      });
+    });
+
+    it('matches candidates regardless of current status (2026-08-31 fix) — a sub-assembly consumed by its parent before confirm() runs still gets stamped', async () => {
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([{ id: 'fg1', status: 'CONSUMED' }]);
+      prisma.tenant.productionExecution.findUnique.mockResolvedValue({ ...draftProductExecution, qtyCompleted: 1 });
+      await service.confirm(user, 'ex1');
+      expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) }),
+      );
+      expect(prisma.tenant.finishedGood.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['fg1'] } },
         data: { confirmedByExecutionId: 'ex1' },
       });
     });

@@ -539,7 +539,7 @@ describe('CustomerOrdersService', () => {
     });
   });
 
-  describe('getOrderProductionUnits (2026-08-30): "В роботі" / "Що зроблено" tabs', () => {
+  describe('getOrderProductionUnits (2026-08-30, fixed 2026-08-31): "В роботі" / "Що зроблено" tabs', () => {
     it('splits every batch\'s (top-level AND sub-assembly) FinishedGood units into inProgress/ready buckets, grouped by article', async () => {
       mockProductionOrdersFindMany([
         { id: 'po-top', customerOrderItemId: 'item1', assemblyId: 'a-top' },
@@ -550,9 +550,8 @@ describe('CustomerOrdersService', () => {
         { id: 'a-sub', name: 'Sub Assembly', article: 'S-1' },
       ]);
       prisma.tenant.finishedGood.groupBy.mockImplementation(({ where }: any) => {
-        const scoped = where.AND[1];
-        // IN_PROGRESS branch sets confirmedByExecutionId: null; READY sets an OR clause
-        const isReady = Boolean(scoped.OR);
+        // READY sets an OR clause (CONSUMED/SHIPPED unconditionally, or confirmed IN_STOCK); IN_PROGRESS is a flat status+confirmedByExecutionId filter
+        const isReady = Boolean(where.OR);
         return Promise.resolve(isReady ? [{ assemblyId: 'a-top', _count: { _all: 4 } }] : [{ assemblyId: 'a-sub', _count: { _all: 6 } }]);
       });
 
@@ -561,8 +560,35 @@ describe('CustomerOrdersService', () => {
       expect(result.ready).toEqual([{ assemblyId: 'a-top', assemblyName: 'Top Assembly', article: 'T-1', qty: 4 }]);
       expect(result.inProgress).toEqual([{ assemblyId: 'a-sub', assemblyName: 'Sub Assembly', article: 'S-1', qty: 6 }]);
       expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ AND: [{ productionOrderId: { in: ['po-top', 'po-sub'] } }, expect.anything()] }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ productionOrderId: { in: ['po-top', 'po-sub'] }, OR: expect.anything() }),
+        }),
       );
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ productionOrderId: { in: ['po-top', 'po-sub'] }, status: 'IN_STOCK', confirmedByExecutionId: null }),
+        }),
+      );
+    });
+
+    it('READY counts CONSUMED/SHIPPED units unconditionally (2026-08-31 fix — a sub-assembly consumed by its parent before confirm() still counts as "Що зроблено"), and IN_PROGRESS excludes them even though they were never confirmed', async () => {
+      mockProductionOrdersFindMany([{ id: 'po-sub', customerOrderItemId: null, subAssemblyForItemId: 'item1', assemblyId: 'a-sub' }]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'a-sub', name: 'Sub Assembly', article: 'S-1' }]);
+      prisma.tenant.finishedGood.groupBy.mockImplementation(({ where }: any) => {
+        const isReady = Boolean(where.OR);
+        // The CONSUMED unit only shows up in the READY query — IN_PROGRESS's flat status:'IN_STOCK' filter would never match it, simulated directly here.
+        return Promise.resolve(isReady ? [{ assemblyId: 'a-sub', _count: { _all: 1 } }] : []);
+      });
+
+      const result = await service.getOrderProductionUnits(user, 'co1');
+
+      expect(result.ready).toEqual([{ assemblyId: 'a-sub', assemblyName: 'Sub Assembly', article: 'S-1', qty: 1 }]);
+      expect(result.inProgress).toEqual([]);
+      const readyCall = prisma.tenant.finishedGood.groupBy.mock.calls.find((c: any) => c[0].where.OR)[0];
+      expect(readyCall.where.OR).toEqual([
+        { status: { in: ['CONSUMED', 'SHIPPED'] } },
+        { status: 'IN_STOCK', confirmedByExecutionId: { not: null } },
+      ]);
     });
 
     it('returns empty buckets, without querying FinishedGood at all, when the order has no production batches yet', async () => {

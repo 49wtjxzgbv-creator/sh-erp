@@ -1,14 +1,19 @@
 /**
- * One-off backfill (2026-08-30): FinishedGood.confirmedByExecutionId only
- * gets stamped going forward, by ProductionExecutionsService#confirm()
- * (added this same day) — any ProductionExecution that was already
- * CONFIRMED before this column existed never touched it, so those units
- * still read as "В роботі" even though the work was genuinely confirmed
- * and paid. This replays the exact same FIFO-match confirm() now does,
- * against every historical CONFIRMED execution, in the order they were
- * actually confirmed (confirmedAt asc) — so a batch confirmed in two
- * separate executions gets its units split the same way live confirms
- * would have split them.
+ * One-off backfill (2026-08-30, extended 2026-08-31): FinishedGood.
+ * confirmedByExecutionId only gets stamped going forward, by
+ * ProductionExecutionsService#confirm(). Two separate gaps this replays:
+ *  - Any ProductionExecution CONFIRMED before this column existed never
+ *    touched it (2026-08-30).
+ *  - Any execution confirmed AFTER a sub-assembly's units were already
+ *    CONSUMED by their parent's own start() — stampConfirmedFinishedGoods
+ *    used to only match `status: 'IN_STOCK'` candidates, so a unit consumed
+ *    before its own confirm() ran was skipped and never got stamped, even
+ *    by live confirms (2026-08-31 fix, matching that method's own status-
+ *    agnostic candidate query now).
+ * This replays the exact same FIFO-match confirm() now does, against every
+ * historical CONFIRMED execution, in the order they were actually confirmed
+ * (confirmedAt asc) — so a batch confirmed in two separate executions gets
+ * its units split the same way live confirms would have split them.
  *
  * Idempotent — only ever writes rows where confirmedByExecutionId IS NULL
  * (findMany's own where clause), so re-running is always safe and a mix of
@@ -48,7 +53,7 @@ async function backfillCompany(prisma: PrismaClient, companyId: string) {
       if (qty <= 0) continue;
 
       const candidates = await tx.finishedGood.findMany({
-        where: { productionOrderId: execution.productionOrderId!, status: 'IN_STOCK', confirmedByExecutionId: null },
+        where: { productionOrderId: execution.productionOrderId!, confirmedByExecutionId: null },
         orderBy: { manufactureDate: 'asc' },
         take: qty,
       });

@@ -9,7 +9,6 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { PayrollArticleLine } from '../hr/payroll.service';
-import { applyFinishedGoodScope } from '../production/finished-goods.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
@@ -783,16 +782,36 @@ export class CustomerOrdersService {
   /**
    * "В роботі" / "Що зроблено" tabs on Виробництво → По замовленнях → order
    * detail (2026-08-30 user request) — every FinishedGood unit genuinely
-   * traceable to THIS order's production, split the same way Склад's
-   * "В роботі"/"Готова продукція" tabs are (applyFinishedGoodScope,
-   * confirmedByExecutionId). Unlike getPayrollFundSummary's byArticle
-   * (piecework payroll, order-level fund pool) and unlike
+   * traceable to THIS order's production. Unlike getPayrollFundSummary's
+   * byArticle (piecework payroll, order-level fund pool) and unlike
    * withProductionProgress's percentComplete (top-level items only), this
    * includes EVERY batch tied to the order at ANY depth — both
    * customerOrderItemId (top-level "give to production") and
    * subAssemblyForItemId (sub-assembly batches) — so a viewer sees the
    * whole tree's real unit-level state, not just the finished top-level
    * product.
+   *
+   * Deliberately does NOT reuse Склад's `applyFinishedGoodScope` (2026-08-31
+   * fix — "у вкладці що зроблено не відображаються підвироби які зробили
+   * працівники"): that helper's callers always pre-filter `status:
+   * 'IN_STOCK'` (a warehouse view only cares what's physically still on the
+   * shelf — once a sub-assembly is consumed into its parent it's correctly
+   * gone from Склад entirely). Here a sub-assembly consumed into the SAME
+   * order's parent item mid-production is still very much "made for this
+   * order" — it just isn't sitting on a shelf anymore. So:
+   *  - READY ("Що зроблено"): CONSUMED/SHIPPED units count unconditionally
+   *    (being consumed or shipped is itself proof the work happened,
+   *    confirmedByExecutionId or not — a sub-assembly routinely gets
+   *    consumed by its parent's start() before a worker gets around to
+   *    confirming the execution that made it, see
+   *    ProductionExecutionsService#stampConfirmedFinishedGoods's own
+   *    2026-08-31 fix for the other half of this bug), plus still-IN_STOCK
+   *    units that ARE confirmed.
+   *  - IN_PROGRESS ("В роботі"): only units still IN_STOCK AND unconfirmed —
+   *    a CONSUMED unit is no longer "pending", regardless of confirmation
+   *    status, so excluding it here (via the explicit status check, not
+   *    just confirmedByExecutionId) is what actually fixes the previously
+   *    inflated/incorrect count.
    */
   async getOrderProductionUnits(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
@@ -814,15 +833,13 @@ export class CustomerOrdersService {
 
     const buildBucket = async (scope: 'IN_PROGRESS' | 'READY') => {
       if (batchIds.length === 0) return [];
-      // applyFinishedGoodScope assigns straight onto `productionOrderId`/`OR`
-      // keys of whatever object it's given — calling it on the SAME object
-      // that already carries our own `productionOrderId: {in: batchIds}`
-      // would silently clobber that constraint (last write wins on a
-      // shared key), so the batch filter is composed via a separate `AND`
-      // branch instead of a merged top-level `where`.
-      const scoped: any = {};
-      applyFinishedGoodScope(scoped, scope);
-      const where: any = { AND: [{ productionOrderId: { in: batchIds } }, scoped] };
+      const where: any =
+        scope === 'READY'
+          ? {
+              productionOrderId: { in: batchIds },
+              OR: [{ status: { in: ['CONSUMED', 'SHIPPED'] } }, { status: 'IN_STOCK', confirmedByExecutionId: { not: null } }],
+            }
+          : { productionOrderId: { in: batchIds }, status: 'IN_STOCK', confirmedByExecutionId: null };
       const grouped = await this.prisma.tenant.finishedGood.groupBy({ by: ['assemblyId'], where, _count: { _all: true } });
       return (grouped as any[])
         .map((g) => {

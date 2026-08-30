@@ -347,19 +347,29 @@ export class ProductionExecutionsService {
    * confirmed execution's own `qtyCompleted` is a genuine INCREMENT over
    * whatever was confirmed before (enforced by computeAndValidateProductAmount's
    * `confirmedQty + qtyCompleted <= unitsPlanned` invariant), so it FIFO-
-   * matches against this order's oldest still-unstamped IN_STOCK units —
-   * same "oldest first, no other identity to match on" convention already
-   * used for sub-assembly FIFO consumption elsewhere in this codebase. Units
-   * are otherwise interchangeable within a batch (all frozen at the same
+   * matches against this order's oldest still-unstamped units — same
+   * "oldest first, no other identity to match on" convention already used
+   * for sub-assembly FIFO consumption elsewhere in this codebase. Units are
+   * otherwise interchangeable within a batch (all frozen at the same
    * per-unit cost at start()), so which SPECIFIC serials get stamped by
    * which execution is not meaningful beyond "the batch is now this much
    * further confirmed" — reversed in full by void_() below.
+   *
+   * NOT scoped to `status: 'IN_STOCK'` (2026-08-31 fix — a sub-assembly
+   * routinely gets consumed by its parent's own start() before the worker
+   * who made it gets around to confirming the execution, especially once
+   * the parent is itself given to production the same day; the units still
+   * exist as CONSUMED FinishedGood rows, just no longer sitting in stock).
+   * Matching regardless of status means a since-consumed/shipped unit can
+   * still receive its confirmation stamp — without this, that sub-assembly
+   * would forever read as neither "В роботі" (it's gone) nor "Що зроблено"
+   * (never stamped) on the order's own production-units view.
    */
   private async stampConfirmedFinishedGoods(productionOrderId: string, executionId: string, qtyCompleted: number): Promise<void> {
     const qty = Math.floor(qtyCompleted);
     if (qty <= 0) return;
     const candidates = await this.prisma.tenant.finishedGood.findMany({
-      where: { productionOrderId, status: 'IN_STOCK', confirmedByExecutionId: null },
+      where: { productionOrderId, confirmedByExecutionId: null },
       orderBy: { manufactureDate: 'asc' },
       take: qty,
     });
