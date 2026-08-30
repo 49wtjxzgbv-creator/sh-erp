@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const TABS = [
+  { href: '/production/by-order', labelKey: 'byOrder' },
   { href: '/production', labelKey: 'orders' },
   { href: '/production/schedule', labelKey: 'schedule' },
   { href: '/production/stages', labelKey: 'stages' },

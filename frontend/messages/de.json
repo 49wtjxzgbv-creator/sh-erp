@@ -353,6 +353,7 @@
   "production": {
     "title": "Production",
     "orders": "Orders",
+    "byOrder": "By order",
     "viewInSales": "View in sales",
     "stages": "Stages",
     "finishedGoods": "Finished goods",

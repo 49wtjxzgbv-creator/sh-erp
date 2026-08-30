@@ -3,8 +3,8 @@
 import { useParams } from 'next/navigation';
 import { ProductionPlanOrderDetail } from '@/components/domain/production/production-plan-order-detail';
 
-/** "План виробництва" order detail — content lives in the shared ProductionPlanOrderDetail (also reused by Виробництво → "По замовленнях"). */
-export default function ProductionPlanDetailPage() {
+/** Виробництво → "По замовленнях" order detail — content lives in the shared ProductionPlanOrderDetail (also reused by "План виробництва"). */
+export default function ProductionByOrderDetailPage() {
   const params = useParams<{ id: string }>();
   return <ProductionPlanOrderDetail orderId={params.id} />;
 }
