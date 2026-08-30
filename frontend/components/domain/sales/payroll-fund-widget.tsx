@@ -67,8 +67,20 @@ export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderI
 
       {fund.estimatedByArticle.length > 0 && (
         <div className="space-y-1.5">
-          <div className="no-print flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
+          {/* PayrollFundEstimatePrint's own <PrintArea> must NOT sit inside a
+              `no-print` ancestor — `.no-print`/`display:none` is inherited by
+              every descendant with no way to escape it (unlike the
+              visibility:hidden trick @media print itself uses, which a
+              descendant CAN override). In preview mode (?print=1) the content
+              portals out to #print-preview-root so this would go unnoticed;
+              a REAL print (window.print() straight off this page, no portal)
+              stayed literally display:none the whole time — "в перегляді є,
+              а коли пускаю на друк то пустий листок" (2026-08-31 fix). Only
+              the label needs no-print; the buttons already read fine in
+              print (hidden via the same visibility trick as everything else
+              outside .print-area--active). */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="no-print text-xs font-medium text-muted-foreground">{t('payrollFundEstimatedByArticle')}</p>
             <PayrollFundEstimatePrint lines={fund.estimatedByArticle} photosByAssembly={photosByAssembly} subtitle={orderLabel} />
           </div>
           <Table>
