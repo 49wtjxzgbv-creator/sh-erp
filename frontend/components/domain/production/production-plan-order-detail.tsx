@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCustomerOrder, useOrderProductionUnits } from '@/lib/hooks/use-sales';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -38,12 +39,31 @@ export function ProductionPlanOrderDetail({ orderId }: { orderId: string }) {
   const t = useTranslations('sales');
   const tp = useTranslations('production');
   const tFin = useTranslations('finance');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const { data: order, isLoading } = useCustomerOrder(orderId);
   const { data: units, isLoading: unitsLoading } = useOrderProductionUnits(orderId);
 
   if (isLoading || !order) {
     return <LoadingBlock />;
+  }
+
+  // Tab state kept in the URL (2026-08-31 fix — "не друкує нічого не
+  // відображається"): PreviewButton opens `?print=1` in a FRESH tab, which
+  // re-mounts this whole page from scratch — an uncontrolled Tabs
+  // (defaultValue only) always re-lands on "progress" there regardless of
+  // which tab was actually open when Print/Preview was clicked, so any
+  // print area on a non-default tab (like Фонд's "Оцінка по виробах") was
+  // never even in the DOM to portal into. Controlled + synced to `?tab=`
+  // means the preview tab's URL (copied verbatim from window.location.href)
+  // reopens on the SAME tab.
+  const activeTab = searchParams.get('tab') ?? 'progress';
+  function handleTabChange(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
   return (
@@ -59,7 +79,7 @@ export function ProductionPlanOrderDetail({ orderId }: { orderId: string }) {
         </Link>
       </div>
 
-      <Tabs defaultValue="progress">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="progress">{t('productionProgress')}</TabsTrigger>
           <TabsTrigger value="in-progress">{tp('inProgressTab')}</TabsTrigger>
