@@ -62,6 +62,7 @@ describe('CustomerOrdersService', () => {
         finishedGood: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
         payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
         assembly: { findMany: jest.fn().mockResolvedValue([]) },
+        employee: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -386,6 +387,63 @@ describe('CustomerOrdersService', () => {
       // confirms the WHERE clause itself, not just in-memory filtering.
       await service.getPayrollFundSummary(user, 'co1');
       expect(prisma.tenant.payrollEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ type: 'PIECEWORK' }) }));
+    });
+  });
+
+  describe('getOrderPayrollByEmployee (2026-08-30): "По працівниках" tab', () => {
+    it('groups PIECEWORK entries by employee, each with their own total and article/qty/amount breakdown', async () => {
+      mockProductionOrdersFindMany([
+        { id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, assemblyId: 'a1' },
+        { id: 'po2', customerOrderItemId: null, subAssemblyForItemId: 'item1', assemblyId: 'sub1' },
+      ]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
+        { employeeId: 'e2', type: 'PIECEWORK', amount: 20, unitsProduced: 2, productionOrderId: 'po1' },
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 30, unitsProduced: 1, productionOrderId: 'po2' },
+      ]);
+      prisma.tenant.employee.findMany.mockResolvedValue([
+        { id: 'e1', fullName: 'Іван Іванов' },
+        { id: 'e2', fullName: 'Петро Петров' },
+      ]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([
+        { id: 'a1', name: 'Widget', article: 'W-1' },
+        { id: 'sub1', name: 'Sub', article: 'S-1' },
+      ]);
+
+      const result = await service.getOrderPayrollByEmployee(user, 'co1');
+
+      expect(result).toEqual([
+        {
+          employeeId: 'e1',
+          employeeName: 'Іван Іванов',
+          totalEarned: 130,
+          byArticle: [
+            { assemblyId: 'sub1', assemblyName: 'Sub', article: 'S-1', unitsProduced: 1, amount: 30 },
+            { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 4, amount: 100 },
+          ],
+        },
+        {
+          employeeId: 'e2',
+          employeeName: 'Петро Петров',
+          totalEarned: 20,
+          byArticle: [{ assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 2, amount: 20 }],
+        },
+      ]);
+    });
+
+    it('returns [] without querying anything else when the order has no production batches yet', async () => {
+      mockProductionOrdersFindMany([]);
+      const result = await service.getOrderPayrollByEmployee(user, 'co1');
+      expect(result).toEqual([]);
+      expect(prisma.tenant.payrollEntry.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns [] when batches exist but nobody has been paid PIECEWORK yet', async () => {
+      mockProductionOrdersFindMany([{ id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, assemblyId: 'a1' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([]);
+      const result = await service.getOrderPayrollByEmployee(user, 'co1');
+      expect(result).toEqual([]);
+      expect(prisma.tenant.employee.findMany).not.toHaveBeenCalled();
     });
   });
 

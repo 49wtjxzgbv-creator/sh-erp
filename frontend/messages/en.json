@@ -517,7 +517,8 @@
     "scheduleByOrders": "Schedule by orders",
     "inProgressTab": "In progress",
     "readyTab": "Completed",
-    "payrollTab": "Payroll"
+    "payrollTab": "Payroll",
+    "payrollByEmployeeTab": "By employee"
   },
   "procurement": {
     "title": "Procurement",
@@ -680,6 +681,7 @@
     "payrollFundArticle": "Article",
     "payrollFundUnitsProduced": "Quantity",
     "payrollFundGeneralWork": "General work (no article)",
+    "payrollByEmployeeEmpty": "Nobody has been paid piecework on this order yet",
     "payrollFundProducedByWorkers": "Produced by workers",
     "payrollFundEstimatedByArticle": "Estimate by product (current rates)",
     "payrollFundQtyNeeded": "Needed",

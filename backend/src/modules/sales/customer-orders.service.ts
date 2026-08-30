@@ -41,6 +41,14 @@ export interface PayrollEstimatedArticleLine {
   estimatedAmount: number;
 }
 
+/** "По працівниках" tab (2026-08-30 user request) — one row per employee who earned PIECEWORK pay on this order, with their own article/qty/amount breakdown. */
+export interface PayrollByEmployeeLine {
+  employeeId: string;
+  employeeName: string;
+  totalEarned: number;
+  byArticle: PayrollArticleLine[];
+}
+
 @Injectable()
 export class CustomerOrdersService {
   constructor(
@@ -681,6 +689,89 @@ export class CustomerOrdersService {
     });
 
     return { estimated: round2(estimated), estimatedByArticle, actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
+  }
+
+  /**
+   * "По працівниках" tab on План виробництва's order detail (2026-08-30
+   * user request — "хто скільки заробив і хто скільки чого зробив"): the
+   * same real PayrollEntry (PIECEWORK) ledger `getPayrollFundSummary`
+   * already sums into `earnedActual`/`byArticle`, grouped by employee
+   * INSTEAD of by article — one row per worker who actually earned
+   * something on this order, each with their own total and their own
+   * article/qty/amount breakdown (mirrors payroll.service.ts's
+   * getPayrollSummaryReport, scoped to just this order's batches rather
+   * than a company-wide date range).
+   */
+  async getOrderPayrollByEmployee(user: RequestUser, orderId: string): Promise<PayrollByEmployeeLine[]> {
+    const order = await this.findOne(user, orderId);
+    const itemIds = (order.items as any[]).map((i) => i.id);
+
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({
+          where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
+          select: { id: true, assemblyId: true },
+        })
+      : [];
+    const assemblyIdByOrderId = new Map((batches as any[]).map((b) => [b.id, b.assemblyId as string]));
+    const productionOrderIds = (batches as any[]).map((b) => b.id);
+
+    const payrollEntries = productionOrderIds.length
+      ? await this.prisma.tenant.payrollEntry.findMany({ where: { type: 'PIECEWORK', productionOrderId: { in: productionOrderIds } } })
+      : [];
+    if (payrollEntries.length === 0) return [];
+
+    const employeeIds = Array.from(new Set((payrollEntries as any[]).map((e) => e.employeeId as string)));
+    const employees = await this.prisma.tenant.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, fullName: true } });
+    const employeeById = new Map((employees as any[]).map((e) => [e.id, e]));
+
+    const assemblyIds = Array.from(new Set(Array.from(assemblyIdByOrderId.values())));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
+    const GENERAL_WORK_KEY = '__general__';
+    const linesByEmployee = new Map<string, PayrollByEmployeeLine>();
+    const articlesByEmployee = new Map<string, Map<string, PayrollArticleLine>>();
+    for (const entry of payrollEntries as any[]) {
+      const employeeId = entry.employeeId as string;
+      if (!linesByEmployee.has(employeeId)) {
+        linesByEmployee.set(employeeId, {
+          employeeId,
+          employeeName: employeeById.get(employeeId)?.fullName ?? employeeId,
+          totalEarned: 0,
+          byArticle: [],
+        });
+        articlesByEmployee.set(employeeId, new Map());
+      }
+      const line = linesByEmployee.get(employeeId)!;
+      const amount = Number(entry.amount);
+      line.totalEarned += amount;
+
+      const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
+      const key = assemblyId ?? GENERAL_WORK_KEY;
+      const byArticle = articlesByEmployee.get(employeeId)!;
+      if (!byArticle.has(key)) {
+        const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
+        byArticle.set(key, { assemblyId, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
+      }
+      const articleLine = byArticle.get(key)!;
+      articleLine.unitsProduced += Number(entry.unitsProduced ?? 0);
+      articleLine.amount += amount;
+    }
+
+    for (const [employeeId, line] of linesByEmployee) {
+      line.totalEarned = round2(line.totalEarned);
+      line.byArticle = Array.from(articlesByEmployee.get(employeeId)!.values())
+        .map((a) => ({ ...a, amount: round2(a.amount) }))
+        .sort((a, b) => {
+          if (a.assemblyId === null) return 1;
+          if (b.assemblyId === null) return -1;
+          return (a.article ?? '').localeCompare(b.article ?? '');
+        });
+    }
+
+    return Array.from(linesByEmployee.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
   }
 
   /**

@@ -522,7 +522,8 @@
     "scheduleByOrders": "Графік по замовленнях",
     "inProgressTab": "В роботі",
     "readyTab": "Що зроблено",
-    "payrollTab": "Зарплата"
+    "payrollTab": "Зарплата",
+    "payrollByEmployeeTab": "По працівниках"
   },
   "procurement": {
     "title": "Закупівлі",
@@ -777,6 +778,7 @@
     "payrollFundArticle": "Артикул",
     "payrollFundUnitsProduced": "Кількість",
     "payrollFundGeneralWork": "Загальні роботи (без артикулу)",
+    "payrollByEmployeeEmpty": "По цьому замовленню ще ніхто не отримав відрядну оплату",
     "payrollFundProducedByWorkers": "Виготовлено працівниками",
     "payrollFundEstimatedByArticle": "Оцінка по виробах (за поточними ставками)",
     "payrollFundQtyNeeded": "Потрібно",

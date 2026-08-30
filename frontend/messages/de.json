@@ -517,7 +517,8 @@
     "scheduleByOrders": "Zeitplan nach Aufträgen",
     "inProgressTab": "In Arbeit",
     "readyTab": "Fertiggestellt",
-    "payrollTab": "Lohn"
+    "payrollTab": "Lohn",
+    "payrollByEmployeeTab": "Nach Mitarbeiter"
   },
   "procurement": {
     "title": "Procurement",
@@ -680,6 +681,7 @@
     "payrollFundArticle": "Artikel",
     "payrollFundUnitsProduced": "Menge",
     "payrollFundGeneralWork": "Allgemeine Arbeit (ohne Artikel)",
+    "payrollByEmployeeEmpty": "Für diesen Auftrag wurde noch kein Akkordlohn ausgezahlt",
     "payrollFundProducedByWorkers": "Von Mitarbeitern hergestellt",
     "payrollFundEstimatedByArticle": "Schätzung nach Produkt (aktuelle Sätze)",
     "payrollFundQtyNeeded": "Benötigt",

@@ -13,6 +13,7 @@ import { ProductionProgressTree } from '@/components/domain/sales/production-pro
 import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
 import { FinanceSummaryWidget } from '@/components/domain/sales/finance-summary-widget';
 import { PayrollFundWidget } from '@/components/domain/sales/payroll-fund-widget';
+import { OrderPayrollByEmployee } from '@/components/domain/sales/order-payroll-by-employee';
 import { OrderProductionUnitsTable } from '@/components/domain/production/order-production-units-table';
 import type { CustomerOrderStatus } from '@/lib/api-client/sales';
 
@@ -24,12 +25,14 @@ const STATUS_VARIANT: Record<CustomerOrderStatus, 'secondary' | 'warning' | 'suc
 };
 
 /**
- * "План виробництва" order detail (2026-08-30) — three blocks/tabs: the
- * existing full BOM production tree ("Хід виробництва", same
- * ProductionProgressTree the Sales order page shows collapsed), "В роботі"
- * (manufactured, not yet confirmed by a worker), and "Що зроблено"
- * (purchased outright or manufactured-and-confirmed) — both sourced from
- * CustomerOrdersService#getOrderProductionUnits.
+ * "План виробництва" order detail (2026-08-30) — the existing full BOM
+ * production tree ("Хід виробництва", same ProductionProgressTree the
+ * Sales order page shows collapsed), "В роботі" (manufactured, not yet
+ * confirmed by a worker) / "Що зроблено" (purchased outright or
+ * manufactured-and-confirmed, both via getOrderProductionUnits),
+ * "Фінанси"/"Зарплата" (the same widgets the Sales order page shows), and
+ * "По працівниках" — who earned how much and made how many of what, via
+ * getOrderPayrollByEmployee.
  */
 export default function ProductionPlanDetailPage() {
   const params = useParams<{ id: string }>();
@@ -64,6 +67,7 @@ export default function ProductionPlanDetailPage() {
           <TabsTrigger value="ready">{tp('readyTab')}</TabsTrigger>
           <TabsTrigger value="finance">{tFin('financeSummary')}</TabsTrigger>
           <TabsTrigger value="payroll">{tp('payrollTab')}</TabsTrigger>
+          <TabsTrigger value="payroll-by-employee">{tp('payrollByEmployeeTab')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="progress">
@@ -113,6 +117,10 @@ export default function ProductionPlanDetailPage() {
 
         <TabsContent value="payroll">
           <PayrollFundWidget orderId={order.id} defaultOpen />
+        </TabsContent>
+
+        <TabsContent value="payroll-by-employee">
+          <OrderPayrollByEmployee orderId={order.id} />
         </TabsContent>
       </Tabs>
     </div>

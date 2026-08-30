@@ -112,6 +112,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.getPayrollFundSummary(user, id);
   }
 
+  @Get(':id/payroll-by-employee')
+  @RequirePermissions('customer-orders:read')
+  @ApiOperation({
+    summary:
+      '"По працівниках" — one row per employee who earned PIECEWORK pay on this order\'s batches, with their own ' +
+      'total and article/qty/amount breakdown.',
+  })
+  async getOrderPayrollByEmployee(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.customerOrdersService.getOrderPayrollByEmployee(user, id);
+  }
+
   @Get(':id/production-units')
   @RequirePermissions('customer-orders:read')
   @ApiOperation({

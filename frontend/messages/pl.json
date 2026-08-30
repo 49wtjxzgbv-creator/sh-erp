@@ -517,7 +517,8 @@
     "scheduleByOrders": "Harmonogram według zamówień",
     "inProgressTab": "W trakcie",
     "readyTab": "Wykonano",
-    "payrollTab": "Płace"
+    "payrollTab": "Płace",
+    "payrollByEmployeeTab": "Według pracownika"
   },
   "procurement": {
     "title": "Procurement",
@@ -680,6 +681,7 @@
     "payrollFundArticle": "Indeks",
     "payrollFundUnitsProduced": "Ilość",
     "payrollFundGeneralWork": "Prace ogólne (bez indeksu)",
+    "payrollByEmployeeEmpty": "Nikt jeszcze nie otrzymał wynagrodzenia akordowego za to zamówienie",
     "payrollFundProducedByWorkers": "Wyprodukowane przez pracowników",
     "payrollFundEstimatedByArticle": "Szacunek według produktu (aktualne stawki)",
     "payrollFundQtyNeeded": "Potrzebne",

@@ -13,6 +13,7 @@ import {
   giveSubAssemblyToProduction,
   getItemProductionTree,
   getPayrollFundSummary,
+  getOrderPayrollByEmployee,
   getOrderProductionUnits,
   giveAllToProduction,
   getShortagePreview,
@@ -144,6 +145,14 @@ export function usePayrollFundSummary(orderId: string) {
   return useQuery({
     queryKey: ['customer-orders', orderId, 'payroll-fund'] as const,
     queryFn: () => getPayrollFundSummary(orderId),
+  });
+}
+
+/** "По працівниках" tab — who earned how much and made how many of what, on this order. */
+export function useOrderPayrollByEmployee(orderId: string) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId, 'payroll-by-employee'] as const,
+    queryFn: () => getOrderPayrollByEmployee(orderId),
   });
 }
 

@@ -262,6 +262,18 @@ export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSumma
   return apiClient.get<PayrollFundSummary>(`customer-orders/${orderId}/payroll-fund`);
 }
 
+/** "По працівниках" tab (2026-08-30) — one row per employee who earned PIECEWORK pay on this order, with their own total and article/qty/amount breakdown. */
+export interface PayrollByEmployeeLine {
+  employeeId: string;
+  employeeName: string;
+  totalEarned: number;
+  byArticle: PayrollFundArticleLine[];
+}
+
+export function getOrderPayrollByEmployee(orderId: string): Promise<PayrollByEmployeeLine[]> {
+  return apiClient.get<PayrollByEmployeeLine[]>(`customer-orders/${orderId}/payroll-by-employee`);
+}
+
 /** "План виробництва" → order detail page: one row per assembly actually seen in production for this order (any depth — top-level items AND sub-assembly batches). */
 export interface OrderProductionUnitLine {
   assemblyId: string;
