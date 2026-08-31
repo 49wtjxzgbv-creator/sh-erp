@@ -382,9 +382,16 @@ describe('AssembliesService', () => {
       // 2026-08-31 fix: an IN_STOCK FinishedGood whose production hasn't
       // been confirmed yet (payroll not closed for it) must not count as
       // available stock for `done` — otherwise a sub-assembly still
-      // mid-production shows "Готово".
+      // mid-production shows "Готово". 2026-09-01 fix: but a PURCHASED unit
+      // (productionOrderId null — e.g. claimed "Зі складу" at order
+      // creation) has no execution to confirm at all, so it must still
+      // count via the OR — see FinishedGood.confirmedByExecutionId's own
+      // schema comment.
       for (const call of prisma.tenant.finishedGood.count.mock.calls) {
-        expect(call[0].where).toMatchObject({ status: 'IN_STOCK', confirmedByExecutionId: { not: null } });
+        expect(call[0].where).toMatchObject({
+          status: 'IN_STOCK',
+          OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }],
+        });
       }
       expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'a1');
       expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');

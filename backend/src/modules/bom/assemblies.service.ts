@@ -653,17 +653,26 @@ export class AssembliesService {
 
     const [assembly, qtyInStock, qtyClaimedFromStock, components] = await Promise.all([
       this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
-      // `confirmedByExecutionId: { not: null }` — a FinishedGood row goes
-      // IN_STOCK the moment its production execution finishes, but stays
-      // UNCONFIRMED (payroll not yet closed for it) until
-      // stampConfirmedFinishedGoods explicitly stamps it. Counting
-      // unconfirmed stock here made a still-in-production sub-assembly show
-      // as "Готово" (2026-08-31 fix — "чому пише що готово якщо вони у
-      // виробництві і зарплату ще не закрили по них"). Same confirmed-only
-      // gate CustomerOrdersService#getOrderProductionUnits already uses for
-      // its READY bucket. Drives `done` only — see laborFundEstimate's own
-      // doc comment for why it does NOT also drive the labor estimate.
-      this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK', confirmedByExecutionId: { not: null } } }),
+      // `productionOrderId: null OR confirmedByExecutionId: { not: null }` —
+      // FinishedGood.confirmedByExecutionId's own schema comment spells out
+      // this exact rule: a PURCHASED unit (no productionOrderId at all, e.g.
+      // claimed "Зі складу" at order creation) has no labor to confirm and
+      // counts as available immediately; a MANUFACTURED unit
+      // (productionOrderId set) goes IN_STOCK the moment its execution
+      // finishes but stays unconfirmed (payroll not yet closed) until
+      // stampConfirmedFinishedGoods stamps it. An EARLIER version of this
+      // fix (2026-08-31, "чому пише що готово якщо вони у виробництві і
+      // зарплату ще не закрили по них") required confirmedByExecutionId
+      // unconditionally — which fixed manufactured units but wrongly hid
+      // genuinely-available PURCHASED stock too, since confirmedByExecutionId
+      // never gets set for those (2026-09-01 fix — "чому в ході виробництва
+      // зникли вироби з позначкою готово які... забили що візьмемо куплені
+      // зі склада"). Same OR shape `applyFinishedGoodScope`'s READY scope
+      // uses for Склад. Drives `done` only — see laborFundEstimate's own doc
+      // comment for why it does NOT also drive the labor estimate.
+      this.prisma.tenant.finishedGood.count({
+        where: { assemblyId, status: 'IN_STOCK', OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }] },
+      }),
       this.subAssemblyReservationService.getClaimForOrder(user, customerOrderId, assemblyId),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
