@@ -1673,7 +1673,6 @@
     "quotationStatusREJECTED": "Abgelehnt",
     "quotationStatusEXPIRED": "Abgelaufen",
     "duplicate": "Duplizieren",
-    "confirmDelete": "Dieses Angebot löschen? Dies kann nicht rückgängig gemacht werden.",
     "deleteConfirmTitle": "Angebot löschen?",
     "deleteConfirmDescription": "Das Angebot wird als gelöscht markiert und aus der Liste entfernt. Ein daraus bereits erstellter Kundenauftrag bleibt unberührt.",
     "terms": "Bedingungen",

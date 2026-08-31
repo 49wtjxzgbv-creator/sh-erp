@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const PAGE_SIZE = 50;
@@ -36,6 +37,7 @@ export default function QuotationsPage() {
   const canManage = useHasPermission('quotations:manage');
   const duplicateQuotation = useDuplicateQuotation();
   const deleteQuotation = useDeleteQuotation();
+  const [deleteTarget, setDeleteTarget] = useState<string | undefined>(undefined);
 
   const { data, isLoading } = useQuotations({ search: search || undefined, status, limit: PAGE_SIZE, offset });
 
@@ -44,9 +46,10 @@ export default function QuotationsPage() {
     router.push(`/quotations/${created.id}`);
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm(t('confirmDelete'))) return;
-    await deleteQuotation.mutateAsync(id);
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    await deleteQuotation.mutateAsync(deleteTarget);
+    setDeleteTarget(undefined);
   }
 
   const columns = useMemo<ColumnDef<QuotationListItem>[]>(
@@ -107,7 +110,7 @@ export default function QuotationsPage() {
                 title={tc('delete')}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void handleDelete(row.original.id);
+                  setDeleteTarget(row.original.id);
                 }}
                 disabled={deleteQuotation.isPending}
               >
@@ -171,6 +174,23 @@ export default function QuotationsPage() {
         onRowClick={(item) => router.push(`/quotations/${item.id}`)}
         pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
       />
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{tc('cancel')}</Button>
+            </DialogClose>
+            <Button variant="destructive" loading={deleteQuotation.isPending} onClick={handleDelete}>
+              {tc('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
