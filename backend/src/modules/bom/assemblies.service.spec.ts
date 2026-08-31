@@ -371,6 +371,14 @@ describe('AssembliesService', () => {
           },
         ],
       });
+
+      // 2026-08-31 fix: an IN_STOCK FinishedGood whose production hasn't
+      // been confirmed yet (payroll not closed for it) must not count as
+      // available stock — otherwise a sub-assembly still mid-production
+      // shows "Готово" and its labor estimate is wrongly zeroed.
+      for (const call of prisma.tenant.finishedGood.count.mock.calls) {
+        expect(call[0].where).toMatchObject({ status: 'IN_STOCK', confirmedByExecutionId: { not: null } });
+      }
     });
 
     it('detects a circular BOM instead of recursing forever', async () => {

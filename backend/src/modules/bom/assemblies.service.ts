@@ -635,7 +635,17 @@ export class AssembliesService {
 
     const [assembly, qtyInStock, components] = await Promise.all([
       this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
-      this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK' } }),
+      // `confirmedByExecutionId: { not: null }` — a FinishedGood row goes
+      // IN_STOCK the moment its production execution finishes, but stays
+      // UNCONFIRMED (payroll not yet closed for it) until
+      // stampConfirmedFinishedGoods explicitly stamps it. Counting
+      // unconfirmed stock here made a still-in-production sub-assembly show
+      // as "Готово" and zeroed its laborFundEstimate below (2026-08-31 fix
+      // — "чому виріб показує 0 і пише що готово якщо вони у виробництві і
+      // зарплату ще не закрили по них"). Same confirmed-only gate
+      // CustomerOrdersService#getOrderProductionUnits already uses for its
+      // READY bucket.
+      this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK', confirmedByExecutionId: { not: null } } }),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
     if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
