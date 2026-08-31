@@ -121,8 +121,24 @@ export class QuotationsService {
     return role.permissions.some((rp: any) => rp.permission.key === key);
   }
 
+  /** Soft delete — same shape as QuotationTemplatesService#remove/CustomersService#remove. No status/conversion guard: a duplicated/converted quotation keeps existing as the ORIGINAL row those relations point at (duplicatedFromId, CustomerOrder.sourceQuotation) — only `deletedAt` changes, so nothing referencing it breaks. */
+  async remove(user: RequestUser, id: string) {
+    const before = await this.findOne(user, id);
+    if (before.deletedAt) throw new CodedConflictException('QUOTATION_ALREADY_DELETED', 'Quotation is already deleted.');
+    const quotation = await this.prisma.tenant.quotation.update({ where: { id }, data: { deletedAt: new Date() } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'quotation.deleted',
+      entityType: 'Quotation',
+      entityId: id,
+      before,
+    });
+    return quotation;
+  }
+
   async query(user: RequestUser, query: QueryQuotationsDto) {
-    const where: Prisma.QuotationWhereInput = {};
+    const where: Prisma.QuotationWhereInput = { deletedAt: null };
     if (query.status) where.status = query.status as any;
     if (query.customerId) where.customerId = query.customerId;
     if (query.search) {

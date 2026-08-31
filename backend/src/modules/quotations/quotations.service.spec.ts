@@ -71,6 +71,7 @@ function makeFakePrisma() {
       }),
       findMany: jest.fn(({ where, take = 50, skip = 0 }: any) => {
         let rows = [...db.quotation.values()];
+        if (where?.deletedAt === null) rows = rows.filter((r) => !r.deletedAt);
         if (where?.status) rows = rows.filter((r) => r.status === where.status);
         if (where?.customerId) rows = rows.filter((r) => r.customerId === where.customerId);
         rows = rows
@@ -349,6 +350,26 @@ describe('QuotationsService', () => {
       expect(dup.currentVersion.versionNumber).toBe(1);
       expect(dup.currentVersion.items[0].belowCostApproved).toBe(false);
       expect(dup.duplicatedFromId).toBe(q.id);
+    });
+  });
+
+  describe('remove — soft delete', () => {
+    it('stamps deletedAt and excludes the quotation from query() afterward', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+
+      const removed = await service.remove(user, q.id);
+      expect(removed.deletedAt).not.toBeNull();
+
+      const { items } = await service.query(user, {} as any);
+      expect(items.find((i: any) => i.id === q.id)).toBeUndefined();
+    });
+
+    it('refuses to delete an already-deleted quotation', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.remove(user, q.id);
+      await expect(service.remove(user, q.id)).rejects.toThrow();
     });
   });
 

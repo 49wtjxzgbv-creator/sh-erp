@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -72,6 +72,13 @@ export class QuotationsController {
   @ApiOperation({ summary: 'Start a new editable DRAFT version, copied from the current (locked) version.' })
   async createNewVersion(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.quotationsService.createNewVersion(user, id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('quotations:manage')
+  @ApiOperation({ summary: 'Soft-delete a quotation.' })
+  async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.quotationsService.remove(user, id);
   }
 
   @Post(':id/duplicate')

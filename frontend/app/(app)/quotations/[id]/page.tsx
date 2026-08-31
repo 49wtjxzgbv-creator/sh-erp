@@ -13,6 +13,7 @@ import {
   useSendQuotation,
   useCreateNewQuotationVersion,
   useDuplicateQuotation,
+  useDeleteQuotation,
   useAcceptQuotation,
   useRejectQuotation,
   useConvertQuotationToOrder,
@@ -107,6 +108,7 @@ export default function QuotationDetailPage() {
   const sendQuotation = useSendQuotation(params.id);
   const createNewVersion = useCreateNewQuotationVersion(params.id);
   const duplicateQuotation = useDuplicateQuotation();
+  const deleteQuotation = useDeleteQuotation();
   const acceptQuotation = useAcceptQuotation(params.id);
   const rejectQuotation = useRejectQuotation(params.id);
   const convertToOrder = useConvertQuotationToOrder(params.id);
@@ -219,6 +221,16 @@ export default function QuotationDetailPage() {
     try {
       const created = await duplicateQuotation.mutateAsync(params.id);
       router.push(`/quotations/${created.id}`);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleDelete() {
+    setError(null);
+    try {
+      await deleteQuotation.mutateAsync(params.id);
+      router.push('/quotations');
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
@@ -511,6 +523,29 @@ export default function QuotationDetailPage() {
             <Button asChild variant="outline" size="sm">
               <Link href={`/sales/${quotation.convertedCustomerOrderId}`}>{t('viewCreatedOrder')}</Link>
             </Button>
+          )}
+          {canManage && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  {tc('delete')}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+                  <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">{tc('cancel')}</Button>
+                  </DialogClose>
+                  <Button variant="destructive" loading={deleteQuotation.isPending} onClick={handleDelete}>
+                    {tc('delete')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
         </div>
       </div>

@@ -11,6 +11,7 @@ import {
   sendQuotation,
   createNewQuotationVersion,
   duplicateQuotation,
+  deleteQuotation,
   markQuotationViewed,
   acceptQuotation,
   rejectQuotation,
@@ -106,6 +107,14 @@ export function useDuplicateQuotation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => duplicateQuotation(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['quotations'] }),
+  });
+}
+
+export function useDeleteQuotation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteQuotation(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['quotations'] }),
   });
 }

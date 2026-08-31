@@ -192,6 +192,9 @@ export function createNewQuotationVersion(id: string): Promise<Quotation> {
 export function duplicateQuotation(id: string): Promise<Quotation> {
   return apiClient.post<Quotation>(`quotations/${id}/duplicate`);
 }
+export function deleteQuotation(id: string): Promise<Quotation> {
+  return apiClient.delete<Quotation>(`quotations/${id}`);
+}
 export function markQuotationViewed(id: string): Promise<Quotation> {
   return apiClient.post<Quotation>(`quotations/${id}/view`);
 }

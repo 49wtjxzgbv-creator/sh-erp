@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus, Copy } from 'lucide-react';
-import { useQuotations, useDuplicateQuotation } from '@/lib/hooks/use-quotations';
+import { Plus, Copy, Trash2 } from 'lucide-react';
+import { useQuotations, useDuplicateQuotation, useDeleteQuotation } from '@/lib/hooks/use-quotations';
 import { formatMoney } from '@/lib/finance-format';
 import type { QuotationListItem, QuotationStatus } from '@/lib/api-client/quotations';
 import { DataTable } from '@/components/domain/data-table/data-table';
@@ -28,18 +28,25 @@ const STATUS_VARIANT: Record<QuotationStatus, 'secondary' | 'warning' | 'success
 
 export default function QuotationsPage() {
   const t = useTranslations('quotations');
+  const tc = useTranslations('common');
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<QuotationStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const canManage = useHasPermission('quotations:manage');
   const duplicateQuotation = useDuplicateQuotation();
+  const deleteQuotation = useDeleteQuotation();
 
   const { data, isLoading } = useQuotations({ search: search || undefined, status, limit: PAGE_SIZE, offset });
 
   async function handleDuplicate(id: string) {
     const created = await duplicateQuotation.mutateAsync(id);
     router.push(`/quotations/${created.id}`);
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm(t('confirmDelete'))) return;
+    await deleteQuotation.mutateAsync(id);
   }
 
   const columns = useMemo<ColumnDef<QuotationListItem>[]>(
@@ -79,24 +86,39 @@ export default function QuotationsPage() {
         header: '',
         cell: ({ row }) =>
           canManage ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title={t('duplicate')}
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleDuplicate(row.original.id);
-              }}
-              disabled={duplicateQuotation.isPending}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title={t('duplicate')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDuplicate(row.original.id);
+                }}
+                disabled={duplicateQuotation.isPending}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                title={tc('delete')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDelete(row.original.id);
+                }}
+                disabled={deleteQuotation.isPending}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           ) : null,
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, canManage, duplicateQuotation.isPending],
+    [t, canManage, duplicateQuotation.isPending, deleteQuotation.isPending],
   );
 
   return (
