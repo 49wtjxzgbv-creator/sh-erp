@@ -570,7 +570,7 @@ export class CustomerOrdersService {
     const item = (order.items as any[]).find((i) => i.id === itemId);
     if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
 
-    const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty));
+    const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId);
 
     const batches = await this.prisma.tenant.productionOrder.findMany({
       where: { OR: [{ customerOrderItemId: itemId }, { subAssemblyForItemId: itemId }] },
@@ -601,12 +601,14 @@ export class CustomerOrdersService {
    * cost totals elsewhere on this order —
    *  - `estimated`: every node's own `laborFundEstimate` (live BOM rates,
    *    assembly.laborCostPerUnit x the SHORTFALL not already covered by
-   *    stock — see ProductionTreeNode.laborFundEstimate's own 2026-08-30
-   *    fix comment; a node with enough IN_STOCK units already, purchased
-   *    ready-made or previously manufactured, contributes 0 here even
-   *    though qtyNeeded is nonzero), summed across every item's FULL
-   *    production tree — виріб AND every підвиріб at any depth, not just
-   *    the top-level line. Never frozen; recomputed fresh every call.
+   *    THIS order's own "Зі складу" claim from order creation — see
+   *    ProductionTreeNode.laborFundEstimate's own 2026-08-31 fix comment;
+   *    deliberately NOT live/global stock, so this stays a stable budget
+   *    reference rather than drifting down as the order's own production
+   *    gets confirmed), summed across every item's FULL production tree —
+   *    виріб AND every підвиріб at any depth, not just the top-level line.
+   *    Rates are still live (current BOM laborCostPerUnit), only the stock
+   *    offset is order-creation-frozen — recomputed fresh every call.
    *  - `estimatedByArticle` (2026-08-30 user request — breakdown under
    *    "Оцінено (за поточними ставками)"): the same walk, but keeping every
    *    distinct assembly's own qtyNeeded (the FULL requirement, not the
@@ -643,7 +645,7 @@ export class CustomerOrdersService {
     let estimated = 0;
     const estimatedByArticleMap = new Map<string, PayrollEstimatedArticleLine>();
     for (const item of items) {
-      const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty));
+      const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId);
       estimated += sumLaborFund(tree);
       collectLaborFundByArticle(tree, estimatedByArticleMap);
     }

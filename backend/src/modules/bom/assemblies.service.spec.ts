@@ -38,7 +38,7 @@ describe('AssembliesService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn() };
-    subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]) };
+    subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]), getClaimForOrder: jest.fn().mockResolvedValue(0) };
     service = new AssembliesService(prisma, audit, stock, subAssemblyReservationService);
   });
 
@@ -338,17 +338,24 @@ describe('AssembliesService', () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });
     });
 
-    it('builds a real parent -> child tree, each node done when its own IN_STOCK count covers its own needed qty; laborFundEstimate only counts the shortfall not already covered by stock (2026-08-30 fix)', async () => {
+    it('builds a real parent -> child tree; `done` follows live confirmed IN_STOCK count, but laborFundEstimate follows this order\'s own reservation claim instead (2026-08-31 fix)', async () => {
       prisma.tenant.assembly.findUnique
         .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
         .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
         .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 4 });
+      // Live confirmed stock: a1 has 2 (done), sub1 has 1 (not done).
       prisma.tenant.finishedGood.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+      // This order's own "Зі складу" claim (SubAssemblyReservation), the
+      // OPPOSITE pattern — a1 has nothing claimed (full labor charged
+      // despite live stock covering it), sub1 has its full qty claimed (no
+      // labor charged despite live stock NOT covering it) — proves the two
+      // are genuinely decoupled, not just both happening to move together.
+      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
 
-      const result = await service.getProductionTree(user, 'a1', 2);
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
 
       expect(result).toEqual({
         assemblyId: 'a1',
@@ -356,8 +363,8 @@ describe('AssembliesService', () => {
         article: 'ART-A1',
         qtyNeeded: 2,
         qtyInStock: 2,
-        done: true,
-        laborFundEstimate: 0, // needed 2, already have 2 in stock (bought or made) — nothing left to pay labor for
+        done: true, // live stock covers it
+        laborFundEstimate: 20, // nothing claimed "Зі складу" at order creation — full labor still charged
         children: [
           {
             assemblyId: 'sub1',
@@ -365,8 +372,8 @@ describe('AssembliesService', () => {
             article: null,
             qtyNeeded: 2,
             qtyInStock: 1,
-            done: false,
-            laborFundEstimate: 4, // needed 2, only 1 in stock — labor estimate covers just the missing 1, not the full 2
+            done: false, // live stock does NOT cover it
+            laborFundEstimate: 0, // fully claimed "Зі складу" at order creation — no labor charged regardless of live stock
             children: [],
           },
         ],
@@ -374,11 +381,13 @@ describe('AssembliesService', () => {
 
       // 2026-08-31 fix: an IN_STOCK FinishedGood whose production hasn't
       // been confirmed yet (payroll not closed for it) must not count as
-      // available stock — otherwise a sub-assembly still mid-production
-      // shows "Готово" and its labor estimate is wrongly zeroed.
+      // available stock for `done` — otherwise a sub-assembly still
+      // mid-production shows "Готово".
       for (const call of prisma.tenant.finishedGood.count.mock.calls) {
         expect(call[0].where).toMatchObject({ status: 'IN_STOCK', confirmedByExecutionId: { not: null } });
       }
+      expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'a1');
+      expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');
     });
 
     it('detects a circular BOM instead of recursing forever', async () => {
@@ -391,7 +400,7 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'a1', qtyPerUnit: 1 }]); // sub1 points back at a1
 
-      await expect(service.getProductionTree(user, 'a1', 1)).rejects.toThrow(ConflictException);
+      await expect(service.getProductionTree(user, 'a1', 1, 'order-1')).rejects.toThrow(ConflictException);
     });
   });
 });

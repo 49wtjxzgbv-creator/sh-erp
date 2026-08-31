@@ -61,16 +61,28 @@ export interface ProductionTreeNode {
   done: boolean;
   /**
    * This node's own labor fund at current BOM rates: assembly.laborCostPerUnit
-   * x the SHORTFALL only — max(qtyNeeded - qtyInStock, 0), not the raw
-   * qtyNeeded (2026-08-30 fix — "Оцінка по виробах" was showing a full labor
-   * estimate for sub-assemblies that already have enough stock on hand,
-   * purchased ready-made or otherwise, so nobody will actually be paid to
-   * make more of them for this order). Same "own labor only, not recursive"
-   * fund every ProductionOrder freezes at start() (production-orders.service.ts's
-   * `ownLabor`), same global (not order-reserved) stock count `done` already
-   * uses above. Live/never-frozen until that node's own batch actually
-   * starts — see CustomerOrdersService#getPayrollFundSummary for the
-   * estimated-vs-actual pairing.
+   * x the SHORTFALL only — max(qtyNeeded - qtyClaimedFromStock, 0), not the
+   * raw qtyNeeded (2026-08-30 fix — "Оцінка по виробах" was showing a full
+   * labor estimate for sub-assemblies that already have enough stock on
+   * hand, purchased ready-made or otherwise, so nobody will actually be paid
+   * to make more of them for this order).
+   *
+   * `qtyClaimedFromStock` is THIS order's own SubAssemblyReservation claim
+   * ("Зі складу" choice made in the "Підвироби" dialog at order creation) —
+   * deliberately NOT the live/global `qtyInStock` `done` uses above
+   * (2026-08-31 fix — "оцінка... це орієнтир скільки коштуватиме, це не
+   * повинно бути пов'язано зі складом, якщо ми не обрали вироби зі складу
+   * при створенні замовлення"). Using live stock made the estimate drift
+   * down over time as THIS SAME order's own batches got confirmed — the
+   * estimate ate its own tail, converging toward the already-tracked
+   * `actual`/`earnedActual` instead of staying a stable budget reference.
+   * The reservation claim only ever changes when explicitly re-claimed or
+   * consumed at a batch's own start() (SubAssemblyReservationService#consume),
+   * never as a side effect of unrelated stock/confirmation activity — same
+   * "own labor only, not recursive" fund every ProductionOrder freezes at
+   * start() (production-orders.service.ts's `ownLabor`). See
+   * CustomerOrdersService#getPayrollFundSummary for the estimated-vs-actual
+   * pairing.
    */
   laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
@@ -622,30 +634,37 @@ export class AssembliesService {
    * supplier-link-gated one) — this is about physical stock readiness,
    * not purchasing.
    */
-  async getProductionTree(user: RequestUser, assemblyId: string, qty: number): Promise<ProductionTreeNode> {
+  async getProductionTree(user: RequestUser, assemblyId: string, qty: number, customerOrderId: string): Promise<ProductionTreeNode> {
     await this.findOne(user, assemblyId);
-    return this.buildProductionTree(assemblyId, qty, new Set());
+    return this.buildProductionTree(user, customerOrderId, assemblyId, qty, new Set());
   }
 
-  private async buildProductionTree(assemblyId: string, qty: number, visited: Set<string>): Promise<ProductionTreeNode> {
+  private async buildProductionTree(
+    user: RequestUser,
+    customerOrderId: string,
+    assemblyId: string,
+    qty: number,
+    visited: Set<string>,
+  ): Promise<ProductionTreeNode> {
     if (visited.has(assemblyId)) {
       throw new CodedConflictException('BOM_CIRCULAR_EXPAND', `Circular BOM detected while expanding assembly ${assemblyId}.`);
     }
     visited.add(assemblyId);
 
-    const [assembly, qtyInStock, components] = await Promise.all([
+    const [assembly, qtyInStock, qtyClaimedFromStock, components] = await Promise.all([
       this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
       // `confirmedByExecutionId: { not: null }` — a FinishedGood row goes
       // IN_STOCK the moment its production execution finishes, but stays
       // UNCONFIRMED (payroll not yet closed for it) until
       // stampConfirmedFinishedGoods explicitly stamps it. Counting
       // unconfirmed stock here made a still-in-production sub-assembly show
-      // as "Готово" and zeroed its laborFundEstimate below (2026-08-31 fix
-      // — "чому виріб показує 0 і пише що готово якщо вони у виробництві і
-      // зарплату ще не закрили по них"). Same confirmed-only gate
-      // CustomerOrdersService#getOrderProductionUnits already uses for its
-      // READY bucket.
+      // as "Готово" (2026-08-31 fix — "чому пише що готово якщо вони у
+      // виробництві і зарплату ще не закрили по них"). Same confirmed-only
+      // gate CustomerOrdersService#getOrderProductionUnits already uses for
+      // its READY bucket. Drives `done` only — see laborFundEstimate's own
+      // doc comment for why it does NOT also drive the labor estimate.
       this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK', confirmedByExecutionId: { not: null } } }),
+      this.subAssemblyReservationService.getClaimForOrder(user, customerOrderId, assemblyId),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
     if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
@@ -653,7 +672,7 @@ export class AssembliesService {
     const children: ProductionTreeNode[] = [];
     for (const line of components) {
       if (!line.subAssemblyId) continue;
-      children.push(await this.buildProductionTree(line.subAssemblyId, qty * Number(line.qtyPerUnit), visited));
+      children.push(await this.buildProductionTree(user, customerOrderId, line.subAssemblyId, qty * Number(line.qtyPerUnit), visited));
     }
 
     visited.delete(assemblyId);
@@ -665,7 +684,7 @@ export class AssembliesService {
       qtyNeeded: qty,
       qtyInStock,
       done: qtyInStock >= Math.ceil(qty),
-      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyInStock, 0),
+      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock, 0),
       children,
     };
   }

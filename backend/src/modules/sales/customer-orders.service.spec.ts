@@ -286,7 +286,7 @@ describe('CustomerOrdersService', () => {
 
       const result = await service.getItemProductionTree(user, 'co1', 'item1');
 
-      expect(assembliesService.getProductionTree).toHaveBeenCalledWith(user, 'a1', 3);
+      expect(assembliesService.getProductionTree).toHaveBeenCalledWith(user, 'a1', 3, 'co1');
       expect(result.batches).toEqual([{ id: 'po-top', status: 'PLANNED', unitsPlanned: 3 }]);
       expect(result.children[0].batches).toEqual([{ id: 'po-sub', status: 'PLANNED', unitsPlanned: 3 }]);
     });
