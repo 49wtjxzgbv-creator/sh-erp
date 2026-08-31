@@ -761,6 +761,8 @@
     "subAssemblyPlanningDescription": "Цей виріб складається з підвиробів, які теж потрібно виготовити. Оберіть для кожного: виготовити чи використати зі складу готової продукції. Це лише план — виробниче замовлення не створюється зараз, ви передасте кожен підвиріб у виробництво окремо у вкладці «Хід виробництва».",
     "subAssemblyNeeded": "Потрібно: {qty}",
     "subAssemblyInStock": "На складі: {qty}",
+    "subAssemblyProduced": "Виготовлено: {qty}",
+    "subAssemblyRemaining": "Залишилось виготовити: {qty}",
     "subAssemblySufficient": "достатньо на складі",
     "subAssemblyReservedByOthers": "Заброньовано для інших замовлень: {qty}",
     "subAssemblyProduce": "Виготовити",

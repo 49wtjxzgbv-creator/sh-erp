@@ -223,6 +223,8 @@ export interface ProductionTreeNode {
   batches: Array<{ id: string; status: string; unitsPlanned: number }>;
   /** Qty chosen for this node in the order-creation "Підвироби" dialog, if any — null when it wasn't marked "Виготовити" there. */
   planned: number | null;
+  /** "Виготовлено" — confirmed (payroll closed) FinishedGood units across this node's OWN batches only. `qtyNeeded - produced` (clamped at 0) is "залишилось виготовити". */
+  produced: number;
   children: ProductionTreeNode[];
 }
 

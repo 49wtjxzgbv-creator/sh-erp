@@ -664,6 +664,8 @@
     "subAssemblyPlanningDescription": "This item is built from sub-assemblies that also need to be made. For each one, choose: produce it or use it from finished-goods stock. This is only a plan — no production batch is created yet; you'll hand off each sub-assembly separately in the \"Production progress\" tab.",
     "subAssemblyNeeded": "Needed: {qty}",
     "subAssemblyInStock": "In stock: {qty}",
+    "subAssemblyProduced": "Produced: {qty}",
+    "subAssemblyRemaining": "Remaining to produce: {qty}",
     "subAssemblySufficient": "enough in stock",
     "subAssemblyReservedByOthers": "Reserved for other orders: {qty}",
     "subAssemblyProduce": "Produce",

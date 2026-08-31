@@ -28,6 +28,22 @@ export interface ProductionTreeNodeWithBatches extends ProductionTreeNode {
   batches: Array<{ id: string; status: string; unitsPlanned: number }>;
   /** Qty chosen for this node in the order-creation "Підвироби" dialog, if any — null when it wasn't marked "Виготовити" there. Purely a pre-fill hint for GiveNodeToProductionButton; never implies a batch already exists. */
   planned: number | null;
+  /**
+   * "Виготовлено" (2026-09-01 user request): count of this node's OWN
+   * confirmed FinishedGood units (confirmedByExecutionId NOT NULL) across
+   * ITS OWN batches only — deliberately NOT `qtyInStock` (which also
+   * counts purchased "Зі складу" stock and isn't order-scoped) and NOT the
+   * IN_PROGRESS/unconfirmed count — this is specifically "how much has
+   * actually been made AND closed into payroll for this order's own
+   * production", same confirmed-only gate `CustomerOrdersService#
+   * getOrderProductionUnits`'s READY bucket uses. `Потрібно - produced`
+   * (clamped at 0, computed on the frontend) is "залишилось виготовити" —
+   * deliberately does NOT net out `qtyClaimedFromStock`
+   * (SubAssemblyReservation) the way `laborFundEstimate` does, since a
+   * "Зі складу" claim was never something this order intends to actually
+   * manufacture in the first place.
+   */
+  produced: number;
   children: ProductionTreeNodeWithBatches[];
 }
 
@@ -582,15 +598,29 @@ export class CustomerOrdersService {
       batchesByAssembly.set(b.assemblyId, list);
     }
 
+    const batchIds = (batches as any[]).map((b) => b.id);
+    const producedGrouped = batchIds.length
+      ? await this.prisma.tenant.finishedGood.groupBy({
+          by: ['productionOrderId'],
+          where: { productionOrderId: { in: batchIds }, confirmedByExecutionId: { not: null } },
+          _count: { _all: true },
+        })
+      : [];
+    const producedByBatch = new Map((producedGrouped as any[]).map((g) => [g.productionOrderId as string, g._count._all as number]));
+
     const plannedList = ((item as any).plannedSubAssemblies ?? []) as Array<{ assemblyId: string; qty: number }>;
     const plannedByAssembly = new Map(plannedList.map((p) => [p.assemblyId, p.qty]));
 
-    const attachBatches = (node: ProductionTreeNode): ProductionTreeNodeWithBatches => ({
-      ...node,
-      batches: (batchesByAssembly.get(node.assemblyId) ?? []).map((b) => ({ id: b.id, status: b.status, unitsPlanned: Number(b.unitsPlanned) })),
-      planned: plannedByAssembly.get(node.assemblyId) ?? null,
-      children: node.children.map(attachBatches),
-    });
+    const attachBatches = (node: ProductionTreeNode): ProductionTreeNodeWithBatches => {
+      const nodeBatches = batchesByAssembly.get(node.assemblyId) ?? [];
+      return {
+        ...node,
+        batches: nodeBatches.map((b) => ({ id: b.id, status: b.status, unitsPlanned: Number(b.unitsPlanned) })),
+        planned: plannedByAssembly.get(node.assemblyId) ?? null,
+        produced: nodeBatches.reduce((sum, b) => sum + (producedByBatch.get(b.id) ?? 0), 0),
+        children: node.children.map(attachBatches),
+      };
+    };
 
     return attachBatches(tree);
   }

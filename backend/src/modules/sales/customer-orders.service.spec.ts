@@ -291,6 +291,39 @@ describe('CustomerOrdersService', () => {
       expect(result.children[0].batches).toEqual([{ id: 'po-sub', status: 'PLANNED', unitsPlanned: 3 }]);
     });
 
+    it('produced (2026-09-01, "Виготовлено"): sums confirmed FinishedGood units across a node\'s OWN batches only, excluding other nodes\' batches and unconfirmed units', async () => {
+      assembliesService.getProductionTree.mockResolvedValue({
+        assemblyId: 'a1',
+        name: 'A1',
+        article: null,
+        qtyNeeded: 10,
+        qtyInStock: 0,
+        done: false,
+        children: [{ assemblyId: 'sub1', name: 'Sub1', article: null, qtyNeeded: 5, qtyInStock: 0, done: false, children: [] }],
+      });
+      mockProductionOrdersFindMany([
+        { id: 'po-top-1', assemblyId: 'a1', status: 'IN_PROGRESS', unitsPlanned: 6, customerOrderItemId: 'item1', subAssemblyForItemId: null },
+        { id: 'po-top-2', assemblyId: 'a1', status: 'IN_PROGRESS', unitsPlanned: 4, customerOrderItemId: 'item1', subAssemblyForItemId: null },
+        { id: 'po-sub', assemblyId: 'sub1', status: 'IN_PROGRESS', unitsPlanned: 5, customerOrderItemId: null, subAssemblyForItemId: 'item1' },
+      ]);
+      prisma.tenant.finishedGood.groupBy.mockResolvedValue([
+        { productionOrderId: 'po-top-1', _count: { _all: 3 } },
+        { productionOrderId: 'po-top-2', _count: { _all: 2 } },
+        { productionOrderId: 'po-sub', _count: { _all: 1 } },
+      ]);
+
+      const result = await service.getItemProductionTree(user, 'co1', 'item1');
+
+      expect(result.produced).toBe(5); // 3 + 2 across a1's two batches
+      expect(result.children[0].produced).toBe(1);
+      expect(prisma.tenant.finishedGood.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['productionOrderId'],
+          where: { productionOrderId: { in: ['po-top-1', 'po-top-2', 'po-sub'] }, confirmedByExecutionId: { not: null } },
+        }),
+      );
+    });
+
     it('attaches the "Підвироби"-dialog planned qty (item.plannedSubAssemblies) per node by assemblyId, null when a node was never marked', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({
         ...order,

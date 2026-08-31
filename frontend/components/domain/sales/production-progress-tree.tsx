@@ -154,7 +154,9 @@ function TreeNode({
             {node.article ? `${node.article} — ${node.name}` : node.name}
           </p>
           <p className="text-xs text-muted-foreground">
-            {t('subAssemblyNeeded', { qty: node.qtyNeeded })} · {t('subAssemblyInStock', { qty: node.qtyInStock })}
+            {t('subAssemblyNeeded', { qty: node.qtyNeeded })} · {t('subAssemblyInStock', { qty: node.qtyInStock })} ·{' '}
+            {t('subAssemblyProduced', { qty: node.produced })} ·{' '}
+            {t('subAssemblyRemaining', { qty: Math.max(node.qtyNeeded - node.produced, 0) })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
