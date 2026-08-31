@@ -800,20 +800,21 @@ export class CustomerOrdersService {
    * shelf — once a sub-assembly is consumed into its parent it's correctly
    * gone from Склад entirely). Here a sub-assembly consumed into the SAME
    * order's parent item mid-production is still very much "made for this
-   * order" — it just isn't sitting on a shelf anymore. So:
-   *  - READY ("Що зроблено"): CONSUMED/SHIPPED units count unconditionally
-   *    (being consumed or shipped is itself proof the work happened,
-   *    confirmedByExecutionId or not — a sub-assembly routinely gets
-   *    consumed by its parent's start() before a worker gets around to
-   *    confirming the execution that made it, see
+   * order" — it just isn't sitting on a shelf anymore. So both buckets
+   * share the same status set (IN_STOCK/CONSUMED/SHIPPED — REWORK/DEFECTIVE
+   * never count as either) and split purely on `confirmedByExecutionId`:
+   *  - READY ("Що зроблено"): confirmed only (2026-08-31 fix — "коректно
+   *    відображались вироби які ми реально зробили і закрили в зарплату";
+   *    an EARLIER version of this fix counted CONSUMED/SHIPPED unconditionally
+   *    the moment they were physically consumed/shipped, even before payroll
+   *    was closed for the execution that made them — that read as "done"
+   *    before it actually was for accounting purposes).
+   *  - IN_PROGRESS ("В роботі"): unconfirmed, regardless of physical status —
+   *    a sub-assembly routinely gets CONSUMED by its parent's start() before
+   *    a worker gets around to confirming the execution that made it (see
    *    ProductionExecutionsService#stampConfirmedFinishedGoods's own
-   *    2026-08-31 fix for the other half of this bug), plus still-IN_STOCK
-   *    units that ARE confirmed.
-   *  - IN_PROGRESS ("В роботі"): only units still IN_STOCK AND unconfirmed —
-   *    a CONSUMED unit is no longer "pending", regardless of confirmation
-   *    status, so excluding it here (via the explicit status check, not
-   *    just confirmedByExecutionId) is what actually fixes the previously
-   *    inflated/incorrect count.
+   *    2026-08-31 fix for the other half of this), so it stays "в роботі"
+   *    (payroll not yet closed) rather than vanishing from both tabs.
    */
   async getOrderProductionUnits(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
@@ -835,13 +836,11 @@ export class CustomerOrdersService {
 
     const buildBucket = async (scope: 'IN_PROGRESS' | 'READY') => {
       if (batchIds.length === 0) return [];
-      const where: any =
-        scope === 'READY'
-          ? {
-              productionOrderId: { in: batchIds },
-              OR: [{ status: { in: ['CONSUMED', 'SHIPPED'] } }, { status: 'IN_STOCK', confirmedByExecutionId: { not: null } }],
-            }
-          : { productionOrderId: { in: batchIds }, status: 'IN_STOCK', confirmedByExecutionId: null };
+      const where: any = {
+        productionOrderId: { in: batchIds },
+        status: { in: ['IN_STOCK', 'CONSUMED', 'SHIPPED'] },
+        confirmedByExecutionId: scope === 'READY' ? { not: null } : null,
+      };
       const grouped = await this.prisma.tenant.finishedGood.groupBy({ by: ['assemblyId'], where, _count: { _all: true } });
       return (grouped as any[])
         .map((g) => {
