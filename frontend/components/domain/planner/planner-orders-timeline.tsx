@@ -74,7 +74,7 @@ export function PlannerOrdersTimelineView({
 }) {
   const t = useTranslations('planner');
   const ts = useTranslations('sales');
-  const [scale, setScale] = useState<OrdersScale>('year');
+  const [scale, setScale] = useState<OrdersScale>('week');
   const [anchor, setAnchor] = useState(() => new Date());
   // Collapsed by default (2026-08-28 user request) — the frozen date grid
   // is useful but crowds out the timeline the moment this view loads;

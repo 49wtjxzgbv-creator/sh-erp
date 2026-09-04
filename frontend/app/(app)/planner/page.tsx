@@ -128,10 +128,10 @@ export default function PlannerPage() {
   // period (only meaningful for week/month) so "3 тижні"/"2 місяці" are one
   // stepper click away instead of needing a full custom-range picker.
   // Defaults deliberately mirror PlannerOrdersTimelineView's own screen
-  // defaults (year scale, dates collapsed) — 2026-08-28 user request: print
+  // defaults (week scale, dates collapsed) — 2026-08-28 user request: print
   // should look like the on-screen graph the user is actually looking at,
   // not some different starting point.
-  const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('year');
+  const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('week');
   const [ordersPrintAnchor, setOrdersPrintAnchor] = useState(() => new Date());
   const [ordersPrintCount, setOrdersPrintCount] = useState(1);
   // Same "менше — зручніше" idea as the on-screen collapse toggle: the 5

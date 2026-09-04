@@ -69,8 +69,8 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
   // independent of the on-screen `year` used for the live chart above.
   // `printCount` multiplies the chosen scale's single period (week/month
   // only) so "3 тижні"/"2 місяці" is one stepper click, not a custom-range
-  // picker. Defaults mirror the on-screen chart (year scale, dates hidden).
-  const [printScale, setPrintScale] = useState<'week' | 'month' | 'year'>('year');
+  // picker. Defaults mirror the on-screen chart (week scale, dates hidden).
+  const [printScale, setPrintScale] = useState<'week' | 'month' | 'year'>('week');
   const [printAnchor, setPrintAnchor] = useState(() => new Date());
   const [printCount, setPrintCount] = useState(1);
   const [printDatesHidden, setPrintDatesHidden] = useState(true);

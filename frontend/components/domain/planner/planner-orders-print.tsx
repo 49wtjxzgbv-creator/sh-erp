@@ -106,7 +106,7 @@ export function PlannerOrdersPrintTable({
   orders,
   from,
   to,
-  scale = 'year',
+  scale = 'week',
   datesHidden = false,
 }: {
   orders: PlannerOrderNode[];
