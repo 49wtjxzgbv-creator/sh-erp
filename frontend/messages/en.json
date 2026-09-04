@@ -1657,6 +1657,7 @@
   "quotations": {
     "title": "Quotations",
     "newQuotation": "New quotation",
+    "defaultUnit": "pcs",
     "number": "Number",
     "customer": "Customer",
     "customerRequired": "Select a customer.",

@@ -1657,6 +1657,7 @@
   "quotations": {
     "title": "Oferty handlowe",
     "newQuotation": "Nowa oferta",
+    "defaultUnit": "szt.",
     "number": "Numer",
     "customer": "Klient",
     "customerRequired": "Wybierz klienta.",

@@ -1657,6 +1657,7 @@
   "quotations": {
     "title": "Angebote",
     "newQuotation": "Neues Angebot",
+    "defaultUnit": "Stk.",
     "number": "Nummer",
     "customer": "Kunde",
     "customerRequired": "Kunde auswählen.",

@@ -18,12 +18,12 @@ function nextDraftId(): string {
   return `draft-${Date.now()}-${draftCounter}`;
 }
 
-export function newDraftItem(): QuotationItemDraft {
+export function newDraftItem(defaultUnit: string): QuotationItemDraft {
   return {
     clientId: nextDraftId(),
     kind: 'CUSTOM',
     quantity: 1,
-    unit: 'шт',
+    unit: defaultUnit,
     pricingSource: 'CUSTOM',
     belowCostApproved: false,
   };
@@ -130,7 +130,7 @@ export function QuotationItemEditor({
   }
 
   function addItem() {
-    onItemsChange([...items, newDraftItem()]);
+    onItemsChange([...items, newDraftItem(t('defaultUnit'))]);
   }
 
   return (

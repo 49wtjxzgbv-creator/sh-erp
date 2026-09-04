@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { QueryPlannerBoardDto } from './dto/planner-query.dto';
 import { PlannerBoardService } from './planner-board.service';
 import { PlannerKpisService } from './planner-kpis.service';
@@ -14,12 +15,14 @@ export class PlannerController {
   ) {}
 
   @Get('board')
-  @ApiOperation({ summary: 'Full План-графік hierarchy: CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan, plus purchase orders/problems. Read-only, no permission gate (same convention as the dashboard timeline).' })
+  @RequirePermissions('production-orders:read')
+  @ApiOperation({ summary: 'Full План-графік hierarchy: CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan, plus purchase orders/problems. Reuses production-orders:read, same as production-schedule.controller.ts — no dedicated planner:* key.' })
   async getBoard(@CurrentUser() user: RequestUser, @Query() query: QueryPlannerBoardDto) {
     return this.boardService.getBoard(user, query);
   }
 
   @Get('kpis')
+  @RequirePermissions('production-orders:read')
   @ApiOperation({ summary: 'Aggregate counts for the Planner KPI bar — derived from the same board data.' })
   async getKpis(@CurrentUser() user: RequestUser, @Query() query: QueryPlannerBoardDto) {
     return this.kpisService.getKpis(user, query);
