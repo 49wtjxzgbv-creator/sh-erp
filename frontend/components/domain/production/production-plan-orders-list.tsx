@@ -72,7 +72,9 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
   // picker. Defaults mirror the on-screen chart (week scale, dates hidden).
   const [printScale, setPrintScale] = useState<'week' | 'month' | 'year'>('week');
   const [printAnchor, setPrintAnchor] = useState(() => new Date());
-  const [printCount, setPrintCount] = useState(1);
+  // 8 weeks, not 1 (2026-09-04 user request) — one week printed too little
+  // of the schedule to be useful at a glance.
+  const [printCount, setPrintCount] = useState(8);
   const [printDatesHidden, setPrintDatesHidden] = useState(true);
 
   const { data, isLoading } = useCustomerOrders({ status, limit: PAGE_SIZE, offset });

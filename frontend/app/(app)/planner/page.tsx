@@ -133,7 +133,9 @@ export default function PlannerPage() {
   // not some different starting point.
   const [ordersPrintScale, setOrdersPrintScale] = useState<'week' | 'month' | 'year'>('week');
   const [ordersPrintAnchor, setOrdersPrintAnchor] = useState(() => new Date());
-  const [ordersPrintCount, setOrdersPrintCount] = useState(1);
+  // 8 weeks, not 1 (2026-09-04 user request) — one week printed too little
+  // of the schedule to be useful at a glance.
+  const [ordersPrintCount, setOrdersPrintCount] = useState(8);
   // Same "менше — зручніше" idea as the on-screen collapse toggle: the 5
   // date fields are useful but take real width away from the timeline on
   // paper too, and unlike the screen there's no way to expand them back
