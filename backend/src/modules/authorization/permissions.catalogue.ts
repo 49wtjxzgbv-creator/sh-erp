@@ -72,6 +72,13 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'production-executions:confirm', resource: 'production-executions', action: 'confirm', description: 'Confirm a DRAFT execution (generates PayrollEntry rows), or void/correct a CONFIRMED one.' },
   { key: 'work-tasks:manage', resource: 'work-tasks', action: 'manage', description: 'Create/edit GENERAL work tasks (non-product labor with a manually-set fund) and their informational product tags.' },
 
+  // Planner — the "План-графік" board/KPI view. Deliberately its OWN key
+  // rather than reusing production-orders:read (as production-schedule.
+  // controller.ts does): unlike that controller, the Planner nav item needs
+  // to be independently hideable per role without also gating the separate
+  // production-orders:read-gated screens (production orders list, schedule).
+  { key: 'planner:read', resource: 'planner', action: 'read', description: 'View the План-графік planning board and its KPI bar.' },
+
   // Quality — split into checklist configuration (admin-only, legacy matrix) vs. recording a check (admin+storekeeper-equivalent roles)
   { key: 'qc-checklist:manage', resource: 'qc-checklist', action: 'manage', description: 'Configure the QC checklist item list (admin-only in the legacy RBAC matrix, Phase 1 §5).' },
   { key: 'qc:record', resource: 'qc', action: 'record', description: 'Record a QC check result against a finished good.' },
@@ -149,7 +156,7 @@ export const DEFAULT_ROLES = [
       'purchase-orders:read', 'finished-goods:read', 'finished-goods:manage', 'shipments:read', 'files:read', 'files:write',
       // AI: full RBAC-matrix parity with the legacy "storekeeper" role — both
       // basic AI use and confirming a critical action (Phase 1 §5's AI rows).
-      'ai:use', 'ai:use-critical-actions',
+      'ai:use', 'ai:use-critical-actions', 'planner:read',
     ],
   },
   {
@@ -157,7 +164,7 @@ export const DEFAULT_ROLES = [
     permissions: [
       'products:read', 'assemblies:read', 'assemblies:write',
       'production-orders:read', 'production-orders:manage', 'finished-goods:read', 'finished-goods:manage',
-      'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use',
+      'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use', 'planner:read',
       // Production-labor module (2026-08-24): the shop-floor foreman role
       // records AND confirms its own executions — this codebase has no
       // separate "Supervisor" role yet, so both tiers are bundled here,
@@ -172,14 +179,14 @@ export const DEFAULT_ROLES = [
       'products:read', 'assemblies:read', 'customer-orders:read', 'customer-orders:manage',
       'customers:read', 'customers:write',
       'quotations:read', 'quotations:manage', 'quotations:convert',
-      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use',
+      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use', 'planner:read',
     ],
   },
   {
     name: 'Viewer',
     permissions: [
       'products:read', 'assemblies:read', 'stock:read', 'production-orders:read',
-      'customer-orders:read', 'customers:read', 'quotations:read', 'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'reports:read',
+      'customer-orders:read', 'customers:read', 'quotations:read', 'purchase-orders:read', 'finished-goods:read', 'shipments:read', 'reports:read', 'planner:read',
       // AI: legacy matrix grants viewer both simple + full assistant use, just
       // never `ai:use-critical-actions` (viewer can't confirm mutating actions).
       'ai:use',

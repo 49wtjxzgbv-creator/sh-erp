@@ -43,7 +43,7 @@ import { Logo } from '@/components/domain/shell/logo';
 export const NAV_ITEMS = [
   { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
   { href: '/production-plan', labelKey: 'productionPlan', icon: ClipboardCheck },
-  { href: '/planner', labelKey: 'planner', icon: CalendarClock, permission: 'production-orders:read' },
+  { href: '/planner', labelKey: 'planner', icon: CalendarClock, permission: 'planner:read' },
   { href: '/catalog', labelKey: 'catalog', icon: Package },
   { href: '/bom', labelKey: 'bom', icon: ListTree },
   { href: '/inventory', labelKey: 'inventory', icon: Warehouse },

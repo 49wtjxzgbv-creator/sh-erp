@@ -15,14 +15,14 @@ export class PlannerController {
   ) {}
 
   @Get('board')
-  @RequirePermissions('production-orders:read')
-  @ApiOperation({ summary: 'Full План-графік hierarchy: CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan, plus purchase orders/problems. Reuses production-orders:read, same as production-schedule.controller.ts — no dedicated planner:* key.' })
+  @RequirePermissions('planner:read')
+  @ApiOperation({ summary: 'Full План-графік hierarchy: CustomerOrder → CustomerOrderItem → ProductionOrder batch → stage plan, plus purchase orders/problems.' })
   async getBoard(@CurrentUser() user: RequestUser, @Query() query: QueryPlannerBoardDto) {
     return this.boardService.getBoard(user, query);
   }
 
   @Get('kpis')
-  @RequirePermissions('production-orders:read')
+  @RequirePermissions('planner:read')
   @ApiOperation({ summary: 'Aggregate counts for the Planner KPI bar — derived from the same board data.' })
   async getKpis(@CurrentUser() user: RequestUser, @Query() query: QueryPlannerBoardDto) {
     return this.kpisService.getKpis(user, query);
