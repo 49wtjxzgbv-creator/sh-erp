@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { chromium } from 'playwright';
 import { CodedConflictException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { PdfRenderTimeoutError, renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 import { FilesService } from '../files/files.service';
-import { pdfRenderQueue } from './pdf-render-queue';
 
 export interface QuotationPdfRenderInput {
   quotationId: string;
@@ -40,7 +39,7 @@ export class QuotationPdfService {
   constructor(private readonly filesService: FilesService) {}
 
   async generateAndStore(user: RequestUser, input: QuotationPdfRenderInput): Promise<string> {
-    const pdfBytes = await pdfRenderQueue.run(() => this.renderWithTimeout(input.html));
+    const pdfBytes = await this.renderOrThrow(input.html);
 
     const { fileAssetId } = await this.filesService.storeGeneratedAsset({
       companyId: user.companyId,
@@ -56,43 +55,14 @@ export class QuotationPdfService {
     return fileAssetId;
   }
 
-  /**
-   * Launch → render → close, always, on both the happy path and every
-   * failure/timeout branch (`finally`) — a leaked Chromium process is
-   * exactly what the single-render mutex in pdf-render-queue.ts can't
-   * protect against once it's already escaped this method's view. The
-   * timeout races against the render rather than being passed into
-   * Playwright's own per-call `timeout` options, because `page.pdf()`
-   * itself has no such option — only navigation/action calls do.
-   */
-  private async renderWithTimeout(html: string): Promise<Buffer> {
-    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  /** Thin wrapper over the shared `renderHtmlToPdf` (common/pdf/html-to-pdf.ts) that maps its generic failure/timeout into this module's own coded errors — the launch/render/timeout/queue mechanics themselves are shared with the AI assistant's exportToPdf tool, not duplicated here. */
+  private async renderOrThrow(html: string): Promise<Buffer> {
     try {
-      return await withTimeout(this.renderPdf(browser, html), PDF_RENDER_TIMEOUT_MS);
+      return await renderHtmlToPdf(html, PDF_RENDER_TIMEOUT_MS);
     } catch (err) {
       this.logger.error(`Quotation PDF render failed: ${err instanceof Error ? err.message : String(err)}`);
-      throw err instanceof CodedConflictException ? err : new CodedConflictException('QUOTATION_PDF_RENDER_FAILED', 'Failed to render the quotation PDF.');
-    } finally {
-      await browser.close().catch(() => undefined);
+      if (err instanceof PdfRenderTimeoutError) throw new CodedConflictException('QUOTATION_PDF_TIMEOUT', err.message);
+      throw new CodedConflictException('QUOTATION_PDF_RENDER_FAILED', 'Failed to render the quotation PDF.');
     }
   }
-
-  private async renderPdf(browser: import('playwright').Browser, html: string): Promise<Buffer> {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'load' });
-    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '0', bottom: '0', left: '0', right: '0' } });
-    return pdf;
-  }
-}
-
-/** Races `promise` against a timer; if the timer wins, attaches a no-op catch to the still-pending `promise` so its eventual rejection (once the caller closes the browser out from under it) never surfaces as an unhandled rejection. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      promise.catch(() => undefined);
-      reject(new CodedConflictException('QUOTATION_PDF_TIMEOUT', `PDF rendering exceeded ${ms}ms.`));
-    }, ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
