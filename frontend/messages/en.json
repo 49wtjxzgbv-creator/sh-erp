@@ -888,6 +888,7 @@
     "voiceRecognitionError": "Could not recognize speech. Try again or type your question.",
     "voiceReplyOn": "Voice replies on (click to turn off)",
     "voiceReplyOff": "Voice replies off (click to turn on)",
+    "voiceSelectPlaceholder": "Choose a voice",
     "invoiceRecognitionDescription": "Upload a photo or scan of a supplier invoice — the assistant extracts line items and matches them to existing products.",
     "recognize": "Recognize",
     "rawName": "Name on invoice",

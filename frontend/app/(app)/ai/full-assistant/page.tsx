@@ -10,6 +10,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useSpeechRecognition, useSpeechSynthesis, speechLangForLocale } from '@/lib/hooks/use-speech';
 import type { Locale } from '@/i18n';
@@ -93,6 +94,13 @@ export default function AiFullAssistantPage() {
     onError: () => setVoiceError(t('voiceRecognitionError')),
   });
   const synth = useSpeechSynthesis({ lang: speechLang });
+  // Prefer voices matching the current locale's language (e.g. "uk" for
+  // Ukrainian) — falls back to every installed voice if the browser/OS has
+  // none for that language, so the picker is never empty just because the
+  // interface locale doesn't have a matching system voice.
+  const langPrefix = speechLang.slice(0, 2).toLowerCase();
+  const matchingVoices = synth.voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+  const voiceOptions = matchingVoices.length > 0 ? matchingVoices : synth.voices;
 
   function toggleListening() {
     setVoiceError(null);
@@ -275,6 +283,20 @@ export default function AiFullAssistantPage() {
                   >
                     {voiceReplyEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                   </Button>
+                )}
+                {synth.supported && voiceReplyEnabled && voiceOptions.length > 0 && (
+                  <Select value={synth.voiceURI ?? undefined} onValueChange={synth.selectVoice}>
+                    <SelectTrigger className="h-8 w-40 text-xs">
+                      <SelectValue placeholder={t('voiceSelectPlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {voiceOptions.map((v) => (
+                        <SelectItem key={v.voiceURI} value={v.voiceURI}>
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
               </div>
               <Button type="submit" loading={askFullAssistant.isPending} disabled={!question.trim()}>

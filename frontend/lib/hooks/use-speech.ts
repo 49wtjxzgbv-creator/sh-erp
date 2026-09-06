@@ -127,10 +127,43 @@ export interface UseSpeechSynthesisOptions {
   lang: string;
 }
 
-/** Wraps native `speechSynthesis`. Cancels any in-flight utterance before starting a new one — without this, rapid consecutive assistant replies would queue up and read out of order relative to what's on screen. */
+/** localStorage, not a backend setting — `getVoices()` is per-browser/per-device (a voiceURI picked on one machine is meaningless on another), so there is nothing sensible to sync server-side here. */
+const VOICE_STORAGE_KEY = 'sh_tts_voice_uri';
+
+/**
+ * Wraps native `speechSynthesis`. Cancels any in-flight utterance before
+ * starting a new one — without this, rapid consecutive assistant replies
+ * would queue up and read out of order relative to what's on screen.
+ *
+ * Voice choice (2026-09-07 user request: "можна змінювати голос?") — the
+ * previous version always let the browser pick its own default voice for
+ * `lang`, which on a multi-voice browser (Chrome/Edge routinely ship 10-20+
+ * per language) is often not the one a user would have chosen themselves.
+ * `getVoices()` loads asynchronously on some browsers (empty on first call,
+ * populated once `voiceschanged` fires), so `voices` starts empty and
+ * updates when that event arrives. The selected `voiceURI` persists in
+ * localStorage so it survives a refresh, but is inherently local to this
+ * one browser/device — there is no cross-device "my preferred voice".
+ */
 export function useSpeechSynthesis({ lang }: UseSpeechSynthesisOptions) {
   const [speaking, setSpeaking] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceURI, setVoiceURI] = useState<string | null>(null);
   const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
+  useEffect(() => {
+    if (!supported) return;
+    const loadVoices = () => setVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    setVoiceURI(localStorage.getItem(VOICE_STORAGE_KEY));
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+  }, [supported]);
+
+  const selectVoice = useCallback((uri: string) => {
+    setVoiceURI(uri);
+    localStorage.setItem(VOICE_STORAGE_KEY, uri);
+  }, []);
 
   const speak = useCallback(
     (text: string) => {
@@ -138,12 +171,14 @@ export function useSpeechSynthesis({ lang }: UseSpeechSynthesisOptions) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = lang;
+      const voice = voices.find((v) => v.voiceURI === voiceURI);
+      if (voice) utterance.voice = voice;
       utterance.onstart = () => setSpeaking(true);
       utterance.onend = () => setSpeaking(false);
       utterance.onerror = () => setSpeaking(false);
       window.speechSynthesis.speak(utterance);
     },
-    [supported, lang],
+    [supported, lang, voices, voiceURI],
   );
 
   const cancel = useCallback(() => {
@@ -153,5 +188,5 @@ export function useSpeechSynthesis({ lang }: UseSpeechSynthesisOptions) {
 
   useEffect(() => () => { if (supported) window.speechSynthesis.cancel(); }, [supported]);
 
-  return { supported, speaking, speak, cancel };
+  return { supported, speaking, speak, cancel, voices, voiceURI, selectVoice };
 }
