@@ -154,7 +154,17 @@ export class FilesService {
     input: { filename: string; mimeType: string; body: Buffer },
   ): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
     const safeName = sanitizeFilename(input.filename);
-    const storageKey = `tenants/${user.companyId}/ai-exports/${randomUUID()}-${safeName}`;
+    // Real production bug (2026-09-06): AuditEvent.entityId is `@db.Uuid` —
+    // passing the full storage key (a path, not a UUID) as entityId made
+    // every export's audit INSERT fail Postgres's uuid-format check, which
+    // aborted the whole uploadEphemeralExport call (the R2 PUT above had
+    // already succeeded, but the caller never got a downloadUrl back) —
+    // both exportToExcel and exportToPdf share this one helper, so both
+    // failed identically. A dedicated id for the audit row, with the real
+    // storageKey kept in metadata for traceability, fixes this without a
+    // schema change.
+    const exportId = randomUUID();
+    const storageKey = `tenants/${user.companyId}/ai-exports/${exportId}-${safeName}`;
 
     await this.r2.send(
       new PutObjectCommand({
@@ -171,8 +181,8 @@ export class FilesService {
       actorUserId: user.userId,
       action: 'ai.export_generated',
       entityType: 'AiExport',
-      entityId: storageKey,
-      metadata: { filename: input.filename, mimeType: input.mimeType, sizeBytes: input.body.byteLength },
+      entityId: exportId,
+      metadata: { storageKey, filename: input.filename, mimeType: input.mimeType, sizeBytes: input.body.byteLength },
     });
 
     const downloadUrl = await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }), {

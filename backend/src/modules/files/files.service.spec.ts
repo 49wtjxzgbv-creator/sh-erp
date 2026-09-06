@@ -74,6 +74,23 @@ describe('FilesService', () => {
     await expect(service.confirmUpload(user, 'f1')).rejects.toThrow(BadRequestException);
   });
 
+  describe('uploadEphemeralExport (AI export.tools — exportToExcel/exportToPdf)', () => {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    it('logs an audit event with a real UUID entityId, not the storage key path — real bug, 2026-09-06: AuditEvent.entityId is @db.Uuid, so passing the storage key there made the audit INSERT fail Postgres\'s uuid check and abort the whole export', async () => {
+      service['r2'].send = jest.fn().mockResolvedValue({});
+
+      const result = await service.uploadEphemeralExport(user, { filename: 'звіт.csv', mimeType: 'text/csv', body: Buffer.from('a,b\n1,2') });
+
+      expect(result.downloadUrl).toBe('https://r2.example.com/signed');
+      const auditCall = audit.record.mock.calls[0][0];
+      expect(auditCall.entityId).toMatch(UUID_RE);
+      expect(auditCall.entityType).toBe('AiExport');
+      expect(auditCall.metadata.storageKey).toContain('tenants/c1/ai-exports/');
+      expect(auditCall.metadata.filename).toBe('звіт.csv');
+    });
+  });
+
   it('confirmUpload succeeds and logs an audit event when size matches', async () => {
     const fileAsset = { id: 'f1', storageKey: 'k', sizeBytes: 1000, domain: 'PRODUCT_PHOTO', entityType: 'Product', entityId: 'p1' };
     prisma.tenant.fileAsset.findUnique.mockResolvedValue(fileAsset);
