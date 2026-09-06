@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 
 export class UpdateCompanyAiSettingsDto {
   @ApiPropertyOptional({
@@ -25,4 +25,13 @@ export class UpdateCompanyAiSettingsDto {
   @IsInt()
   @Min(0)
   monthlyUsageQuota?: number;
+
+  @ApiPropertyOptional({
+    description:
+      '"Who we are / what we make" (2026-09-06) — prepended to every AI prompt so the model has baseline context about the business without the user re-explaining it every conversation. Pass an empty string to clear it.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  contextText?: string;
 }

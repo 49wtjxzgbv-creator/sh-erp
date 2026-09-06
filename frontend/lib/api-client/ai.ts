@@ -137,6 +137,8 @@ export interface CompanyAiSettings {
   provider: AiProviderName;
   hasCustomApiKey: boolean;
   monthlyUsageQuota: number | null;
+  /** "Who we are / what we make" (2026-09-06) — prepended to every AI prompt. '' when unset. */
+  contextText: string;
 }
 
 export interface UpdateCompanyAiSettingsInput {
@@ -144,6 +146,8 @@ export interface UpdateCompanyAiSettingsInput {
   /** Pass an empty string to clear a previously-set key and fall back to the platform key (Gemini only — DeepSeek has none). */
   apiKey?: string;
   monthlyUsageQuota?: number;
+  /** Pass an empty string to clear it. */
+  contextText?: string;
 }
 
 export function getAiSettings(): Promise<CompanyAiSettings> {

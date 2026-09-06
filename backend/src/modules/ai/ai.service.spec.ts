@@ -28,6 +28,7 @@ describe('AiService', () => {
       getEffectiveApiKey: jest.fn().mockResolvedValue('test-api-key'),
       getGeminiApiKey: jest.fn().mockResolvedValue('test-api-key'),
       getProvider: jest.fn().mockResolvedValue('gemini'),
+      getContextText: jest.fn().mockResolvedValue(''),
     };
     actionsService = {
       checkQuota: jest.fn().mockResolvedValue(undefined),
@@ -96,6 +97,37 @@ describe('AiService', () => {
 
       expect(settingsService.getGeminiApiKey).toHaveBeenCalledWith(user.companyId);
       expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('company context (2026-09-06 user request: "щоб діп сік розумів компанію")', () => {
+    it('prepends CompanyAiSettings.contextText, if set, to the askHelp prompt', async () => {
+      settingsService.getContextText.mockResolvedValue('Виробляємо конвеєрне обладнання для скляної промисловості.');
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'ok' }] } });
+
+      await service.askHelp(user, 'Питання');
+
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[0].text).toContain('=== ПРО КОМПАНІЮ ===\nВиробляємо конвеєрне обладнання для скляної промисловості.');
+    });
+
+    it('adds nothing to the prompt when contextText is unset — byte-for-byte the same as before this feature existed', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'ok' }] } });
+
+      await service.askHelp(user, 'Питання');
+
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[0].text).not.toContain('ПРО КОМПАНІЮ');
+    });
+
+    it('prepends it to askFullAssistant\'s system text too', async () => {
+      settingsService.getContextText.mockResolvedValue('Ми виробник конвеєрів.');
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'ok' }] } });
+
+      await service.askFullAssistant(user, { question: 'Питання' } as any);
+
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[0].text).toContain('Ми виробник конвеєрів.');
     });
   });
 

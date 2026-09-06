@@ -2761,6 +2761,16 @@ model CompanyAiSettings {
   apiKeyEncrypted   String? // present only if the company brings their own key (Phase 2 §8); null = platform-provided, metered (Gemini only — see `provider` above)
   monthlyUsageQuota Int?
 
+  // Free-text "who we are / what we make" blurb (2026-09-06 user request:
+  // "щоб діп сік розумів компанію що робить") — prepended to every
+  // company-facing AI prompt (askHelp/askFullAssistant/
+  // askAboutCustomerOrder; NOT translateJson/recognizeInvoice, which are
+  // mechanical tasks with no use for it) so the model has baseline context
+  // about the business without the user re-explaining it every
+  // conversation. Plain string, not a separate table — same "small,
+  // company-authored config" tier as CompanyRequisites.companyDetailsText.
+  contextText String?
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 

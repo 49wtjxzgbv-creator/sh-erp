@@ -7,6 +7,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { AiProviderName } from '@/lib/api-client/ai';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +36,7 @@ export default function AiSettingsPage() {
   const [provider, setProvider] = useState<AiProviderName>('gemini');
   const [apiKey, setApiKey] = useState('');
   const [monthlyUsageQuota, setMonthlyUsageQuota] = useState('');
+  const [contextText, setContextText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -42,6 +44,7 @@ export default function AiSettingsPage() {
     if (!settings) return;
     setProvider(settings.provider);
     setMonthlyUsageQuota(settings.monthlyUsageQuota != null ? String(settings.monthlyUsageQuota) : '');
+    setContextText(settings.contextText);
   }, [settings]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -53,6 +56,7 @@ export default function AiSettingsPage() {
         provider: settings && provider !== settings.provider ? provider : undefined,
         apiKey: apiKey === '' ? undefined : apiKey,
         monthlyUsageQuota: monthlyUsageQuota === '' ? undefined : Number(monthlyUsageQuota),
+        contextText: settings && contextText !== settings.contextText ? contextText : undefined,
       });
       setApiKey('');
       setSaved(true);
@@ -87,6 +91,18 @@ export default function AiSettingsPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-1.5">
+              <Label htmlFor="contextText">{t('contextText')}</Label>
+              <Textarea
+                id="contextText"
+                placeholder={t('contextTextPlaceholder')}
+                value={contextText}
+                onChange={(e) => setContextText(e.target.value)}
+                rows={4}
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground">{t('contextTextHint')}</p>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="provider">{t('provider')}</Label>
               <Select value={provider} onValueChange={(v) => setProvider(v as AiProviderName)}>

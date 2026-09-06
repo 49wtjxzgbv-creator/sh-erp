@@ -28,7 +28,13 @@ describe('AiSettingsService', () => {
     it('reports hasCustomApiKey: false and provider: gemini when nothing is configured', async () => {
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue(null);
       const result = await service.getSettings(user);
-      expect(result).toEqual({ companyId: 'c1', provider: 'gemini', hasCustomApiKey: false, monthlyUsageQuota: null });
+      expect(result).toEqual({ companyId: 'c1', provider: 'gemini', hasCustomApiKey: false, monthlyUsageQuota: null, contextText: '' });
+    });
+
+    it('reports the stored contextText, if any', async () => {
+      prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ contextText: 'Виробляємо конвеєри.', apiKeyEncrypted: null, monthlyUsageQuota: null });
+      const result = await service.getSettings(user);
+      expect(result.contextText).toBe('Виробляємо конвеєри.');
     });
 
     it('reports the stored provider once one has been picked', async () => {
@@ -56,6 +62,26 @@ describe('AiSettingsService', () => {
       const call = prisma.tenant.companyAiSettings.upsert.mock.calls[0][0];
       expect(call.update.apiKeyEncrypted).not.toBe('my-real-gemini-key');
       expect(call.update.apiKeyEncrypted).toContain(':'); // iv:tag:ciphertext shape
+    });
+
+    it('trims and stores a non-empty contextText', async () => {
+      prisma.tenant.companyAiSettings.upsert.mockResolvedValue({});
+      prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ contextText: 'Виробляємо конвеєри.' });
+
+      await service.updateSettings(user, { contextText: '  Виробляємо конвеєри.  ' });
+
+      const call = prisma.tenant.companyAiSettings.upsert.mock.calls[0][0];
+      expect(call.update.contextText).toBe('Виробляємо конвеєри.');
+    });
+
+    it('clears contextText to null when set to an empty/whitespace-only string', async () => {
+      prisma.tenant.companyAiSettings.upsert.mockResolvedValue({});
+      prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ contextText: null });
+
+      await service.updateSettings(user, { contextText: '   ' });
+
+      const call = prisma.tenant.companyAiSettings.upsert.mock.calls[0][0];
+      expect(call.update.contextText).toBeNull();
     });
 
     it('clears the key when apiKey is an empty string (falls back to the platform key)', async () => {
@@ -143,6 +169,18 @@ describe('AiSettingsService', () => {
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ provider: 'deepseek', apiKeyEncrypted: ciphertext });
 
       expect(await service.getGeminiApiKey('c1')).toBe('platform-key');
+    });
+  });
+
+  describe('getContextText (2026-09-06 user request: "щоб діп сік розумів компанію")', () => {
+    it('returns an empty string, not null, when unset', async () => {
+      prisma.tenant.companyAiSettings.findUnique.mockResolvedValue(null);
+      expect(await service.getContextText('c1')).toBe('');
+    });
+
+    it('returns the stored blurb', async () => {
+      prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ contextText: 'Виробляємо конвеєри для скляної промисловості.' });
+      expect(await service.getContextText('c1')).toBe('Виробляємо конвеєри для скляної промисловості.');
     });
   });
 });

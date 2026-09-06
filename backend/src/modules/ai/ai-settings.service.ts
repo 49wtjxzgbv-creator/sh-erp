@@ -33,6 +33,7 @@ export class AiSettingsService {
       provider: (settings?.provider as AiProviderName) ?? 'gemini',
       hasCustomApiKey: !!settings?.apiKeyEncrypted,
       monthlyUsageQuota: settings?.monthlyUsageQuota ?? null,
+      contextText: settings?.contextText ?? '',
     };
   }
 
@@ -46,6 +47,9 @@ export class AiSettingsService {
     }
     if (dto.monthlyUsageQuota !== undefined) {
       data.monthlyUsageQuota = dto.monthlyUsageQuota;
+    }
+    if (dto.contextText !== undefined) {
+      data.contextText = dto.contextText.trim() === '' ? null : dto.contextText.trim();
     }
 
     await this.prisma.tenant.companyAiSettings.upsert({
@@ -64,10 +68,17 @@ export class AiSettingsService {
         providerChanged: dto.provider !== undefined,
         apiKeyChanged: dto.apiKey !== undefined,
         monthlyUsageQuotaChanged: dto.monthlyUsageQuota !== undefined,
+        contextTextChanged: dto.contextText !== undefined,
       },
     });
 
     return this.getSettings(user);
+  }
+
+  /** The company's "who we are / what we make" blurb (2026-09-06), if they've set one — see CompanyAiSettings.contextText's own schema comment for where this gets used. Empty string when unset, never null, so every call site can just prepend it without a null-check. */
+  async getContextText(companyId: string): Promise<string> {
+    const settings = await this.prisma.tenant.companyAiSettings.findUnique({ where: { companyId } });
+    return settings?.contextText ?? '';
   }
 
   /** Which vendor to call for this company — see CompanyAiSettings.provider's own schema comment. */

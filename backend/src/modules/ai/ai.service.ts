@@ -54,6 +54,23 @@ export class AiService {
     return provider === 'deepseek' ? this.deepSeekProvider : this.geminiProvider;
   }
 
+  /**
+   * "Хто ми / чим займаємось" (2026-09-06 user request) — the company's own
+   * CompanyAiSettings.contextText, if set, formatted as its own section so
+   * the model can't confuse it with the instruction/order-data sections
+   * around it. Returns '' (not injected at all) when unset, so a company
+   * that never fills this in sees byte-for-byte the same prompt as before
+   * this feature existed. Deliberately NOT added to translateJson
+   * (mechanical field-by-field translation, no use for business context)
+   * or recognizeInvoice (structured extraction from an image, same
+   * reasoning).
+   */
+  private async companyContextBlock(companyId: string): Promise<string> {
+    const contextText = await this.settingsService.getContextText(companyId);
+    if (!contextText) return '';
+    return `\n\n=== ПРО КОМПАНІЮ ===\n${contextText}`;
+  }
+
   async askHelp(user: RequestUser, question: string) {
     const provider = await this.resolveProvider(user.companyId);
     const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
@@ -64,7 +81,9 @@ export class AiService {
       'Відповідай КОРОТКО, українською мовою, спираючись ВИКЛЮЧНО на інструкцію нижче. ' +
       'Не вигадуй кнопок, розділів чи функцій, яких немає в інструкції. ' +
       'Якщо відповіді в інструкції немає — чесно скажи, що не маєш такої інформації, і порадь звернутись до адміністратора. ' +
-      'Не обговорюй нічого, що не стосується роботи із застосунком.\n\n=== ІНСТРУКЦІЯ ===\n' +
+      'Не обговорюй нічого, що не стосується роботи із застосунком.' +
+      (await this.companyContextBlock(user.companyId)) +
+      '\n\n=== ІНСТРУКЦІЯ ===\n' +
       HELP_MANUAL_TEXT +
       '\n\n=== ЗАПИТАННЯ КОРИСТУВАЧА ===\n' +
       question;
@@ -133,7 +152,9 @@ export class AiService {
       'Ти — асистент системи складського обліку й виробництва "SH ERP", який допомагає з КОНКРЕТНИМ замовленням клієнта. ' +
       'Відповідай українською мовою, по суті, спираючись на дані нижче. ' +
       'Якщо просять скласти лист, звіт чи документ — просто напиши повний текст цього документа, без зайвих коментарів навколо. ' +
-      'Якщо запитують щось, чого немає в даних нижче — чесно скажи, що такої інформації не маєш.\n\n' +
+      'Якщо запитують щось, чого немає в даних нижче — чесно скажи, що такої інформації не маєш.' +
+      (await this.companyContextBlock(user.companyId)) +
+      '\n\n' +
       context +
       '\n\n=== ЗАПИТАННЯ ===\n' +
       question;
@@ -181,7 +202,8 @@ export class AiService {
       'У тебе є інструменти для отримання РЕАЛЬНИХ даних — використовуй їх щоразу, коли потрібні конкретні дані, не вигадуй нічого сам. ' +
       'Деякі інструменти є КРИТИЧНИМИ діями (зміна залишків тощо) — вони НІКОЛИ не виконуються одразу, система сама покаже користувачу підтвердження; ти просто повідомляєш, що саме пропонуєш зробити. ' +
       "Якщо користувач прикріпив зображення чи документ — уважно проаналізуй його вміст і дай корисну відповідь по суті. " +
-      'Відповідай українською мовою, по суті, стисло. Коли створюєш файл — обов\'язково згадай посилання на нього.';
+      'Відповідай українською мовою, по суті, стисло. Коли створюєш файл — обов\'язково згадай посилання на нього.' +
+      (await this.companyContextBlock(user.companyId));
 
     let contents: AiMessage[] = [];
     if (dto.historyJson) {
