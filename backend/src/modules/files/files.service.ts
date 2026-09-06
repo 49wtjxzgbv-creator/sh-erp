@@ -489,22 +489,22 @@ export class FilesService {
 }
 
 /**
- * Real bug (2026-09-06 user report): the old ASCII-only version
- * (`[^a-zA-Z0-9._-]` → `_`) turned an entire Cyrillic title into a wall of
- * underscores ("________________________.txt") — every letter of e.g.
- * "Звіт по залишках" is outside that allowlist. S3/R2 keys are UTF-8-safe
- * (the AWS SDK URI-encodes the Key for the actual request), so there's no
- * technical need to strip non-Latin letters — only characters that would
- * actually break an S3 key or a `Content-Disposition` header value need
- * escaping. Spaces still become underscores, same as before, to avoid raw
- * spaces in a storage key/URL.
+ * Deliberately ASCII-only, back to the original behavior (2026-09-06:
+ * briefly relaxed this to keep Cyrillic letters, which immediately broke
+ * presigned R2 downloads with a raw `AccessDenied` — a non-ASCII object
+ * key/`Content-Disposition` value change the exact bytes a SigV4 signature
+ * covers, and something in the URL/header round-trip between generating
+ * the presigned URL and R2 receiving the GET re-encodes them differently,
+ * so the signature no longer matches what R2 recomputes. Reverted: ASCII-
+ * safe keys are the proven-reliable choice here). The real, human-readable
+ * (possibly Cyrillic) filename still reaches the user correctly — see
+ * `uploadEphemeralExport`'s `ResponseContentDisposition`, whose `filename*`
+ * RFC 5987 param percent-encodes it into plain ASCII, which every current
+ * browser honors for the actual downloaded filename regardless of what
+ * this function does to the underlying storage key.
  */
 function sanitizeFilename(name: string): string {
-  return name
-    .replace(/\s+/g, '_')
-    .replace(/[\/\\?%*:|"<>\x00-\x1F]/g, '_')
-    .trim()
-    .slice(-140); // keep the tail (extension survives truncation of an overly long name)
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-140); // keep the tail (extension survives truncation of an overly long name)
 }
 
 /** Reduces an ExcelJS cell value to a plain JSON-safe primitive for the preview response — formulas resolve to their cached result, rich text/hyperlinks to their display text, dates to an ISO string. */

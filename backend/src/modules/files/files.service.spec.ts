@@ -91,7 +91,7 @@ describe('FilesService', () => {
       expect(auditCall.metadata.filename).toBe('звіт.csv');
     });
 
-    it('keeps Cyrillic letters in the storage key instead of collapsing them to underscores — real bug, 2026-09-06: the old ASCII-only sanitizer turned a whole Ukrainian title into "________________________.txt"', async () => {
+    it('keeps the storage key ASCII-only even for a Cyrillic title — real regression, 2026-09-06: briefly letting non-ASCII into the R2 object key broke presigned downloads with a raw AccessDenied (SigV4 signature mismatch), so this reverted on purpose; the real name still reaches the user via Content-Disposition below, not the key', async () => {
       service['r2'].send = jest.fn().mockResolvedValue({});
 
       const result = await service.uploadEphemeralExport(user, {
@@ -102,8 +102,7 @@ describe('FilesService', () => {
 
       expect(result.downloadUrl).toBe('https://r2.example.com/signed');
       const auditCall = audit.record.mock.calls[0][0];
-      expect(auditCall.metadata.storageKey).toContain('Звіт_по_залишках_на_складі.txt');
-      expect(auditCall.metadata.storageKey).not.toMatch(/_{5,}/); // no wall-of-underscores regression
+      expect(auditCall.metadata.storageKey).toMatch(/^tenants\/c1\/ai-exports\/[0-9a-f-]+-_+\.txt$/);
     });
 
     it('sets Content-Disposition: attachment with the real UTF-8 filename, so the link downloads instead of opening inline', async () => {
