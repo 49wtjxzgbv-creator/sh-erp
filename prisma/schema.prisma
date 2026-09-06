@@ -2747,8 +2747,18 @@ model CompanyRequisites {
 // ============================================================================
 
 model CompanyAiSettings {
-  companyId         String  @id @db.Uuid
-  apiKeyEncrypted   String? // present only if the company brings their own key (Phase 2 §8); null = platform-provided, metered
+  companyId String @id @db.Uuid
+
+  // Which vendor `AiService` calls for this company (2026-09-06, DeepSeek
+  // support) — 'gemini' | 'deepseek', same plain-String-not-enum
+  // convention as Company.locale. Only ONE is active at a time (a switch,
+  // not simultaneous multi-provider use) — apiKeyEncrypted below always
+  // means "the key for whichever provider this is", so switching providers
+  // means re-entering the new provider's own key. No platform-provided
+  // fallback for 'deepseek' (AI_PLATFORM_API_KEY is a Gemini key) — see
+  // AiSettingsService#getEffectiveApiKey.
+  provider          String  @default("gemini")
+  apiKeyEncrypted   String? // present only if the company brings their own key (Phase 2 §8); null = platform-provided, metered (Gemini only — see `provider` above)
   monthlyUsageQuota Int?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)

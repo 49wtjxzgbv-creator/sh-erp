@@ -4,6 +4,7 @@ import { AiService } from './ai.service';
 describe('AiService', () => {
   let service: AiService;
   let provider: any;
+  let deepSeekProvider: any;
   let prisma: any;
   let settingsService: any;
   let actionsService: any;
@@ -14,6 +15,7 @@ describe('AiService', () => {
 
   beforeEach(() => {
     provider = { generateContent: jest.fn() };
+    deepSeekProvider = { generateContent: jest.fn() };
     prisma = {
       tenant: {
         role: { findUnique: jest.fn().mockResolvedValue({ permissions: [] }) },
@@ -22,7 +24,11 @@ describe('AiService', () => {
         product: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
-    settingsService = { getEffectiveApiKey: jest.fn().mockResolvedValue('test-api-key') };
+    settingsService = {
+      getEffectiveApiKey: jest.fn().mockResolvedValue('test-api-key'),
+      getGeminiApiKey: jest.fn().mockResolvedValue('test-api-key'),
+      getProvider: jest.fn().mockResolvedValue('gemini'),
+    };
     actionsService = {
       checkQuota: jest.fn().mockResolvedValue(undefined),
       logUsage: jest.fn().mockResolvedValue(undefined),
@@ -34,7 +40,43 @@ describe('AiService', () => {
     assembliesService = { calculateCost: jest.fn() };
     customerOrdersService = { findOne: jest.fn() };
 
-    service = new AiService(provider, prisma, settingsService, actionsService, toolsRegistry, assembliesService, customerOrdersService);
+    service = new AiService(provider, deepSeekProvider, prisma, settingsService, actionsService, toolsRegistry, assembliesService, customerOrdersService);
+  });
+
+  describe('provider routing (2026-09-06, DeepSeek support)', () => {
+    it('routes askHelp through DeepSeek when the company picked it, using getEffectiveApiKey (not getGeminiApiKey)', async () => {
+      settingsService.getProvider.mockResolvedValue('deepseek');
+      settingsService.getEffectiveApiKey.mockResolvedValue('deepseek-key');
+      deepSeekProvider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Відповідь від DeepSeek' }] } });
+
+      const result = await service.askHelp(user, 'Як додати товар?');
+
+      expect(result).toEqual({ answer: 'Відповідь від DeepSeek' });
+      expect(provider.generateContent).not.toHaveBeenCalled();
+      const [, apiKey] = deepSeekProvider.generateContent.mock.calls[0];
+      expect(apiKey).toBe('deepseek-key');
+    });
+
+    it('always routes askFullAssistant through Gemini via getGeminiApiKey, even when the company picked DeepSeek', async () => {
+      settingsService.getProvider.mockResolvedValue('deepseek');
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Ось відповідь' }] } });
+
+      await service.askFullAssistant(user, { question: 'Скільки товару X?' } as any);
+
+      expect(settingsService.getGeminiApiKey).toHaveBeenCalledWith(user.companyId);
+      expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
+      expect(provider.generateContent).toHaveBeenCalled();
+    });
+
+    it('always routes recognizeInvoice through Gemini via getGeminiApiKey, even when the company picked DeepSeek', async () => {
+      settingsService.getProvider.mockResolvedValue('deepseek');
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '[]' }] } });
+
+      await service.recognizeInvoice(user, 'base64...', 'image/jpeg');
+
+      expect(settingsService.getGeminiApiKey).toHaveBeenCalledWith(user.companyId);
+      expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
+    });
   });
 
   describe('askHelp — instruction-only, zero live-data access (Phase 1 §3.7)', () => {

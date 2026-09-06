@@ -128,15 +128,20 @@ export function recognizeInvoice(base64Image: string, mimeType: string): Promise
   return apiClient.post<InvoiceRecognitionLine[]>('ai/recognize-invoice', { base64Image, mimeType });
 }
 
+/** 2026-09-06: choice of AI vendor — only 'gemini' has a platform-provided fallback key; 'deepseek' always needs the company's own key (AiSettingsService#getEffectiveApiKey). */
+export type AiProviderName = 'gemini' | 'deepseek';
+
 /** Never carries the actual key — `hasCustomApiKey` is the only signal, matching the backend's own never-return-the-key contract. */
 export interface CompanyAiSettings {
   companyId: string;
+  provider: AiProviderName;
   hasCustomApiKey: boolean;
   monthlyUsageQuota: number | null;
 }
 
 export interface UpdateCompanyAiSettingsInput {
-  /** Pass an empty string to clear a previously-set key and fall back to the platform key. */
+  provider?: AiProviderName;
+  /** Pass an empty string to clear a previously-set key and fall back to the platform key (Gemini only — DeepSeek has none). */
   apiKey?: string;
   monthlyUsageQuota?: number;
 }

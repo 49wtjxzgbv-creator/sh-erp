@@ -1,11 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class UpdateCompanyAiSettingsDto {
   @ApiPropertyOptional({
+    enum: ['gemini', 'deepseek'],
+    description: 'Which AI vendor to use (2026-09-06) — switching does NOT carry the API key over, since each vendor needs its own key.',
+  })
+  @IsOptional()
+  @IsIn(['gemini', 'deepseek'])
+  provider?: 'gemini' | 'deepseek';
+
+  @ApiPropertyOptional({
     description:
-      'Bring-your-own Gemini API key (Phase 2 §8) — encrypted at rest before storage, never returned in plaintext by any read endpoint. ' +
-      'Pass an empty string to clear it and fall back to the platform-provided key.',
+      "Bring-your-own API key for the currently selected `provider` (Phase 2 §8) — encrypted at rest before storage, never returned in plaintext by any read endpoint. " +
+      'Pass an empty string to clear it (Gemini falls back to the platform-provided key; DeepSeek has none, so this becomes non-functional until a new key is set).',
   })
   @IsOptional()
   @IsString()

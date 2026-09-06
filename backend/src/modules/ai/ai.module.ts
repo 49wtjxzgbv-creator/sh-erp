@@ -9,8 +9,8 @@ import { AiActionsService } from './ai-actions.service';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { AiSettingsService } from './ai-settings.service';
-import { AI_PROVIDER_PORT } from './providers/ai-provider.port';
 import { GeminiAdapter } from './providers/gemini.adapter';
+import { DeepSeekAdapter } from './providers/deepseek.adapter';
 import { AI_TOOLS } from './tools/ai-tool.interface';
 import { AdjustProductStockTool } from './tools/adjust-stock.tool';
 import { GetAssemblyDetailTool, GetLowStockProductsTool, SearchAssembliesTool, SearchProductsTool } from './tools/catalog.tools';
@@ -41,14 +41,16 @@ const TOOL_PROVIDERS = [
 ];
 
 /**
- * AI module (Phase 1 §3.7 / Phase 2 §8, roadmap Module 11). Provider-abstracted
- * (`AiProviderPort` / `GeminiAdapter`, the only implementation so far),
- * function-calling tool registry (16 tools, ported from `AI_TOOLS_` in
- * `AI_FullAssistant.gs`), and the durable `PendingAiAction` critical-action
- * confirmation flow that replaces the legacy in-memory `needs_confirmation`
- * pattern. Imports every domain module whose service a tool reuses rather
- * than re-implementing that logic — see each tool file's header comment for
- * which one and why.
+ * AI module (Phase 1 §3.7 / Phase 2 §8, roadmap Module 11). Provider-
+ * abstracted (`AiProviderPort`) with two implementations — `GeminiAdapter`
+ * (full feature set: text, vision, function-calling) and `DeepSeekAdapter`
+ * (2026-09-06, plain text only) — see AiService's own header comment for
+ * how it picks between them per company/per call. Function-calling tool
+ * registry (16 tools, ported from `AI_TOOLS_` in `AI_FullAssistant.gs`),
+ * and the durable `PendingAiAction` critical-action confirmation flow that
+ * replaces the legacy in-memory `needs_confirmation` pattern. Imports every
+ * domain module whose service a tool reuses rather than re-implementing
+ * that logic — see each tool file's header comment for which one and why.
  */
 @Module({
   imports: [BomModule, SalesModule, InventoryModule, HrModule, ReportsModule, FilesModule],
@@ -58,7 +60,8 @@ const TOOL_PROVIDERS = [
     AiActionsService,
     AiSettingsService,
     AiToolsRegistry,
-    { provide: AI_PROVIDER_PORT, useClass: GeminiAdapter },
+    GeminiAdapter,
+    DeepSeekAdapter,
     ...TOOL_PROVIDERS,
     {
       provide: AI_TOOLS,

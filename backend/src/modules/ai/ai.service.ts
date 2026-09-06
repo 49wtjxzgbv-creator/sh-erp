@@ -1,11 +1,13 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { CodedBadRequestException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { CustomerOrdersService } from '../sales/customer-orders.service';
 import { HELP_MANUAL_TEXT } from './help-manual.constant';
-import { AI_PROVIDER_PORT, AiGenerateResult, AiMessage, AiProviderException, AiProviderPort, AiToolDeclaration } from './providers/ai-provider.port';
+import { AiGenerateResult, AiMessage, AiProviderException, AiProviderPort, AiToolDeclaration } from './providers/ai-provider.port';
+import { GeminiAdapter } from './providers/gemini.adapter';
+import { DeepSeekAdapter } from './providers/deepseek.adapter';
 import { AiActionsService } from './ai-actions.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiToolsRegistry } from './tools/tools.registry';
@@ -22,11 +24,22 @@ const MAX_TOOL_LOOP_ITERATIONS = 6; // mirrors the legacy askFullAssistant's max
  *    tool catalogue, with the critical-action confirmation hand-off.
  *  - `askAboutCustomerOrder`: narrowly-scoped Q&A over one specific order's
  *    real data.
+ *
+ * Provider routing (2026-09-06, DeepSeek support): plain single-turn text
+ * calls (`askHelp`, `askAboutCustomerOrder`, `translateJson`) go through
+ * `resolveProvider()`, which honors the company's own `CompanyAiSettings.
+ * provider` choice. `askFullAssistant` (function-calling) and
+ * `recognizeInvoice` (image vision) ALWAYS use `GeminiAdapter` directly,
+ * regardless of that setting — `DeepSeekAdapter` doesn't implement either
+ * capability yet (explicit user decision to ship the simple functions
+ * first), so routing those two through the company's choice would silently
+ * break them the moment someone picked DeepSeek.
  */
 @Injectable()
 export class AiService {
   constructor(
-    @Inject(AI_PROVIDER_PORT) private readonly provider: AiProviderPort,
+    private readonly geminiProvider: GeminiAdapter,
+    private readonly deepSeekProvider: DeepSeekAdapter,
     private readonly prisma: PrismaService,
     private readonly settingsService: AiSettingsService,
     private readonly actionsService: AiActionsService,
@@ -35,7 +48,13 @@ export class AiService {
     private readonly customerOrdersService: CustomerOrdersService,
   ) {}
 
+  private async resolveProvider(companyId: string): Promise<AiProviderPort> {
+    const provider = await this.settingsService.getProvider(companyId);
+    return provider === 'deepseek' ? this.deepSeekProvider : this.geminiProvider;
+  }
+
   async askHelp(user: RequestUser, question: string) {
+    const provider = await this.resolveProvider(user.companyId);
     const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
@@ -49,7 +68,7 @@ export class AiService {
       '\n\n=== ЗАПИТАННЯ КОРИСТУВАЧА ===\n' +
       question;
 
-    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
+    const result = await this.generateContentOrThrow(provider, [{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
     await this.actionsService.logUsage(user, 'help-assistant', result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text;
@@ -57,6 +76,7 @@ export class AiService {
   }
 
   async askAboutCustomerOrder(user: RequestUser, customerOrderId: string, question: string) {
+    const provider = await this.resolveProvider(user.companyId);
     const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
@@ -117,7 +137,7 @@ export class AiService {
       '\n\n=== ЗАПИТАННЯ ===\n' +
       question;
 
-    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
+    const result = await this.generateContentOrThrow(provider, [{ role: 'user', parts: [{ text: systemPrompt }] }], apiKey);
     await this.actionsService.logUsage(user, 'customer-order-assistant', result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text;
@@ -135,7 +155,9 @@ export class AiService {
    * of living only in the returned `history` blob.
    */
   async askFullAssistant(user: RequestUser, dto: AskFullAssistantDto) {
-    const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
+    // Always Gemini — function-calling isn't implemented in DeepSeekAdapter
+    // yet, see this class's own header comment.
+    const apiKey = await this.settingsService.getGeminiApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
     const permissions = await loadPermissionSet(this.prisma, user);
@@ -170,7 +192,7 @@ export class AiService {
     let totalTokens = 0;
 
     for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
-      const result = await this.generateContentOrThrow(contents, apiKey, toolDeclarations);
+      const result = await this.generateContentOrThrow(this.geminiProvider, contents, apiKey, toolDeclarations);
       if (result.usage?.totalTokens) totalTokens += result.usage.totalTokens;
       contents.push(result.message);
 
@@ -227,7 +249,9 @@ export class AiService {
    * line items, fuzzy-matched against existing Products by name.
    */
   async recognizeInvoice(user: RequestUser, base64Image: string, mimeType: string) {
-    const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
+    // Always Gemini — this needs image vision, which DeepSeekAdapter
+    // doesn't support (see this class's own header comment).
+    const apiKey = await this.settingsService.getGeminiApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
     const prompt =
@@ -238,6 +262,7 @@ export class AiService {
       'Якщо кількість не вдається розпізнати — став 1. Накладна може бути українською, англійською або німецькою мовою.';
 
     const result = await this.generateContentOrThrow(
+      this.geminiProvider,
       [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Image } }] }],
       apiKey,
     );
@@ -289,6 +314,7 @@ export class AiService {
     const entries = Object.entries(fields).filter(([, v]) => v != null && v.trim() !== '') as [string, string][];
     if (entries.length === 0) return fields;
 
+    const provider = await this.resolveProvider(user.companyId);
     const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
@@ -301,7 +327,7 @@ export class AiService {
       'Поверни СУВОРО валідний JSON-об\'єкт з тими самими ключами, без жодного тексту до чи після нього, без markdown-огортання.\n\n' +
       JSON.stringify(input);
 
-    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
+    const result = await this.generateContentOrThrow(provider, [{ role: 'user', parts: [{ text: prompt }] }], apiKey);
     await this.actionsService.logUsage(user, 'quotation-translate', result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text ?? '';
@@ -328,9 +354,9 @@ export class AiService {
    * server error" for the frontend. Every call site must go through this so
    * the real reason reaches the user instead of being swallowed.
    */
-  private async generateContentOrThrow(contents: AiMessage[], apiKey: string, tools?: AiToolDeclaration[]): Promise<AiGenerateResult> {
+  private async generateContentOrThrow(provider: AiProviderPort, contents: AiMessage[], apiKey: string, tools?: AiToolDeclaration[]): Promise<AiGenerateResult> {
     try {
-      return await this.provider.generateContent(contents, apiKey, tools);
+      return await provider.generateContent(contents, apiKey, tools);
     } catch (e) {
       if (e instanceof AiProviderException) throw new CodedBadRequestException('AI_PROVIDER_ERROR', e.message);
       throw e;

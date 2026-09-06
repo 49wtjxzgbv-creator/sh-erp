@@ -4,13 +4,17 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAiSettings, useUpdateAiSettings } from '@/lib/hooks/use-ai';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import type { AiProviderName } from '@/lib/api-client/ai';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
+
+const PROVIDERS: AiProviderName[] = ['gemini', 'deepseek'];
 
 /**
  * Bring-your-own Gemini API key + monthly usage quota
@@ -28,6 +32,7 @@ export default function AiSettingsPage() {
   const { data: settings, isLoading } = useAiSettings();
   const updateSettings = useUpdateAiSettings();
 
+  const [provider, setProvider] = useState<AiProviderName>('gemini');
   const [apiKey, setApiKey] = useState('');
   const [monthlyUsageQuota, setMonthlyUsageQuota] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +40,7 @@ export default function AiSettingsPage() {
 
   useEffect(() => {
     if (!settings) return;
+    setProvider(settings.provider);
     setMonthlyUsageQuota(settings.monthlyUsageQuota != null ? String(settings.monthlyUsageQuota) : '');
   }, [settings]);
 
@@ -44,6 +50,7 @@ export default function AiSettingsPage() {
     setSaved(false);
     try {
       await updateSettings.mutateAsync({
+        provider: settings && provider !== settings.provider ? provider : undefined,
         apiKey: apiKey === '' ? undefined : apiKey,
         monthlyUsageQuota: monthlyUsageQuota === '' ? undefined : Number(monthlyUsageQuota),
       });
@@ -80,6 +87,24 @@ export default function AiSettingsPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-1.5">
+              <Label htmlFor="provider">{t('provider')}</Label>
+              <Select value={provider} onValueChange={(v) => setProvider(v as AiProviderName)}>
+                <SelectTrigger id="provider" className="max-w-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDERS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {t(`provider${p === 'gemini' ? 'Gemini' : 'DeepSeek'}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {provider === 'deepseek' ? t('providerDeepSeekHint') : t('providerGeminiHint')}
+              </p>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="apiKey">{t('apiKey')}</Label>
               <div className="flex items-center gap-2">
