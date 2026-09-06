@@ -19,6 +19,37 @@ interface ChatMessage {
   text: string;
 }
 
+const URL_RE = /https?:\/\/[^\s<>()"']+/g;
+
+/**
+ * The assistant's own system prompt tells it to "обов'язково згадай
+ * посилання" whenever a tool (exportToExcel/exportToPdf) creates a file —
+ * the link IS the file, there's no separate attachment mechanism. Plain
+ * `{m.text}` rendering left that URL as inert text a user had to manually
+ * select and copy (real user report, 2026-09-06: "він дає якесь посилання
+ * а не файл") — this splits on bare URLs and renders them as real,
+ * clickable/downloadable links instead, leaving everything else as plain
+ * text exactly as before.
+ */
+function LinkifiedText({ text }: { text: string }) {
+  const parts = text.split(URL_RE);
+  const urls = text.match(URL_RE) ?? [];
+  return (
+    <>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {part}
+          {i < urls.length && (
+            <a href={urls[i]} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-80">
+              {urls[i]}
+            </a>
+          )}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /**
  * The full function-calling assistant (`askFullAssistant`). The opaque
  * `historyJson` string from each response is stored and echoed back
@@ -168,7 +199,7 @@ export default function AiFullAssistantPage() {
               m.role === 'system' && 'mx-auto bg-secondary text-secondary-foreground text-xs italic',
             )}
           >
-            {m.text}
+            <LinkifiedText text={m.text} />
           </div>
         ))}
       </div>

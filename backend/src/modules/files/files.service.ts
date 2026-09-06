@@ -185,9 +185,22 @@ export class FilesService {
       metadata: { storageKey, filename: input.filename, mimeType: input.mimeType, sizeBytes: input.body.byteLength },
     });
 
-    const downloadUrl = await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }), {
-      expiresIn: DOWNLOAD_URL_TTL_SECONDS,
-    });
+    // `ResponseContentDisposition: attachment` (2026-09-06 user report:
+    // "він дає якесь посилання а не файл") — without it, R2/S3 serves the
+    // object inline, so opening the link just showed raw CSV/text in the
+    // browser tab instead of downloading it. `filename*` carries the real
+    // (possibly Cyrillic) name via RFC 5987 encoding; the plain `filename`
+    // fallback is the already-ASCII-sanitized `safeName` for browsers/tools
+    // that don't understand `filename*`.
+    const downloadUrl = await getSignedUrl(
+      this.r2,
+      new GetObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: storageKey,
+        ResponseContentDisposition: `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(input.filename)}`,
+      }),
+      { expiresIn: DOWNLOAD_URL_TTL_SECONDS },
+    );
 
     return { downloadUrl, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS };
   }
