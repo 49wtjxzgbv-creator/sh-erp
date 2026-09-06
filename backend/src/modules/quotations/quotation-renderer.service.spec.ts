@@ -117,9 +117,9 @@ describe('QuotationRendererService', () => {
     expect(html).toContain('#6423d0');
   });
 
-  it('always ends with the sh-erp.com / by Shyryng footer, matching the rest of the app\'s printed documents', () => {
+  it('always ends with the sh-erp.pro / by Shyryng footer, matching the rest of the app\'s printed documents', () => {
     const html = service.renderHtml(baseData());
-    expect(html).toContain('sh-erp.com');
+    expect(html).toContain('sh-erp.pro');
     expect(html).toContain('by Shyryng');
   });
 });

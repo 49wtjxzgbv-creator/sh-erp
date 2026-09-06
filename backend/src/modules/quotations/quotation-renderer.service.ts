@@ -213,7 +213,7 @@ export class QuotationRendererService {
   ${termsBlocks ? `<div class="terms">${termsBlocks}</div>` : ''}
 
   <div class="footer">
-    <p class="footer-brand">sh-erp.com</p>
+    <p class="footer-brand">sh-erp.pro</p>
     <p class="footer-tagline">by Shyryng</p>
   </div>
 </body>
