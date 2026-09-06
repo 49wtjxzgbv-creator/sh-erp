@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { CustomerOrdersService } from '../sales/customer-orders.service';
 import { FilesService } from '../files/files.service';
+import { AiService } from '../ai/ai.service';
 import { DocumentNumberingService } from './document-numbering.service';
 import { QuotationPricingService } from './quotation-pricing.service';
 import { QuotationPdfService } from './quotation-pdf.service';
@@ -42,6 +43,7 @@ export class QuotationsService {
     private readonly customerOrdersService: CustomerOrdersService,
     private readonly rendererService: QuotationRendererService,
     private readonly filesService: FilesService,
+    private readonly aiService: AiService,
   ) {}
 
   async create(user: RequestUser, dto: CreateQuotationDto) {
@@ -446,6 +448,7 @@ export class QuotationsService {
       createdAt: Date;
       validUntil: Date | null;
       currency: string;
+      locale: string;
       subtotal: unknown;
       discountAmount: unknown;
       total: unknown;
@@ -544,6 +547,7 @@ export class QuotationsService {
       createdAt: version.createdAt,
       validUntil: version.validUntil,
       currency: version.currency,
+      locale: version.locale as any,
       customer: {
         name: customer?.name ?? '',
         contactPerson: customer?.contactPerson ?? null,
@@ -623,6 +627,87 @@ export class QuotationsService {
       entityType: 'Quotation',
       entityId: quotationId,
       after: { versionNumber: newVersion.versionNumber, copiedFromVersionNumber: current.versionNumber },
+    });
+
+    return this.findOne(user, quotationId);
+  }
+
+  /**
+   * Language switcher (2026-09-06 user request): "створювати на одній мові,
+   * перекладати на іншу" — always appends a brand-new version (never
+   * mutates the current one, whether it's a DRAFT or already SENT/locked),
+   * with every free-text field the user hand-typed (item names/
+   * descriptions/units, payment/delivery/installation terms, notes)
+   * AI-translated via AiService#translateJson in one batched call. Pricing,
+   * quantities, kind/assemblyId/productId pointers, and below-cost approval
+   * are copied verbatim — translation never touches money. The rendered
+   * PDF's own chrome labels ("Клієнт", "Кількість", ...) switch too, via
+   * QuotationRenderData.locale in QuotationRendererService — those are a
+   * static per-locale dictionary, not AI, since they're fixed boilerplate.
+   */
+  async translateVersion(user: RequestUser, quotationId: string, targetLocale: string) {
+    const current = await this.getCurrentVersion(quotationId);
+    if (current.locale === targetLocale) {
+      throw new CodedConflictException('QUOTATION_TRANSLATE_SAME_LOCALE', 'This version is already in the requested language.');
+    }
+    const items = await this.prisma.tenant.quotationVersionItem.findMany({ where: { quotationVersionId: current.id }, orderBy: { sortOrder: 'asc' } });
+
+    // One batched AI call for every free-text field on the version: terms/
+    // notes (fixed keys) plus one name/description/unit triplet per item
+    // (indexed keys) — see AiService#translateJson's own header comment for
+    // why this is a single request rather than N.
+    const fields: Record<string, string | null> = {
+      paymentTerms: current.paymentTerms,
+      deliveryTerms: current.deliveryTerms,
+      installationTerms: current.installationTerms,
+      notes: current.notes,
+    };
+    items.forEach((item, i) => {
+      fields[`item_${i}_name`] = item.nameSnapshot;
+      fields[`item_${i}_description`] = item.descriptionSnapshot;
+      fields[`item_${i}_unit`] = item.unit;
+    });
+    const translated = await this.aiService.translateJson(user, fields, targetLocale);
+
+    const newVersion = await this.prisma.tenant.quotationVersion.create({
+      data: {
+        quotationId,
+        versionNumber: current.versionNumber + 1,
+        validUntil: current.validUntil,
+        currency: current.currency,
+        locale: targetLocale,
+        paymentTerms: translated.paymentTerms,
+        deliveryTerms: translated.deliveryTerms,
+        installationTerms: translated.installationTerms,
+        notes: translated.notes,
+        templateId: current.templateId,
+        subtotal: current.subtotal,
+        discountAmount: current.discountAmount,
+        total: current.total,
+        createdById: user.userId,
+      } as any,
+    });
+    for (const [i, item] of items.entries()) {
+      const { id, quotationVersionId, ...rest } = item as any;
+      await this.prisma.tenant.quotationVersionItem.create({
+        data: {
+          ...rest,
+          quotationVersionId: newVersion.id,
+          nameSnapshot: translated[`item_${i}_name`] ?? item.nameSnapshot,
+          descriptionSnapshot: translated[`item_${i}_description`],
+          unit: translated[`item_${i}_unit`] ?? item.unit,
+        },
+      });
+    }
+
+    await this.prisma.tenant.quotation.update({ where: { id: quotationId }, data: { status: 'DRAFT' } });
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'quotation.version_translated',
+      entityType: 'Quotation',
+      entityId: quotationId,
+      after: { versionNumber: newVersion.versionNumber, copiedFromVersionNumber: current.versionNumber, locale: targetLocale },
     });
 
     return this.findOne(user, quotationId);

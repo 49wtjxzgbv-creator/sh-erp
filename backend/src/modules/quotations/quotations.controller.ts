@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { CreateQuotationDto, QueryQuotationsDto, SaveQuotationItemsDto, UpdateQuotationVersionDto } from './dto/quotation.dto';
+import { CreateQuotationDto, QueryQuotationsDto, SaveQuotationItemsDto, TranslateQuotationDto, UpdateQuotationVersionDto } from './dto/quotation.dto';
 import { QuotationsService } from './quotations.service';
 
 @ApiTags('quotations')
@@ -72,6 +72,13 @@ export class QuotationsController {
   @ApiOperation({ summary: 'Start a new editable DRAFT version, copied from the current (locked) version.' })
   async createNewVersion(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.quotationsService.createNewVersion(user, id);
+  }
+
+  @Post(':id/translate')
+  @RequirePermissions('quotations:manage')
+  @ApiOperation({ summary: 'Create a new version in a different language, AI-translating every hand-typed field (item names/descriptions/units, terms, notes) — works whether the current version is a DRAFT or already SENT.' })
+  async translate(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: TranslateQuotationDto) {
+    return this.quotationsService.translateVersion(user, id, dto.locale);
   }
 
   @Delete(':id')

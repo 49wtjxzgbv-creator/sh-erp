@@ -134,4 +134,37 @@ describe('AiService', () => {
       await expect(service.recognizeInvoice(user, 'base64...', 'image/jpeg')).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('translateJson — Quotations language switcher (2026-09-06)', () => {
+    it('sends one batched request and merges the translated values back by key', async () => {
+      provider.generateContent.mockResolvedValue({
+        message: { role: 'model', parts: [{ text: '{"notes":"Thank you","item_0_name":"Cabinet"}' }] },
+      });
+
+      const result = await service.translateJson(user, { notes: 'Дякуємо', item_0_name: 'Шафа' }, 'en');
+
+      expect(actionsService.checkQuota).toHaveBeenCalledWith(user);
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[0].text).toContain('"notes":"Дякуємо"');
+      expect(result).toEqual({ notes: 'Thank you', item_0_name: 'Cabinet' });
+      expect(actionsService.logUsage).toHaveBeenCalledWith(user, 'quotation-translate', undefined);
+    });
+
+    it('skips the AI call entirely and returns the input unchanged when every field is null/empty', async () => {
+      const result = await service.translateJson(user, { notes: null, unit: '' }, 'en');
+      expect(provider.generateContent).not.toHaveBeenCalled();
+      expect(result).toEqual({ notes: null, unit: '' });
+    });
+
+    it('leaves null fields untouched while translating the rest', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '{"notes":"Thank you"}' }] } });
+      const result = await service.translateJson(user, { notes: 'Дякуємо', description: null }, 'en');
+      expect(result).toEqual({ notes: 'Thank you', description: null });
+    });
+
+    it('throws BadRequestException when the model does not return valid JSON', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'not json at all' }] } });
+      await expect(service.translateJson(user, { notes: 'Дякуємо' }, 'en')).rejects.toThrow(BadRequestException);
+    });
+  });
 });

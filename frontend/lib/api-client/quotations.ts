@@ -1,6 +1,7 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
 import type { Customer } from './customers';
+import { locales, type Locale } from '@/lib/i18n-locales';
 
 /**
  * Typed wrappers for backend/src/modules/quotations/ (QuotationsController,
@@ -19,6 +20,9 @@ import type { Customer } from './customers';
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED';
 export type QuotationItemKind = 'ASSEMBLY' | 'PRODUCT' | 'SERVICE' | 'DELIVERY' | 'INSTALLATION' | 'CUSTOM';
 export type PricingSource = 'BASE_PRICE' | 'MARKUP_PERCENT' | 'COST_PLUS_MARGIN' | 'LABOR_MARKUP_PERCENT' | 'LABOR_COST_PLUS_MARGIN' | 'CUSTOM';
+/** Same 4-locale set as the app's own next-intl config (lib/i18n-locales.ts) — see quotation-renderer.service.ts's QUOTATION_LOCALES. */
+export type QuotationLocale = Locale;
+export const QUOTATION_LOCALES: readonly QuotationLocale[] = locales;
 
 export interface QuotationVersionItem {
   id: string;
@@ -66,6 +70,8 @@ export interface QuotationVersion {
   rejectedAt: string | null;
   validUntil: string | null;
   currency: string;
+  /** Language switcher (2026-09-06) — the language this version's free text and rendered PDF are in. Defaults to 'uk' on versions created before this field existed. */
+  locale: QuotationLocale;
   paymentTerms: string | null;
   deliveryTerms: string | null;
   installationTerms: string | null;
@@ -188,6 +194,9 @@ export function sendQuotation(id: string): Promise<Quotation> {
 }
 export function createNewQuotationVersion(id: string): Promise<Quotation> {
   return apiClient.post<Quotation>(`quotations/${id}/new-version`);
+}
+export function translateQuotation(id: string, locale: QuotationLocale): Promise<Quotation> {
+  return apiClient.post<Quotation>(`quotations/${id}/translate`, { locale });
 }
 export function duplicateQuotation(id: string): Promise<Quotation> {
   return apiClient.post<Quotation>(`quotations/${id}/duplicate`);

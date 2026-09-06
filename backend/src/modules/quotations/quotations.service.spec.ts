@@ -168,9 +168,19 @@ function makeService() {
     getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://files.example.com/logo.png' }),
     listForEntities: jest.fn().mockResolvedValue({}),
   };
+  // Fake "translation": tags every non-null string with the target locale, so
+  // tests can assert the new version's text actually changed, without a real
+  // AI provider call.
+  const ai = {
+    translateJson: jest.fn((_user: any, fields: Record<string, string | null>, targetLocale: string) => {
+      const out: Record<string, string | null> = {};
+      for (const [k, v] of Object.entries(fields)) out[k] = v == null ? v : `[${targetLocale}] ${v}`;
+      return Promise.resolve(out);
+    }),
+  };
 
-  const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any);
-  return { service, db, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, nextId };
+  const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any, ai as any);
+  return { service, db, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, ai, nextId };
 }
 
 describe('QuotationsService', () => {
@@ -331,6 +341,52 @@ describe('QuotationsService', () => {
       const { service } = makeService();
       const q = await service.create(user, { customerId: 'cust-1' } as any);
       await expect(service.createNewVersion(user, q.id)).rejects.toThrow();
+    });
+  });
+
+  describe('translateVersion — language switcher (2026-09-06)', () => {
+    it('appends a translated versionNumber+1, unlike createNewVersion works on a still-editable DRAFT, and leaves the original untouched', async () => {
+      const { service, db, assemblies, ai } = makeService();
+      db.assembly.set('asm-1', { id: 'asm-1', name: 'A', baseSalePriceEur: 100 });
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-1', costPerUnit: 60, breakdown: [] });
+      const q = await service.create(user, { customerId: 'cust-1', notes: 'Дякуємо за співпрацю' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-1', quantity: 2, pricingSource: 'BASE_PRICE' }] } as any);
+      const draftVersionId = q.currentVersion.id;
+
+      const translated = await service.translateVersion(user, q.id, 'en');
+      expect(ai.translateJson).toHaveBeenCalledWith(user, expect.any(Object), 'en');
+      expect(translated.currentVersion.versionNumber).toBe(2);
+      expect(translated.currentVersion.locale).toBe('en');
+      expect(translated.currentVersion.notes).toBe('[en] Дякуємо за співпрацю');
+      expect(translated.currentVersion.items[0].nameSnapshot).toBe('[en] A');
+      // Pricing/structural fields are copied verbatim, never re-derived from a translation call.
+      expect(Number(translated.currentVersion.items[0].total)).toBe(200);
+
+      const original = translated.versionHistory.find((v: any) => v.id === draftVersionId);
+      expect(original.notes).toBe('Дякуємо за співпрацю');
+      expect(original.items[0].nameSnapshot).toBe('A');
+    });
+
+    it('also works once the current version is already SENT/locked', async () => {
+      const { service, db, assemblies } = makeService();
+      db.assembly.set('asm-1', { id: 'asm-1', name: 'A', baseSalePriceEur: 100 });
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-1', costPerUnit: 60, breakdown: [] });
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-1', quantity: 1, pricingSource: 'BASE_PRICE' }] } as any);
+      await service.send(user, q.id);
+
+      const translated = await service.translateVersion(user, q.id, 'de');
+      expect(translated.currentVersion.versionNumber).toBe(2);
+      expect(translated.currentVersion.locale).toBe('de');
+      expect(translated.currentVersion.sentAt).toBeNull();
+      expect(translated.status).toBe('DRAFT');
+    });
+
+    it('refuses to translate into the version\'s own current locale', async () => {
+      const { service, db } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      db.quotationVersion.get(q.currentVersion.id).locale = 'uk';
+      await expect(service.translateVersion(user, q.id, 'uk')).rejects.toThrow();
     });
   });
 

@@ -12,6 +12,7 @@ import {
   useApproveBelowCost,
   useSendQuotation,
   useCreateNewQuotationVersion,
+  useTranslateQuotation,
   useDuplicateQuotation,
   useDeleteQuotation,
   useAcceptQuotation,
@@ -22,7 +23,9 @@ import {
 import { getFileDownloadUrl } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { useHasPermission } from '@/lib/hooks/use-roles';
-import type { QuotationItemInput, QuotationStatus, QuotationVersionItem } from '@/lib/api-client/quotations';
+import type { QuotationItemInput, QuotationLocale, QuotationStatus, QuotationVersionItem } from '@/lib/api-client/quotations';
+import { QUOTATION_LOCALES } from '@/lib/api-client/quotations';
+import { LOCALE_LABELS } from '@/components/domain/shell/language-switcher';
 import { QuotationItemEditor, QuotationLiveTotals } from '@/components/domain/quotations/quotation-item-editor';
 import { QuotationPreviewPane } from '@/components/domain/quotations/quotation-preview-pane';
 import type { QuotationItemDraft } from '@/components/domain/quotations/quotation-item-row';
@@ -44,6 +47,8 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Languages } from 'lucide-react';
 
 const STATUS_VARIANT: Record<QuotationStatus, 'secondary' | 'warning' | 'success' | 'destructive' | 'default'> = {
   DRAFT: 'secondary',
@@ -107,6 +112,7 @@ export default function QuotationDetailPage() {
   const approveBelowCost = useApproveBelowCost(params.id);
   const sendQuotation = useSendQuotation(params.id);
   const createNewVersion = useCreateNewQuotationVersion(params.id);
+  const translateQuotation = useTranslateQuotation(params.id);
   const duplicateQuotation = useDuplicateQuotation();
   const deleteQuotation = useDeleteQuotation();
   const acceptQuotation = useAcceptQuotation(params.id);
@@ -209,6 +215,17 @@ export default function QuotationDetailPage() {
     setError(null);
     try {
       await createNewVersion.mutateAsync();
+      setItemsDirty(false);
+      setTermsDirty(false);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleTranslate(locale: QuotationLocale) {
+    setError(null);
+    try {
+      await translateQuotation.mutateAsync(locale);
       setItemsDirty(false);
       setTermsDirty(false);
     } catch (err) {
@@ -450,6 +467,9 @@ export default function QuotationDetailPage() {
           <Badge variant={STATUS_VARIANT[quotation.status]}>{t(`quotationStatus${quotation.status}`)}</Badge>
           {isExpired && <Badge variant="destructive">{t('quotationStatusEXPIRED')}</Badge>}
           {isLocked && <Badge variant="outline">{t('versionLocked')}</Badge>}
+          <Badge variant="outline" title={LOCALE_LABELS[currentVersion.locale]}>
+            {currentVersion.locale.toUpperCase()}
+          </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
           {currentVersion.pdfFileId && (
@@ -461,6 +481,23 @@ export default function QuotationDetailPage() {
             <Button variant="outline" size="sm" loading={duplicateQuotation.isPending} onClick={handleDuplicate}>
               {t('duplicate')}
             </Button>
+          )}
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" loading={translateQuotation.isPending}>
+                  <Languages className="mr-2 h-4 w-4" />
+                  {t('translateAction')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {QUOTATION_LOCALES.filter((l) => l !== currentVersion.locale).map((l) => (
+                  <DropdownMenuItem key={l} onClick={() => handleTranslate(l)}>
+                    {LOCALE_LABELS[l]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {canManage && editable && (
             <Dialog>

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { QUOTATION_LOCALES } from '../quotation-renderer.service';
 
 export class CreateQuotationDto {
   @ApiProperty()
@@ -131,6 +132,12 @@ export class SaveQuotationItemsDto {
   @ValidateNested({ each: true })
   @Type(() => QuotationItemInputDto)
   items!: QuotationItemInputDto[];
+}
+
+export class TranslateQuotationDto {
+  @ApiProperty({ enum: QUOTATION_LOCALES, description: 'Target language for the new, translated version.' })
+  @IsIn(QUOTATION_LOCALES)
+  locale!: string;
 }
 
 export class QueryQuotationsDto {

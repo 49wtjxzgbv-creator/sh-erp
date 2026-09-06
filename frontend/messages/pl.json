@@ -1741,6 +1741,7 @@
     "sendConfirmDescription": "Bieżąca wersja zostanie zablokowana, wygenerowany zostanie PDF. Dalsze zmiany tylko przez „Utwórz nową wersję”.",
     "versionLocked": "Wersja zablokowana",
     "createNewVersion": "Utwórz nową wersję",
+    "translateAction": "Przetłumacz",
     "versionHistory": "Historia wersji",
     "version": "Wersja",
     "current": "bieżąca",

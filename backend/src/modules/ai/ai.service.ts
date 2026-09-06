@@ -276,6 +276,52 @@ export class AiService {
   }
 
   /**
+   * Generic "translate this batch of free text" helper (2026-09-06,
+   * Quotations language switcher) — a flat `{key: string|null}` object in,
+   * the same shape translated back out. One request for every field on a
+   * QuotationVersion instead of N (name/description/unit per item, plus
+   * terms/notes) — same "batch it into one JSON round-trip" reasoning as
+   * `recognizeInvoice`. Null/empty values are filtered out before the call
+   * (nothing to translate) and re-inserted as-is afterward, so the caller
+   * never has to special-case them.
+   */
+  async translateJson(user: RequestUser, fields: Record<string, string | null>, targetLocale: string): Promise<Record<string, string | null>> {
+    const entries = Object.entries(fields).filter(([, v]) => v != null && v.trim() !== '') as [string, string][];
+    if (entries.length === 0) return fields;
+
+    const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
+    await this.actionsService.checkQuota(user);
+
+    const input = Object.fromEntries(entries);
+    const prompt =
+      `Переклади значення цього JSON-об'єкта на мову з кодом ISO 639-1 "${targetLocale}". ` +
+      'Ключі залишай ТОЧНО такими самими, зміни лише значення. ' +
+      'Це текст комерційної пропозиції (умови оплати/доставки/монтажу, примітки, назви й описи товарних позицій) — перекладай по-діловому, природно, без дослівщини. ' +
+      'Якщо значення — власна назва, артикул чи не потребує перекладу, залиш його без змін. ' +
+      'Поверни СУВОРО валідний JSON-об\'єкт з тими самими ключами, без жодного тексту до чи після нього, без markdown-огортання.\n\n' +
+      JSON.stringify(input);
+
+    const result = await this.generateContentOrThrow([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
+    await this.actionsService.logUsage(user, 'quotation-translate', result.usage);
+
+    const text = result.message.parts.find((p) => p.text !== undefined)?.text ?? '';
+    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    let translated: Record<string, string>;
+    try {
+      translated = JSON.parse(cleaned);
+    } catch {
+      throw new CodedBadRequestException('AI_TRANSLATION_INVALID_JSON', 'AI did not return valid JSON for the translated text.');
+    }
+
+    const merged: Record<string, string | null> = { ...fields };
+    for (const key of Object.keys(input)) {
+      merged[key] = typeof translated[key] === 'string' ? translated[key] : input[key];
+    }
+    return merged;
+  }
+
+  /**
    * `AiProviderException` (invalid key, quota exhausted, Gemini overloaded,
    * etc.) already carries a clear Ukrainian message — but if it escapes
    * uncaught, Nest's default filter turns it into a generic 500 "Internal

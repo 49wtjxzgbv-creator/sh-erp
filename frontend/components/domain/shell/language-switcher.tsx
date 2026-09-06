@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { locales, LOCALE_COOKIE_NAME, type Locale } from '@/lib/i18n-locales';
 
-const LOCALE_LABELS: Record<Locale, string> = {
+export const LOCALE_LABELS: Record<Locale, string> = {
   uk: 'Українська',
   en: 'English',
   pl: 'Polski',

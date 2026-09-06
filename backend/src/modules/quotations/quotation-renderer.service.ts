@@ -1,6 +1,83 @@
 import { Injectable } from '@nestjs/common';
 import { PLATFORM_LOGO_DATA_URI } from './platform-logo';
 
+/** Supported PDF/print languages for a Quotation — same 4-locale set as the app's own next-intl config (frontend/messages/{uk,en,de,pl}.json). Chrome labels below are a static, hand-translated dictionary (not AI) — reliable and free for the ~15 boilerplate strings; only the user's own free text (terms/notes/item names) goes through AI translation, see QuotationsService#translateVersion. */
+export type QuotationLocale = 'uk' | 'en' | 'de' | 'pl';
+export const QUOTATION_LOCALES: QuotationLocale[] = ['uk', 'en', 'de', 'pl'];
+
+const DATE_LOCALE: Record<QuotationLocale, string> = { uk: 'uk-UA', en: 'en-GB', de: 'de-DE', pl: 'pl-PL' };
+
+const LABELS: Record<QuotationLocale, Record<string, string>> = {
+  uk: {
+    paymentTerms: 'Умови оплати',
+    deliveryTerms: 'Умови доставки',
+    installationTerms: 'Умови монтажу',
+    notes: 'Примітки',
+    client: 'Клієнт',
+    item: 'Позиція',
+    quantity: 'Кількість',
+    price: 'Ціна',
+    discount: 'Знижка',
+    amount: 'Сума',
+    subtotalBeforeDiscount: 'Разом до знижки',
+    totalDue: 'До сплати',
+    quotationNumber: 'Комерційна пропозиція №',
+    date: 'Дата:',
+    validUntil: 'Дійсна до:',
+  },
+  en: {
+    paymentTerms: 'Payment terms',
+    deliveryTerms: 'Delivery terms',
+    installationTerms: 'Installation terms',
+    notes: 'Notes',
+    client: 'Client',
+    item: 'Item',
+    quantity: 'Quantity',
+    price: 'Price',
+    discount: 'Discount',
+    amount: 'Amount',
+    subtotalBeforeDiscount: 'Subtotal before discount',
+    totalDue: 'Total due',
+    quotationNumber: 'Quotation No.',
+    date: 'Date:',
+    validUntil: 'Valid until:',
+  },
+  de: {
+    paymentTerms: 'Zahlungsbedingungen',
+    deliveryTerms: 'Lieferbedingungen',
+    installationTerms: 'Montagebedingungen',
+    notes: 'Anmerkungen',
+    client: 'Kunde',
+    item: 'Position',
+    quantity: 'Menge',
+    price: 'Preis',
+    discount: 'Rabatt',
+    amount: 'Betrag',
+    subtotalBeforeDiscount: 'Summe vor Rabatt',
+    totalDue: 'Zu zahlen',
+    quotationNumber: 'Angebot Nr.',
+    date: 'Datum:',
+    validUntil: 'Gültig bis:',
+  },
+  pl: {
+    paymentTerms: 'Warunki płatności',
+    deliveryTerms: 'Warunki dostawy',
+    installationTerms: 'Warunki montażu',
+    notes: 'Uwagi',
+    client: 'Klient',
+    item: 'Pozycja',
+    quantity: 'Ilość',
+    price: 'Cena',
+    discount: 'Rabat',
+    amount: 'Kwota',
+    subtotalBeforeDiscount: 'Razem przed rabatem',
+    totalDue: 'Do zapłaty',
+    quotationNumber: 'Oferta nr',
+    date: 'Data:',
+    validUntil: 'Ważna do:',
+  },
+};
+
 export interface QuotationRenderItem {
   kind: string;
   nameSnapshot: string;
@@ -21,6 +98,8 @@ export interface QuotationRenderData {
   createdAt: Date;
   validUntil: Date | null;
   currency: string;
+  /** Defaults to 'uk' when absent (pre-existing versions predate this field). */
+  locale?: QuotationLocale;
   customer: { name: string; contactPerson: string | null; phone: string | null; email: string | null; address: string | null };
   items: QuotationRenderItem[];
   subtotal: number;
@@ -59,10 +138,12 @@ export interface QuotationRenderData {
 @Injectable()
 export class QuotationRendererService {
   renderHtml(data: QuotationRenderData): string {
+    const locale = data.locale ?? 'uk';
+    const l = LABELS[locale];
     const visible = (key: string, fallback = true) => data.visibleBlocks[key] ?? fallback;
     const accent = data.accentColor && /^#[0-9a-fA-F]{3,8}$/.test(data.accentColor) ? data.accentColor : '#6423d0';
     const money = (v: number) => `${v.toFixed(2)} ${escapeHtml(data.currency)}`;
-    const fmtDate = (d: Date | null) => (d ? new Date(d).toLocaleDateString('uk-UA') : '—');
+    const fmtDate = (d: Date | null) => (d ? new Date(d).toLocaleDateString(DATE_LOCALE[locale]) : '—');
 
     const itemRows = data.items
       .map(
@@ -87,14 +168,14 @@ export class QuotationRendererService {
       .join('');
 
     const termsBlocks = [
-      visible('paymentTerms') && data.paymentTerms ? termBlock('Умови оплати', data.paymentTerms) : '',
-      visible('deliveryTerms') && data.deliveryTerms ? termBlock('Умови доставки', data.deliveryTerms) : '',
-      visible('installationTerms') && data.installationTerms ? termBlock('Умови монтажу', data.installationTerms) : '',
-      visible('notes') && data.notes ? termBlock('Примітки', data.notes) : '',
+      visible('paymentTerms') && data.paymentTerms ? termBlock(l.paymentTerms, data.paymentTerms) : '',
+      visible('deliveryTerms') && data.deliveryTerms ? termBlock(l.deliveryTerms, data.deliveryTerms) : '',
+      visible('installationTerms') && data.installationTerms ? termBlock(l.installationTerms, data.installationTerms) : '',
+      visible('notes') && data.notes ? termBlock(l.notes, data.notes) : '',
     ].join('');
 
     return `<!doctype html>
-<html lang="uk">
+<html lang="${locale}">
 <head>
 <meta charset="utf-8" />
 <title>КП ${escapeHtml(data.number)}</title>
@@ -169,9 +250,9 @@ export class QuotationRendererService {
       ${data.logoUrl ? `<span class="brand-divider"></span><img src="${escapeAttr(data.logoUrl)}" alt="" />` : ''}
     </div>
     <div class="doc-meta">
-      <div class="doc-title">Комерційна пропозиція № ${escapeHtml(data.number)}</div>
-      <div>Дата: ${fmtDate(data.createdAt)}</div>
-      ${data.validUntil ? `<div>Дійсна до: ${fmtDate(data.validUntil)}</div>` : ''}
+      <div class="doc-title">${l.quotationNumber} ${escapeHtml(data.number)}</div>
+      <div>${l.date} ${fmtDate(data.createdAt)}</div>
+      ${data.validUntil ? `<div>${l.validUntil} ${fmtDate(data.validUntil)}</div>` : ''}
     </div>
   </div>
 
@@ -179,7 +260,7 @@ export class QuotationRendererService {
 
   <div class="parties">
     <div class="party">
-      <h3>Клієнт</h3>
+      <h3>${l.client}</h3>
       <div class="line"><strong>${escapeHtml(data.customer.name)}</strong></div>
       ${data.customer.contactPerson ? `<div class="line">${escapeHtml(data.customer.contactPerson)}</div>` : ''}
       ${data.customer.phone ? `<div class="line">${escapeHtml(data.customer.phone)}</div>` : ''}
@@ -193,11 +274,11 @@ export class QuotationRendererService {
       <thead>
         <tr>
           <th class="col-idx">#</th>
-          <th>Позиція</th>
-          <th class="col-num">Кількість</th>
-          <th class="col-num">Ціна</th>
-          <th class="col-num">Знижка</th>
-          <th class="col-num">Сума</th>
+          <th>${l.item}</th>
+          <th class="col-num">${l.quantity}</th>
+          <th class="col-num">${l.price}</th>
+          <th class="col-num">${l.discount}</th>
+          <th class="col-num">${l.amount}</th>
         </tr>
       </thead>
       <tbody>${itemRows}</tbody>
@@ -205,9 +286,9 @@ export class QuotationRendererService {
   </div>
 
   <div class="totals">
-    <div class="row"><span>Разом до знижки</span><span>${money(data.subtotal)}</span></div>
-    ${data.discountAmount > 0 ? `<div class="row"><span>Знижка</span><span>-${money(data.discountAmount)}</span></div>` : ''}
-    <div class="row grand"><span>До сплати</span><span>${money(data.total)}</span></div>
+    <div class="row"><span>${l.subtotalBeforeDiscount}</span><span>${money(data.subtotal)}</span></div>
+    ${data.discountAmount > 0 ? `<div class="row"><span>${l.discount}</span><span>-${money(data.discountAmount)}</span></div>` : ''}
+    <div class="row grand"><span>${l.totalDue}</span><span>${money(data.total)}</span></div>
   </div>
 
   ${termsBlocks ? `<div class="terms">${termsBlocks}</div>` : ''}

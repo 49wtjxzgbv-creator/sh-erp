@@ -10,6 +10,7 @@ import {
   approveBelowCost,
   sendQuotation,
   createNewQuotationVersion,
+  translateQuotation,
   duplicateQuotation,
   deleteQuotation,
   markQuotationViewed,
@@ -28,6 +29,7 @@ import {
   type QuotationItemInput,
   type CreateQuotationTemplateInput,
   type UpdateQuotationTemplateInput,
+  type QuotationLocale,
 } from '@/lib/api-client/quotations';
 
 const quotationsKey = (query: QueryQuotationsInput) => ['quotations', query] as const;
@@ -98,6 +100,15 @@ export function useCreateNewQuotationVersion(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => createNewQuotationVersion(id),
+    onSuccess: () => invalidateQuotation(qc, id),
+  });
+}
+
+/** Language switcher (2026-09-06) — result is the same Quotation with a new, translated current version, not a separate document (contrast useDuplicateQuotation below). */
+export function useTranslateQuotation(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (locale: QuotationLocale) => translateQuotation(id, locale),
     onSuccess: () => invalidateQuotation(qc, id),
   });
 }

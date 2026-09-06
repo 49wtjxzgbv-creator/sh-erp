@@ -3235,6 +3235,14 @@ model QuotationVersion {
 
   validUntil DateTime? @db.Timestamptz(3)
 
+  // Language this version's free text (terms/notes/item names) and its
+  // rendered PDF chrome labels are in — same 4-locale set as the app's own
+  // interface language (Company.locale). Independent per version (not on
+  // Quotation itself) since "перекласти" (2026-09-06 user request) always
+  // creates a NEW version rather than mutating the original — a Quotation
+  // can end up with e.g. a uk v1 and an en v2, each immutable once sent.
+  locale String @default("uk")
+
   currency          String  @default("EUR") // one currency per version — see Finance module's own currency-snapshot precedent; no conversion, service layer only
   paymentTerms      String?
   deliveryTerms     String?
