@@ -1,8 +1,8 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { usePayrollSummary } from '@/lib/hooks/use-hr';
 import type { PayrollSummaryLine } from '@/lib/api-client/hr';
 import { formatEur } from '@/lib/utils';
@@ -10,8 +10,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
+
+/** Toggles which mounted `.print-area` the browser's next `window.print()` shows — same pattern as usePrintOptions (print-options.tsx), inlined here since this page needs no columns/photos dialog, just isolation between the whole-summary print and a single employee's. */
+function activateOnlyPrintArea(id: string) {
+  document.querySelectorAll('.print-area').forEach((el) => {
+    el.classList.toggle('print-area--active', el.getAttribute('data-print-area-id') === id);
+  });
+}
 
 /**
  * Per-employee totals by entry type, plus a QC-defect count
@@ -34,6 +42,14 @@ export default function PayrollSummaryPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Per-employee print (2026-09-06 user request): "натиснути кнопку і
+  // друкувати тільки його зарплату" — a separate PrintArea mounted only
+  // while an employee is selected, isolated from the always-mounted
+  // whole-summary one below via printAreaId/activateOnlyPrintArea (same
+  // multi-PrintArea-on-one-page gotcha as production/[id]/page.tsx).
+  const [printEmployee, setPrintEmployee] = useState<PayrollSummaryLine | null>(null);
+  const summaryPrintAreaId = useId();
+  const employeePrintAreaId = useId();
 
   const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined });
 
@@ -44,6 +60,27 @@ export default function PayrollSummaryPage() {
       else next.add(employeeId);
       return next;
     });
+  }
+
+  // Reset after the print dialog closes (fires on both print and cancel) so
+  // a later plain "Друкувати" (whole summary) isn't left pointed at the
+  // employee-only print area.
+  useEffect(() => {
+    function reset() {
+      setPrintEmployee(null);
+      activateOnlyPrintArea(summaryPrintAreaId);
+    }
+    window.addEventListener('afterprint', reset);
+    return () => window.removeEventListener('afterprint', reset);
+  }, [summaryPrintAreaId]);
+
+  function handlePrintEmployee(line: PayrollSummaryLine, e: React.MouseEvent) {
+    e.stopPropagation();
+    setPrintEmployee(line);
+    window.setTimeout(() => {
+      activateOnlyPrintArea(employeePrintAreaId);
+      window.print();
+    }, 50);
   }
 
   function articleLabel(line: { assemblyName: string | null; article: string | null }): string {
@@ -92,18 +129,19 @@ export default function PayrollSummaryPage() {
                   <TableHead>{t('entryTypePENALTY')}</TableHead>
                   <TableHead>{t('netTotal')}</TableHead>
                   <TableHead>{t('defectCount')}</TableHead>
+                  <TableHead className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                       {tc('loading')}
                     </TableCell>
                   </TableRow>
                 ) : !data || data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                       {tc('noResults')}
                     </TableCell>
                   </TableRow>
@@ -126,10 +164,22 @@ export default function PayrollSummaryPage() {
                           <TableCell>
                             {line.defectCount > 0 ? <Badge variant="warning">{line.defectCount}</Badge> : line.defectCount}
                           </TableCell>
+                          <TableCell>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title={tp('printAction')}
+                              onClick={(e) => handlePrintEmployee(line, e)}
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
                         </TableRow>
                         {isOpen && line.byArticle.length > 0 && (
                           <TableRow>
-                            <TableCell colSpan={8} className="bg-muted/20 py-3">
+                            <TableCell colSpan={9} className="bg-muted/20 py-3">
                               <div className="space-y-1 pl-8">
                                 <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground">
                                   <span>{t('article')}</span>
@@ -158,7 +208,7 @@ export default function PayrollSummaryPage() {
       </div>
 
       {data && data.length > 0 && (
-        <PrintArea>
+        <PrintArea printAreaId={summaryPrintAreaId}>
           <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
           <table className="mb-6 w-full text-sm">
             <thead>
@@ -181,6 +231,13 @@ export default function PayrollSummaryPage() {
               <PayrollEmployeePrintBlock key={line.employeeId} line={line} t={t} articleLabel={articleLabel} />
             ))}
           </div>
+        </PrintArea>
+      )}
+
+      {printEmployee && (
+        <PrintArea printAreaId={employeePrintAreaId}>
+          <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
+          <PayrollEmployeePrintBlock line={printEmployee} t={t} articleLabel={articleLabel} />
         </PrintArea>
       )}
     </div>
