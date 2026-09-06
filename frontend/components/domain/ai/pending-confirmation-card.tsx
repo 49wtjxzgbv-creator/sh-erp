@@ -28,12 +28,12 @@ export function PendingConfirmationCard({ pending, onConfirm, onCancel, confirmi
   return (
     <Card className="border-warning">
       <CardContent className="space-y-3 pt-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">{t('confirmationNeeded')}</Badge>
           <span className="text-xs text-muted-foreground">{pending.action}</span>
         </div>
         <p className="text-sm">{pending.description}</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={onConfirm} loading={confirming}>
             {t('confirmAction')}
           </Button>

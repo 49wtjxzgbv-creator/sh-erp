@@ -187,7 +187,7 @@ export default function AiFullAssistantPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{t('fullAssistantDescription')}</p>
         {messages.length > 0 && (
           <Button size="sm" variant="ghost" onClick={handleReset}>
@@ -201,7 +201,7 @@ export default function AiFullAssistantPage() {
           <div
             key={i}
             className={cn(
-              'max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
+              'max-w-[85%] break-words rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
               m.role === 'user' && 'ml-auto bg-primary text-primary-foreground',
               m.role === 'assistant' && 'bg-card border border-border',
               m.role === 'system' && 'mx-auto bg-secondary text-secondary-foreground text-xs italic',
@@ -257,16 +257,16 @@ export default function AiFullAssistantPage() {
               )}
             </div>
             {voiceError && <p className="text-xs text-destructive">{voiceError}</p>}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={handleFileChange}
-                  className="text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs"
+                  className="max-w-[160px] text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs sm:max-w-none"
                 />
-                {file && <span className="text-xs text-muted-foreground">{file.name}</span>}
+                {file && <span className="max-w-[140px] truncate text-xs text-muted-foreground">{file.name}</span>}
                 {synth.supported && (
                   <Button
                     type="button"
@@ -286,7 +286,7 @@ export default function AiFullAssistantPage() {
                 )}
                 {synth.supported && voiceReplyEnabled && voiceOptions.length > 0 && (
                   <Select value={synth.voiceURI ?? undefined} onValueChange={synth.selectVoice}>
-                    <SelectTrigger className="h-8 w-40 text-xs">
+                    <SelectTrigger className="h-8 w-32 text-xs sm:w-40">
                       <SelectValue placeholder={t('voiceSelectPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -299,7 +299,7 @@ export default function AiFullAssistantPage() {
                   </Select>
                 )}
               </div>
-              <Button type="submit" loading={askFullAssistant.isPending} disabled={!question.trim()}>
+              <Button type="submit" className="w-full sm:w-auto" loading={askFullAssistant.isPending} disabled={!question.trim()}>
                 {t('ask')}
               </Button>
             </div>
