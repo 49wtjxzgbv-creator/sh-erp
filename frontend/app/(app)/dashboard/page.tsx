@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Package, Layers, AlertTriangle, PackageCheck, Factory, ShoppingCart, Truck, Users, ChevronLeft, ChevronRight, Send, CalendarRange } from 'lucide-react';
-import { useSessionStore } from '@/lib/auth/session-store';
+import { useMyProfile } from '@/lib/hooks/use-users';
 import { useDashboardSummary, useOperationsTimeline } from '@/lib/hooks/use-dashboard';
 import { usePlannerBoard } from '@/lib/hooks/use-planner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const tp = useTranslations('print');
   const tPlanner = useTranslations('planner');
   const router = useRouter();
-  const companySlug = useSessionStore((s) => s.companySlug);
+  const { data: profile } = useMyProfile();
   const { data, isLoading, isError } = useDashboardSummary();
 
   const [year, setYear] = useState(new Date().getFullYear());
@@ -92,10 +92,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">
-          {t('welcome')}
-          {companySlug ? `, ${companySlug}` : ''}
-        </h1>
+        <h1 className="text-xl font-semibold">{profile?.fullName ?? t('welcome')}</h1>
         <p className="text-sm text-muted-foreground">{t('overview')}</p>
       </div>
 

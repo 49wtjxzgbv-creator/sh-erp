@@ -197,6 +197,13 @@ export class UsersService {
     return { userId: targetUserId, removed: true };
   }
 
+  /** Self-service profile lookup (2026-09-06, dashboard greeting by name) — no special permission required beyond being authenticated, same as changeOwnPassword below. */
+  async me(user: RequestUser) {
+    const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
+    if (!dbUser) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
+    return { id: dbUser.id, fullName: dbUser.fullName, email: dbUser.email };
+  }
+
   async changeOwnPassword(user: RequestUser, dto: ChangePasswordDto) {
     const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
     if (!dbUser || !dbUser.passwordHash) {

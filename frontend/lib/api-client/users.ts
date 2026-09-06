@@ -37,6 +37,17 @@ export function listUsers(): Promise<CompanyMember[]> {
   return apiClient.get<CompanyMember[]>('users');
 }
 
+/** Self-service profile (2026-09-06, dashboard greeting by name) — no special permission required, works for every role. */
+export interface MyProfile {
+  id: string;
+  fullName: string;
+  email: string;
+}
+
+export function getMyProfile(): Promise<MyProfile> {
+  return apiClient.get<MyProfile>('users/me');
+}
+
 export interface InviteUserInput {
   email: string;
   fullName: string;

@@ -43,6 +43,12 @@ export class UsersController {
     return this.usersService.deactivate(user, userId);
   }
 
+  @Get('me')
+  @ApiOperation({ summary: 'Your own profile (id/fullName/email) — no special permission required beyond being authenticated.' })
+  async me(@CurrentUser() user: RequestUser) {
+    return this.usersService.me(user);
+  }
+
   @Patch('me/password')
   @ApiOperation({ summary: 'Change your own password — no special permission required beyond being authenticated.' })
   async changeOwnPassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {

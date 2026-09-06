@@ -35,6 +35,22 @@ describe('UsersService', () => {
     service = new UsersService(prisma, audit, email);
   });
 
+  describe('me() — self-service profile lookup (2026-09-06, dashboard greeting by name)', () => {
+    it('returns id/fullName/email for the current user, nothing else', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', passwordHash: 'secret-hash' });
+
+      const result = await service.me(user);
+
+      expect(result).toEqual({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com' });
+      expect(prisma.tenant.user.findUnique).toHaveBeenCalledWith({ where: { id: 'u1' } });
+    });
+
+    it('throws when the user row is somehow gone', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue(null);
+      await expect(service.me(user)).rejects.toThrow();
+    });
+  });
+
   it('invite() creates a new account with a temp password for a brand-new email', async () => {
     prisma.tenant.role.findUnique.mockResolvedValue({ id: 'role1', name: 'Storekeeper' });
     prisma.tenant.user.findUnique.mockResolvedValue(null);
