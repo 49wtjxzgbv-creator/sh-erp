@@ -901,7 +901,7 @@
     "providerGemini": "Google Gemini",
     "providerDeepSeek": "DeepSeek",
     "providerGeminiHint": "Full AI assistant with action execution, invoice recognition, translation — everything available.",
-    "providerDeepSeekHint": "Only simple functions for now: help assistant, order Q&A, quotation translation. The full assistant and invoice recognition still run on Gemini regardless of this choice. Requires your own API key — there is no platform-provided quota for DeepSeek.",
+    "providerDeepSeekHint": "Help assistant, full action-taking AI assistant, order Q&A, quotation translation — all available. Exception: invoice photo/scan recognition and any image/document attached in the assistant chat always run on Gemini — DeepSeek has no vision. Requires your own API key — there is no platform-provided quota for DeepSeek.",
     "apiKey": "API key",
     "apiKeyConfigured": "Configured",
     "apiKeyNotConfigured": "Not configured",

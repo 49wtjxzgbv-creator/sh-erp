@@ -25,15 +25,16 @@ const MAX_TOOL_LOOP_ITERATIONS = 6; // mirrors the legacy askFullAssistant's max
  *  - `askAboutCustomerOrder`: narrowly-scoped Q&A over one specific order's
  *    real data.
  *
- * Provider routing (2026-09-06, DeepSeek support): plain single-turn text
- * calls (`askHelp`, `askAboutCustomerOrder`, `translateJson`) go through
- * `resolveProvider()`, which honors the company's own `CompanyAiSettings.
- * provider` choice. `askFullAssistant` (function-calling) and
- * `recognizeInvoice` (image vision) ALWAYS use `GeminiAdapter` directly,
- * regardless of that setting — `DeepSeekAdapter` doesn't implement either
- * capability yet (explicit user decision to ship the simple functions
- * first), so routing those two through the company's choice would silently
- * break them the moment someone picked DeepSeek.
+ * Provider routing (2026-09-06, DeepSeek support + function-calling
+ * follow-up): every method except `recognizeInvoice` goes through
+ * `resolveProvider()`, honoring the company's own `CompanyAiSettings.
+ * provider` choice — including `askFullAssistant` now that DeepSeekAdapter
+ * translates Gemini's functionCall/functionResponse shape to/from
+ * DeepSeek's OpenAI-style tool_calls (see that adapter's header comment).
+ * `recognizeInvoice` ALWAYS uses `GeminiAdapter` directly regardless of
+ * that setting — it needs image vision, a genuine DeepSeek-V3/R1 model
+ * limitation, not a scoping choice, so routing it through the company's
+ * pick would silently break it the moment someone selected DeepSeek.
  */
 @Injectable()
 export class AiService {
@@ -155,9 +156,17 @@ export class AiService {
    * of living only in the returned `history` blob.
    */
   async askFullAssistant(user: RequestUser, dto: AskFullAssistantDto) {
-    // Always Gemini — function-calling isn't implemented in DeepSeekAdapter
-    // yet, see this class's own header comment.
-    const apiKey = await this.settingsService.getGeminiApiKey(user.companyId);
+    const provider = await this.resolveProvider(user.companyId);
+    // DeepSeek has no vision — an attached image/document would silently
+    // go unseen if sent anyway (toOpenAiMessages drops inlineData parts).
+    // Fail loudly instead of quietly answering as if nothing was attached.
+    if (provider === this.deepSeekProvider && dto.fileBase64) {
+      throw new CodedBadRequestException(
+        'AI_DEEPSEEK_NO_ATTACHMENTS',
+        'DeepSeek не підтримує зображення чи документи в цьому запиті — приберіть вкладення або оберіть Gemini в Налаштування → AI.',
+      );
+    }
+    const apiKey = await this.settingsService.getEffectiveApiKey(user.companyId);
     await this.actionsService.checkQuota(user);
 
     const permissions = await loadPermissionSet(this.prisma, user);
@@ -192,7 +201,7 @@ export class AiService {
     let totalTokens = 0;
 
     for (let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++) {
-      const result = await this.generateContentOrThrow(this.geminiProvider, contents, apiKey, toolDeclarations);
+      const result = await this.generateContentOrThrow(provider, contents, apiKey, toolDeclarations);
       if (result.usage?.totalTokens) totalTokens += result.usage.totalTokens;
       contents.push(result.message);
 

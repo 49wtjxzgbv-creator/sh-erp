@@ -20,13 +20,6 @@ describe('DeepSeekAdapter', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('throws without hitting the network when tools are passed — function calling is not implemented yet', async () => {
-    await expect(
-      adapter.generateContent([{ role: 'user', parts: [{ text: 'hi' }] }], 'key', [{ name: 'foo', description: 'd', parameters: {} }]),
-    ).rejects.toThrow(AiProviderException);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it('maps AiMessage[] to OpenAI-shaped {role, content} messages, and the reply back into AiGenerateResult', async () => {
     fetchMock.mockResolvedValue(
       fakeFetchResponse(200, {
@@ -82,5 +75,90 @@ describe('DeepSeekAdapter', () => {
   it('throws when the response has no message content', async () => {
     fetchMock.mockResolvedValue(fakeFetchResponse(200, { choices: [{ message: {} }] }));
     await expect(adapter.generateContent([{ role: 'user', parts: [{ text: 'hi' }] }], 'key')).rejects.toThrow(AiProviderException);
+  });
+
+  describe('function calling (2026-09-06 follow-up)', () => {
+    it('sends AiToolDeclaration[] as OpenAI-shaped tools', async () => {
+      fetchMock.mockResolvedValue(fakeFetchResponse(200, { choices: [{ message: { content: 'ok' } }] }));
+
+      await adapter.generateContent(
+        [{ role: 'user', parts: [{ text: 'Знайди болт' }] }],
+        'key',
+        [{ name: 'searchProducts', description: 'Шукає товари', parameters: { type: 'object', properties: {} } }],
+      );
+
+      const [, init] = fetchMock.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.tools).toEqual([
+        { type: 'function', function: { name: 'searchProducts', description: 'Шукає товари', parameters: { type: 'object', properties: {} } } },
+      ]);
+    });
+
+    it('converts a functionCall reply into AiGenerateResult with no content and one functionCall part', async () => {
+      fetchMock.mockResolvedValue(
+        fakeFetchResponse(200, {
+          choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'call_abc', type: 'function', function: { name: 'searchProducts', arguments: '{"query":"болт"}' } }] } }],
+        }),
+      );
+
+      const result = await adapter.generateContent([{ role: 'user', parts: [{ text: 'Знайди болт' }] }], 'key', [
+        { name: 'searchProducts', description: 'd', parameters: {} },
+      ]);
+
+      expect(result.message).toEqual({ role: 'model', parts: [{ functionCall: { name: 'searchProducts', args: { query: 'болт' } } }] });
+    });
+
+    it('round-trips a functionCall + functionResponse turn into matching tool_call_id-linked messages', async () => {
+      fetchMock.mockResolvedValue(fakeFetchResponse(200, { choices: [{ message: { content: 'Знайдено 3 товари' } }] }));
+
+      const contents = [
+        { role: 'user' as const, parts: [{ text: 'Знайди болт' }] },
+        { role: 'model' as const, parts: [{ functionCall: { name: 'searchProducts', args: { query: 'болт' } } }] },
+        { role: 'user' as const, parts: [{ functionResponse: { name: 'searchProducts', response: { count: 3 } } }] },
+      ];
+
+      await adapter.generateContent(contents, 'key', [{ name: 'searchProducts', description: 'd', parameters: {} }]);
+
+      const [, init] = fetchMock.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.messages).toHaveLength(3);
+      expect(body.messages[0]).toEqual({ role: 'user', content: 'Знайди болт' });
+      expect(body.messages[1].role).toBe('assistant');
+      expect(body.messages[1].tool_calls).toHaveLength(1);
+      const callId = body.messages[1].tool_calls[0].id;
+      expect(body.messages[1].tool_calls[0].function).toEqual({ name: 'searchProducts', arguments: '{"query":"болт"}' });
+      expect(body.messages[2]).toEqual({ role: 'tool', tool_call_id: callId, content: JSON.stringify({ count: 3 }) });
+    });
+
+    it('handles two parallel function calls in one turn, matching each response to its own call by position', async () => {
+      fetchMock.mockResolvedValue(fakeFetchResponse(200, { choices: [{ message: { content: 'ok' } }] }));
+
+      const contents = [
+        { role: 'user' as const, parts: [{ text: 'Порівняй два товари' }] },
+        {
+          role: 'model' as const,
+          parts: [
+            { functionCall: { name: 'getProduct', args: { id: 'a' } } },
+            { functionCall: { name: 'getProduct', args: { id: 'b' } } },
+          ],
+        },
+        {
+          role: 'user' as const,
+          parts: [
+            { functionResponse: { name: 'getProduct', response: { id: 'a', name: 'Гвинт' } } },
+            { functionResponse: { name: 'getProduct', response: { id: 'b', name: 'Гайка' } } },
+          ],
+        },
+      ];
+
+      await adapter.generateContent(contents, 'key', [{ name: 'getProduct', description: 'd', parameters: {} }]);
+
+      const [, init] = fetchMock.mock.calls[0];
+      const body = JSON.parse(init.body);
+      const [callIdA, callIdB] = body.messages[1].tool_calls.map((c: any) => c.id);
+      expect(callIdA).not.toBe(callIdB);
+      expect(body.messages[2]).toEqual({ role: 'tool', tool_call_id: callIdA, content: JSON.stringify({ id: 'a', name: 'Гвинт' }) });
+      expect(body.messages[3]).toEqual({ role: 'tool', tool_call_id: callIdB, content: JSON.stringify({ id: 'b', name: 'Гайка' }) });
+    });
   });
 });

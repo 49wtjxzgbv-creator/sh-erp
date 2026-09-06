@@ -57,15 +57,35 @@ describe('AiService', () => {
       expect(apiKey).toBe('deepseek-key');
     });
 
-    it('always routes askFullAssistant through Gemini via getGeminiApiKey, even when the company picked DeepSeek', async () => {
+    it('routes askFullAssistant through DeepSeek when the company picked it (function-calling support, follow-up)', async () => {
       settingsService.getProvider.mockResolvedValue('deepseek');
-      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Ось відповідь' }] } });
+      settingsService.getEffectiveApiKey.mockResolvedValue('deepseek-key');
+      deepSeekProvider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Ось відповідь від DeepSeek' }] } });
 
-      await service.askFullAssistant(user, { question: 'Скільки товару X?' } as any);
+      const result = await service.askFullAssistant(user, { question: 'Скільки товару X?' } as any);
 
-      expect(settingsService.getGeminiApiKey).toHaveBeenCalledWith(user.companyId);
+      expect(result.answer).toBe('Ось відповідь від DeepSeek');
+      expect(provider.generateContent).not.toHaveBeenCalled();
+      const [, apiKey] = deepSeekProvider.generateContent.mock.calls[0];
+      expect(apiKey).toBe('deepseek-key');
+    });
+
+    it('refuses an askFullAssistant call with an attached file when the company picked DeepSeek (no vision)', async () => {
+      settingsService.getProvider.mockResolvedValue('deepseek');
+
+      await expect(
+        service.askFullAssistant(user, { question: 'Що на цьому фото?', fileBase64: 'abc', fileMimeType: 'image/jpeg' } as any),
+      ).rejects.toThrow(BadRequestException);
       expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
-      expect(provider.generateContent).toHaveBeenCalled();
+      expect(provider.generateContent).not.toHaveBeenCalled();
+    });
+
+    it('still allows an attached file through askFullAssistant when the company is on Gemini', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Бачу фото' }] } });
+
+      const result = await service.askFullAssistant(user, { question: 'Що на цьому фото?', fileBase64: 'abc', fileMimeType: 'image/jpeg' } as any);
+
+      expect(result.answer).toBe('Бачу фото');
     });
 
     it('always routes recognizeInvoice through Gemini via getGeminiApiKey, even when the company picked DeepSeek', async () => {
