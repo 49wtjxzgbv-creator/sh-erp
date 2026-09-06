@@ -94,13 +94,13 @@ export default function AiFullAssistantPage() {
     onError: () => setVoiceError(t('voiceRecognitionError')),
   });
   const synth = useSpeechSynthesis({ lang: speechLang });
-  // Prefer voices matching the current locale's language (e.g. "uk" for
-  // Ukrainian) — falls back to every installed voice if the browser/OS has
-  // none for that language, so the picker is never empty just because the
-  // interface locale doesn't have a matching system voice.
-  const langPrefix = speechLang.slice(0, 2).toLowerCase();
-  const matchingVoices = synth.voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
-  const voiceOptions = matchingVoices.length > 0 ? matchingVoices : synth.voices;
+  // Shows every voice installed in the browser, not just ones matching the
+  // interface language (2026-09-07 fix — filtering to just "uk" left a
+  // real user with exactly one option, "Леся", even though their system
+  // had other voices too; a "wrong" language reading Ukrainian text still
+  // beats no choice at all). Each option's own `lang` is shown alongside
+  // its name so it's clear which are native to the current language.
+  const voiceOptions = synth.voices;
 
   function toggleListening() {
     setVoiceError(null);
@@ -292,7 +292,7 @@ export default function AiFullAssistantPage() {
                     <SelectContent>
                       {voiceOptions.map((v) => (
                         <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                          {v.name}
+                          {v.name} ({v.lang})
                         </SelectItem>
                       ))}
                     </SelectContent>
