@@ -9,6 +9,7 @@ jest.mock('./r2-client', () => ({
   R2_BUCKET: 'test-bucket',
 }));
 
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { FilesService } from './files.service';
 
 describe('FilesService', () => {
@@ -88,6 +89,32 @@ describe('FilesService', () => {
       expect(auditCall.entityType).toBe('AiExport');
       expect(auditCall.metadata.storageKey).toContain('tenants/c1/ai-exports/');
       expect(auditCall.metadata.filename).toBe('звіт.csv');
+    });
+
+    it('keeps Cyrillic letters in the storage key instead of collapsing them to underscores — real bug, 2026-09-06: the old ASCII-only sanitizer turned a whole Ukrainian title into "________________________.txt"', async () => {
+      service['r2'].send = jest.fn().mockResolvedValue({});
+
+      const result = await service.uploadEphemeralExport(user, {
+        filename: 'Звіт по залишках на складі.txt',
+        mimeType: 'text/plain',
+        body: Buffer.from('...'),
+      });
+
+      expect(result.downloadUrl).toBe('https://r2.example.com/signed');
+      const auditCall = audit.record.mock.calls[0][0];
+      expect(auditCall.metadata.storageKey).toContain('Звіт_по_залишках_на_складі.txt');
+      expect(auditCall.metadata.storageKey).not.toMatch(/_{5,}/); // no wall-of-underscores regression
+    });
+
+    it('sets Content-Disposition: attachment with the real UTF-8 filename, so the link downloads instead of opening inline', async () => {
+      service['r2'].send = jest.fn().mockResolvedValue({});
+
+      await service.uploadEphemeralExport(user, { filename: 'Звіт.csv', mimeType: 'text/csv', body: Buffer.from('a,b') });
+
+      const calls = (getSignedUrl as jest.Mock).mock.calls;
+      const disposition = calls[calls.length - 1][1].input.ResponseContentDisposition as string;
+      expect(disposition).toContain('attachment');
+      expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent('Звіт.csv')}`);
     });
   });
 

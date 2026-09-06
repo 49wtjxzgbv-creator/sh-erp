@@ -488,8 +488,23 @@ export class FilesService {
   }
 }
 
+/**
+ * Real bug (2026-09-06 user report): the old ASCII-only version
+ * (`[^a-zA-Z0-9._-]` → `_`) turned an entire Cyrillic title into a wall of
+ * underscores ("________________________.txt") — every letter of e.g.
+ * "Звіт по залишках" is outside that allowlist. S3/R2 keys are UTF-8-safe
+ * (the AWS SDK URI-encodes the Key for the actual request), so there's no
+ * technical need to strip non-Latin letters — only characters that would
+ * actually break an S3 key or a `Content-Disposition` header value need
+ * escaping. Spaces still become underscores, same as before, to avoid raw
+ * spaces in a storage key/URL.
+ */
 function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-140); // keep the tail (extension survives truncation of an overly long name)
+  return name
+    .replace(/\s+/g, '_')
+    .replace(/[\/\\?%*:|"<>\x00-\x1F]/g, '_')
+    .trim()
+    .slice(-140); // keep the tail (extension survives truncation of an overly long name)
 }
 
 /** Reduces an ExcelJS cell value to a plain JSON-safe primitive for the preview response — formulas resolve to their cached result, rich text/hyperlinks to their display text, dates to an ISO string. */
