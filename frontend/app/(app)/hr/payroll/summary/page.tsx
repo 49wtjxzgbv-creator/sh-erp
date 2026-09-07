@@ -90,6 +90,23 @@ export default function PayrollSummaryPage() {
 
   const periodSubtitle = from || to ? `${from ? new Date(from).toLocaleDateString() : '…'} – ${to ? new Date(to).toLocaleDateString() : '…'}` : undefined;
 
+  // Grand total across every employee (2026-09-07 user request) — a plain
+  // reduce over the same lines already fetched, not a separate backend
+  // field: cheap to compute client-side, and always matches whatever rows
+  // are currently on screen (same from/to filter, no separate query to
+  // keep in sync).
+  const totals = (data ?? []).reduce(
+    (acc, line) => ({
+      piecework: acc.piecework + line.piecework,
+      advances: acc.advances + line.advances,
+      bonuses: acc.bonuses + line.bonuses,
+      penalties: acc.penalties + line.penalties,
+      netTotal: acc.netTotal + line.netTotal,
+      defectCount: acc.defectCount + line.defectCount,
+    }),
+    { piecework: 0, advances: 0, bonuses: 0, penalties: 0, netTotal: 0, defectCount: 0 },
+  );
+
   return (
     <div className="space-y-4">
       <div className="no-print space-y-4">
@@ -201,6 +218,19 @@ export default function PayrollSummaryPage() {
                     );
                   })
                 )}
+                {data && data.length > 0 && (
+                  <TableRow className="font-semibold">
+                    <TableCell />
+                    <TableCell>{t('grandTotal')}</TableCell>
+                    <TableCell>{formatEur(totals.piecework)}</TableCell>
+                    <TableCell>{formatEur(totals.advances)}</TableCell>
+                    <TableCell>{formatEur(totals.bonuses)}</TableCell>
+                    <TableCell>{formatEur(totals.penalties)}</TableCell>
+                    <TableCell>{formatEur(totals.netTotal)}</TableCell>
+                    <TableCell>{totals.defectCount > 0 ? <Badge variant="warning">{totals.defectCount}</Badge> : totals.defectCount}</TableCell>
+                    <TableCell />
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -224,6 +254,10 @@ export default function PayrollSummaryPage() {
                   <td className="py-1 text-right font-medium tabular-nums">{formatEur(line.netTotal)}</td>
                 </tr>
               ))}
+              <tr className="border-t-2 border-black font-bold">
+                <td className="py-1">{t('grandTotal')}</td>
+                <td className="py-1 text-right tabular-nums">{formatEur(totals.netTotal)}</td>
+              </tr>
             </tbody>
           </table>
           <div className="space-y-5">

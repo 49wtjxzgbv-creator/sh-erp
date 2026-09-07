@@ -907,6 +907,7 @@
     "fromDate": "Від",
     "toDate": "До",
     "netTotal": "Разом",
+    "grandTotal": "Загалом по всіх",
     "defectCount": "Брак",
     "article": "Артикул",
     "unitsProduced": "Кількість",

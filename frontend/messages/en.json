@@ -810,6 +810,7 @@
     "fromDate": "From",
     "toDate": "To",
     "netTotal": "Net total",
+    "grandTotal": "Grand total (all employees)",
     "defectCount": "Defects",
     "article": "Article",
     "unitsProduced": "Quantity",
