@@ -66,7 +66,18 @@ describe('PayrollService', () => {
 
       const call = prisma.tenant.payrollEntry.findMany.mock.calls[0][0];
       expect(call.where.entryDate.gte).toEqual(new Date('2026-09-01'));
-      expect(call.where.entryDate.lte).toEqual(new Date('2026-09-30'));
+      expect(call.where.entryDate.lte).toEqual(new Date('2026-09-30T23:59:59.999Z'));
+    });
+
+    it('includes the whole "to" day, not just its midnight instant — same-day (from=to) single-day filter must not come back empty', async () => {
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([]);
+      prisma.tenant.payrollEntry.count.mockResolvedValue(0);
+
+      await service.query(user, { from: '2026-09-08', to: '2026-09-08' } as any);
+
+      const call = prisma.tenant.payrollEntry.findMany.mock.calls[0][0];
+      expect(call.where.entryDate.gte).toEqual(new Date('2026-09-08T00:00:00.000Z'));
+      expect(call.where.entryDate.lte).toEqual(new Date('2026-09-08T23:59:59.999Z'));
     });
 
     it('resolves each PIECEWORK entry\'s article via productionOrderId -> assembly, same join as the summary report', async () => {

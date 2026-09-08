@@ -7,6 +7,20 @@ import { PayrollSummaryQueryDto, QueryPayrollEntriesDto, RecordPayrollEntryDto }
 import { PayrollPeriodsService } from './payroll-periods.service';
 
 /**
+ * A bare 'YYYY-MM-DD' `to` filter parses via `new Date(...)` as UTC
+ * midnight — used directly as an `lte` bound, that excludes every entry
+ * recorded later that same day (the real cause of the single-day payroll
+ * view, from=to=today, returning "nothing found" for a day that plainly
+ * had entries: `gte` and `lte` were both exactly midnight). Push `to` to
+ * the last instant of that UTC day so the whole day is actually included.
+ */
+function endOfUtcDay(dateStr: string): Date {
+  const d = new Date(dateStr);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+}
+
+/**
  * One (employee, article) bucket of PIECEWORK output for the period — "яку
  * кількість якого артикулу зробив" (2026-08-28 user request). `assemblyId
  * null` is the real "no article" bucket: a WorkTask-based PIECEWORK entry
@@ -112,7 +126,7 @@ export class PayrollService {
     if (query.from || query.to) {
       where.entryDate = {};
       if (query.from) where.entryDate.gte = new Date(query.from);
-      if (query.to) where.entryDate.lte = new Date(query.to);
+      if (query.to) where.entryDate.lte = endOfUtcDay(query.to);
     }
 
     const take = query.limit ?? 50;
@@ -179,7 +193,7 @@ export class PayrollService {
     if (query.from || query.to) {
       entryWhere.entryDate = {};
       if (query.from) entryWhere.entryDate.gte = new Date(query.from);
-      if (query.to) entryWhere.entryDate.lte = new Date(query.to);
+      if (query.to) entryWhere.entryDate.lte = endOfUtcDay(query.to);
     }
 
     const [entries, employees, workerAssignments, finishedGoods, reworkChecks] = await Promise.all([
