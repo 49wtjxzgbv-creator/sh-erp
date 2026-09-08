@@ -23,10 +23,11 @@ export interface PayrollArticleLine {
   amount: number;
 }
 
-/** A raw `PayrollEntry` row plus its resolved article (2026-09-08, "в який день що кому закрили в зп") — same productionOrderId -> assembly join getPayrollSummaryReport already does, applied per-row instead of aggregated. `null` for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
+/** A raw `PayrollEntry` row plus its resolved article and employee name (2026-09-08, "в який день що кому закрили в зп") — same productionOrderId -> assembly join getPayrollSummaryReport already does, applied per-row instead of aggregated. `article`/`assemblyName` are `null` for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
 export interface PayrollEntryWithArticle {
   id: string;
   employeeId: string;
+  employeeName: string;
   type: string;
   productionOrderId: string | null;
   unitsProduced: unknown;
@@ -124,23 +125,39 @@ export class PayrollService {
     return { items: await this.withArticles(items as any[]), total, limit: take, offset: skip };
   }
 
-  /** Same productionOrderId -> assemblyId -> assembly(name, article) join as getPayrollSummaryReport below, extracted so `query()` can enrich the raw ledger with it too — "яку роботу зробив" is exactly as relevant per-entry as it is aggregated. */
+  /**
+   * Same productionOrderId -> assemblyId -> assembly(name, article) join as
+   * getPayrollSummaryReport below, extracted so `query()` can enrich the raw
+   * ledger with it too — "яку роботу зробив" is exactly as relevant
+   * per-entry as it is aggregated. Also resolves `employeeName`: the
+   * day-across-everyone view (query() called with no employeeId) needs a
+   * name per row since it isn't scoped to one already-known employee.
+   */
   private async withArticles(entries: any[]): Promise<PayrollEntryWithArticle[]> {
     const productionOrderIds = Array.from(new Set(entries.map((e) => e.productionOrderId).filter((id): id is string => Boolean(id))));
-    const productionOrders = productionOrderIds.length
-      ? await this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } }, select: { id: true, assemblyId: true } })
-      : [];
+    const [productionOrders, employees] = await Promise.all([
+      productionOrderIds.length
+        ? this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } }, select: { id: true, assemblyId: true } })
+        : Promise.resolve([]),
+      this.prisma.tenant.employee.findMany({ select: { id: true, fullName: true } }),
+    ]);
     const assemblyIdByOrderId = new Map((productionOrders as any[]).map((o) => [o.id, o.assemblyId]));
     const assemblyIds = Array.from(new Set((productionOrders as any[]).map((o) => o.assemblyId)));
     const assemblies = assemblyIds.length
       ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
       : [];
     const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+    const employeeNameById = new Map((employees as any[]).map((e) => [e.id, e.fullName]));
 
     return entries.map((entry) => {
       const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
       const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
-      return { ...entry, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null };
+      return {
+        ...entry,
+        employeeName: employeeNameById.get(entry.employeeId) ?? entry.employeeId,
+        assemblyName: assembly?.name ?? null,
+        article: assembly?.article ?? null,
+      };
     });
   }
 

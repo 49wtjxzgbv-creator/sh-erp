@@ -93,6 +93,23 @@ describe('PayrollService', () => {
       expect(result.items[0]).toEqual(expect.objectContaining({ assemblyName: null, article: null }));
       expect(prisma.tenant.productionOrder.findMany).not.toHaveBeenCalled();
     });
+
+    it('resolves employeeName for every row so a company-wide (no employeeId filter) query can list who earned what without a second lookup', async () => {
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { id: 'p1', employeeId: 'e1', type: 'BONUS', productionOrderId: null, entryDate: new Date('2026-09-05'), amount: 50 },
+        { id: 'p2', employeeId: 'e2', type: 'PENALTY', productionOrderId: null, entryDate: new Date('2026-09-05'), amount: -20 },
+      ]);
+      prisma.tenant.payrollEntry.count.mockResolvedValue(2);
+      prisma.tenant.employee.findMany.mockResolvedValue([
+        { id: 'e1', fullName: 'Alice' },
+        { id: 'e2', fullName: 'Bob' },
+      ]);
+
+      const result = await service.query(user, {} as any);
+
+      expect(result.items[0]).toEqual(expect.objectContaining({ employeeId: 'e1', employeeName: 'Alice' }));
+      expect(result.items[1]).toEqual(expect.objectContaining({ employeeId: 'e2', employeeName: 'Bob' }));
+    });
   });
 
   describe('getPayrollSummaryReport — cross-referenced defect count (Phase 1 §6.5)', () => {

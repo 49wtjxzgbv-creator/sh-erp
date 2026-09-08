@@ -93,6 +93,8 @@ export interface PayrollEntry {
   id: string;
   companyId: string;
   employeeId: string;
+  /** Resolved employeeId -> Employee.fullName (2026-09-08, day-view across everyone) — always present, never a second lookup needed. */
+  employeeName: string;
   type: PayrollEntryType;
   productionOrderId: string | null;
   unitsProduced: DecimalString | null;

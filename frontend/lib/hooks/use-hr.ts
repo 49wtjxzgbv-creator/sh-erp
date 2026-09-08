@@ -94,8 +94,8 @@ export function useReactivateEmployee(id: string) {
   });
 }
 
-export function usePayrollEntries(query: QueryPayrollEntriesInput) {
-  return useQuery({ queryKey: payrollEntriesKey(query), queryFn: () => queryPayrollEntries(query) });
+export function usePayrollEntries(query: QueryPayrollEntriesInput, enabled = true) {
+  return useQuery({ queryKey: payrollEntriesKey(query), queryFn: () => queryPayrollEntries(query), enabled });
 }
 
 export function useRecordPayrollEntry() {

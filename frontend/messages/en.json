@@ -808,6 +808,8 @@
     "allTypes": "All types",
     "summaryByEmployee": "Summary by employee",
     "dayByDayTitle": "By day",
+    "dayViewTitle": "View by specific day",
+    "day": "Day",
     "fromDate": "From",
     "toDate": "To",
     "netTotal": "Net total",

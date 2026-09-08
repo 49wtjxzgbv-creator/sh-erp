@@ -42,6 +42,15 @@ export default function PayrollSummaryPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Single-day view across every employee (2026-09-08 follow-up to the
+  // per-employee day-by-day expansion below: "чому я не можу просто обрати
+  // день в календарі і подивитись хто що заробив в цей день") — the
+  // per-row expansion still requires picking one employee first, which
+  // isn't what was asked for. This is a separate, independent query (not
+  // reusing from/to above) since a manager checking one specific day isn't
+  // necessarily also looking at a period range at the same time.
+  const [day, setDay] = useState('');
+  const { data: dayEntries, isLoading: dayLoading } = usePayrollEntries({ from: day, to: day, limit: 500 }, Boolean(day));
   // Per-employee print (2026-09-06 user request): "натиснути кнопку і
   // друкувати тільки його зарплату" — a separate PrintArea mounted only
   // while an employee is selected, isolated from the always-mounted
@@ -127,6 +136,62 @@ export default function PayrollSummaryPage() {
               <Label htmlFor="to">{t('toDate')}</Label>
               <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('dayViewTitle')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="day">{t('day')}</Label>
+              <Input id="day" type="date" value={day} onChange={(e) => setDay(e.target.value)} className="w-fit" />
+            </div>
+            {day && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('employee')}</TableHead>
+                    <TableHead>{t('entryType')}</TableHead>
+                    <TableHead>{t('article')}</TableHead>
+                    <TableHead className="text-right">{t('amount')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dayLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                        {tc('loading')}
+                      </TableCell>
+                    </TableRow>
+                  ) : !dayEntries || dayEntries.items.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                        {tc('noResults')}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    [...dayEntries.items]
+                      .sort((a, b) => a.employeeName.localeCompare(b.employeeName))
+                      .map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell>{entry.employeeName}</TableCell>
+                          <TableCell>
+                            <Badge variant={ENTRY_TYPE_VARIANT[entry.type]} className="w-fit">
+                              {t(`entryType${entry.type}`)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="truncate text-muted-foreground" title={entry.comment ?? undefined}>
+                            {entry.article ? `${entry.assemblyName ?? ''} (${entry.article})` : entry.assemblyName || entry.comment || '—'}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{formatEur(Number(entry.amount))}</TableCell>
+                        </TableRow>
+                      ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 

@@ -905,6 +905,8 @@
     "allTypes": "Усі типи",
     "summaryByEmployee": "Зведення за співробітниками",
     "dayByDayTitle": "По днях",
+    "dayViewTitle": "Перегляд по конкретному дню",
+    "day": "День",
     "fromDate": "Від",
     "toDate": "До",
     "netTotal": "Разом",
