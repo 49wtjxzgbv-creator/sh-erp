@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
+import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 
 /** Toggles which mounted `.print-area` the browser's next `window.print()` shows — same pattern as usePrintOptions (print-options.tsx), inlined here since this page needs no columns/photos dialog, just isolation between the whole-summary print and a single employee's. */
 function activateOnlyPrintArea(id: string) {
@@ -90,11 +91,6 @@ export default function PayrollSummaryPage() {
       activateOnlyPrintArea(employeePrintAreaId);
       window.print();
     }, 50);
-  }
-
-  function articleLabel(line: { assemblyName: string | null; article: string | null }): string {
-    if (!line.assemblyName && !line.article) return t('generalWork');
-    return line.article ? `${line.assemblyName ?? ''} (${line.article})` : (line.assemblyName ?? '');
   }
 
   const periodSubtitle = from || to ? `${from ? new Date(from).toLocaleDateString() : '…'} – ${to ? new Date(to).toLocaleDateString() : '…'}` : undefined;
@@ -182,8 +178,8 @@ export default function PayrollSummaryPage() {
                               {t(`entryType${entry.type}`)}
                             </Badge>
                           </TableCell>
-                          <TableCell className="truncate text-muted-foreground" title={entry.comment ?? undefined}>
-                            {entry.article ? `${entry.assemblyName ?? ''} (${entry.article})` : entry.assemblyName || entry.comment || '—'}
+                          <TableCell>
+                            <ArticleCell assemblyId={entry.assemblyId} assemblyName={entry.assemblyName} article={entry.article} comment={entry.comment} t={t} />
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{formatEur(Number(entry.amount))}</TableCell>
                         </TableRow>
@@ -268,8 +264,8 @@ export default function PayrollSummaryPage() {
                                   <span className="text-right">{t('entryTypePIECEWORK')}</span>
                                 </div>
                                 {line.byArticle.map((a) => (
-                                  <div key={a.assemblyId ?? 'general'} className="grid grid-cols-3 gap-2 text-sm">
-                                    <span className="truncate">{articleLabel(a)}</span>
+                                  <div key={a.assemblyId ?? 'general'} className="grid grid-cols-3 items-center gap-2 text-sm">
+                                    <ArticleCell assemblyId={a.assemblyId} assemblyName={a.assemblyName} article={a.article} t={t} />
                                     <span className="text-right tabular-nums">{a.unitsProduced || '—'}</span>
                                     <span className="text-right tabular-nums">{formatEur(a.amount)}</span>
                                   </div>
@@ -333,7 +329,7 @@ export default function PayrollSummaryPage() {
           </table>
           <div className="space-y-5">
             {data.map((line) => (
-              <PayrollEmployeePrintBlock key={line.employeeId} line={line} t={t} articleLabel={articleLabel} />
+              <PayrollEmployeePrintBlock key={line.employeeId} line={line} t={t} />
             ))}
           </div>
         </PrintArea>
@@ -342,7 +338,7 @@ export default function PayrollSummaryPage() {
       {printEmployee && (
         <PrintArea printAreaId={employeePrintAreaId}>
           <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
-          <PayrollEmployeePrintBlock line={printEmployee} t={t} articleLabel={articleLabel} />
+          <PayrollEmployeePrintBlock line={printEmployee} t={t} />
         </PrintArea>
       )}
     </div>
@@ -352,11 +348,9 @@ export default function PayrollSummaryPage() {
 function PayrollEmployeePrintBlock({
   line,
   t,
-  articleLabel,
 }: {
   line: PayrollSummaryLine;
   t: ReturnType<typeof useTranslations>;
-  articleLabel: (l: { assemblyName: string | null; article: string | null }) => string;
 }) {
   return (
     <div className="break-inside-avoid border-b border-gray-300 pb-3">
@@ -378,7 +372,9 @@ function PayrollEmployeePrintBlock({
           <tbody>
             {line.byArticle.map((a) => (
               <tr key={a.assemblyId ?? 'general'}>
-                <td className="py-0.5">{articleLabel(a)}</td>
+                <td className="py-0.5">
+                  <ArticleCell assemblyId={a.assemblyId} assemblyName={a.assemblyName} article={a.article} t={t} />
+                </td>
                 <td className="py-0.5 text-right tabular-nums">{a.unitsProduced || '—'}</td>
                 <td className="py-0.5 text-right tabular-nums">{formatEur(a.amount)}</td>
               </tr>
@@ -412,6 +408,38 @@ const ENTRY_TYPE_VARIANT: Record<PayrollEntryType, 'default' | 'success' | 'warn
   BONUS: 'success',
   PENALTY: 'destructive',
 };
+
+/**
+ * Article column across every payroll breakdown (byArticle, day view,
+ * per-employee day-by-day) — 2026-09-08 user request "додай біля артикулів
+ * фото". Delegates the photo+name+article rendering to the same
+ * `AssemblyCell` sales/production already use, rather than a second photo
+ * lookup here; only WorkTask-based general labor / manual entries (no
+ * `assemblyId`) fall back to plain text.
+ */
+function ArticleCell({
+  assemblyId,
+  assemblyName,
+  article,
+  comment,
+  t,
+}: {
+  assemblyId: string | null;
+  assemblyName: string | null;
+  article: string | null;
+  comment?: string | null;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (assemblyId) {
+    return <AssemblyCell assemblyId={assemblyId} />;
+  }
+  const label = assemblyName || article ? `${assemblyName ?? ''}${article ? ` (${article})` : ''}` : comment || t('generalWork');
+  return (
+    <span className="truncate text-muted-foreground" title={comment ?? undefined}>
+      {label}
+    </span>
+  );
+}
 
 /**
  * Raw, dated ledger for one employee (2026-09-08 user request: "в який
@@ -458,9 +486,7 @@ function PayrollDayByDay({
           <Badge variant={ENTRY_TYPE_VARIANT[entry.type]} className="w-fit">
             {t(`entryType${entry.type}`)}
           </Badge>
-          <span className="truncate text-muted-foreground" title={entry.comment ?? undefined}>
-            {entry.article ? `${entry.assemblyName ?? ''} (${entry.article})` : entry.assemblyName || entry.comment || '—'}
-          </span>
+          <ArticleCell assemblyId={entry.assemblyId} assemblyName={entry.assemblyName} article={entry.article} comment={entry.comment} t={t} />
           <span className="text-right tabular-nums">{formatEur(Number(entry.amount))}</span>
         </div>
       ))}

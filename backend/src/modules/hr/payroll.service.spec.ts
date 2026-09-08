@@ -90,7 +90,7 @@ describe('PayrollService', () => {
 
       const result = await service.query(user, {} as any);
 
-      expect(result.items[0]).toEqual(expect.objectContaining({ assemblyName: 'Шафа', article: 'SH-1' }));
+      expect(result.items[0]).toEqual(expect.objectContaining({ assemblyId: 'asm1', assemblyName: 'Шафа', article: 'SH-1' }));
     });
 
     it('leaves article/assemblyName null for a manual entry with no productionOrderId', async () => {

@@ -104,7 +104,8 @@ export interface PayrollEntry {
   comment: string | null;
   createdById: string;
   createdAt: string;
-  /** Resolved productionOrderId -> assembly (2026-09-08, day-by-day payroll history) — null for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
+  /** Resolved productionOrderId -> assembly (2026-09-08, day-by-day payroll history) — null for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. `assemblyId` (2026-09-08 follow-up) feeds straight into <AssemblyCell> for a photo, same as sales/production already do. */
+  assemblyId: string | null;
   assemblyName: string | null;
   article: string | null;
 }

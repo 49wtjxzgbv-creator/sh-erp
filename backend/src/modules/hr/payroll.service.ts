@@ -37,7 +37,17 @@ export interface PayrollArticleLine {
   amount: number;
 }
 
-/** A raw `PayrollEntry` row plus its resolved article and employee name (2026-09-08, "в який день що кому закрили в зп") — same productionOrderId -> assembly join getPayrollSummaryReport already does, applied per-row instead of aggregated. `article`/`assemblyName` are `null` for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
+/**
+ * A raw `PayrollEntry` row plus its resolved article and employee name
+ * (2026-09-08, "в який день що кому закрили в зп") — same productionOrderId
+ * -> assembly join getPayrollSummaryReport already does, applied per-row
+ * instead of aggregated. `assemblyId`/`assemblyName`/`article` are `null`
+ * for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based
+ * (no-article) PIECEWORK. `assemblyId` is exposed (2026-09-08 follow-up,
+ * "додай біля артикулів фото") so the frontend can feed it straight into
+ * the existing `AssemblyCell` component (same one sales/production already
+ * use for photo+name) instead of resolving a photo by article string.
+ */
 export interface PayrollEntryWithArticle {
   id: string;
   employeeId: string;
@@ -50,6 +60,7 @@ export interface PayrollEntryWithArticle {
   comment: string | null;
   createdById: string;
   createdAt: Date;
+  assemblyId: string | null;
   assemblyName: string | null;
   article: string | null;
 }
@@ -169,6 +180,7 @@ export class PayrollService {
       return {
         ...entry,
         employeeName: employeeNameById.get(entry.employeeId) ?? entry.employeeId,
+        assemblyId,
         assemblyName: assembly?.name ?? null,
         article: assembly?.article ?? null,
       };
