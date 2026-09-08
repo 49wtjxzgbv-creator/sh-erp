@@ -72,6 +72,20 @@ export class QueryPayrollEntriesDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  // Day-by-day payroll history (2026-09-08 user request: "в який день що
+  // кому закрили в зп") — lets the summary page's per-employee expansion
+  // reuse the same from/to period it's already filtered by, so the raw
+  // ledger rows shown always match the aggregate totals on screen.
+  @ApiPropertyOptional({ description: 'ISO date — defaults to no lower bound.' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'ISO date — defaults to no upper bound.' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }
 
 export class PayrollSummaryQueryDto {

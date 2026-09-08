@@ -57,6 +57,44 @@ describe('PayrollService', () => {
     });
   });
 
+  describe('query — day-by-day ledger (2026-09-08 user request: "в який день що кому закрили в зп")', () => {
+    it('filters by from/to on entryDate, same convention as getPayrollSummaryReport', async () => {
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([]);
+      prisma.tenant.payrollEntry.count.mockResolvedValue(0);
+
+      await service.query(user, { from: '2026-09-01', to: '2026-09-30' } as any);
+
+      const call = prisma.tenant.payrollEntry.findMany.mock.calls[0][0];
+      expect(call.where.entryDate.gte).toEqual(new Date('2026-09-01'));
+      expect(call.where.entryDate.lte).toEqual(new Date('2026-09-30'));
+    });
+
+    it('resolves each PIECEWORK entry\'s article via productionOrderId -> assembly, same join as the summary report', async () => {
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { id: 'p1', employeeId: 'e1', type: 'PIECEWORK', productionOrderId: 'po1', entryDate: new Date('2026-09-05'), amount: 100 },
+      ]);
+      prisma.tenant.payrollEntry.count.mockResolvedValue(1);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'asm1' }]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'asm1', name: 'Шафа', article: 'SH-1' }]);
+
+      const result = await service.query(user, {} as any);
+
+      expect(result.items[0]).toEqual(expect.objectContaining({ assemblyName: 'Шафа', article: 'SH-1' }));
+    });
+
+    it('leaves article/assemblyName null for a manual entry with no productionOrderId', async () => {
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { id: 'p2', employeeId: 'e1', type: 'ADVANCE', productionOrderId: null, entryDate: new Date('2026-09-05'), amount: -50 },
+      ]);
+      prisma.tenant.payrollEntry.count.mockResolvedValue(1);
+
+      const result = await service.query(user, {} as any);
+
+      expect(result.items[0]).toEqual(expect.objectContaining({ assemblyName: null, article: null }));
+      expect(prisma.tenant.productionOrder.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPayrollSummaryReport — cross-referenced defect count (Phase 1 §6.5)', () => {
     it('sums entries by type into piecework/advances/bonuses/penalties and a signed netTotal', async () => {
       prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);

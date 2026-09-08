@@ -23,6 +23,22 @@ export interface PayrollArticleLine {
   amount: number;
 }
 
+/** A raw `PayrollEntry` row plus its resolved article (2026-09-08, "в який день що кому закрили в зп") — same productionOrderId -> assembly join getPayrollSummaryReport already does, applied per-row instead of aggregated. `null` for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
+export interface PayrollEntryWithArticle {
+  id: string;
+  employeeId: string;
+  type: string;
+  productionOrderId: string | null;
+  unitsProduced: unknown;
+  amount: unknown;
+  entryDate: Date;
+  comment: string | null;
+  createdById: string;
+  createdAt: Date;
+  assemblyName: string | null;
+  article: string | null;
+}
+
 export interface PayrollSummaryLine {
   employeeId: string;
   employeeName: string;
@@ -92,6 +108,11 @@ export class PayrollService {
     const where: Record<string, any> = {};
     if (query.employeeId) where.employeeId = query.employeeId;
     if (query.type) where.type = query.type;
+    if (query.from || query.to) {
+      where.entryDate = {};
+      if (query.from) where.entryDate.gte = new Date(query.from);
+      if (query.to) where.entryDate.lte = new Date(query.to);
+    }
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
@@ -99,7 +120,28 @@ export class PayrollService {
       this.prisma.tenant.payrollEntry.findMany({ where, orderBy: { entryDate: 'desc' }, take, skip }),
       this.prisma.tenant.payrollEntry.count({ where }),
     ]);
-    return { items, total, limit: take, offset: skip };
+
+    return { items: await this.withArticles(items as any[]), total, limit: take, offset: skip };
+  }
+
+  /** Same productionOrderId -> assemblyId -> assembly(name, article) join as getPayrollSummaryReport below, extracted so `query()` can enrich the raw ledger with it too — "яку роботу зробив" is exactly as relevant per-entry as it is aggregated. */
+  private async withArticles(entries: any[]): Promise<PayrollEntryWithArticle[]> {
+    const productionOrderIds = Array.from(new Set(entries.map((e) => e.productionOrderId).filter((id): id is string => Boolean(id))));
+    const productionOrders = productionOrderIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } }, select: { id: true, assemblyId: true } })
+      : [];
+    const assemblyIdByOrderId = new Map((productionOrders as any[]).map((o) => [o.id, o.assemblyId]));
+    const assemblyIds = Array.from(new Set((productionOrders as any[]).map((o) => o.assemblyId)));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
+    return entries.map((entry) => {
+      const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
+      const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
+      return { ...entry, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null };
+    });
   }
 
   /**

@@ -3,8 +3,8 @@
 import { Fragment, useEffect, useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
-import { usePayrollSummary } from '@/lib/hooks/use-hr';
-import type { PayrollSummaryLine } from '@/lib/api-client/hr';
+import { usePayrollSummary, usePayrollEntries } from '@/lib/hooks/use-hr';
+import type { PayrollEntryType, PayrollSummaryLine } from '@/lib/api-client/hr';
 import { formatEur } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -169,8 +169,7 @@ export default function PayrollSummaryPage() {
                       <Fragment key={line.employeeId}>
                         <TableRow className="cursor-pointer" onClick={() => toggleExpanded(line.employeeId)}>
                           <TableCell>
-                            {line.byArticle.length > 0 &&
-                              (isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />)}
+                            {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                           </TableCell>
                           <TableCell>{line.employeeName}</TableCell>
                           <TableCell>{formatEur(line.piecework)}</TableCell>
@@ -211,6 +210,13 @@ export default function PayrollSummaryPage() {
                                   </div>
                                 ))}
                               </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {isOpen && (
+                          <TableRow>
+                            <TableCell colSpan={9} className="bg-muted/20 py-3">
+                              <PayrollDayByDay employeeId={line.employeeId} from={from} to={to} t={t} />
                             </TableCell>
                           </TableRow>
                         )}
@@ -331,6 +337,68 @@ function PayrollEmployeePrintBlock({
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+const ENTRY_TYPE_VARIANT: Record<PayrollEntryType, 'default' | 'success' | 'warning' | 'destructive'> = {
+  PIECEWORK: 'default',
+  ADVANCE: 'warning',
+  BONUS: 'success',
+  PENALTY: 'destructive',
+};
+
+/**
+ * Raw, dated ledger for one employee (2026-09-08 user request: "в який
+ * день що кому закрили в зп") — a separate live fetch from the aggregate
+ * `PayrollSummaryLine` above (usePayrollSummary has no per-entry dates at
+ * all), scoped to the same from/to the summary table is already filtered
+ * by so the two never disagree. Only fetches once this row is actually
+ * expanded — this component doesn't mount until then, so there is no
+ * N+1 of these queries just from the summary page loading.
+ */
+function PayrollDayByDay({
+  employeeId,
+  from,
+  to,
+  t,
+}: {
+  employeeId: string;
+  from: string;
+  to: string;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const tc = useTranslations('common');
+  const { data, isLoading } = usePayrollEntries({ employeeId, from: from || undefined, to: to || undefined, limit: 200 });
+
+  if (isLoading) {
+    return <p className="pl-8 text-xs text-muted-foreground">{tc('loading')}</p>;
+  }
+  if (!data || data.items.length === 0) {
+    return <p className="pl-8 text-xs text-muted-foreground">{tc('noResults')}</p>;
+  }
+
+  return (
+    <div className="space-y-1 pl-8">
+      <p className="text-xs font-medium text-muted-foreground">{t('dayByDayTitle')}</p>
+      <div className="grid grid-cols-4 gap-2 text-xs font-medium text-muted-foreground">
+        <span>{t('entryDate')}</span>
+        <span>{t('entryType')}</span>
+        <span>{t('article')}</span>
+        <span className="text-right">{t('amount')}</span>
+      </div>
+      {data.items.map((entry) => (
+        <div key={entry.id} className="grid grid-cols-4 items-center gap-2 text-sm">
+          <span className="tabular-nums">{new Date(entry.entryDate).toLocaleDateString()}</span>
+          <Badge variant={ENTRY_TYPE_VARIANT[entry.type]} className="w-fit">
+            {t(`entryType${entry.type}`)}
+          </Badge>
+          <span className="truncate text-muted-foreground" title={entry.comment ?? undefined}>
+            {entry.article ? `${entry.assemblyName ?? ''} (${entry.article})` : entry.assemblyName || entry.comment || '—'}
+          </span>
+          <span className="text-right tabular-nums">{formatEur(Number(entry.amount))}</span>
+        </div>
+      ))}
     </div>
   );
 }

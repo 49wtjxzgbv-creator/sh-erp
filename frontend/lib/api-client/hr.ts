@@ -102,6 +102,9 @@ export interface PayrollEntry {
   comment: string | null;
   createdById: string;
   createdAt: string;
+  /** Resolved productionOrderId -> assembly (2026-09-08, day-by-day payroll history) — null for manual ADVANCE/BONUS/PENALTY entries and for WorkTask-based (no-article) PIECEWORK. */
+  assemblyName: string | null;
+  article: string | null;
 }
 
 export interface RecordPayrollEntryInput {
@@ -118,6 +121,9 @@ export interface QueryPayrollEntriesInput {
   type?: PayrollEntryType;
   limit?: number;
   offset?: number;
+  /** Day-by-day payroll history (2026-09-08) — same from/to convention as QueryPayrollSummaryInput below. */
+  from?: string;
+  to?: string;
 }
 
 export interface PaginatedPayrollEntries {

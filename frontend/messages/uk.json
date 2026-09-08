@@ -904,6 +904,7 @@
     "filterByType": "Фільтр за типом",
     "allTypes": "Усі типи",
     "summaryByEmployee": "Зведення за співробітниками",
+    "dayByDayTitle": "По днях",
     "fromDate": "Від",
     "toDate": "До",
     "netTotal": "Разом",
