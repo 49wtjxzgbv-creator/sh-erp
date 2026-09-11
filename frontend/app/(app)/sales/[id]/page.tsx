@@ -130,6 +130,10 @@ function OrderPriceTotals({ order, items }: { order: CustomerOrder; items: Custo
         <p className="text-sm font-medium">{hasActual ? formatEur(actualTotal) : t('pricePending')}</p>
         <p className="text-[11px] text-muted-foreground">{t('actualTotalHint')}</p>
       </div>
+      <div>
+        <p className="text-xs text-muted-foreground">{t('salePrice')}</p>
+        <p className="text-sm font-medium">{toNumber(order.salePrice) != null ? formatEur(toNumber(order.salePrice)!) : t('pricePending')}</p>
+      </div>
     </div>
   );
 }
@@ -475,6 +479,12 @@ export default function CustomerOrderDetailPage() {
             <div>
               <p className="text-xs text-muted-foreground">{t('otherCost')}</p>
               <p className="text-sm">{formatEur(toNumber(order.otherCost)!)}</p>
+            </div>
+          )}
+          {toNumber(order.salePrice) != null && (
+            <div>
+              <p className="text-xs text-muted-foreground">{t('salePrice')}</p>
+              <p className="text-sm">{formatEur(toNumber(order.salePrice)!)}</p>
             </div>
           )}
           {order.comment && (

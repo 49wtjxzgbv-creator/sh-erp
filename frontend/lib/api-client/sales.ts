@@ -71,6 +71,8 @@ export interface CustomerOrder {
   deliveryCost: DecimalString | null;
   transportRiggingCost: DecimalString | null;
   otherCost: DecimalString | null;
+  /** Revenue, not cost — total price the whole order is sold to the customer for. Never folded into estimatedTotal/actualTotal. */
+  salePrice: DecimalString | null;
   comment: string | null;
   createdById: string;
   createdAt: string;
@@ -125,6 +127,7 @@ export interface CreateCustomerOrderInput {
   deliveryCost?: number;
   transportRiggingCost?: number;
   otherCost?: number;
+  salePrice?: number;
   comment?: string;
   items: CustomerOrderItemInput[];
 }

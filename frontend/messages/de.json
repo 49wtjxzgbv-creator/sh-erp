@@ -745,6 +745,7 @@
     "deliveryCost": "Delivery",
     "transportRiggingCost": "Transport/rigging costs",
     "otherCost": "Additional costs",
+    "salePrice": "Order sale price",
     "itemPlannedStartAt": "Planned start (item)",
     "itemPlannedEndAt": "Planned completion (item)",
     "itemDeadline": "Item deadline",

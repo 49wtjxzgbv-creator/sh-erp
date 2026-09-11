@@ -1961,6 +1961,13 @@ model CustomerOrder {
   transportRiggingCost Decimal? @db.Decimal(14, 2)
   otherCost            Decimal? @db.Decimal(14, 2)
 
+  // Total price the whole order is sold to the customer for (2026-09-11 user
+  // request) — entered directly by staff, same nullable-Decimal(14,2) shape
+  // as the cost fields above, but deliberately NOT folded into
+  // estimatedTotal/actualTotal (those are cost, this is revenue; margin is
+  // whatever reads them both side by side, never computed/stored here).
+  salePrice Decimal? @db.Decimal(14, 2)
+
   legacyId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)

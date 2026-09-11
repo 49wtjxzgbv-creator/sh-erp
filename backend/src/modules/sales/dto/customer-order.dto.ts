@@ -37,6 +37,18 @@ class ExtraCostsDto {
   @IsNumber()
   @Min(0)
   otherCost?: number;
+
+  // Revenue, not cost — the total price the whole order is sold to the
+  // customer for. Deliberately not folded into estimatedTotal/actualTotal
+  // (those are cost); lives alongside the cost fields here only because
+  // it's entered/edited the same way (header-level, staff-entered, same
+  // nullable-Decimal(14,2) shape).
+  @ApiPropertyOptional({ description: 'Ціна продажу всього замовлення клієнту.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  salePrice?: number;
 }
 
 export class SubAssemblyToProduceDto {

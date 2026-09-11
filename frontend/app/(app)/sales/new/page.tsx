@@ -59,6 +59,7 @@ export default function NewCustomerOrderPage() {
   const [deliveryCost, setDeliveryCost] = useState('');
   const [transportRiggingCost, setTransportRiggingCost] = useState('');
   const [otherCost, setOtherCost] = useState('');
+  const [salePrice, setSalePrice] = useState('');
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +150,7 @@ export default function NewCustomerOrderPage() {
         deliveryCost: deliveryCost ? Number(deliveryCost) : undefined,
         transportRiggingCost: transportRiggingCost ? Number(transportRiggingCost) : undefined,
         otherCost: otherCost ? Number(otherCost) : undefined,
+        salePrice: salePrice ? Number(salePrice) : undefined,
         comment: comment || undefined,
         items,
       });
@@ -256,6 +258,10 @@ export default function NewCustomerOrderPage() {
           <div className="space-y-1.5">
             <Label htmlFor="otherCost">{t('otherCost')}</Label>
             <Input id="otherCost" type="number" step="any" min={0} value={otherCost} onChange={(e) => setOtherCost(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="salePrice">{t('salePrice')}</Label>
+            <Input id="salePrice" type="number" step="any" min={0} value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="comment">{t('comment')}</Label>

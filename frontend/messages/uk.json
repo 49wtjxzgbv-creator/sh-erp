@@ -849,6 +849,7 @@
     "deliveryCost": "Доставка",
     "transportRiggingCost": "Транспортно-такелажні витрати",
     "otherCost": "Додаткові витрати",
+    "salePrice": "Ціна продажу замовлення",
     "itemPlannedStartAt": "Плановий початок (позиція)",
     "itemPlannedEndAt": "Планове завершення (позиція)",
     "itemDeadline": "Дедлайн позиції",

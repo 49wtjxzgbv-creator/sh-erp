@@ -45,6 +45,7 @@ export function EditCustomerOrderDialog({ open, onOpenChange, order }: EditCusto
   const [deliveryCost, setDeliveryCost] = useState('');
   const [transportRiggingCost, setTransportRiggingCost] = useState('');
   const [otherCost, setOtherCost] = useState('');
+  const [salePrice, setSalePrice] = useState('');
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +63,7 @@ export function EditCustomerOrderDialog({ open, onOpenChange, order }: EditCusto
     setDeliveryCost(toNumber(order.deliveryCost)?.toString() ?? '');
     setTransportRiggingCost(toNumber(order.transportRiggingCost)?.toString() ?? '');
     setOtherCost(toNumber(order.otherCost)?.toString() ?? '');
+    setSalePrice(toNumber(order.salePrice)?.toString() ?? '');
     setComment(order.comment ?? '');
     setError(null);
   }, [open, order]);
@@ -87,6 +89,7 @@ export function EditCustomerOrderDialog({ open, onOpenChange, order }: EditCusto
         deliveryCost: deliveryCost ? Number(deliveryCost) : undefined,
         transportRiggingCost: transportRiggingCost ? Number(transportRiggingCost) : undefined,
         otherCost: otherCost ? Number(otherCost) : undefined,
+        salePrice: salePrice ? Number(salePrice) : undefined,
         comment: comment || undefined,
       });
       onOpenChange(false);
@@ -182,6 +185,10 @@ export function EditCustomerOrderDialog({ open, onOpenChange, order }: EditCusto
             <div className="space-y-1.5">
               <Label htmlFor="edit-otherCost">{t('otherCost')}</Label>
               <Input id="edit-otherCost" type="number" step="any" min={0} value={otherCost} onChange={(e) => setOtherCost(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-salePrice">{t('salePrice')}</Label>
+              <Input id="edit-salePrice" type="number" step="any" min={0} value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="edit-comment">{t('comment')}</Label>

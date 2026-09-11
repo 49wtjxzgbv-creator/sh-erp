@@ -100,6 +100,7 @@ export class CustomerOrdersService {
         deliveryCost: dto.deliveryCost,
         transportRiggingCost: dto.transportRiggingCost,
         otherCost: dto.otherCost,
+        salePrice: dto.salePrice,
         comment: dto.comment,
         status: 'NEW',
         createdById: user.userId,

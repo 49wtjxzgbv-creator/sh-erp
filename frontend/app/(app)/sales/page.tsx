@@ -8,6 +8,8 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
 import { useCustomerOrders } from '@/lib/hooks/use-sales';
 import { formatEur } from '@/lib/utils';
+import { toNumber } from '@/lib/api-client/decimal';
+import type { DecimalString } from '@/lib/api-client/decimal';
 import type { CustomerOrder, CustomerOrderStatus } from '@/lib/api-client/sales';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { Input } from '@/components/ui/input';
@@ -70,6 +72,14 @@ export default function CustomerOrdersPage() {
         header: t('actualTotal'),
         cell: ({ getValue }) => {
           const v = getValue() as number | null | undefined;
+          return v != null ? formatEur(v) : t('pricePending');
+        },
+      },
+      {
+        accessorKey: 'salePrice',
+        header: t('salePrice'),
+        cell: ({ getValue }) => {
+          const v = toNumber(getValue() as DecimalString | null | undefined);
           return v != null ? formatEur(v) : t('pricePending');
         },
       },
