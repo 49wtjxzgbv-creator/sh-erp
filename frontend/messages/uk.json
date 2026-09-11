@@ -914,6 +914,8 @@
     "summaryByEmployee": "Зведення за співробітниками",
     "dayByDayTitle": "По днях",
     "dayViewTitle": "Перегляд по конкретному дню",
+    "payrollByOrder": "Зарплата по замовленню",
+    "payrollByOrderLabel": "Оберіть замовлення",
     "day": "День",
     "fromDate": "Від",
     "toDate": "До",

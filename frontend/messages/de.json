@@ -817,6 +817,8 @@
     "summaryByEmployee": "Summary by employee",
     "dayByDayTitle": "By day",
     "dayViewTitle": "View by specific day",
+    "payrollByOrder": "Payroll by order",
+    "payrollByOrderLabel": "Select an order",
     "day": "Day",
     "fromDate": "From",
     "toDate": "To",

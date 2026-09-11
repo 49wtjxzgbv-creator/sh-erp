@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
+import { CustomerOrderPicker } from '@/components/domain/sales/customer-order-picker';
+import { PayrollFundWidget } from '@/components/domain/sales/payroll-fund-widget';
+import { OrderPayrollByEmployee } from '@/components/domain/sales/order-payroll-by-employee';
 
 /** Toggles which mounted `.print-area` the browser's next `window.print()` shows — same pattern as usePrintOptions (print-options.tsx), inlined here since this page needs no columns/photos dialog, just isolation between the whole-summary print and a single employee's. */
 function activateOnlyPrintArea(id: string) {
@@ -60,6 +63,20 @@ export default function PayrollSummaryPage() {
   const [printEmployee, setPrintEmployee] = useState<PayrollSummaryLine | null>(null);
   const summaryPrintAreaId = useId();
   const employeePrintAreaId = useId();
+  // "Зарплата по конкретних замовленнях" (2026-09-11 user request) — reuses
+  // the Sales order page's own PayrollFundWidget/OrderPayrollByEmployee
+  // as-is (both already order-scoped, no new backend needed) rather than
+  // building a second copy of that breakdown here. Rendered OUTSIDE the
+  // `.no-print` wrapper below (own top-level block, after it closes) —
+  // PayrollFundWidget mounts its own nested `<PrintArea>`
+  // (PayrollFundEstimatePrint), and `.no-print`'s `display:none` at print
+  // time is inherited by every descendant with no way to escape it (unlike
+  // the visibility trick `.print-area--active` itself uses), so nesting it
+  // inside `.no-print` would silently break that widget's own print button
+  // — same class of bug payroll-fund-widget.tsx's own header comment
+  // documents from 2026-08-31.
+  const [payrollOrderId, setPayrollOrderId] = useState<string | undefined>(undefined);
+  const [payrollOrderLabel, setPayrollOrderLabel] = useState<string | undefined>(undefined);
 
   const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined });
 
@@ -302,7 +319,32 @@ export default function PayrollSummaryPage() {
             </Table>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('payrollByOrder')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            <Label htmlFor="payrollOrder">{t('payrollByOrderLabel')}</Label>
+            <div className="w-fit min-w-[280px]">
+              <CustomerOrderPicker
+                value={payrollOrderId}
+                onChange={(id, label) => {
+                  setPayrollOrderId(id);
+                  setPayrollOrderLabel(label);
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {payrollOrderId && (
+        <div className="space-y-4">
+          <PayrollFundWidget orderId={payrollOrderId} orderLabel={payrollOrderLabel} defaultOpen />
+          <OrderPayrollByEmployee orderId={payrollOrderId} />
+        </div>
+      )}
 
       {data && data.length > 0 && (
         <PrintArea printAreaId={summaryPrintAreaId}>
