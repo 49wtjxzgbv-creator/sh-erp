@@ -118,6 +118,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'customer-orders:read', resource: 'customer-orders', action: 'read', description: 'View customer orders.' },
   { key: 'customer-orders:manage', resource: 'customer-orders', action: 'manage', description: 'Create/edit customer orders, give lines to production, preview and create shortage-driven purchase orders.' },
   { key: 'customer-orders:delete', resource: 'customer-orders', action: 'delete', description: 'Permanently delete a customer order — admin-only, not granted to any default role besides Admin.' },
+  { key: 'customer-orders:view-profit', resource: 'customer-orders', action: 'view-profit', description: 'View a customer order\'s sale price and net-profit report (production cost, real payroll spend, additional expenses) — same admin-sensitive rationale as quotations:view-margin, not granted to any default role besides Admin.' },
   { key: 'shipments:read', resource: 'shipments', action: 'read', description: 'View shipments.' },
   { key: 'shipments:manage', resource: 'shipments', action: 'manage', description: 'Create/edit shipments, mark delivered.' },
 

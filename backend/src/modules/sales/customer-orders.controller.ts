@@ -123,6 +123,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.getOrderPayrollByEmployee(user, id);
   }
 
+  @Get(':id/profit-report')
+  @RequirePermissions('customer-orders:view-profit')
+  @ApiOperation({
+    summary:
+      '"Прибуток по замовленню" — salePrice minus three real cost buckets (production cost excluding labor, real ' +
+      'payroll payouts, additional Finance expenses). Admin-sensitive, same rationale as quotations:view-margin.',
+  })
+  async getProfitReport(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.customerOrdersService.getProfitReport(user, id);
+  }
+
   @Get(':id/production-units')
   @RequirePermissions('customer-orders:read')
   @ApiOperation({

@@ -9,6 +9,7 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { SubAssemblyReservationService } from '../inventory/sub-assembly-reservation.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { PayrollArticleLine } from '../hr/payroll.service';
+import { FinanceService } from '../finance/finance.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
@@ -74,6 +75,7 @@ export class CustomerOrdersService {
     private readonly stockReservationService: StockReservationService,
     private readonly subAssemblyReservationService: SubAssemblyReservationService,
     private readonly shortageService: CustomerOrderShortageService,
+    private readonly financeService: FinanceService,
   ) {}
 
   /**
@@ -727,6 +729,86 @@ export class CustomerOrdersService {
     });
 
     return { estimated: round2(estimated), estimatedByArticle, actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
+  }
+
+  /**
+   * "Прибуток по замовленню" (2026-09-11 user request) — чистий прибуток =
+   * ціна продажу (order.salePrice) мінус три REAL cost buckets, deliberately
+   * chosen to avoid the two double-counting traps found while designing
+   * this:
+   *  - `productionCost`: Σ this order's ProductionOrder batches'
+   *    `totalLocalCostEur` (materials + packaging/delivery/other, frozen at
+   *    batch start — same batches getPayrollFundSummary's `actual` sums)
+   *    MINUS each batch's own `laborCostEur`, because labor is charged for
+   *    real below via `earnedActual` instead — `totalLocalCostEur` bakes
+   *    materials AND a frozen BOM-rate labor estimate into one number
+   *    (production-orders.service.ts's "Cost freezing"), so leaving
+   *    `laborCostEur` in would double-count against `laborCost` below. PLUS
+   *    this order's own deliveryCost/transportRiggingCost/otherCost (never
+   *    part of any ProductionOrder, so no overlap there). null (not 0) until
+   *    at least one batch has actually started — same "no fabricated number"
+   *    discipline as withPriceTotals' hasEstimate/hasActual.
+   *  - `laborCost`: `getPayrollFundSummary`'s `earnedActual` — the REAL
+   *    PayrollEntry (PIECEWORK) ledger, not the frozen `laborCostEur`
+   *    estimate already excluded above. User's explicit 2026-09-11 choice
+   *    ("реально виплачено працівникам") over the frozen BOM-rate estimate.
+   *  - `additionalExpenses`: `FinanceService#getCustomerOrderSummary`'s
+   *    `additionalExpenses` (primary currency only, same as everywhere else
+   *    in Finance — see that summary's own "never blend currencies" rule) —
+   *    direct `CustomerOrderExpense` rows, genuinely separate from
+   *    `productionCost` above. Deliberately does NOT use that summary's
+   *    `purchaseCost`: shortage-driven POs buy materials that flow into
+   *    `FinishedGood.unitCostLocalEur` and from there into this same
+   *    `totalLocalCostEur`, so adding it here would double-count real
+   *    material spend a second time.
+   * Gated behind `customer-orders:view-profit` (controller), same
+   * admin-sensitive rationale as `quotations:view-margin` — sale price and
+   * margin are exactly the kind of figure that must never leak to an
+   * ordinary sales user's screen.
+   */
+  async getProfitReport(user: RequestUser, orderId: string) {
+    const order = await this.findOne(user, orderId);
+    const items = order.items as any[];
+    const itemIds = items.map((i) => i.id);
+
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({
+          where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
+        })
+      : [];
+
+    let productionCost = 0;
+    let hasProductionCost = false;
+    for (const b of batches as any[]) {
+      if (b.totalLocalCostEur != null) {
+        productionCost += Number(b.totalLocalCostEur) - Number(b.laborCostEur ?? 0);
+        hasProductionCost = true;
+      }
+    }
+    const extraCosts = Number(order.deliveryCost ?? 0) + Number(order.transportRiggingCost ?? 0) + Number(order.otherCost ?? 0);
+    const hasExtraCosts = order.deliveryCost != null || order.transportRiggingCost != null || order.otherCost != null;
+    if (hasExtraCosts) {
+      productionCost += extraCosts;
+      hasProductionCost = true;
+    }
+
+    const [payrollFund, financeSummary] = await Promise.all([
+      this.getPayrollFundSummary(user, orderId),
+      this.financeService.getCustomerOrderSummary(user, orderId),
+    ]);
+    const laborCost = payrollFund.earnedActual;
+    const additionalExpenses = financeSummary.additionalExpenses;
+
+    const salePrice = order.salePrice != null ? Number(order.salePrice) : null;
+    const netProfit = salePrice != null && hasProductionCost ? salePrice - productionCost - laborCost - additionalExpenses : null;
+
+    return {
+      salePrice,
+      productionCost: hasProductionCost ? round2(productionCost) : null,
+      laborCost: round2(laborCost),
+      additionalExpenses: round2(additionalExpenses),
+      netProfit: netProfit != null ? round2(netProfit) : null,
+    };
   }
 
   /**

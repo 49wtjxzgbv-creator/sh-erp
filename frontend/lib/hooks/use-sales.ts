@@ -13,6 +13,7 @@ import {
   giveSubAssemblyToProduction,
   getItemProductionTree,
   getPayrollFundSummary,
+  getProfitReport,
   getOrderPayrollByEmployee,
   getOrderProductionUnits,
   giveAllToProduction,
@@ -145,6 +146,15 @@ export function usePayrollFundSummary(orderId: string) {
   return useQuery({
     queryKey: ['customer-orders', orderId, 'payroll-fund'] as const,
     queryFn: () => getPayrollFundSummary(orderId),
+  });
+}
+
+/** "Прибуток по замовленню" — admin-sensitive (customer-orders:view-profit), disabled via undefined orderId when the caller lacks it. */
+export function useProfitReport(orderId: string | undefined) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId ?? '', 'profit-report'] as const,
+    queryFn: () => getProfitReport(orderId as string),
+    enabled: Boolean(orderId),
   });
 }
 

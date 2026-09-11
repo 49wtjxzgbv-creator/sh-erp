@@ -267,6 +267,30 @@ export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSumma
   return apiClient.get<PayrollFundSummary>(`customer-orders/${orderId}/payroll-fund`);
 }
 
+/**
+ * "Прибуток по замовленню" (2026-09-11) — real JSON numbers (computed
+ * server-side, not raw Prisma Decimal fields). `productionCost` excludes
+ * labor (folded into `laborCost` = real PayrollEntry payouts instead, not
+ * the frozen BOM-rate estimate) and deliberately does NOT include Finance's
+ * `purchaseCost` (would double-count materials already in `productionCost`)
+ * — see CustomerOrdersService#getProfitReport's own header comment for the
+ * full double-counting rationale. null (not 0) on any field means "not yet
+ * determined", same pricePending convention as estimatedTotal/actualTotal.
+ * Gated behind `customer-orders:view-profit` — admin-sensitive, same as
+ * Quotation margin fields.
+ */
+export interface ProfitReport {
+  salePrice: number | null;
+  productionCost: number | null;
+  laborCost: number;
+  additionalExpenses: number;
+  netProfit: number | null;
+}
+
+export function getProfitReport(orderId: string): Promise<ProfitReport> {
+  return apiClient.get<ProfitReport>(`customer-orders/${orderId}/profit-report`);
+}
+
 /** "По працівниках" tab (2026-08-30) — one row per employee who earned PIECEWORK pay on this order, with their own total and article/qty/amount breakdown. */
 export interface PayrollByEmployeeLine {
   employeeId: string;

@@ -10,6 +10,7 @@ describe('CustomerOrdersService', () => {
   let stockReservationService: any;
   let subAssemblyReservationService: any;
   let shortageService: any;
+  let financeService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -74,7 +75,17 @@ describe('CustomerOrdersService', () => {
     stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     subAssemblyReservationService = { reserve: jest.fn().mockResolvedValue(undefined), releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
-    service = new CustomerOrdersService(prisma, audit, productionOrdersService, assembliesService, stockReservationService, subAssemblyReservationService, shortageService);
+    financeService = { getCustomerOrderSummary: jest.fn().mockResolvedValue({ additionalExpenses: 0 }) };
+    service = new CustomerOrdersService(
+      prisma,
+      audit,
+      productionOrdersService,
+      assembliesService,
+      stockReservationService,
+      subAssemblyReservationService,
+      shortageService,
+      financeService,
+    );
 
     // Default baseline matching `order` above: item2 already has its full
     // qty (2) given to production via one batch, item1 has none yet — the

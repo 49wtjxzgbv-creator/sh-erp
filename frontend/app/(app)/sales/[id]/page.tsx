@@ -44,6 +44,7 @@ import { ProductionProgressPrint } from '@/components/domain/sales/production-pr
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { FinanceSummaryWidget } from '@/components/domain/sales/finance-summary-widget';
 import { PayrollFundWidget } from '@/components/domain/sales/payroll-fund-widget';
+import { ProfitReportWidget } from '@/components/domain/sales/profit-report-widget';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
@@ -498,6 +499,7 @@ export default function CustomerOrderDetailPage() {
 
       <FinanceSummaryWidget customerOrderId={order.id} />
       <PayrollFundWidget orderId={order.id} orderLabel={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`} />
+      <ProfitReportWidget orderId={order.id} />
 
       <Card>
         <CardHeader>

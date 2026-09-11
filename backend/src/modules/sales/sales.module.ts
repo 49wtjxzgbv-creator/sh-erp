@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BomModule } from '../bom/bom.module';
+import { FinanceModule } from '../finance/finance.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ProcurementModule } from '../procurement/procurement.module';
 import { ProductionModule } from '../production/production.module';
@@ -10,7 +11,7 @@ import { ShipmentsController } from './shipments.controller';
 import { ShipmentsService } from './shipments.service';
 
 @Module({
-  imports: [ProductionModule, ProcurementModule, BomModule, InventoryModule], // ProductionOrdersService (give-to-production) + PurchaseOrdersService (shortage → PO) + AssembliesService (estimated price on the orders list) + StockReservationService (auto-reserve at order creation, release on cancel)
+  imports: [ProductionModule, ProcurementModule, BomModule, InventoryModule, FinanceModule], // ProductionOrdersService (give-to-production) + PurchaseOrdersService (shortage → PO) + AssembliesService (estimated price on the orders list) + StockReservationService (auto-reserve at order creation, release on cancel) + FinanceService (profit report's additionalExpenses)
   controllers: [CustomerOrdersController, ShipmentsController],
   providers: [CustomerOrdersService, CustomerOrderShortageService, ShipmentsService],
   exports: [CustomerOrdersService, CustomerOrderShortageService, ShipmentsService],
