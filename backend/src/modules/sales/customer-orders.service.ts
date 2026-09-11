@@ -671,6 +671,37 @@ export class CustomerOrdersService {
    *    fetched below), no extra ProductionOrder round trip needed unlike
    *    the global report.
    */
+  /**
+   * "Загальні роботи" (2026-09-11 user request — "у нас є коли створюємо
+   * замовлення блок пов'язані позиції замовлень цим ми ж прив'язуємо
+   * загальну роботу до замовлення"): `WorkTask`-based PIECEWORK entries have
+   * NO `productionOrderId` at all (a `ProductionExecution` is for exactly
+   * one of `productionOrderId`/`workTaskId`, never both — see that model's
+   * own XOR comment), so they were invisible to every productionOrderId-only
+   * fetch below. `WorkTaskItem` (the "Пов'язані позиції замовлень" block
+   * shown when creating a general-work task) already links a WorkTask to
+   * specific `CustomerOrderItem`s — schema.prisma's own comment on that
+   * model flagged it "informational tag... never read by any fund/
+   * allocation calculation", which was true until this fix. Joins
+   * PayrollEntry -> sourceAllocation -> execution -> workTaskId ->
+   * WorkTaskItem.customerOrderItemId, scoped to this order's own items.
+   * Every returned entry keeps `productionOrderId: null`, so both callers'
+   * existing `assemblyId ?? GENERAL_WORK_KEY` bucketing picks them up with
+   * zero further changes needed there.
+   */
+  private async getGeneralWorkPayrollEntries(itemIds: string[]) {
+    if (!itemIds.length) return [];
+    const workTaskItems = await this.prisma.tenant.workTaskItem.findMany({
+      where: { customerOrderItemId: { in: itemIds } },
+      select: { workTaskId: true },
+    });
+    const workTaskIds = Array.from(new Set(workTaskItems.map((w) => w.workTaskId)));
+    if (!workTaskIds.length) return [];
+    return this.prisma.tenant.payrollEntry.findMany({
+      where: { type: 'PIECEWORK', sourceAllocation: { execution: { workTaskId: { in: workTaskIds } } } },
+    });
+  }
+
   async getPayrollFundSummary(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
     const items = order.items as any[];
@@ -699,6 +730,8 @@ export class CustomerOrdersService {
     const payrollEntries = productionOrderIds.length
       ? await this.prisma.tenant.payrollEntry.findMany({ where: { type: 'PIECEWORK', productionOrderId: { in: productionOrderIds } } })
       : [];
+    const generalWorkEntries = await this.getGeneralWorkPayrollEntries(itemIds);
+    const allPayrollEntries = [...payrollEntries, ...generalWorkEntries];
 
     const assemblyIds = Array.from(new Set(Array.from(assemblyIdByOrderId.values())));
     const assemblies = assemblyIds.length
@@ -709,7 +742,7 @@ export class CustomerOrdersService {
     const GENERAL_WORK_KEY = '__general__';
     const byArticleMap = new Map<string, PayrollArticleLine>();
     let earnedActual = 0;
-    for (const entry of payrollEntries as any[]) {
+    for (const entry of allPayrollEntries as any[]) {
       const amount = Number(entry.amount);
       earnedActual += amount;
       const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
@@ -838,9 +871,11 @@ export class CustomerOrdersService {
     const payrollEntries = productionOrderIds.length
       ? await this.prisma.tenant.payrollEntry.findMany({ where: { type: 'PIECEWORK', productionOrderId: { in: productionOrderIds } } })
       : [];
-    if (payrollEntries.length === 0) return [];
+    const generalWorkEntries = await this.getGeneralWorkPayrollEntries(itemIds);
+    const allPayrollEntries = [...payrollEntries, ...generalWorkEntries];
+    if (allPayrollEntries.length === 0) return [];
 
-    const employeeIds = Array.from(new Set((payrollEntries as any[]).map((e) => e.employeeId as string)));
+    const employeeIds = Array.from(new Set((allPayrollEntries as any[]).map((e) => e.employeeId as string)));
     const employees = await this.prisma.tenant.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, fullName: true } });
     const employeeById = new Map((employees as any[]).map((e) => [e.id, e]));
 
@@ -853,7 +888,7 @@ export class CustomerOrdersService {
     const GENERAL_WORK_KEY = '__general__';
     const linesByEmployee = new Map<string, PayrollByEmployeeLine>();
     const articlesByEmployee = new Map<string, Map<string, PayrollArticleLine>>();
-    for (const entry of payrollEntries as any[]) {
+    for (const entry of allPayrollEntries as any[]) {
       const employeeId = entry.employeeId as string;
       if (!linesByEmployee.has(employeeId)) {
         linesByEmployee.set(employeeId, {

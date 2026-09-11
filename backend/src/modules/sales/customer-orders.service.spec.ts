@@ -62,6 +62,7 @@ describe('CustomerOrdersService', () => {
         productionOrder: { findMany: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
         payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
+        workTaskItem: { findMany: jest.fn().mockResolvedValue([]) },
         assembly: { findMany: jest.fn().mockResolvedValue([]) },
         employee: { findMany: jest.fn().mockResolvedValue([]) },
       },
@@ -421,6 +422,32 @@ describe('CustomerOrdersService', () => {
       ]);
       expect(prisma.tenant.payrollEntry.findMany).toHaveBeenCalledWith({
         where: { type: 'PIECEWORK', productionOrderId: { in: ['po1', 'po2'] } },
+      });
+    });
+
+    it('загальні роботи (2026-09-11): includes WorkTask-based PIECEWORK entries tagged to this order\'s items via WorkTaskItem, bucketed under GENERAL_WORK_KEY alongside normal production-order entries', async () => {
+      assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
+      mockProductionOrdersFindMany([{ id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 12, assemblyId: 'a1' }]);
+      prisma.tenant.workTaskItem.findMany.mockResolvedValue([{ workTaskId: 'wt1' }]);
+      prisma.tenant.payrollEntry.findMany.mockImplementation(({ where }: any) => {
+        if (where.sourceAllocation) return Promise.resolve([{ employeeId: 'e1', type: 'PIECEWORK', amount: 50, unitsProduced: 0, productionOrderId: null }]);
+        return Promise.resolve([{ employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' }]);
+      });
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'a1', name: 'Widget', article: 'W-1' }]);
+
+      const result = await service.getPayrollFundSummary(user, 'co1');
+
+      expect(result.earnedActual).toBe(150);
+      expect(result.byArticle).toEqual([
+        { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 4, amount: 100 },
+        { assemblyId: null, assemblyName: null, article: null, unitsProduced: 0, amount: 50 },
+      ]);
+      expect(prisma.tenant.workTaskItem.findMany).toHaveBeenCalledWith({
+        where: { customerOrderItemId: { in: ['item1', 'item2'] } },
+        select: { workTaskId: true },
+      });
+      expect(prisma.tenant.payrollEntry.findMany).toHaveBeenCalledWith({
+        where: { type: 'PIECEWORK', sourceAllocation: { execution: { workTaskId: { in: ['wt1'] } } } },
       });
     });
 

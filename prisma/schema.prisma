@@ -1754,8 +1754,15 @@ enum WorkTaskStatus {
   CLOSED
 }
 
-// Purely informational tag ("this general work touched product X") —
-// never read by any fund/allocation calculation, reporting only.
+// Tags a WorkTask ("this general work touched product X") — never read by
+// any fund/ALLOCATION calculation (a PayrollEntry's amount/share is always
+// computed from ProductionExecutionAllocation, same for a WorkTask-based
+// execution as a ProductionOrder-based one). 2026-09-11 fix: IS now read by
+// CustomerOrdersService#getGeneralWorkPayrollEntries — the per-order payroll
+// views (getPayrollFundSummary/getOrderPayrollByEmployee, and therefore
+// getProfitReport's laborCost) join through this table to attribute a
+// WorkTask-based PayrollEntry (no productionOrderId of its own) back to
+// whichever CustomerOrder(s) it was tagged against here.
 model WorkTaskItem {
   id                  String @id @default(uuid()) @db.Uuid
   companyId           String @db.Uuid
