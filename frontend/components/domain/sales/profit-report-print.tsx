@@ -5,7 +5,8 @@ import { useProfitReport } from '@/lib/hooks/use-sales';
 import { useCustomerOrderFinanceExpenses } from '@/lib/hooks/use-finance';
 import { formatEur } from '@/lib/utils';
 import { formatMoney } from '@/lib/finance-format';
-import { PrintArea, PrintButton, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 
 /**
  * "Друк ПДФ" (2026-09-11 user request) — same browser-print-to-PDF mechanism
@@ -15,6 +16,18 @@ import { PrintArea, PrintButton, PrintDocumentHeader, PreviewButton } from '@/co
  * figures plus the raw additional-expense lines, same numbers the on-screen
  * ProfitReportWidget shows — printed from the same useProfitReport query so
  * the two can never drift apart.
+ *
+ * MUST use `usePrintOptions`/`printAreaId`, not a plain `PrintButton` — this
+ * order page already hosts several other `<PrintArea>`s (CustomerOrderPrint,
+ * ProductionProgressPrint, PayrollFundEstimatePrint), every one of which
+ * starts `print-area--active` by default (print-area.tsx). A plain
+ * `window.print()` here left every one of them active at once — real
+ * reported bug (2026-09-11: "не друкує сам звіт"), the printed output was
+ * whichever OTHER print area's content won the resulting `position:
+ * absolute; inset: 0` stack, not this one. `usePrintOptions` deactivates
+ * every other print area right before firing `window.print()` — see that
+ * hook's own header comment for the full regression history
+ * (production/[id]/page.tsx hit the identical bug first, 2026-08-25).
  */
 export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
@@ -22,6 +35,10 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
   const tp = useTranslations('print');
   const { data: report } = useProfitReport(orderId);
   const { data: expenses } = useCustomerOrderFinanceExpenses(orderId);
+
+  const columns: PrintColumnOption[] = [{ id: 'expenses', label: tf('directExpenses') }];
+  const printOptions = usePrintOptions({ columns });
+
   if (!report) return null;
 
   const rows: [string, string][] = [
@@ -35,10 +52,16 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <PrintButton label={tp('printProfitReport')} />
+        <PrintOptionsDialog
+          open={printOptions.open}
+          onOpenChange={printOptions.setOpen}
+          columns={columns}
+          onConfirm={printOptions.confirm}
+          triggerLabel={tp('printProfitReport')}
+        />
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('profitReportTitle')} subtitle={orderLabel} />
         <table className="mb-4">
           <tbody>
@@ -56,7 +79,7 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
           </tbody>
         </table>
 
-        {expenses && expenses.length > 0 && (
+        {printOptions.isColumnVisible('expenses') && expenses && expenses.length > 0 && (
           <div>
             <h3 className="mb-1 font-semibold">{tf('directExpenses')}</h3>
             <table>

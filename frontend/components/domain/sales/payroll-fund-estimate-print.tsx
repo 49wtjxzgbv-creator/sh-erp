@@ -1,9 +1,12 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { Printer } from 'lucide-react';
 import { formatEur } from '@/lib/utils';
 import type { PayrollEstimatedArticleLine } from '@/lib/api-client/sales';
-import { PrintArea, PrintButton, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { usePrintOptions } from '@/components/domain/print/print-options';
+import { Button } from '@/components/ui/button';
 
 /**
  * "Друкувати оцінку по виробах" (2026-08-31 user request) — the payroll
@@ -14,6 +17,15 @@ import { PrintArea, PrintButton, PrintDocumentHeader, PreviewButton } from '@/co
  * semantic table for print (repeating `<thead>` across pages, borders,
  * the `.print-photo-col` width helper), same convention every other print
  * view in this app already follows (production-progress-print.tsx etc.).
+ *
+ * `usePrintOptions`/`printAreaId` (no columns — the table always prints in
+ * full) — needed for activate-only-this-print-area, not just cosmetics: this
+ * order page hosts several other `<PrintArea>`s at once (CustomerOrderPrint,
+ * ProductionProgressPrint, ProfitReportPrint), each starting
+ * `print-area--active` by default. A plain `window.print()` here left all of
+ * them active simultaneously — real reported bug (2026-09-11), same root
+ * cause as production-progress-print.tsx's own fix (see that file's header
+ * comment).
  */
 export function PayrollFundEstimatePrint({
   lines,
@@ -30,14 +42,18 @@ export function PayrollFundEstimatePrint({
   const t = useTranslations('sales');
   const tCatalog = useTranslations('catalog');
   const tp = useTranslations('print');
+  const printOptions = usePrintOptions({ columns: [] });
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <PrintButton label={tp('printPayrollEstimate')} />
+        <Button type="button" variant="outline" size="sm" onClick={() => printOptions.confirm(new Set(), false)}>
+          <Printer className="mr-2 h-4 w-4" />
+          {tp('printPayrollEstimate')}
+        </Button>
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('payrollEstimateTitle')} subtitle={subtitle} />
         <table>
           <colgroup>

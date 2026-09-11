@@ -2,15 +2,18 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { Printer } from 'lucide-react';
 import { useItemProductionTree } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { CustomerOrder, CustomerOrderItem, ProductionTreeNode } from '@/lib/api-client/sales';
 import type { ProductionOrderStatus } from '@/lib/api-client/production';
-import { PrintArea, PrintButton, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+import { usePrintOptions } from '@/components/domain/print/print-options';
 import { BATCH_STATUS_VARIANT, collectAssemblyIds } from '@/components/domain/sales/production-progress-tree';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /** Same card look as the on-screen TreeNode (production-progress-tree.tsx) — border/background by readiness, photo, name, needed/in-stock, status badges — just without the interactive Link/button, since a printed page has nothing to click. */
@@ -89,17 +92,32 @@ function ProductionProgressPrintItem({ orderId, item }: { orderId: string; item:
  * production tree (виріб -> підвироби -> ...) with each node's readiness
  * and any already-planned batch statuses, printed with the same visual
  * card layout as the on-screen tree, not a plain text list.
+ *
+ * `usePrintOptions`/`printAreaId` with an empty column list (no per-column
+ * toggle makes sense for this view — the whole tree always prints) — still
+ * needed for the activate-only-this-print-area + wait-for-fetch behavior,
+ * since this order page hosts several other `<PrintArea>`s at once
+ * (CustomerOrderPrint, PayrollFundEstimatePrint, ProfitReportPrint). A plain
+ * `PrintButton`/`window.print()` here left every one of them
+ * `print-area--active` simultaneously — real reported bug (2026-09-11: "не
+ * друкує сам звіт", found via ProfitReportPrint but equally present here —
+ * see print-options.tsx's own header comment for the original 2026-08-25
+ * regression this same fix pattern addresses).
  */
 export function ProductionProgressPrint({ order }: { order: CustomerOrder }) {
   const tp = useTranslations('print');
+  const printOptions = usePrintOptions({ columns: [] });
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <PrintButton label={tp('printProductionProgress')} />
+        <Button type="button" variant="outline" size="sm" onClick={() => printOptions.confirm(new Set(), false)}>
+          <Printer className="mr-2 h-4 w-4" />
+          {tp('printProductionProgress')}
+        </Button>
         <PreviewButton />
       </div>
-      <PrintArea>
+      <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
           title={tp('productionProgressTitle')}
           subtitle={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`}
