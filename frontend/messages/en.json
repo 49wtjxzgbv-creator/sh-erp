@@ -1089,7 +1089,9 @@
     "backToAppAction": "Back to app",
     "photoColumn": "Photo",
     "printAvailability": "Print availability",
-    "availabilityTitle": "Availability check"
+    "availabilityTitle": "Availability check",
+    "printProfitReport": "Print (PDF)",
+    "profitReportTitle": "Order profit report"
   },
   "legacyImport": {
     "title": "Import sources",

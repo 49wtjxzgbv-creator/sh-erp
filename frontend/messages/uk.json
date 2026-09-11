@@ -1216,7 +1216,9 @@
     "backToAppAction": "Повернутися в програму",
     "photoColumn": "Фото",
     "printAvailability": "Друк наявності",
-    "availabilityTitle": "Перевірка наявності"
+    "availabilityTitle": "Перевірка наявності",
+    "printProfitReport": "Друкувати (PDF)",
+    "profitReportTitle": "Прибуток по замовленню"
   },
   "legacyImport": {
     "title": "Джерела імпорту",

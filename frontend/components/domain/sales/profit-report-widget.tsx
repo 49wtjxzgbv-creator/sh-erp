@@ -6,6 +6,7 @@ import { useHasPermission } from '@/lib/hooks/use-roles';
 import { formatEur } from '@/lib/utils';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
+import { ProfitReportPrint } from '@/components/domain/sales/profit-report-print';
 
 /**
  * "Прибуток по замовленню" (2026-09-11 user request) — salePrice minus
@@ -19,7 +20,7 @@ import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
  * Finance's own order page uses) so "додаткові витрати" can be entered right
  * here — deliberately not a second, parallel expense-entry form.
  */
-export function ProfitReportWidget({ orderId }: { orderId: string }) {
+export function ProfitReportWidget({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
   const tf = useTranslations('finance');
   const canView = useHasPermission('customer-orders:view-profit');
@@ -29,6 +30,8 @@ export function ProfitReportWidget({ orderId }: { orderId: string }) {
 
   return (
     <CollapsibleCard title={t('profitReport')} contentClassName="space-y-4">
+      <ProfitReportPrint orderId={orderId} orderLabel={orderLabel} />
+
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <div>
           <p className="text-xs text-muted-foreground">{t('salePrice')}</p>
