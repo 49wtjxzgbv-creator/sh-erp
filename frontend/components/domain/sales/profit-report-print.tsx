@@ -12,7 +12,7 @@ import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/c
  * "Друк ПДФ" (2026-09-11 user request) — same browser-print-to-PDF mechanism
  * every other document in this app uses (PrintArea/window.print(), "Save as
  * PDF" in the browser's own print dialog — see print-area.tsx's own header
- * comment for why there's no separate server-side PDF generator). Five key
+ * comment for why there's no separate server-side PDF generator). Four key
  * figures plus the raw additional-expense lines, same numbers the on-screen
  * ProfitReportWidget shows — printed from the same useProfitReport query so
  * the two can never drift apart.
@@ -43,7 +43,6 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
 
   const rows: [string, string][] = [
     [t('salePrice'), report.salePrice != null ? formatEur(report.salePrice) : t('pricePending')],
-    [t('profitProductionCost'), report.productionCost != null ? formatEur(report.productionCost) : t('pricePending')],
     [t('profitLaborCost'), formatEur(report.laborCost)],
     [t('profitAdditionalExpenses'), formatEur(report.additionalExpenses)],
     [t('netProfit'), report.netProfit != null ? formatEur(report.netProfit) : t('pricePending')],

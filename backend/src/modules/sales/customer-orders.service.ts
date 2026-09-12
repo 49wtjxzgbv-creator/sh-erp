@@ -765,35 +765,23 @@ export class CustomerOrdersService {
   }
 
   /**
-   * "Прибуток по замовленню" (2026-09-11 user request) — чистий прибуток =
-   * ціна продажу (order.salePrice) мінус три REAL cost buckets, deliberately
-   * chosen to avoid the two double-counting traps found while designing
-   * this:
-   *  - `productionCost`: Σ this order's ProductionOrder batches'
-   *    `totalLocalCostEur` (materials + packaging/delivery/other, frozen at
-   *    batch start — same batches getPayrollFundSummary's `actual` sums)
-   *    MINUS each batch's own `laborCostEur`, because labor is charged for
-   *    real below via `earnedActual` instead — `totalLocalCostEur` bakes
-   *    materials AND a frozen BOM-rate labor estimate into one number
-   *    (production-orders.service.ts's "Cost freezing"), so leaving
-   *    `laborCostEur` in would double-count against `laborCost` below. PLUS
-   *    this order's own deliveryCost/transportRiggingCost/otherCost (never
-   *    part of any ProductionOrder, so no overlap there). null (not 0) until
-   *    at least one batch has actually started — same "no fabricated number"
-   *    discipline as withPriceTotals' hasEstimate/hasActual.
+   * "Прибуток по замовленню" — чистий прибуток = ціна продажу
+   * (order.salePrice) мінус ДВА REAL cost buckets (2026-09-12 user
+   * correction: production/materials cost deliberately dropped from this
+   * formula entirely — an earlier version subtracted it too, but the user
+   * explicitly wants only labor + additional expenses netted against sale
+   * price here):
    *  - `laborCost`: `getPayrollFundSummary`'s `earnedActual` — the REAL
-   *    PayrollEntry (PIECEWORK) ledger, not the frozen `laborCostEur`
-   *    estimate already excluded above. User's explicit 2026-09-11 choice
-   *    ("реально виплачено працівникам") over the frozen BOM-rate estimate.
+   *    PayrollEntry (PIECEWORK) ledger (includes "Загальні роботи" tagged to
+   *    this order via WorkTaskItem), not the frozen `laborCostEur` BOM-rate
+   *    estimate. User's explicit 2026-09-11 choice ("реально виплачено
+   *    працівникам").
    *  - `additionalExpenses`: `FinanceService#getCustomerOrderSummary`'s
    *    `additionalExpenses` (primary currency only, same as everywhere else
    *    in Finance — see that summary's own "never blend currencies" rule) —
-   *    direct `CustomerOrderExpense` rows, genuinely separate from
-   *    `productionCost` above. Deliberately does NOT use that summary's
-   *    `purchaseCost`: shortage-driven POs buy materials that flow into
-   *    `FinishedGood.unitCostLocalEur` and from there into this same
-   *    `totalLocalCostEur`, so adding it here would double-count real
-   *    material spend a second time.
+   *    direct `CustomerOrderExpense` rows. Deliberately does NOT use that
+   *    summary's `purchaseCost` (shortage-driven PO material spend) — kept
+   *    out of this formula the same as production cost above.
    * Gated behind `customer-orders:view-profit` (controller), same
    * admin-sensitive rationale as `quotations:view-margin` — sale price and
    * margin are exactly the kind of figure that must never leak to an
@@ -801,29 +789,6 @@ export class CustomerOrdersService {
    */
   async getProfitReport(user: RequestUser, orderId: string) {
     const order = await this.findOne(user, orderId);
-    const items = order.items as any[];
-    const itemIds = items.map((i) => i.id);
-
-    const batches = itemIds.length
-      ? await this.prisma.tenant.productionOrder.findMany({
-          where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
-        })
-      : [];
-
-    let productionCost = 0;
-    let hasProductionCost = false;
-    for (const b of batches as any[]) {
-      if (b.totalLocalCostEur != null) {
-        productionCost += Number(b.totalLocalCostEur) - Number(b.laborCostEur ?? 0);
-        hasProductionCost = true;
-      }
-    }
-    const extraCosts = Number(order.deliveryCost ?? 0) + Number(order.transportRiggingCost ?? 0) + Number(order.otherCost ?? 0);
-    const hasExtraCosts = order.deliveryCost != null || order.transportRiggingCost != null || order.otherCost != null;
-    if (hasExtraCosts) {
-      productionCost += extraCosts;
-      hasProductionCost = true;
-    }
 
     const [payrollFund, financeSummary] = await Promise.all([
       this.getPayrollFundSummary(user, orderId),
@@ -833,11 +798,10 @@ export class CustomerOrdersService {
     const additionalExpenses = financeSummary.additionalExpenses;
 
     const salePrice = order.salePrice != null ? Number(order.salePrice) : null;
-    const netProfit = salePrice != null && hasProductionCost ? salePrice - productionCost - laborCost - additionalExpenses : null;
+    const netProfit = salePrice != null ? salePrice - laborCost - additionalExpenses : null;
 
     return {
       salePrice,
-      productionCost: hasProductionCost ? round2(productionCost) : null,
       laborCost: round2(laborCost),
       additionalExpenses: round2(additionalExpenses),
       netProfit: netProfit != null ? round2(netProfit) : null,

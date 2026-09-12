@@ -461,6 +461,32 @@ describe('CustomerOrdersService', () => {
     });
   });
 
+  describe('getProfitReport', () => {
+    it('netProfit = salePrice - laborCost(earnedActual) - additionalExpenses (2026-09-12 user correction: no production-cost bucket)', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, salePrice: 1000 });
+      assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
+      mockProductionOrdersFindMany([{ id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, laborCostEur: 999, assemblyId: 'a1' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([{ employeeId: 'e1', type: 'PIECEWORK', amount: 300, unitsProduced: 1, productionOrderId: 'po1' }]);
+      financeService.getCustomerOrderSummary.mockResolvedValue({ additionalExpenses: 150 });
+
+      const result = await service.getProfitReport(user, 'co1');
+
+      expect(result).toEqual({ salePrice: 1000, laborCost: 300, additionalExpenses: 150, netProfit: 550 });
+    });
+
+    it('netProfit is null (not a fabricated number) when the order has no salePrice yet', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, salePrice: null });
+      assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
+      mockProductionOrdersFindMany([]);
+      financeService.getCustomerOrderSummary.mockResolvedValue({ additionalExpenses: 0 });
+
+      const result = await service.getProfitReport(user, 'co1');
+
+      expect(result.salePrice).toBeNull();
+      expect(result.netProfit).toBeNull();
+    });
+  });
+
   describe('getOrderPayrollByEmployee (2026-08-30): "По працівниках" tab', () => {
     it('groups PIECEWORK entries by employee, each with their own total and article/qty/amount breakdown', async () => {
       mockProductionOrdersFindMany([

@@ -268,20 +268,20 @@ export function getPayrollFundSummary(orderId: string): Promise<PayrollFundSumma
 }
 
 /**
- * "Прибуток по замовленню" (2026-09-11) — real JSON numbers (computed
- * server-side, not raw Prisma Decimal fields). `productionCost` excludes
- * labor (folded into `laborCost` = real PayrollEntry payouts instead, not
- * the frozen BOM-rate estimate) and deliberately does NOT include Finance's
- * `purchaseCost` (would double-count materials already in `productionCost`)
- * — see CustomerOrdersService#getProfitReport's own header comment for the
- * full double-counting rationale. null (not 0) on any field means "not yet
- * determined", same pricePending convention as estimatedTotal/actualTotal.
- * Gated behind `customer-orders:view-profit` — admin-sensitive, same as
- * Quotation margin fields.
+ * "Прибуток по замовленню" — real JSON numbers (computed server-side, not
+ * raw Prisma Decimal fields). netProfit = salePrice - laborCost -
+ * additionalExpenses (2026-09-12 user correction: production/materials cost
+ * deliberately excluded from this formula) — see
+ * CustomerOrdersService#getProfitReport's own header comment. `laborCost` is
+ * real PayrollEntry payouts, not the frozen BOM-rate estimate;
+ * `additionalExpenses` deliberately excludes Finance's `purchaseCost`. null
+ * salePrice/netProfit means "not yet determined", same pricePending
+ * convention as estimatedTotal/actualTotal. Gated behind
+ * `customer-orders:view-profit` — admin-sensitive, same as Quotation margin
+ * fields.
  */
 export interface ProfitReport {
   salePrice: number | null;
-  productionCost: number | null;
   laborCost: number;
   additionalExpenses: number;
   netProfit: number | null;

@@ -747,8 +747,6 @@
     "otherCost": "Additional costs",
     "salePrice": "Order sale price",
     "profitReport": "Order profit report",
-    "profitProductionCost": "Production cost",
-    "profitProductionCostHint": "Materials + packaging/delivery/other on started production batches, excluding labor (separate line below)",
     "profitLaborCost": "Labor cost",
     "profitLaborCostHint": "Real payroll paid out for this order",
     "profitAdditionalExpenses": "Additional expenses",

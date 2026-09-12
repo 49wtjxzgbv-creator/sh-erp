@@ -9,12 +9,12 @@ import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
 import { ProfitReportPrint } from '@/components/domain/sales/profit-report-print';
 
 /**
- * "Прибуток по замовленню" (2026-09-11 user request) — salePrice minus
- * three real cost buckets (see CustomerOrdersService#getProfitReport's own
- * header comment for the double-counting rationale each one was chosen to
- * avoid). Gated behind `customer-orders:view-profit`, same admin-sensitive
- * treatment as Quotation margin fields — hidden entirely without it, not
- * just visually de-emphasized.
+ * "Прибуток по замовленню" — netProfit = salePrice - laborCost -
+ * additionalExpenses (2026-09-12 user correction: production/materials cost
+ * deliberately excluded — see CustomerOrdersService#getProfitReport's own
+ * header comment). Gated behind `customer-orders:view-profit`, same
+ * admin-sensitive treatment as Quotation margin fields — hidden entirely
+ * without it, not just visually de-emphasized.
  *
  * Embeds the existing ExpensesPanel (kind="customer-order", the same one
  * Finance's own order page uses) so "додаткові витрати" can be entered right
@@ -36,11 +36,6 @@ export function ProfitReportWidget({ orderId, orderLabel }: { orderId: string; o
         <div>
           <p className="text-xs text-muted-foreground">{t('salePrice')}</p>
           <p className="text-sm font-medium">{report.salePrice != null ? formatEur(report.salePrice) : t('pricePending')}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">{t('profitProductionCost')}</p>
-          <p className="text-sm font-medium">{report.productionCost != null ? formatEur(report.productionCost) : t('pricePending')}</p>
-          <p className="text-[11px] text-muted-foreground">{t('profitProductionCostHint')}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">{t('profitLaborCost')}</p>
