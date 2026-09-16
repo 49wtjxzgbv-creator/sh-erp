@@ -11,7 +11,7 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { update: jest.fn(), findUniqueOrThrow: jest.fn() },
+      user: { update: jest.fn(), findUniqueOrThrow: jest.fn(), findUnique: jest.fn() },
       company: { findUnique: jest.fn() },
       companyBranding: { findUnique: jest.fn() },
       companyMembership: { findUnique: jest.fn() },
@@ -108,6 +108,31 @@ describe('AuthService', () => {
     });
   });
 
+  describe('login/refresh/impersonate — capture ip/device (2026-09-16 Super Admin "хто заходить в програму" request)', () => {
+    it('login() passes ip/device through to the refresh token row', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'user@acme.com', active: true, passwordHash: await argon2.hash('pw'), legacyPasswordHash: null });
+      prisma.company.findUnique.mockResolvedValue({ id: 'c1', slug: 'acme', status: 'ACTIVE' });
+      prisma.companyMembership.findUnique.mockResolvedValue({ roleId: 'role1' });
+
+      await service.login({ email: 'user@acme.com', password: 'pw', companySlug: 'acme' }, '203.0.113.5', 'Mozilla/5.0 TestAgent');
+
+      const data = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(data.ipAddress).toBe('203.0.113.5');
+      expect(data.device).toBe('Mozilla/5.0 TestAgent');
+    });
+
+    it('caps an absurdly long User-Agent at 500 chars rather than storing it verbatim', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'user@acme.com', active: true, passwordHash: await argon2.hash('pw'), legacyPasswordHash: null });
+      prisma.company.findUnique.mockResolvedValue({ id: 'c1', slug: 'acme', status: 'ACTIVE' });
+      prisma.companyMembership.findUnique.mockResolvedValue({ roleId: 'role1' });
+
+      await service.login({ email: 'user@acme.com', password: 'pw', companySlug: 'acme' }, '203.0.113.5', 'x'.repeat(2000));
+
+      const data = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(data.device).toHaveLength(500);
+    });
+  });
+
   describe('issueImpersonationSession — P0 fix (2026-08-20)', () => {
     it('persists impersonatedBy and a computed absoluteExpiresAt ceiling on the refresh token row', async () => {
       const before = Date.now();
@@ -129,6 +154,13 @@ describe('AuthService', () => {
     it('returns impersonatedBy in the token pair response', async () => {
       const result = await service.issueImpersonationSession('u1', 'c1', 'user@acme.com', 'role1', 'super-admin-1');
       expect(result.impersonatedBy).toBe('super-admin-1');
+    });
+
+    it('captures the ACTING Super Admin\'s own ip/device on the minted session (2026-09-16)', async () => {
+      await service.issueImpersonationSession('u1', 'c1', 'user@acme.com', 'role1', 'super-admin-1', '198.51.100.9', 'AdminBrowser/1.0');
+      const data = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(data.ipAddress).toBe('198.51.100.9');
+      expect(data.device).toBe('AdminBrowser/1.0');
     });
   });
 
@@ -169,10 +201,12 @@ describe('AuthService', () => {
       prisma.companyMembership.findUnique.mockResolvedValue({ roleId: 'role1' });
       prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'u1', email: 'user@acme.com' });
 
-      const result = await service.refresh('raw-token');
+      const result = await service.refresh('raw-token', '203.0.113.7', 'RotationAgent/1.0');
 
       expect(result.impersonatedBy).toBe('super-admin-1');
       const newTokenData = prisma.refreshToken.create.mock.calls[0][0].data;
+      expect(newTokenData.ipAddress).toBe('203.0.113.7');
+      expect(newTokenData.device).toBe('RotationAgent/1.0');
       expect(newTokenData.familyId).toBe('fam1'); // same family — rotation, not a new session
       expect(newTokenData.impersonatedBy).toBe('super-admin-1');
       expect(newTokenData.absoluteExpiresAt).toEqual(ceiling); // ceiling never moves on rotation

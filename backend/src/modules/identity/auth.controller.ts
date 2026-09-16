@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { getClientMeta } from '../../common/request-client-meta';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -15,8 +17,9 @@ export class AuthController {
   @ApiOperation({ summary: 'Sign in with email/password, scoped to one company.' })
   @ApiResponse({ status: 200, description: 'Access + refresh token pair.' })
   @ApiResponse({ status: 401, description: 'Invalid credentials, or no access to that company.' })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    const { ip, device } = getClientMeta(req);
+    return this.authService.login(dto, ip, device);
   }
 
   @Public()
@@ -24,8 +27,9 @@ export class AuthController {
   @ApiOperation({ summary: 'Rotate a refresh token for a new access+refresh pair.' })
   @ApiResponse({ status: 200, description: 'New token pair.' })
   @ApiResponse({ status: 401, description: 'Refresh token invalid, expired, or revoked.' })
-  async refresh(@Body() dto: RefreshDto) {
-    return this.authService.refresh(dto.refreshToken);
+  async refresh(@Body() dto: RefreshDto, @Req() req: Request) {
+    const { ip, device } = getClientMeta(req);
+    return this.authService.refresh(dto.refreshToken, ip, device);
   }
 
   @Public()

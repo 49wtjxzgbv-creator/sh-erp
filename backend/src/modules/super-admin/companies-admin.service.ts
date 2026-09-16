@@ -170,7 +170,7 @@ export class CompaniesAdminService {
    * normal 30-day sliding session. Every impersonation is logged with which
    * user it acted as, not just which company.
    */
-  async impersonate(actor: RequestSuperAdmin, companyId: string, dto: ImpersonateDto) {
+  async impersonate(actor: RequestSuperAdmin, companyId: string, dto: ImpersonateDto, ip?: string, device?: string) {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });
     if (!company) throw new CodedNotFoundException('COMPANY_NOT_FOUND', 'Company not found.');
     if (company.status !== 'ACTIVE') {
@@ -199,6 +199,8 @@ export class CompaniesAdminService {
       membership.user.email,
       membership.roleId,
       actor.superAdminId,
+      ip,
+      device,
     );
 
     await this.superAdminAudit.record({

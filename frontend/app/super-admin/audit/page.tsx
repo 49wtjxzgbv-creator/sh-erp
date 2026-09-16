@@ -24,19 +24,80 @@ interface AuditEventRow {
   createdAt: string;
 }
 
+interface LoginSessionRow {
+  id: string;
+  createdAt: string;
+  userEmail: string;
+  userFullName: string;
+  companyName: string;
+  ipAddress: string | null;
+  device: string;
+  city: string | null;
+  country: string | null;
+  impersonatedBySuperAdminId: string | null;
+}
+
 export default function SuperAdminAuditPage() {
   const t = useTranslations('superAdmin');
   const [actions, setActions] = useState<SuperAdminActionRow[]>([]);
   const [events, setEvents] = useState<AuditEventRow[]>([]);
+  const [loginSessions, setLoginSessions] = useState<LoginSessionRow[]>([]);
 
   useEffect(() => {
     superAdminApi.get<{ items: SuperAdminActionRow[] }>('super-admin/audit/super-admin-actions').then((r) => setActions(r.items));
     superAdminApi.get<{ items: AuditEventRow[] }>('super-admin/audit/events').then((r) => setEvents(r.items));
+    superAdminApi.get<{ items: LoginSessionRow[] }>('super-admin/audit/login-sessions').then((r) => setLoginSessions(r.items));
   }, []);
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">{t('auditHeading')}</h1>
+
+      <Card className="border-slate-800 bg-slate-900 text-slate-100">
+        <CardHeader>
+          <CardTitle className="text-base">{t('loginSessions')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('when')}</TableHead>
+                <TableHead>{t('loginUser')}</TableHead>
+                <TableHead>{t('company')}</TableHead>
+                <TableHead>{t('loginIp')}</TableHead>
+                <TableHead>{t('loginDevice')}</TableHead>
+                <TableHead>{t('loginLocation')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loginSessions.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell className="text-slate-400">{new Date(s.createdAt).toLocaleString()}</TableCell>
+                  <TableCell>
+                    {s.userEmail}
+                    {s.impersonatedBySuperAdminId && (
+                      <span className="ml-2 text-xs text-amber-400" title={t('loginImpersonatedHint')}>
+                        ({t('loginImpersonated')})
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-slate-400">{s.companyName}</TableCell>
+                  <TableCell className="text-slate-400">{s.ipAddress ?? '—'}</TableCell>
+                  <TableCell className="text-slate-400">{s.device}</TableCell>
+                  <TableCell className="text-slate-400">{s.city || s.country ? `${s.city ?? ''}${s.city && s.country ? ', ' : ''}${s.country ?? ''}` : '—'}</TableCell>
+                </TableRow>
+              ))}
+              {loginSessions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-slate-500">
+                    {t('noLoginSessionsYet')}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card className="border-slate-800 bg-slate-900 text-slate-100">
         <CardHeader>

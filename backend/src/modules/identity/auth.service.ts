@@ -42,7 +42,7 @@ export class AuthService {
    * forced reset, no user-visible difference, per the owner's explicit
    * Phase 0 choice.
    */
-  async login(dto: LoginDto): Promise<TokenPair & { userId: string; companyId: string }> {
+  async login(dto: LoginDto, ip?: string, device?: string): Promise<TokenPair & { userId: string; companyId: string }> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.active) {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
@@ -72,7 +72,7 @@ export class AuthService {
       throw new CodedUnauthorizedException('AUTH_NO_COMPANY_ACCESS', 'You do not have access to this company.');
     }
 
-    const tokens = await this.issueTokenPair(user.id, company.id, user.email, membership.roleId);
+    const tokens = await this.issueTokenPair(user.id, company.id, user.email, membership.roleId, undefined, undefined, ip, device);
     return { ...tokens, userId: user.id, companyId: company.id };
   }
 
@@ -138,7 +138,7 @@ export class AuthService {
    * revoked, forcing re-authentication, rather than just rejecting the one
    * request.
    */
-  async refresh(rawToken: string): Promise<TokenPair> {
+  async refresh(rawToken: string, ip?: string, device?: string): Promise<TokenPair> {
     const tokenHash = this.hashToken(rawToken);
     const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
 
@@ -193,6 +193,8 @@ export class AuthService {
       // the ceiling must never reset/extend just because the token was
       // refreshed before it expired.
       stored.impersonatedBy ? { impersonatedBy: stored.impersonatedBy, absoluteExpiresAt: stored.absoluteExpiresAt! } : undefined,
+      ip,
+      device,
     );
   }
 
@@ -225,13 +227,24 @@ export class AuthService {
     email: string,
     roleId: string,
     impersonatedBy: string,
+    ip?: string,
+    device?: string,
   ): Promise<TokenPair> {
     const ttlHours = Number(process.env.IMPERSONATION_SESSION_TTL_HOURS ?? 1);
     const absoluteExpiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-    return this.issueTokenPair(userId, companyId, email, roleId, undefined, {
-      impersonatedBy,
-      absoluteExpiresAt,
-    });
+    return this.issueTokenPair(
+      userId,
+      companyId,
+      email,
+      roleId,
+      undefined,
+      { impersonatedBy, absoluteExpiresAt },
+      // ip/device here are the ACTING SUPER ADMIN's own — see this session's
+      // login-sessions-admin.service.ts for how the UI must disclose that,
+      // not present it as if the impersonated user logged in themselves.
+      ip,
+      device,
+    );
   }
 
   private async issueTokenPair(
@@ -241,6 +254,8 @@ export class AuthService {
     roleId: string,
     familyId: string = randomUUID(),
     impersonation?: { impersonatedBy: string; absoluteExpiresAt: Date },
+    ip?: string,
+    device?: string,
   ): Promise<TokenPair> {
     const accessTtl = process.env.JWT_ACCESS_TTL ?? '15m';
     const accessToken = this.jwt.sign(
@@ -266,6 +281,11 @@ export class AuthService {
         expiresAt,
         impersonatedBy: impersonation?.impersonatedBy,
         absoluteExpiresAt: impersonation?.absoluteExpiresAt,
+        ipAddress: ip,
+        // Capped defensively — User-Agent is attacker-controlled input on
+        // an unauthenticated endpoint (login), no legitimate browser sends
+        // anywhere near this long.
+        device: device?.slice(0, 500),
       },
     });
 

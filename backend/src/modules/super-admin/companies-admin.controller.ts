@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { getClientMeta } from '../../common/request-client-meta';
 import { RequireSuperAdminPermissions } from '../../common/decorators/super-admin-permissions.decorator';
 import { SuperAdminGuard, CurrentSuperAdmin, RequestSuperAdmin } from './super-admin-context';
 import { SuperAdminPermissionGuard } from './super-admin-permission.guard';
@@ -91,7 +93,12 @@ export class CompaniesAdminController {
     @CurrentSuperAdmin() actor: RequestSuperAdmin,
     @Param('id') id: string,
     @Body() dto: ImpersonateDto,
+    @Req() req: Request,
   ) {
-    return this.companiesAdminService.impersonate(actor, id, dto);
+    // ip/device captured here are the ACTING Super Admin's own (the browser
+    // that clicked "Увійти як"), not the impersonated user's — see
+    // AuthService#issueImpersonationSession's own comment.
+    const { ip, device } = getClientMeta(req);
+    return this.companiesAdminService.impersonate(actor, id, dto, ip, device);
   }
 }

@@ -16,6 +16,8 @@ import { UsersAdminController } from './users-admin.controller';
 import { PlansAdminService } from './plans-admin.service';
 import { PlansAdminController } from './plans-admin.controller';
 import { AuditAdminController } from './audit-admin.controller';
+import { LoginSessionsAdminService } from './login-sessions-admin.service';
+import { GeoIpService } from './geo-ip.service';
 import { LandingPageAdminService } from './landing-page-admin.service';
 import { LandingPageMediaService } from './landing-page-media.service';
 import { LandingPageAdminController } from './landing-page-admin.controller';
@@ -65,6 +67,8 @@ import { LandingPageAdminController } from './landing-page-admin.controller';
     PlansAdminService,
     LandingPageAdminService,
     LandingPageMediaService,
+    LoginSessionsAdminService,
+    GeoIpService,
   ],
 })
 export class SuperAdminModule {}
