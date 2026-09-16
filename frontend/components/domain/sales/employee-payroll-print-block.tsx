@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { formatEurWithUah, formatQty } from '@/lib/utils';
+import { formatEur, formatEurWithUah, formatQty } from '@/lib/utils';
 import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
 
 /**
@@ -12,9 +12,12 @@ import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
  * render byte-identical output instead of two copies of this table drifting
  * apart.
  *
- * `eurUahRate` (2026-09-16 user request): every EUR figure here also shows
- * the equivalent in hryvnia when a rate was entered — see
- * useEurUahRate's own header comment for where that value comes from.
+ * `eurUahRate` (2026-09-16 user request): the header total shows the
+ * hryvnia equivalent when a rate was entered (see useEurUahRate's own
+ * header comment) — but a follow-up request keeps the article breakdown
+ * table itself EUR-only ("список виробів... хай буде тільки в євро без
+ * гривень"), so only `line.totalEarned` above goes through
+ * `formatEurWithUah`; each article row stays `formatEur`.
  */
 export function EmployeePayrollPrintBlock({
   line,
@@ -60,7 +63,7 @@ export function EmployeePayrollPrintBlock({
                 </td>
                 <td>{a.assemblyId ? `${a.article ? `${a.article} — ` : ''}${a.assemblyName}` : (a.assemblyName ?? t('payrollFundGeneralWork'))}</td>
                 <td>{a.unitsProduced ? formatQty(a.unitsProduced) : '—'}</td>
-                <td>{formatEurWithUah(a.amount, eurUahRate)}</td>
+                <td>{formatEur(a.amount)}</td>
               </tr>
             ))}
           </tbody>
