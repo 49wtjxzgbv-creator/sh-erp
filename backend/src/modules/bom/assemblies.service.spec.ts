@@ -345,8 +345,13 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
         .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
         .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 4 });
-      // Live confirmed stock: a1 has 2 (done), sub1 has 1 (not done).
-      prisma.tenant.finishedGood.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+      // Live confirmed stock: a1 has 2 (done), sub1 has 1 (not done). Then,
+      // per node, the purchased-only IN_STOCK lookup (none purchased here).
+      prisma.tenant.finishedGood.count
+        .mockResolvedValueOnce(2) // a1: general IN_STOCK
+        .mockResolvedValueOnce(0) // a1: purchased IN_STOCK
+        .mockResolvedValueOnce(1) // sub1: general IN_STOCK
+        .mockResolvedValueOnce(0); // sub1: purchased IN_STOCK
       // This order's own "Зі складу" claim (SubAssemblyReservation), the
       // OPPOSITE pattern — a1 has nothing claimed (full labor charged
       // despite live stock covering it), sub1 has its full qty claimed (no
@@ -389,7 +394,7 @@ describe('AssembliesService', () => {
       // creation) has no execution to confirm at all, so it must still
       // count via the OR — see FinishedGood.confirmedByExecutionId's own
       // schema comment.
-      for (const call of prisma.tenant.finishedGood.count.mock.calls) {
+      for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.OR)) {
         expect(call[0].where).toMatchObject({
           status: 'IN_STOCK',
           OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }],
@@ -410,10 +415,14 @@ describe('AssembliesService', () => {
       // physical units got pulled (FIFO-consumed) into a1's own batch —
       // nothing left sitting IN_STOCK as sub1 anymore.
       prisma.tenant.finishedGood.count
-        .mockResolvedValueOnce(2) // a1: IN_STOCK
-        .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order (none — a1 is the top-level виріб)
-        .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf
-        .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order — the 2 units built into a1
+        .mockResolvedValueOnce(2) // a1: general IN_STOCK
+        .mockResolvedValueOnce(0) // a1: general CONSUMED-for-this-order (none — a1 is the top-level виріб)
+        .mockResolvedValueOnce(0) // a1: purchased IN_STOCK
+        .mockResolvedValueOnce(0) // a1: purchased CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: general IN_STOCK — none left on the shelf
+        .mockResolvedValueOnce(2) // sub1: general CONSUMED-for-this-order — the 2 units built into a1
+        .mockResolvedValueOnce(0) // sub1: purchased IN_STOCK
+        .mockResolvedValueOnce(0); // sub1: purchased CONSUMED-for-this-order — this test covers the CLAIM route, not the purchased-signal route
       // SubAssemblyReservationService#consume shrank sub1's LIVE claim to 0
       // as those 2 units got eaten by a1's batch, but
       // getClaimedIncludingConsumedForOrder folds the live qty and the
@@ -441,7 +450,7 @@ describe('AssembliesService', () => {
         where: { OR: [{ customerOrderItemId: { in: ['item1'] } }, { subAssemblyForItemId: { in: ['item1'] } }] },
         select: { id: true },
       });
-      for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.status === 'CONSUMED')) {
+      for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.status === 'CONSUMED' && !('productionOrderId' in c[0].where))) {
         expect(call[0].where).toEqual({ assemblyId: expect.any(String), status: 'CONSUMED', consumedInProductionOrderId: { in: ['po1'] } });
       }
     });
@@ -457,10 +466,14 @@ describe('AssembliesService', () => {
       // via its own batch, then FIFO-consumed into a1's batch same as any
       // other sub-assembly — done via done, but real labor WAS needed.
       prisma.tenant.finishedGood.count
-        .mockResolvedValueOnce(2) // a1: IN_STOCK
-        .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order
-        .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf, all consumed into a1
-        .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order
+        .mockResolvedValueOnce(2) // a1: general IN_STOCK
+        .mockResolvedValueOnce(0) // a1: general CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // a1: purchased IN_STOCK
+        .mockResolvedValueOnce(0) // a1: purchased CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: general IN_STOCK — none left on the shelf, all consumed into a1
+        .mockResolvedValueOnce(2) // sub1: general CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: purchased IN_STOCK — none ever purchased
+        .mockResolvedValueOnce(0); // sub1: purchased CONSUMED-for-this-order — the 2 consumed units were MANUFACTURED, not purchased, so this stays 0
       subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(0); // no claim ever made on either node
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
@@ -480,14 +493,59 @@ describe('AssembliesService', () => {
       });
     });
 
+    it('a sub-assembly bought ready-made through ordinary procurement — never through the "Підвироби" dialog, so no SubAssemblyReservation ever existed — still zeroes its labor estimate by its own PURCHASED (productionOrderId: null) origin (2026-09-17, real order #441639/articles 264112 & 264193)', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] })
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 1 });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1' }]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1' }]);
+      prisma.tenant.finishedGood.count
+        .mockResolvedValueOnce(2) // a1: general IN_STOCK
+        .mockResolvedValueOnce(0) // a1: general CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // a1: purchased IN_STOCK
+        .mockResolvedValueOnce(0) // a1: purchased CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: general IN_STOCK — none left on the shelf
+        .mockResolvedValueOnce(2) // sub1: general CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: purchased IN_STOCK
+        .mockResolvedValueOnce(2); // sub1: purchased CONSUMED-for-this-order — both consumed units were PURCHASED (productionOrderId: null)
+      subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValue(0); // no "Зі складу" claim was ever made — the dialog was never opened for this
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+
+      expect(result.children[0]).toEqual({
+        assemblyId: 'sub1',
+        name: 'Sub1',
+        article: null,
+        qtyNeeded: 2,
+        qtyInStock: 0,
+        done: true,
+        laborFundEstimate: 0, // no claim needed — purchased origin alone zeroes it
+        children: [],
+      });
+      const purchasedConsumedCall = prisma.tenant.finishedGood.count.mock.calls.find(
+        (c: any) => c[0].where.assemblyId === 'sub1' && c[0].where.status === 'CONSUMED' && 'productionOrderId' in c[0].where,
+      );
+      expect(purchasedConsumedCall![0].where).toEqual({
+        assemblyId: 'sub1',
+        status: 'CONSUMED',
+        productionOrderId: null,
+        consumedInProductionOrderId: { in: ['po1'] },
+      });
+    });
+
     it('skips the CONSUMED-stock lookup entirely when this order has no items/batches yet, instead of querying with an empty `in`', async () => {
       prisma.tenant.assembly.findUnique.mockResolvedValueOnce({ id: 'a1', components: [] }).mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null, laborCostPerUnit: 0 });
       prisma.tenant.customerOrderItem.findMany.mockResolvedValue([]);
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
 
       await service.getProductionTree(user, 'a1', 1, 'order-1');
 
       expect(prisma.tenant.productionOrder.findMany).not.toHaveBeenCalled();
-      expect(prisma.tenant.finishedGood.count).toHaveBeenCalledTimes(1); // IN_STOCK only, no CONSUMED lookup
+      expect(prisma.tenant.finishedGood.count).toHaveBeenCalledTimes(2); // general IN_STOCK + purchased IN_STOCK only, no CONSUMED lookups
     });
 
     it('detects a circular BOM instead of recursing forever', async () => {

@@ -85,19 +85,35 @@ export interface ProductionTreeNode {
    * pairing.
    *
    * 2026-09-17 fix ("вироби які ми вказали що купимо готові попали в
-   * Оцінено"): `qtyClaimedFromStock` here comes from
-   * `getClaimedIncludingConsumedForOrder`, NOT the plain live claim — a
-   * first attempt at this fix reused the same `qtyConsumedForThisOrder`
+   * Оцінено", then "оцінено це має бути тільки те що робитимуть працівники
+   * а не купили готове"): `qtyClaimedFromStock` here comes from
+   * `getClaimedIncludingConsumedForOrder`, NOT the plain live claim — an
+   * earlier attempt at this fix reused the same `qtyConsumedForThisOrder`
    * (FinishedGood-count) signal `done` uses above, but that counts ANY
    * consumption of this assembly for this order, including a MANUFACTURED
    * (never claimed "Зі складу") sub-assembly that later gets FIFO-consumed
    * into its own parent's batch — which wrongly zeroed real, planned labor
-   * the moment production got that far ("має бути все що було в замовленні
-   * окрім того що купили на склад"). `getClaimedIncludingConsumedForOrder`
+   * the moment production got that far. `getClaimedIncludingConsumedForOrder`
    * is scoped precisely to THIS claim's own history (live `qty` +
    * SubAssemblyReservation's own `consumedQty`), so a manufactured node
-   * with no claim at all stays completely unaffected, and only a genuine
-   * "Зі складу" choice — spent or not — zeroes the shortfall.
+   * with no claim at all stays completely unaffected.
+   *
+   * Real order #441639 (articles 264112/264193) then showed the OPPOSITE
+   * gap: those sub-assemblies were bought ready-made through ordinary
+   * procurement — never through the "Підвироби" dialog at all — so no
+   * SubAssemblyReservation ever existed for them, and `qtyClaimedFromStock`
+   * stayed 0 despite 100% of what got consumed for this order being
+   * PURCHASED (`productionOrderId: null`) units, never manufactured ones.
+   * `qtyPurchasedInStock`/`qtyPurchasedConsumedForThisOrder` cover this
+   * second, dialog-independent path: they credit purchased units directly
+   * by their own physical origin (same `productionOrderId: null` rule
+   * `done`'s own OR-clause and FinishedGood's schema comment use), whether
+   * still sitting on the shelf or already consumed into this order's own
+   * production — while a MANUFACTURED sub-assembly (`productionOrderId`
+   * set) never qualifies for either credit and keeps charging its real
+   * labor, satisfying both reports at once: "тільки те що робитимуть
+   * працівники" gets charged, "куплене готове" — by claim OR by physical
+   * origin — never does.
    */
   laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
@@ -686,7 +702,15 @@ export class AssembliesService {
     }
     visited.add(assemblyId);
 
-    const [assembly, qtyInStock, qtyConsumedForThisOrder, qtyClaimedFromStock, components] = await Promise.all([
+    const [
+      assembly,
+      qtyInStock,
+      qtyConsumedForThisOrder,
+      qtyClaimedFromStock,
+      qtyPurchasedInStock,
+      qtyPurchasedConsumedForThisOrder,
+      components,
+    ] = await Promise.all([
       this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
       // `productionOrderId: null OR confirmedByExecutionId: { not: null }` —
       // FinishedGood.confirmedByExecutionId's own schema comment spells out
@@ -717,6 +741,25 @@ export class AssembliesService {
           })
         : Promise.resolve(0),
       this.subAssemblyReservationService.getClaimedIncludingConsumedForOrder(user, customerOrderId, assemblyId),
+      // 2026-09-17 fix (real order #441639, articles 264112/264193 — bought
+      // ready-made through ordinary procurement/FIFO, NEVER through the
+      // "Підвироби" dialog at all, so `qtyClaimedFromStock` above stayed 0
+      // for them even though nothing was ever going to be manufactured): a
+      // PURCHASED unit (`productionOrderId: null`, same rule FinishedGood's
+      // own schema comment documents) has no labor to charge regardless of
+      // whether anyone ever formally "claimed" it through that dialog —
+      // live purchased stock still sitting on the shelf right now...
+      this.prisma.tenant.finishedGood.count({ where: { assemblyId, status: 'IN_STOCK', productionOrderId: null } }),
+      // ...plus purchased stock already consumed into another node's batch
+      // FOR THIS ORDER specifically (same scoping as qtyConsumedForThisOrder
+      // above, just narrowed to productionOrderId: null so a MANUFACTURED
+      // sub-assembly that later gets consumed still charges its real labor
+      // — see laborFundEstimate's own doc comment for the full incident).
+      consumedIntoProductionOrderIds.length
+        ? this.prisma.tenant.finishedGood.count({
+            where: { assemblyId, status: 'CONSUMED', productionOrderId: null, consumedInProductionOrderId: { in: consumedIntoProductionOrderIds } },
+          })
+        : Promise.resolve(0),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
     if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
@@ -757,7 +800,9 @@ export class AssembliesService {
       // is scoped to consumption tied to THIS customer order's own batches
       // only (see getProductionTree), never another order's.
       done: qtyInStock + qtyConsumedForThisOrder >= Math.ceil(qty),
-      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock, 0),
+      laborFundEstimate:
+        Number(assembly.laborCostPerUnit) *
+        Math.max(qty - qtyClaimedFromStock - qtyPurchasedInStock - qtyPurchasedConsumedForThisOrder, 0),
       children,
     };
   }
