@@ -29,19 +29,27 @@ export function formatQty(value: number): string {
  * day — payroll prints' per-employee summary rows show hryvnia INSTEAD OF
  * euro, not alongside it; see order-payroll-print.tsx's own header comment
  * for exactly which rows get this vs. plain `formatEur`), at whatever rate
- * staff typed in via useEurUahRate right before printing. No rate entered
- * (null/0) -> falls back to plain EUR, same as formatEur — this never
- * assumes a rate that wasn't actually given.
+ * staff typed in via useEurUahRate right before printing. Returns null when
+ * no rate is entered (null/0) — never fabricates a conversion that wasn't
+ * actually asked for; callers fall back to EUR themselves in that case.
  *
- * The hryvnia figure is rounded UP to the nearest 100 ("у ширинга іллі
- * 38623 грн... заукруглювало до ста щоб було 38700"), for every employee
- * consistently: `Math.ceil`, never a plain round, so this can only move a
- * payout up, never down.
+ * Rounded UP to the nearest 100 ("у ширинга іллі 38623 грн...
+ * заукруглювало до ста щоб було 38700"), for every employee consistently:
+ * `Math.ceil`, never a plain round, so this can only move a payout up,
+ * never down.
+ */
+export function uahRoundUp(value: number, rate: number | null): number | null {
+  if (!rate || rate <= 0) return null;
+  return Math.ceil((value * rate) / 100) * 100;
+}
+
+/**
+ * Same as `uahRoundUp`, formatted — falls back to plain EUR (`formatEur`)
+ * when no rate is entered.
  */
 export function formatUah(value: number, rate: number | null): string {
-  if (!rate || rate <= 0) return formatEur(value);
-  const uah = Math.ceil((value * rate) / 100) * 100;
-  return `${uah} ₴`;
+  const uah = uahRoundUp(value, rate);
+  return uah == null ? formatEur(value) : `${uah} ₴`;
 }
 
 /**

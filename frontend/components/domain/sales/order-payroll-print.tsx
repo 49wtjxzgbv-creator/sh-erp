@@ -6,7 +6,7 @@ import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
-import { formatEur, formatUah } from '@/lib/utils';
+import { formatEur, formatUah, uahRoundUp } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,16 @@ import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
  * detail block below (`EmployeePayrollPrintBlock` — header total AND
  * article list both EUR-only: "далі окремо по кожному співробітнику з
  * списком що зробив тільки євро").
+ *
+ * The grand-total UAH row is the SUM of each employee's own already-
+ * rounded-up UAH figure (`uahRoundUp` per line, then added together) —
+ * NOT a fresh rounding of the combined EUR total, which would
+ * systematically understate it (2026-09-16 user follow-up: "загалом по
+ * всіх в гривнях то має додатися гривнева сума по працівниках" — the real
+ * cash paid out is what each person's own rounded-up payout actually sums
+ * to, since every individual amount already moved up to its own nearest
+ * hundred). See uahRoundUp's own test in utils.test.ts for a worked
+ * example of the two diverging.
  *
  * `usePrintOptions`/`printAreaId` — required, not optional: every page this
  * renders on already hosts other `<PrintArea>`s (Sales order page:
@@ -115,7 +125,11 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                 ))}
                 <tr className="border-t-2 border-black font-bold">
                   <td className="py-1">{th('grandTotal')}</td>
-                  <td className="py-1 text-right tabular-nums">{formatUah(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0), eurUahRate)}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {eurUahRate && eurUahRate > 0
+                      ? `${byEmployee.reduce((sum, l) => sum + (uahRoundUp(l.totalEarned, eurUahRate) ?? 0), 0)} ₴`
+                      : formatEur(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0))}
+                  </td>
                 </tr>
               </tbody>
             </table>
