@@ -32,14 +32,32 @@ export const PRINT_PREVIEW_ROOT_ID = 'print-preview-root';
  * param) makes this render like `@media print` would — visible on screen,
  * not just hidden-until-actually-printing — so a new tab is a real preview
  * of the exact printable markup, not a guess at what printing will show.
+ *
+ * `printAreaId` query param (2026-09-16 fix — "переглянути" used to show
+ * every `<PrintArea>` on the page stacked together, not just the one whose
+ * button was clicked): unlike a real print, which manually deactivates
+ * every OTHER print area's `print-area--active` class on the live DOM right
+ * before `window.print()` (see the class's own header comment), a preview
+ * opens a BRAND NEW TAB — a fresh mount where that manual DOM toggle never
+ * ran, so every `PrintAreaInner` on the page independently sees
+ * `?print=1` and portals into `#print-preview-root` at once. Passing the
+ * clicked view's own `printAreaId` through the URL (PreviewButton below)
+ * lets each instance check "is this ME" instead of "is `?print=1` set",
+ * same end result as the real-print exclusivity but via the URL instead of
+ * a DOM mutation, since a fresh tab has no DOM state to mutate yet.
+ * Omitting the param (existing callers with no `printAreaId` prop) keeps
+ * the original behavior — every print area on the page previews — which is
+ * harmless and correct on any page that only ever mounts one.
  */
-function usePrintPreviewMode(): boolean {
+function usePrintPreviewMode(printAreaId: string): boolean {
   const searchParams = useSearchParams();
-  return searchParams.get('print') === '1';
+  if (searchParams.get('print') !== '1') return false;
+  const targetId = searchParams.get('printAreaId');
+  return !targetId || targetId === printAreaId;
 }
 
 function PrintAreaInner({ children, printAreaId }: { children: ReactNode; printAreaId: string }) {
-  const isPreview = usePrintPreviewMode();
+  const isPreview = usePrintPreviewMode(printAreaId);
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
 
   // Real gap found and fixed here (2026-08-24): `?print=1` opens the SAME
@@ -120,12 +138,22 @@ export function PrintButton({ label, className }: { label: string; className?: s
   );
 }
 
-/** Opens THIS same page with `?print=1` in a new tab — see PrintArea's own comment for why this reuses the current route instead of a separate print-preview route. */
-export function PreviewButton({ className }: { className?: string }) {
+/**
+ * Opens THIS same page with `?print=1` in a new tab — see PrintArea's own
+ * comment for why this reuses the current route instead of a separate
+ * print-preview route. `printAreaId` (optional, same id passed to the
+ * matching `<PrintArea printAreaId={...}>`) scopes the preview to just that
+ * one print area on a page hosting several — see usePrintPreviewMode's own
+ * header comment. Omit it on a page with only one print area; harmless
+ * either way.
+ */
+export function PreviewButton({ className, printAreaId }: { className?: string; printAreaId?: string }) {
   const tp = useTranslations('print');
   function openPreview() {
     const url = new URL(window.location.href);
     url.searchParams.set('print', '1');
+    if (printAreaId) url.searchParams.set('printAreaId', printAreaId);
+    else url.searchParams.delete('printAreaId');
     window.open(url.toString(), '_blank', 'noopener');
   }
   return (
