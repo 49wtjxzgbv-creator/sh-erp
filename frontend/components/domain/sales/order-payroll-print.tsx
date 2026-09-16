@@ -6,7 +6,7 @@ import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
-import { formatEur, formatEurWithUah } from '@/lib/utils';
+import { formatEur, formatUah } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
 import { Button } from '@/components/ui/button';
@@ -35,12 +35,15 @@ import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
  * getGeneralWorkPayrollEntries comment), and `unitsProduced` rounded to 2
  * decimals (real float drift observed live, e.g. "касета транспортерів").
  *
- * UAH scope (2026-09-16 user follow-ups, narrowed twice): only each
- * INDIVIDUAL employee's own total shows the hryvnia equivalent
- * (`formatEurWithUah`) — the article breakdown table stays EUR-only, and so
- * do both "overall across everyone" aggregates (the top `payrollFundEarned`
- * line and the by-employee table's grand-total row), which use plain
- * `formatEur`.
+ * UAH scope (2026-09-16 user follow-ups, settled after several rounds):
+ * ONLY the flat "по працівниках" summary table below shows hryvnia
+ * (`formatUah`, each employee's own row AND the "загалом по всіх" grand
+ * total row) — "зароблено працівниками в євро, далі по працівниках тільки
+ * гривні, внизу загалом по всіх сума в гривнях". The top
+ * `payrollFundEarned` line stays plain EUR, and so does every per-employee
+ * detail block below (`EmployeePayrollPrintBlock` — header total AND
+ * article list both EUR-only: "далі окремо по кожному співробітнику з
+ * списком що зробив тільки євро").
  *
  * `usePrintOptions`/`printAreaId` — required, not optional: every page this
  * renders on already hosts other `<PrintArea>`s (Sales order page:
@@ -107,18 +110,18 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                 {byEmployee.map((line) => (
                   <tr key={line.employeeId} className="border-b border-gray-300">
                     <td className="py-1">{line.employeeName}</td>
-                    <td className="py-1 text-right font-medium tabular-nums">{formatEurWithUah(line.totalEarned, eurUahRate)}</td>
+                    <td className="py-1 text-right font-medium tabular-nums">{formatUah(line.totalEarned, eurUahRate)}</td>
                   </tr>
                 ))}
                 <tr className="border-t-2 border-black font-bold">
                   <td className="py-1">{th('grandTotal')}</td>
-                  <td className="py-1 text-right tabular-nums">{formatEur(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0))}</td>
+                  <td className="py-1 text-right tabular-nums">{formatUah(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0), eurUahRate)}</td>
                 </tr>
               </tbody>
             </table>
             <div className="space-y-3">
               {byEmployee.map((line) => (
-                <EmployeePayrollPrintBlock key={line.employeeId} line={line} photosByAssembly={photosByAssembly} eurUahRate={eurUahRate} />
+                <EmployeePayrollPrintBlock key={line.employeeId} line={line} photosByAssembly={photosByAssembly} />
               ))}
             </div>
           </div>

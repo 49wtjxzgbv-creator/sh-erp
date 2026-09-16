@@ -1,4 +1,4 @@
-import { cn, formatEur, formatEurWithUah } from './utils';
+import { cn, formatEur, formatUah } from './utils';
 
 describe('cn', () => {
   it('merges class lists', () => {
@@ -28,17 +28,17 @@ describe('formatEur', () => {
   });
 });
 
-describe('formatEurWithUah', () => {
+describe('formatUah', () => {
   it('rounds the hryvnia figure UP to the nearest 100 (2026-09-16 user request — "у ширинга іллі 38623 грн... щоб було 38700")', () => {
-    expect(formatEurWithUah(1000, 38.623)).toBe('1000.00 € (38700 ₴)');
+    expect(formatUah(1000, 38.623)).toBe('38700 ₴');
   });
 
   it('leaves an already-round-hundred amount untouched — never rounds down', () => {
-    expect(formatEurWithUah(1000, 38.6)).toBe('1000.00 € (38600 ₴)');
+    expect(formatUah(1000, 38.6)).toBe('38600 ₴');
   });
 
-  it('returns plain EUR when no rate has been entered', () => {
-    expect(formatEurWithUah(1000, null)).toBe('1000.00 €');
-    expect(formatEurWithUah(1000, 0)).toBe('1000.00 €');
+  it('falls back to plain EUR when no rate has been entered', () => {
+    expect(formatUah(1000, null)).toBe('1000.00 €');
+    expect(formatUah(1000, 0)).toBe('1000.00 €');
   });
 });

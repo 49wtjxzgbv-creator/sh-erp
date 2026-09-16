@@ -25,22 +25,23 @@ export function formatQty(value: number): string {
 }
 
 /**
- * "Курс EUR → UAH" (2026-09-16 user request — payroll prints should show
- * hryvnia alongside the app's own EUR figures, at whatever rate staff typed
- * in via useEurUahRate right before printing). No rate entered (null/0) ->
- * plain EUR only, same as formatEur — this never assumes a rate that wasn't
- * actually given.
+ * "Курс EUR → UAH" (2026-09-16 user request, narrowed twice more the same
+ * day — payroll prints' per-employee summary rows show hryvnia INSTEAD OF
+ * euro, not alongside it; see order-payroll-print.tsx's own header comment
+ * for exactly which rows get this vs. plain `formatEur`), at whatever rate
+ * staff typed in via useEurUahRate right before printing. No rate entered
+ * (null/0) -> falls back to plain EUR, same as formatEur — this never
+ * assumes a rate that wasn't actually given.
  *
- * The hryvnia figure is rounded UP to the nearest 100 (same follow-up
- * request — "у ширинга іллі 38623 грн... заукруглювало до ста щоб було
- * 38700"), for every employee consistently: `Math.ceil`, never a plain
- * round, so this can only move a payout up, never down.
+ * The hryvnia figure is rounded UP to the nearest 100 ("у ширинга іллі
+ * 38623 грн... заукруглювало до ста щоб було 38700"), for every employee
+ * consistently: `Math.ceil`, never a plain round, so this can only move a
+ * payout up, never down.
  */
-export function formatEurWithUah(value: number, rate: number | null): string {
-  const eur = formatEur(value);
-  if (!rate || rate <= 0) return eur;
+export function formatUah(value: number, rate: number | null): string {
+  if (!rate || rate <= 0) return formatEur(value);
   const uah = Math.ceil((value * rate) / 100) * 100;
-  return `${eur} (${uah} ₴)`;
+  return `${uah} ₴`;
 }
 
 /**

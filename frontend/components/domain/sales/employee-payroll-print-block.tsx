@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { formatEur, formatEurWithUah, formatQty } from '@/lib/utils';
+import { formatEur, formatQty } from '@/lib/utils';
 import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
 
 /**
@@ -12,21 +12,18 @@ import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
  * render byte-identical output instead of two copies of this table drifting
  * apart.
  *
- * `eurUahRate` (2026-09-16 user request): the header total shows the
- * hryvnia equivalent when a rate was entered (see useEurUahRate's own
- * header comment) — but a follow-up request keeps the article breakdown
- * table itself EUR-only ("список виробів... хай буде тільки в євро без
- * гривень"), so only `line.totalEarned` above goes through
- * `formatEurWithUah`; each article row stays `formatEur`.
+ * Deliberately EUR-only throughout, header total included ("далі окремо по
+ * кожному співробітнику з списком що зробив тільки євро", 2026-09-16) —
+ * `OrderPayrollPrint`'s own flat "по працівниках" summary table is where
+ * hryvnia appears instead, see that file's own header comment for the full
+ * per-section UAH-vs-EUR split.
  */
 export function EmployeePayrollPrintBlock({
   line,
   photosByAssembly,
-  eurUahRate,
 }: {
   line: PayrollByEmployeeLine;
   photosByAssembly: Record<string, { downloadUrl: string }[]> | undefined;
-  eurUahRate: number | null;
 }) {
   const t = useTranslations('sales');
 
@@ -34,7 +31,7 @@ export function EmployeePayrollPrintBlock({
     <div className="break-inside-avoid border-b border-gray-300 pb-2">
       <div className="mb-1 flex items-baseline justify-between">
         <p className="text-sm font-bold">{line.employeeName}</p>
-        <p className="text-sm font-semibold">{formatEurWithUah(line.totalEarned, eurUahRate)}</p>
+        <p className="text-sm font-semibold">{formatEur(line.totalEarned)}</p>
       </div>
       {line.byArticle.length > 0 && (
         <table className="text-xs">
