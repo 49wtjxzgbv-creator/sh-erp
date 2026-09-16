@@ -83,6 +83,20 @@ export interface ProductionTreeNode {
    * start() (production-orders.service.ts's `ownLabor`). See
    * CustomerOrdersService#getPayrollFundSummary for the estimated-vs-actual
    * pairing.
+   *
+   * 2026-09-17 fix ("вироби які ми вказали що купимо готові попали в
+   * Оцінено"): the shortfall also subtracts `qtyConsumedForThisOrder` — the
+   * portion of THIS SAME claim that already got FIFO-consumed into another
+   * виріб's batch for this order (see `done`'s own doc comment just above).
+   * Without this, a fully-claimed "Зі складу" node's estimate silently grew
+   * back from 0 the moment its stock got used, because `consume()` shrinks
+   * the live reservation row by the same amount — the claim and its
+   * already-spent portion together are what "no labor needed" actually
+   * means, not the claim alone. This does NOT reintroduce the tail-eating
+   * problem above: `qtyConsumedForThisOrder` only ever reflects a
+   * sub-assembly being eaten as a component into a DIFFERENT node's batch
+   * (production-orders.service.ts's assemblyLines loop), never THIS node's
+   * own batch output (which stays IN_STOCK, not CONSUMED).
    */
   laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
@@ -742,7 +756,7 @@ export class AssembliesService {
       // is scoped to consumption tied to THIS customer order's own batches
       // only (see getProductionTree), never another order's.
       done: qtyInStock + qtyConsumedForThisOrder >= Math.ceil(qty),
-      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock, 0),
+      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock - qtyConsumedForThisOrder, 0),
       children,
     };
   }

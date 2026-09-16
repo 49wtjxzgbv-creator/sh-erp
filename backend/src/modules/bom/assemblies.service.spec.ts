@@ -399,7 +399,7 @@ describe('AssembliesService', () => {
       expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');
     });
 
-    it('a sub-assembly bought ready-made and consumed into another виріб for THIS order still counts as `done` (2026-09-17 fix — used to flip to "потрібно виготовити")', async () => {
+    it('a sub-assembly bought ready-made and consumed into another виріб for THIS order still counts as `done` AND stays free of labor estimate, even after its "Зі складу" claim row is fully spent (2026-09-17 fix — used to flip to "потрібно виготовити" / re-add labor cost)', async () => {
       prisma.tenant.assembly.findUnique
         .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
         .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
@@ -414,7 +414,11 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order (none — a1 is the top-level виріб)
         .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf
         .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order — the 2 units built into a1
-      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
+      // SubAssemblyReservationService#consume already shrank this order's
+      // claim row on sub1 down to 0 as those 2 units got eaten by a1's
+      // batch — matching production-orders.service.ts's own `consume()`
+      // call right after the FIFO write-off.
+      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
@@ -428,7 +432,7 @@ describe('AssembliesService', () => {
         qtyNeeded: 2,
         qtyInStock: 0,
         done: true, // 0 on the shelf + 2 already consumed into a1's own batch for this order = fulfilled
-        laborFundEstimate: 0,
+        laborFundEstimate: 0, // claim row is 0 now, but qtyConsumedForThisOrder (2) still credits the shortfall to 0 — not 4*2=8
         children: [],
       });
       expect(prisma.tenant.customerOrderItem.findMany).toHaveBeenCalledWith({ where: { customerOrderId: 'order-1' }, select: { id: true } });
