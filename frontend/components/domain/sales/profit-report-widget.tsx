@@ -7,6 +7,7 @@ import { formatEur } from '@/lib/utils';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
 import { ProfitReportPrint } from '@/components/domain/sales/profit-report-print';
+import { useIsPrintPreview } from '@/components/domain/print/print-area';
 
 /**
  * "Прибуток по замовленню" — netProfit = salePrice - laborCost -
@@ -19,6 +20,12 @@ import { ProfitReportPrint } from '@/components/domain/sales/profit-report-print
  * Embeds the existing ExpensesPanel (kind="customer-order", the same one
  * Finance's own order page uses) so "додаткові витрати" can be entered right
  * here — deliberately not a second, parallel expense-entry form.
+ *
+ * `useIsPrintPreview()` forces this card open on preview mode — same real
+ * bug as PayrollFundWidget's own header comment describes
+ * ("переглянути"... "білий екран"): this card starts collapsed, so
+ * `ProfitReportPrint`'s `<PrintArea>` never mounts on a fresh preview-mode
+ * page load otherwise.
  */
 export function ProfitReportWidget({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
@@ -26,10 +33,11 @@ export function ProfitReportWidget({ orderId, orderLabel }: { orderId: string; o
   const canView = useHasPermission('customer-orders:view-profit');
   const canManageFinance = useHasPermission('finance:manage');
   const { data: report } = useProfitReport(canView ? orderId : undefined);
+  const isPreview = useIsPrintPreview();
   if (!canView || !report) return null;
 
   return (
-    <CollapsibleCard title={t('profitReport')} contentClassName="space-y-4">
+    <CollapsibleCard title={t('profitReport')} contentClassName="space-y-4" defaultOpen={isPreview}>
       <ProfitReportPrint orderId={orderId} orderLabel={orderLabel} />
 
       <div className="flex flex-wrap gap-x-6 gap-y-2">

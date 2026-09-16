@@ -37,7 +37,7 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
   const { data: expenses } = useCustomerOrderFinanceExpenses(orderId);
 
   const columns: PrintColumnOption[] = [{ id: 'expenses', label: tf('directExpenses') }];
-  const printOptions = usePrintOptions({ columns });
+  const printOptions = usePrintOptions({ columns, id: 'profit-report-print' });
 
   if (!report) return null;
 
@@ -58,7 +58,7 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
           onConfirm={printOptions.confirm}
           triggerLabel={tp('printProfitReport')}
         />
-        <PreviewButton />
+        <PreviewButton printAreaId={printOptions.printAreaId} />
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('profitReportTitle')} subtitle={orderLabel} />

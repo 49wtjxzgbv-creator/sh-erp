@@ -56,6 +56,25 @@ function usePrintPreviewMode(printAreaId: string): boolean {
   return !targetId || targetId === printAreaId;
 }
 
+/**
+ * "Білий екран" (2026-09-16 real bug, found live in the browser): `?print=1`
+ * opens a FRESH page load, and a `<PrintArea>` sitting inside a
+ * `CollapsibleCard`/any other collapsed-by-default container never even
+ * MOUNTS there — the container's own React state resets to its default
+ * (collapsed) on this brand new mount, unaware the URL says "print". A
+ * caller wrapping its own `<PrintArea>` in something collapsible must force
+ * itself open when this returns true (e.g. `defaultOpen={defaultOpen ||
+ * useIsPrintPreview()}`), or preview mode has nothing to portal at all.
+ * Unlike `usePrintPreviewMode` above, this is NOT scoped to one
+ * `printAreaId` — a container has no way to know in advance which specific
+ * print area (if any) is nested inside it, so it only needs "is this page
+ * in preview mode AT ALL," not "is it MY print area specifically."
+ */
+export function useIsPrintPreview(): boolean {
+  const searchParams = useSearchParams();
+  return searchParams.get('print') === '1';
+}
+
 function PrintAreaInner({ children, printAreaId }: { children: ReactNode; printAreaId: string }) {
   const isPreview = usePrintPreviewMode(printAreaId);
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);

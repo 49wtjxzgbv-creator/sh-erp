@@ -5,6 +5,7 @@ import { usePayrollFundSummary } from '@/lib/hooks/use-sales';
 import { formatEur } from '@/lib/utils';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { OrderPayrollPrint } from '@/components/domain/sales/order-payroll-print';
+import { useIsPrintPreview } from '@/components/domain/print/print-area';
 
 /**
  * "Фонд заробітної плати на все замовлення" — REAL PayrollEntry ledger
@@ -33,14 +34,22 @@ import { OrderPayrollPrint } from '@/components/domain/sales/order-payroll-print
  * document. Embedded here (not a separate per-page addition) so every
  * existing caller of this widget (Sales order page, HR's "Зарплата по
  * замовленню" lookup, План виробництва's order detail) gets it for free.
+ *
+ * `useIsPrintPreview()` forces this card open on preview mode (2026-09-16
+ * real bug found live — "коли натискаю переглянути... білий екран"): this
+ * card starts collapsed on the Sales order page, so `OrderPayrollPrint`'s
+ * `<PrintArea>` never mounts at all on a fresh preview-mode page load
+ * unless something forces it open first — see useIsPrintPreview's own
+ * header comment.
  */
 export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderId: string; defaultOpen?: boolean; orderLabel?: string }) {
   const t = useTranslations('sales');
   const { data: fund } = usePayrollFundSummary(orderId);
+  const isPreview = useIsPrintPreview();
   if (!fund) return null;
 
   return (
-    <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3" defaultOpen={defaultOpen}>
+    <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3" defaultOpen={defaultOpen || isPreview}>
       <OrderPayrollPrint orderId={orderId} orderLabel={orderLabel} />
 
       <div>
