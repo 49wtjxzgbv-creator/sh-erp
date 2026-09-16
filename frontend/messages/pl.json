@@ -744,7 +744,7 @@
     "profitLaborCost": "Labor cost",
     "profitLaborCostHint": "Real payroll paid out for this order",
     "profitAdditionalExpenses": "Additional expenses",
-    "netProfit": "Net profit",
+    "netProfit": "Profit",
     "itemPlannedStartAt": "Planned start (item)",
     "itemPlannedEndAt": "Planned completion (item)",
     "itemDeadline": "Item deadline",

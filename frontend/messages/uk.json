@@ -848,7 +848,7 @@
     "profitLaborCost": "Витрати на зарплату",
     "profitLaborCostHint": "Реально виплачено працівникам по цьому замовленню",
     "profitAdditionalExpenses": "Додаткові витрати",
-    "netProfit": "Чистий прибуток",
+    "netProfit": "Прибуток",
     "itemPlannedStartAt": "Плановий початок (позиція)",
     "itemPlannedEndAt": "Планове завершення (позиція)",
     "itemDeadline": "Дедлайн позиції",
