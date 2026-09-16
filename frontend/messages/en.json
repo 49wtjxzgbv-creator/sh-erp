@@ -686,6 +686,7 @@
     "payrollFundArticle": "Article",
     "payrollFundUnitsProduced": "Quantity",
     "payrollFundGeneralWork": "General work (no article)",
+    "payrollByOrderPrintByEmployee": "By employee",
     "payrollByEmployeeEmpty": "Nobody has been paid piecework on this order yet",
     "payrollFundProducedByWorkers": "Produced by workers",
     "payrollFundEstimatedByArticle": "Estimate by product (current rates)",
@@ -1091,7 +1092,9 @@
     "printAvailability": "Print availability",
     "availabilityTitle": "Availability check",
     "printProfitReport": "Print (PDF)",
-    "profitReportTitle": "Order profit report"
+    "profitReportTitle": "Order profit report",
+    "printOrderPayroll": "Print (PDF)",
+    "orderPayrollTitle": "Order payroll"
   },
   "legacyImport": {
     "title": "Import sources",

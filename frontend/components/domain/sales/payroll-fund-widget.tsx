@@ -9,6 +9,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { PayrollFundEstimatePrint } from '@/components/domain/sales/payroll-fund-estimate-print';
+import { OrderPayrollPrint } from '@/components/domain/sales/order-payroll-print';
 
 /**
  * "Фонд заробітної плати на все замовлення" (2026-08-26 user request) —
@@ -33,6 +34,15 @@ import { PayrollFundEstimatePrint } from '@/components/domain/sales/payroll-fund
  * follow-up — no click needed): every виріб in this order's production
  * tree with its own estimated labor cost — same photo+article row
  * convention as the byArticle table below it.
+ *
+ * `OrderPayrollPrint` (2026-09-16 user request — "друкувати звіт по зарплаті
+ * конкретного замовлення"): a full-report print button up top, distinct
+ * from `PayrollFundEstimatePrint` below (which only covers the
+ * estimated-by-article table) — covers the fund totals, the real
+ * earned-by-article breakdown, AND the per-employee breakdown in one
+ * document. Embedded here (not a separate per-page addition) so every
+ * existing caller of this widget (Sales order page, this HR "Зарплата по
+ * замовленню" lookup, План виробництва's order detail) gets it for free.
  */
 export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderId: string; defaultOpen?: boolean; orderLabel?: string }) {
   const t = useTranslations('sales');
@@ -48,6 +58,8 @@ export function PayrollFundWidget({ orderId, defaultOpen, orderLabel }: { orderI
 
   return (
     <CollapsibleCard title={t('payrollFund')} contentClassName="space-y-3" defaultOpen={defaultOpen}>
+      <OrderPayrollPrint orderId={orderId} orderLabel={orderLabel} />
+
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         <div>
           <p className="text-xs text-muted-foreground">{t('payrollFundEstimated')}</p>

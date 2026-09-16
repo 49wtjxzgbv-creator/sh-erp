@@ -783,6 +783,7 @@
     "payrollFundArticle": "Артикул",
     "payrollFundUnitsProduced": "Кількість",
     "payrollFundGeneralWork": "Загальні роботи (без артикулу)",
+    "payrollByOrderPrintByEmployee": "По працівниках",
     "payrollByEmployeeEmpty": "По цьому замовленню ще ніхто не отримав відрядну оплату",
     "payrollFundProducedByWorkers": "Виготовлено працівниками",
     "payrollFundEstimatedByArticle": "Оцінка по виробах (за поточними ставками)",
@@ -1218,7 +1219,9 @@
     "printAvailability": "Друк наявності",
     "availabilityTitle": "Перевірка наявності",
     "printProfitReport": "Друкувати (PDF)",
-    "profitReportTitle": "Прибуток по замовленню"
+    "profitReportTitle": "Прибуток по замовленню",
+    "printOrderPayroll": "Друкувати (PDF)",
+    "orderPayrollTitle": "Зарплата по замовленню"
   },
   "legacyImport": {
     "title": "Джерела імпорту",

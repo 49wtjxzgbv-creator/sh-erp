@@ -686,6 +686,7 @@
     "payrollFundArticle": "Artikel",
     "payrollFundUnitsProduced": "Menge",
     "payrollFundGeneralWork": "Allgemeine Arbeit (ohne Artikel)",
+    "payrollByOrderPrintByEmployee": "By employee",
     "payrollByEmployeeEmpty": "Für diesen Auftrag wurde noch kein Akkordlohn ausgezahlt",
     "payrollFundProducedByWorkers": "Von Mitarbeitern hergestellt",
     "payrollFundEstimatedByArticle": "Schätzung nach Produkt (aktuelle Sätze)",
@@ -1091,7 +1092,9 @@
     "printAvailability": "Print availability",
     "availabilityTitle": "Availability check",
     "printProfitReport": "Print (PDF)",
-    "profitReportTitle": "Order profit report"
+    "profitReportTitle": "Order profit report",
+    "printOrderPayroll": "Print (PDF)",
+    "orderPayrollTitle": "Order payroll"
   },
   "legacyImport": {
     "title": "Importquellen",
