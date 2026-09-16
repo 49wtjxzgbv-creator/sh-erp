@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Printer, Users } from 'lucide-react';
 import { useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur, formatQty } from '@/lib/utils';
+import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -14,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
 import { EmployeePayrollPrintBlock } from '@/components/domain/sales/employee-payroll-print-block';
+import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 
 /** Same inlined exclusivity toggle hr/payroll/summary/page.tsx's own per-employee print uses — see that file's own header comment for why this is a plain DOM toggle rather than usePrintOptions (no columns/photos dialog needed for a single "print now" click). */
 function activateOnlyPrintArea(id: string) {
@@ -54,6 +56,7 @@ export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: strin
   const { data: lines, isLoading } = useOrderPayrollByEmployee(orderId);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [printEmployeeId, setPrintEmployeeId] = useState<string | null>(null);
+  const [eurUahRate, setEurUahRate] = useEurUahRate();
   const employeePrintAreaId = useId();
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();
@@ -96,8 +99,9 @@ export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: strin
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">{th('summaryByEmployee')}</CardTitle>
+        <EurUahRateField rate={eurUahRate} onChange={setEurUahRate} />
       </CardHeader>
       <CardContent>
         <Table>
@@ -181,7 +185,7 @@ export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: strin
       {printLine && (
         <PrintArea printAreaId={employeePrintAreaId}>
           <PrintDocumentHeader title={tp('orderPayrollTitle')} subtitle={orderLabel ? `${orderLabel} — ${printLine.employeeName}` : printLine.employeeName} />
-          <EmployeePayrollPrintBlock line={printLine} photosByAssembly={photosByAssembly} />
+          <EmployeePayrollPrintBlock line={printLine} photosByAssembly={photosByAssembly} eurUahRate={eurUahRate} />
         </PrintArea>
       )}
     </Card>

@@ -5,11 +5,13 @@ import { useTranslations } from 'next-intl';
 import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { formatEurWithUah } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
 import { Button } from '@/components/ui/button';
 import { EmployeePayrollPrintBlock } from '@/components/domain/sales/employee-payroll-print-block';
+import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 
 /**
  * "Друк звіту по зарплаті замовлення" — the payroll picture for one order in
@@ -47,6 +49,7 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
   const tp = useTranslations('print');
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
+  const [eurUahRate, setEurUahRate] = useEurUahRate();
   const printOptions = usePrintOptions({ columns: [] });
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();
@@ -59,12 +62,13 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => printOptions.confirm(new Set(), false)}>
           <Printer className="mr-2 h-4 w-4" />
           {tp('printOrderPayroll')}
         </Button>
         <PreviewButton />
+        <EurUahRateField rate={eurUahRate} onChange={setEurUahRate} />
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('orderPayrollTitle')} subtitle={orderLabel} />
@@ -73,7 +77,7 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
           <tbody>
             <tr>
               <td>{t('payrollFundEarned')}</td>
-              <td className="font-bold">{formatEur(fund.earnedActual)}</td>
+              <td className="font-bold">{formatEurWithUah(fund.earnedActual, eurUahRate)}</td>
             </tr>
           </tbody>
         </table>
@@ -96,18 +100,23 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                 {byEmployee.map((line) => (
                   <tr key={line.employeeId} className="border-b border-gray-300">
                     <td className="py-1">{line.employeeName}</td>
-                    <td className="py-1 text-right font-medium tabular-nums">{formatEur(line.totalEarned)}</td>
+                    <td className="py-1 text-right font-medium tabular-nums">{formatEurWithUah(line.totalEarned, eurUahRate)}</td>
                   </tr>
                 ))}
                 <tr className="border-t-2 border-black font-bold">
                   <td className="py-1">{th('grandTotal')}</td>
-                  <td className="py-1 text-right tabular-nums">{formatEur(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0))}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {formatEurWithUah(
+                      byEmployee.reduce((sum, l) => sum + l.totalEarned, 0),
+                      eurUahRate,
+                    )}
+                  </td>
                 </tr>
               </tbody>
             </table>
             <div className="space-y-3">
               {byEmployee.map((line) => (
-                <EmployeePayrollPrintBlock key={line.employeeId} line={line} photosByAssembly={photosByAssembly} />
+                <EmployeePayrollPrintBlock key={line.employeeId} line={line} photosByAssembly={photosByAssembly} eurUahRate={eurUahRate} />
               ))}
             </div>
           </div>

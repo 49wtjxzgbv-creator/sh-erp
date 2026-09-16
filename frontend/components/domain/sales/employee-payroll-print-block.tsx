@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { formatEur, formatQty } from '@/lib/utils';
+import { formatEurWithUah, formatQty } from '@/lib/utils';
 import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
 
 /**
@@ -11,13 +11,19 @@ import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
  * section and `OrderPayrollByEmployee`'s own single-employee print button
  * render byte-identical output instead of two copies of this table drifting
  * apart.
+ *
+ * `eurUahRate` (2026-09-16 user request): every EUR figure here also shows
+ * the equivalent in hryvnia when a rate was entered — see
+ * useEurUahRate's own header comment for where that value comes from.
  */
 export function EmployeePayrollPrintBlock({
   line,
   photosByAssembly,
+  eurUahRate,
 }: {
   line: PayrollByEmployeeLine;
   photosByAssembly: Record<string, { downloadUrl: string }[]> | undefined;
+  eurUahRate: number | null;
 }) {
   const t = useTranslations('sales');
 
@@ -25,7 +31,7 @@ export function EmployeePayrollPrintBlock({
     <div className="break-inside-avoid border-b border-gray-300 pb-2">
       <div className="mb-1 flex items-baseline justify-between">
         <p className="text-sm font-bold">{line.employeeName}</p>
-        <p className="text-sm font-semibold">{formatEur(line.totalEarned)}</p>
+        <p className="text-sm font-semibold">{formatEurWithUah(line.totalEarned, eurUahRate)}</p>
       </div>
       {line.byArticle.length > 0 && (
         <table className="text-xs">
@@ -54,7 +60,7 @@ export function EmployeePayrollPrintBlock({
                 </td>
                 <td>{a.assemblyId ? `${a.article ? `${a.article} — ` : ''}${a.assemblyName}` : (a.assemblyName ?? t('payrollFundGeneralWork'))}</td>
                 <td>{a.unitsProduced ? formatQty(a.unitsProduced) : '—'}</td>
-                <td>{formatEur(a.amount)}</td>
+                <td>{formatEurWithUah(a.amount, eurUahRate)}</td>
               </tr>
             ))}
           </tbody>

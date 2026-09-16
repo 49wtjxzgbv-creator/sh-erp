@@ -25,6 +25,19 @@ export function formatQty(value: number): string {
 }
 
 /**
+ * "Курс EUR → UAH" (2026-09-16 user request — payroll prints should show
+ * hryvnia alongside the app's own EUR figures, at whatever rate staff typed
+ * in via useEurUahRate right before printing). No rate entered (null/0) ->
+ * plain EUR only, same as formatEur — this never assumes a rate that wasn't
+ * actually given.
+ */
+export function formatEurWithUah(value: number, rate: number | null): string {
+  const eur = formatEur(value);
+  if (!rate || rate <= 0) return eur;
+  return `${eur} (${(value * rate).toFixed(2)} ₴)`;
+}
+
+/**
  * План-графік planned dates need date AND time (Timestamptz in the DB),
  * not just a day — these two converters are the one place that logic
  * lives, used by every planned-date `<input type="datetime-local">` this

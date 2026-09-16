@@ -843,6 +843,7 @@
     "transportRiggingCost": "Транспортно-такелажні витрати",
     "otherCost": "Додаткові витрати",
     "salePrice": "Ціна продажу замовлення",
+    "eurUahRateLabel": "Курс EUR → UAH",
     "profitReport": "Прибуток по замовленню",
     "profitLaborCost": "Витрати на зарплату",
     "profitLaborCostHint": "Реально виплачено працівникам по цьому замовленню",

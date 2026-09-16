@@ -739,6 +739,7 @@
     "transportRiggingCost": "Transport/rigging costs",
     "otherCost": "Additional costs",
     "salePrice": "Order sale price",
+    "eurUahRateLabel": "EUR → UAH rate",
     "profitReport": "Order profit report",
     "profitLaborCost": "Labor cost",
     "profitLaborCostHint": "Real payroll paid out for this order",
