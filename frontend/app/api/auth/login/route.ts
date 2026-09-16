@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setSessionCookies } from '@/lib/auth/server-cookies';
+import { forwardClientMetaHeaders } from '@/lib/auth/forward-client-meta';
 
 /**
  * Proxies to backend POST /api/v1/auth/login (backend/src/modules/identity/auth.controller.ts).
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   const backendRes = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...forwardClientMetaHeaders(request) },
     body: JSON.stringify(body),
     cache: 'no-store',
   });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setSessionCookies } from '@/lib/auth/server-cookies';
+import { forwardClientMetaHeaders } from '@/lib/auth/forward-client-meta';
 
 /**
  * P0 fix (2026-08-20): the old flow (app/impersonate/page.tsx, now deleted)
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   const backendRes = await fetch(`${API_BASE}/super-admin/companies/${body.companyId}/impersonate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: authHeader },
+    headers: { 'Content-Type': 'application/json', Authorization: authHeader, ...forwardClientMetaHeaders(request) },
     body: JSON.stringify(body.userId ? { userId: body.userId } : {}),
     cache: 'no-store',
   });

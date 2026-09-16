@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setSessionCookies, clearSessionCookies } from '@/lib/auth/server-cookies';
+import { forwardClientMetaHeaders } from '@/lib/auth/forward-client-meta';
 import {
   REFRESH_COOKIE_NAME,
   USER_ID_COOKIE_NAME,
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const backendRes = await fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...forwardClientMetaHeaders(request) },
     body: JSON.stringify({ refreshToken }),
     cache: 'no-store',
   });
