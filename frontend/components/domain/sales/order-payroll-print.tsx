@@ -70,7 +70,7 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
   const [eurUahRate, setEurUahRate] = useEurUahRate();
-  const printOptions = usePrintOptions({ columns: [] });
+  const printOptions = usePrintOptions({ columns: [], id: 'order-payroll-print' });
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();
     for (const line of byEmployee ?? []) for (const a of line.byArticle) if (a.assemblyId) ids.add(a.assemblyId);

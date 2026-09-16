@@ -62,14 +62,37 @@ const PRINT_MAX_WAIT_MS = 20000;
  * behaves exactly as before, including a bare Ctrl+P with no button ever
  * clicked.
  */
-export function usePrintOptions({ columns, hasPhotos = false }: { columns: PrintColumnOption[]; hasPhotos?: boolean }) {
+export function usePrintOptions({
+  columns,
+  hasPhotos = false,
+  id,
+}: {
+  columns: PrintColumnOption[];
+  hasPhotos?: boolean;
+  /**
+   * Stable override for `printAreaId` (2026-09-16 fix — "коли натискаю
+   * переглянути нічого не відображається"). `useId()`'s auto-generated
+   * fallback below is only guaranteed stable WITHIN one mount, for its
+   * original purpose (matching a live DOM node's data attribute right
+   * before `window.print()`) — it is NOT guaranteed to reproduce the same
+   * value on a SEPARATE fresh mount, which is exactly what a preview does
+   * (PreviewButton opens a brand new tab, a full fresh React render). Round-
+   * tripping that value through the URL (`?printAreaId=...`) and expecting
+   * the new tab's own `useId()` call to land on the identical string was
+   * the actual bug — pass a caller-authored constant here (unique among
+   * whatever OTHER print areas share this same page, not globally) whenever
+   * this view also uses `PreviewButton`.
+   */
+  id?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(columns.map((c) => c.id)));
   const [includePhotos, setIncludePhotos] = useState(hasPhotos);
   const [printRequestId, setPrintRequestId] = useState(0);
   const isFetching = useIsFetching();
   const printedRequestId = useRef(0);
-  const printAreaId = useId();
+  const generatedId = useId();
+  const printAreaId = id ?? generatedId;
 
   const activateOnlyThisPrintArea = useCallback(() => {
     document.querySelectorAll('.print-area').forEach((el) => {
