@@ -398,6 +398,27 @@ describe('CustomerOrdersService', () => {
       ]);
     });
 
+    it('drops a node from estimatedByArticle once its labor is fully covered by this order\'s own "Зі складу" claim (2026-09-17 user report — bought-ready-made items must not show a 0 EUR row)', async () => {
+      assembliesService.getProductionTree.mockImplementation(async (_u: unknown, assemblyId: string) =>
+        assemblyId === 'a1'
+          ? {
+              assemblyId: 'a1',
+              name: 'Widget',
+              article: 'W-1',
+              qtyNeeded: 2,
+              laborFundEstimate: 10,
+              // sub1 was bought ready-made and claimed "Зі складу" in full — laborFundEstimate is 0.
+              children: [{ assemblyId: 'sub1', name: 'Sub', article: 'S-1', qtyNeeded: 4, laborFundEstimate: 0, children: [] }],
+            }
+          : { assemblyId: 'a2', name: 'Gadget', article: 'G-1', qtyNeeded: 1, laborFundEstimate: 0, children: [] },
+      );
+      mockProductionOrdersFindMany([]);
+
+      const result = await service.getPayrollFundSummary(user, 'co1');
+
+      expect(result.estimatedByArticle).toEqual([{ assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', qtyNeeded: 2, estimatedAmount: 10 }]);
+    });
+
     it('earnedActual/byArticle (2026-08-30): sums REAL PayrollEntry PIECEWORK rows for this order\'s batches, grouped by article via each batch\'s own assemblyId', async () => {
       assembliesService.getProductionTree.mockResolvedValue({ assemblyId: 'a1', laborFundEstimate: 0, children: [] });
       mockProductionOrdersFindMany([

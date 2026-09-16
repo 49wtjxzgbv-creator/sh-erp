@@ -34,6 +34,8 @@ describe('AssembliesService', () => {
         product: { findUnique: jest.fn() },
         warehouse: { findFirst: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0) },
+        customerOrderItem: { findMany: jest.fn().mockResolvedValue([]) },
+        productionOrder: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -395,6 +397,58 @@ describe('AssembliesService', () => {
       }
       expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'a1');
       expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');
+    });
+
+    it('a sub-assembly bought ready-made and consumed into another виріб for THIS order still counts as `done` (2026-09-17 fix — used to flip to "потрібно виготовити")', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() top-level existence check
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 4 });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1' }]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1' }]);
+      // sub1 was fully claimed "Зі складу" at order creation, then its 2
+      // physical units got pulled (FIFO-consumed) into a1's own batch —
+      // nothing left sitting IN_STOCK as sub1 anymore.
+      prisma.tenant.finishedGood.count
+        .mockResolvedValueOnce(2) // a1: IN_STOCK
+        .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order (none — a1 is the top-level виріб)
+        .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf
+        .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order — the 2 units built into a1
+      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+
+      expect(result.children[0]).toEqual({
+        assemblyId: 'sub1',
+        name: 'Sub1',
+        article: null,
+        qtyNeeded: 2,
+        qtyInStock: 0,
+        done: true, // 0 on the shelf + 2 already consumed into a1's own batch for this order = fulfilled
+        laborFundEstimate: 0,
+        children: [],
+      });
+      expect(prisma.tenant.customerOrderItem.findMany).toHaveBeenCalledWith({ where: { customerOrderId: 'order-1' }, select: { id: true } });
+      expect(prisma.tenant.productionOrder.findMany).toHaveBeenCalledWith({
+        where: { OR: [{ customerOrderItemId: { in: ['item1'] } }, { subAssemblyForItemId: { in: ['item1'] } }] },
+        select: { id: true },
+      });
+      for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.status === 'CONSUMED')) {
+        expect(call[0].where).toEqual({ assemblyId: expect.any(String), status: 'CONSUMED', consumedInProductionOrderId: { in: ['po1'] } });
+      }
+    });
+
+    it('skips the CONSUMED-stock lookup entirely when this order has no items/batches yet, instead of querying with an empty `in`', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValueOnce({ id: 'a1', components: [] }).mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null, laborCostPerUnit: 0 });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([]);
+
+      await service.getProductionTree(user, 'a1', 1, 'order-1');
+
+      expect(prisma.tenant.productionOrder.findMany).not.toHaveBeenCalled();
+      expect(prisma.tenant.finishedGood.count).toHaveBeenCalledTimes(1); // IN_STOCK only, no CONSUMED lookup
     });
 
     it('detects a circular BOM instead of recursing forever', async () => {

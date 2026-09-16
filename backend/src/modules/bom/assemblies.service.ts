@@ -636,12 +636,32 @@ export class AssembliesService {
    */
   async getProductionTree(user: RequestUser, assemblyId: string, qty: number, customerOrderId: string): Promise<ProductionTreeNode> {
     await this.findOne(user, assemblyId);
-    return this.buildProductionTree(user, customerOrderId, assemblyId, qty, new Set());
+    // 2026-09-17 user report ("коли ми використовували [куплені готовими]
+    // в інших виробах вони списались з складу і чомусь статус... змінився
+    // що потрібно виготовити"): every ProductionOrder batch that belongs to
+    // THIS customer order (via customerOrderItemId, or subAssemblyForItemId
+    // for a sub-assembly batch — same dual-field resolution
+    // ProductionOrdersService#resolveCustomerOrderId uses), computed once
+    // up front and threaded through the whole recursion below — see
+    // `done`'s own doc comment for why this is needed.
+    const orderItemIds = (await this.prisma.tenant.customerOrderItem.findMany({ where: { customerOrderId }, select: { id: true } })).map(
+      (i) => i.id,
+    );
+    const consumedIntoProductionOrderIds = orderItemIds.length
+      ? (
+          await this.prisma.tenant.productionOrder.findMany({
+            where: { OR: [{ customerOrderItemId: { in: orderItemIds } }, { subAssemblyForItemId: { in: orderItemIds } }] },
+            select: { id: true },
+          })
+        ).map((p) => p.id)
+      : [];
+    return this.buildProductionTree(user, customerOrderId, consumedIntoProductionOrderIds, assemblyId, qty, new Set());
   }
 
   private async buildProductionTree(
     user: RequestUser,
     customerOrderId: string,
+    consumedIntoProductionOrderIds: string[],
     assemblyId: string,
     qty: number,
     visited: Set<string>,
@@ -651,7 +671,7 @@ export class AssembliesService {
     }
     visited.add(assemblyId);
 
-    const [assembly, qtyInStock, qtyClaimedFromStock, components] = await Promise.all([
+    const [assembly, qtyInStock, qtyConsumedForThisOrder, qtyClaimedFromStock, components] = await Promise.all([
       this.prisma.tenant.assembly.findUnique({ where: { id: assemblyId } }),
       // `productionOrderId: null OR confirmedByExecutionId: { not: null }` —
       // FinishedGood.confirmedByExecutionId's own schema comment spells out
@@ -673,6 +693,14 @@ export class AssembliesService {
       this.prisma.tenant.finishedGood.count({
         where: { assemblyId, status: 'IN_STOCK', OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }] },
       }),
+      // See `done`'s own doc comment — units of THIS node's own assembly
+      // that were already legitimately consumed as a component of another
+      // node's batch, in service of THIS same customer order.
+      consumedIntoProductionOrderIds.length
+        ? this.prisma.tenant.finishedGood.count({
+            where: { assemblyId, status: 'CONSUMED', consumedInProductionOrderId: { in: consumedIntoProductionOrderIds } },
+          })
+        : Promise.resolve(0),
       this.subAssemblyReservationService.getClaimForOrder(user, customerOrderId, assemblyId),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
@@ -681,7 +709,16 @@ export class AssembliesService {
     const children: ProductionTreeNode[] = [];
     for (const line of components) {
       if (!line.subAssemblyId) continue;
-      children.push(await this.buildProductionTree(user, customerOrderId, line.subAssemblyId, qty * Number(line.qtyPerUnit), visited));
+      children.push(
+        await this.buildProductionTree(
+          user,
+          customerOrderId,
+          consumedIntoProductionOrderIds,
+          line.subAssemblyId,
+          qty * Number(line.qtyPerUnit),
+          visited,
+        ),
+      );
     }
 
     visited.delete(assemblyId);
@@ -692,7 +729,19 @@ export class AssembliesService {
       article: assembly.article,
       qtyNeeded: qty,
       qtyInStock,
-      done: qtyInStock >= Math.ceil(qty),
+      // 2026-09-17 fix: `qtyInStock` alone used to decide `done` — correct
+      // for a node still sitting on the shelf, but wrong once it's already
+      // been pulled into a batch FOR THIS ORDER (ProductionOrdersService's
+      // FIFO consumption at start() marks those units CONSUMED, which drops
+      // them out of the live IN_STOCK count entirely). That consumption
+      // already fulfilled this node's own requirement — e.g. a sub-assembly
+      // bought ready-made and claimed "Зі складу", then used as a component
+      // of another виріб in the same order — so it must not flip back to
+      // "потрібно виготовити" just because the physical units moved from
+      // "on the shelf" to "built into the parent". `qtyConsumedForThisOrder`
+      // is scoped to consumption tied to THIS customer order's own batches
+      // only (see getProductionTree), never another order's.
+      done: qtyInStock + qtyConsumedForThisOrder >= Math.ceil(qty),
       laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock, 0),
       children,
     };

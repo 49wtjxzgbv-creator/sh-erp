@@ -730,6 +730,13 @@ export class CustomerOrdersService {
     }
     const estimatedByArticle = Array.from(estimatedByArticleMap.values())
       .map((line) => ({ ...line, qtyNeeded: round2(line.qtyNeeded), estimatedAmount: round2(line.estimatedAmount) }))
+      // 2026-09-17 user report ("забери з оцінки вироби які... купили
+      // готовими"): laborFundEstimate is already 0 for a node fully covered
+      // by this order's own "Зі складу" claim (see ProductionTreeNode's own
+      // doc comment) — but the node still made it into the list with a
+      // 0 EUR row. Nothing was ever going to be paid for it, so it has no
+      // business in an "estimated labor" breakdown at all.
+      .filter((line) => line.estimatedAmount > 0)
       .sort((a, b) => (a.article ?? '').localeCompare(b.article ?? ''));
 
     const itemIds = items.map((i) => i.id);
