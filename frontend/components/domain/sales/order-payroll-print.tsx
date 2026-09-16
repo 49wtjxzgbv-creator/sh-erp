@@ -6,7 +6,7 @@ import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
-import { formatEurWithUah } from '@/lib/utils';
+import { formatEur, formatEurWithUah } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,13 @@ import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
  * `assemblyName` carries that now, see CustomerOrdersService's own
  * getGeneralWorkPayrollEntries comment), and `unitsProduced` rounded to 2
  * decimals (real float drift observed live, e.g. "касета транспортерів").
+ *
+ * UAH scope (2026-09-16 user follow-ups, narrowed twice): only each
+ * INDIVIDUAL employee's own total shows the hryvnia equivalent
+ * (`formatEurWithUah`) — the article breakdown table stays EUR-only, and so
+ * do both "overall across everyone" aggregates (the top `payrollFundEarned`
+ * line and the by-employee table's grand-total row), which use plain
+ * `formatEur`.
  *
  * `usePrintOptions`/`printAreaId` — required, not optional: every page this
  * renders on already hosts other `<PrintArea>`s (Sales order page:
@@ -77,7 +84,7 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
           <tbody>
             <tr>
               <td>{t('payrollFundEarned')}</td>
-              <td className="font-bold">{formatEurWithUah(fund.earnedActual, eurUahRate)}</td>
+              <td className="font-bold">{formatEur(fund.earnedActual)}</td>
             </tr>
           </tbody>
         </table>
@@ -105,12 +112,7 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                 ))}
                 <tr className="border-t-2 border-black font-bold">
                   <td className="py-1">{th('grandTotal')}</td>
-                  <td className="py-1 text-right tabular-nums">
-                    {formatEurWithUah(
-                      byEmployee.reduce((sum, l) => sum + l.totalEarned, 0),
-                      eurUahRate,
-                    )}
-                  </td>
+                  <td className="py-1 text-right tabular-nums">{formatEur(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0))}</td>
                 </tr>
               </tbody>
             </table>
