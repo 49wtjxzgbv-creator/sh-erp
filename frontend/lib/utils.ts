@@ -12,6 +12,19 @@ export function formatEur(value: number): string {
 }
 
 /**
+ * Payroll "кількість" (unitsProduced) is a summed Decimal that can pick up
+ * real floating-point drift once several PayrollEntry rows are added
+ * together server-side (2026-09-16 user report — "виріб касета
+ * транспортерів після коми багато значень", real observed values like
+ * 2.9999999999996) — every payroll qty display should go through this
+ * instead of rendering the raw number. `toFixed(2)` then parsed back to a
+ * number so a whole quantity still reads as "3", not "3.00".
+ */
+export function formatQty(value: number): string {
+  return String(Number(value.toFixed(2)));
+}
+
+/**
  * План-графік planned dates need date AND time (Timestamptz in the DB),
  * not just a day — these two converters are the one place that logic
  * lives, used by every planned-date `<input type="datetime-local">` this

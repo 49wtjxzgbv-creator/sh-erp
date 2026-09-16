@@ -1,9 +1,11 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
-import { formatEur } from '@/lib/utils';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { formatEur, formatQty } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,14 @@ import { Button } from '@/components/ui/button';
  * uses a plain button (matching production-progress-print.tsx's own
  * pattern) instead of the PrintOptionsDialog flow.
  *
+ * Same visit's follow-up: article photos (a real `<img>`, not the on-screen
+ * `Avatar` component — print output stays outside Next's image pipeline,
+ * same convention the now-deleted PayrollFundEstimatePrint used), general
+ * work labeled with its real `WorkTask.title` (not a generic fallback —
+ * `assemblyName` carries that now, see CustomerOrdersService's own
+ * getGeneralWorkPayrollEntries comment), and `unitsProduced` rounded to 2
+ * decimals (real float drift observed live, e.g. "касета транспортерів").
+ *
  * `usePrintOptions`/`printAreaId` — required, not optional: every page this
  * renders on already hosts other `<PrintArea>`s (Sales order page:
  * CustomerOrderPrint/ProductionProgressPrint/ProfitReportPrint; HR payroll
@@ -37,6 +47,12 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
   const printOptions = usePrintOptions({ columns: [] });
+  const assemblyIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const line of byEmployee ?? []) for (const a of line.byArticle) if (a.assemblyId) ids.add(a.assemblyId);
+    return Array.from(ids);
+  }, [byEmployee]);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
 
   if (!fund) return null;
 
@@ -97,8 +113,15 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                   </div>
                   {line.byArticle.length > 0 && (
                     <table className="text-xs">
+                      <colgroup>
+                        <col className="print-photo-col" />
+                        <col />
+                        <col style={{ width: '20%' }} />
+                        <col style={{ width: '20%' }} />
+                      </colgroup>
                       <thead>
                         <tr>
+                          <th />
                           <th>{t('payrollFundArticle')}</th>
                           <th>{t('payrollFundUnitsProduced')}</th>
                           <th>{t('payrollFundEarned')}</th>
@@ -108,11 +131,15 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
                         {line.byArticle.map((a) => (
                           <tr key={a.assemblyId ?? 'general'}>
                             <td>
-                              {a.assemblyId
-                                ? `${a.article ? `${a.article} — ` : ''}${a.assemblyName}`
-                                : t('payrollFundGeneralWork')}
+                              {a.assemblyId && photosByAssembly?.[a.assemblyId]?.[0]?.downloadUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element -- print output, outside Next's image pipeline
+                                <img src={photosByAssembly[a.assemblyId][0].downloadUrl} alt="" style={{ width: 32, height: 32, objectFit: 'cover' }} />
+                              ) : null}
                             </td>
-                            <td>{a.unitsProduced || '—'}</td>
+                            <td>
+                              {a.assemblyId ? `${a.article ? `${a.article} — ` : ''}${a.assemblyName}` : (a.assemblyName ?? t('payrollFundGeneralWork'))}
+                            </td>
+                            <td>{a.unitsProduced ? formatQty(a.unitsProduced) : '—'}</td>
                             <td>{formatEur(a.amount)}</td>
                           </tr>
                         ))}

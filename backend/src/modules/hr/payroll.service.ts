@@ -317,17 +317,34 @@ export class PayrollService {
       ensureLine(employeeId);
     }
 
+    // Real floating-point drift found live (2026-09-16 user report — "виріб
+    // касета транспортерів після коми багато значень"): summing several
+    // Decimal-sourced PayrollEntry.unitsProduced/amount values in plain JS
+    // arithmetic (every `+=` above) can land on e.g. 2.9999999999996 instead
+    // of 3 — round every accumulated total here, once, rather than leaving
+    // it to whichever caller happens to render the raw number.
     for (const [employeeId, line] of summaryByEmployee) {
+      line.piecework = round2(line.piecework);
+      line.advances = round2(line.advances);
+      line.bonuses = round2(line.bonuses);
+      line.penalties = round2(line.penalties);
+      line.netTotal = round2(line.netTotal);
       const byArticle = articlesByEmployee.get(employeeId);
       line.byArticle = byArticle
-        ? Array.from(byArticle.values()).sort((a, b) => {
-            if (a.assemblyId === null) return 1; // general work (no article) always sorts last
-            if (b.assemblyId === null) return -1;
-            return (a.article ?? '').localeCompare(b.article ?? '');
-          })
+        ? Array.from(byArticle.values())
+            .map((a) => ({ ...a, unitsProduced: round2(a.unitsProduced), amount: round2(a.amount) }))
+            .sort((a, b) => {
+              if (a.assemblyId === null) return 1; // general work (no article) always sorts last
+              if (b.assemblyId === null) return -1;
+              return (a.article ?? '').localeCompare(b.article ?? '');
+            })
         : [];
     }
 
     return Array.from(summaryByEmployee.values()).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
   }
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

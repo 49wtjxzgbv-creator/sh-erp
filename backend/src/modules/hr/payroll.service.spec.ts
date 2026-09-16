@@ -195,6 +195,22 @@ describe('PayrollService', () => {
       ]);
     });
 
+    it('rounds unitsProduced/amount (and piecework/netTotal) to 2 decimals, cleaning up float drift from summed entries (2026-09-16 user report)', async () => {
+      prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);
+      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 0.1, unitsProduced: 0.1, productionOrderId: 'po1' },
+        { employeeId: 'e1', type: 'PIECEWORK', amount: 0.2, unitsProduced: 0.2, productionOrderId: 'po1' },
+      ]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1' }]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'a1', name: 'Widget', article: 'W-1' }]);
+
+      const [line] = await service.getPayrollSummaryReport(user, {});
+
+      expect(line.piecework).toBe(0.3);
+      expect(line.netTotal).toBe(0.3);
+      expect(line.byArticle).toEqual([{ assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 0.3, amount: 0.3 }]);
+    });
+
     it('buckets a PIECEWORK entry with no productionOrderId (WorkTask-based general labor) under a null-article "general work" line, sorted last', async () => {
       prisma.tenant.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Alice' }]);
       prisma.tenant.payrollEntry.findMany.mockResolvedValue([

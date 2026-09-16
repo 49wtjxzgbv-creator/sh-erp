@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, Users } from 'lucide-react';
 import { useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { formatEur, formatQty } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -112,9 +112,9 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-muted-foreground">{t('payrollFundGeneralWork')}</span>
+                                <span className="text-muted-foreground">{a.assemblyName ?? t('payrollFundGeneralWork')}</span>
                               )}
-                              <span className="text-right tabular-nums">{a.unitsProduced || '—'}</span>
+                              <span className="text-right tabular-nums">{a.unitsProduced ? formatQty(a.unitsProduced) : '—'}</span>
                               <span className="text-right tabular-nums">{formatEur(a.amount)}</span>
                             </div>
                           ))}

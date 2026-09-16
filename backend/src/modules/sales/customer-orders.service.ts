@@ -685,9 +685,15 @@ export class CustomerOrdersService {
    * allocation calculation", which was true until this fix. Joins
    * PayrollEntry -> sourceAllocation -> execution -> workTaskId ->
    * WorkTaskItem.customerOrderItemId, scoped to this order's own items.
-   * Every returned entry keeps `productionOrderId: null`, so both callers'
-   * existing `assemblyId ?? GENERAL_WORK_KEY` bucketing picks them up with
-   * zero further changes needed there.
+   * Every returned entry keeps `productionOrderId: null`.
+   *
+   * `generalWorkTaskId`/`generalWorkTitle` (2026-09-16 user request —
+   * "загальні роботи дописуй що саме за робота, коли створювали їх то
+   * прописували"): a flat "Загальні роботи" bucket loses which actual task
+   * it was, so both callers now group these by their own `workTaskId`
+   * (`wt:<id>`, distinct from the assemblyId-keyed buckets) and label the
+   * row with `WorkTask.title` — the same description staff typed in when
+   * creating the task — instead of the generic fallback string.
    */
   private async getGeneralWorkPayrollEntries(itemIds: string[]) {
     if (!itemIds.length) return [];
@@ -697,8 +703,17 @@ export class CustomerOrdersService {
     });
     const workTaskIds = Array.from(new Set(workTaskItems.map((w) => w.workTaskId)));
     if (!workTaskIds.length) return [];
-    return this.prisma.tenant.payrollEntry.findMany({
+
+    const entries = await this.prisma.tenant.payrollEntry.findMany({
       where: { type: 'PIECEWORK', sourceAllocation: { execution: { workTaskId: { in: workTaskIds } } } },
+      include: { sourceAllocation: { include: { execution: { select: { workTaskId: true } } } } },
+    });
+    const tasks = await this.prisma.tenant.workTask.findMany({ where: { id: { in: workTaskIds } }, select: { id: true, title: true } });
+    const titleByTaskId = new Map((tasks as any[]).map((t) => [t.id, t.title as string]));
+
+    return (entries as any[]).map((e) => {
+      const generalWorkTaskId = e.sourceAllocation?.execution?.workTaskId ?? null;
+      return { ...e, generalWorkTaskId, generalWorkTitle: generalWorkTaskId ? (titleByTaskId.get(generalWorkTaskId) ?? null) : null };
     });
   }
 
@@ -746,20 +761,22 @@ export class CustomerOrdersService {
       const amount = Number(entry.amount);
       earnedActual += amount;
       const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
-      const key = assemblyId ?? GENERAL_WORK_KEY;
+      const key = assemblyId ?? (entry.generalWorkTaskId ? `wt:${entry.generalWorkTaskId}` : GENERAL_WORK_KEY);
       if (!byArticleMap.has(key)) {
         const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
-        byArticleMap.set(key, { assemblyId, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
+        byArticleMap.set(key, { assemblyId, assemblyName: assembly?.name ?? entry.generalWorkTitle ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
       }
       const line = byArticleMap.get(key)!;
       line.unitsProduced += Number(entry.unitsProduced ?? 0);
       line.amount += amount;
     }
-    const byArticle = Array.from(byArticleMap.values()).sort((a, b) => {
-      if (a.assemblyId === null) return 1;
-      if (b.assemblyId === null) return -1;
-      return (a.article ?? '').localeCompare(b.article ?? '');
-    });
+    const byArticle = Array.from(byArticleMap.values())
+      .map((line) => ({ ...line, unitsProduced: round2(line.unitsProduced), amount: round2(line.amount) }))
+      .sort((a, b) => {
+        if (a.assemblyId === null) return 1;
+        if (b.assemblyId === null) return -1;
+        return (a.article ?? '').localeCompare(b.article ?? '');
+      });
 
     return { estimated: round2(estimated), estimatedByArticle, actual: round2(actual), earnedActual: round2(earnedActual), byArticle };
   }
@@ -868,11 +885,11 @@ export class CustomerOrdersService {
       line.totalEarned += amount;
 
       const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
-      const key = assemblyId ?? GENERAL_WORK_KEY;
+      const key = assemblyId ?? (entry.generalWorkTaskId ? `wt:${entry.generalWorkTaskId}` : GENERAL_WORK_KEY);
       const byArticle = articlesByEmployee.get(employeeId)!;
       if (!byArticle.has(key)) {
         const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
-        byArticle.set(key, { assemblyId, assemblyName: assembly?.name ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
+        byArticle.set(key, { assemblyId, assemblyName: assembly?.name ?? entry.generalWorkTitle ?? null, article: assembly?.article ?? null, unitsProduced: 0, amount: 0 });
       }
       const articleLine = byArticle.get(key)!;
       articleLine.unitsProduced += Number(entry.unitsProduced ?? 0);
@@ -882,7 +899,7 @@ export class CustomerOrdersService {
     for (const [employeeId, line] of linesByEmployee) {
       line.totalEarned = round2(line.totalEarned);
       line.byArticle = Array.from(articlesByEmployee.get(employeeId)!.values())
-        .map((a) => ({ ...a, amount: round2(a.amount) }))
+        .map((a) => ({ ...a, unitsProduced: round2(a.unitsProduced), amount: round2(a.amount) }))
         .sort((a, b) => {
           if (a.assemblyId === null) return 1;
           if (b.assemblyId === null) return -1;
