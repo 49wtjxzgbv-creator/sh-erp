@@ -30,11 +30,17 @@ export function formatQty(value: number): string {
  * in via useEurUahRate right before printing). No rate entered (null/0) ->
  * plain EUR only, same as formatEur — this never assumes a rate that wasn't
  * actually given.
+ *
+ * The hryvnia figure is rounded UP to the nearest 100 (same follow-up
+ * request — "у ширинга іллі 38623 грн... заукруглювало до ста щоб було
+ * 38700"), for every employee consistently: `Math.ceil`, never a plain
+ * round, so this can only move a payout up, never down.
  */
 export function formatEurWithUah(value: number, rate: number | null): string {
   const eur = formatEur(value);
   if (!rate || rate <= 0) return eur;
-  return `${eur} (${(value * rate).toFixed(2)} ₴)`;
+  const uah = Math.ceil((value * rate) / 100) * 100;
+  return `${eur} (${uah} ₴)`;
 }
 
 /**
