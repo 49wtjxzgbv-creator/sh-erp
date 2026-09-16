@@ -27,6 +27,7 @@ import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/c
  */
 export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
+  const th = useTranslations('hr');
   const tp = useTranslations('print');
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
@@ -104,6 +105,30 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
         {printOptions.isColumnVisible('byEmployee') && byEmployee && byEmployee.length > 0 && (
           <div>
             <h3 className="mb-2 font-semibold">{t('payrollByOrderPrintByEmployee')}</h3>
+            {/* Same flat summary-table-then-per-employee-blocks layout as
+                hr/payroll/summary/page.tsx's own whole-summary print — this
+                IS that view's order-scoped sibling (2026-09-16 user
+                request), so the two should read the same on paper. */}
+            <table className="mb-4 w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-black text-left">
+                  <th className="py-1 font-semibold">{th('employee')}</th>
+                  <th className="py-1 text-right font-semibold">{t('payrollFundEarned')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byEmployee.map((line) => (
+                  <tr key={line.employeeId} className="border-b border-gray-300">
+                    <td className="py-1">{line.employeeName}</td>
+                    <td className="py-1 text-right font-medium tabular-nums">{formatEur(line.totalEarned)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-black font-bold">
+                  <td className="py-1">{th('grandTotal')}</td>
+                  <td className="py-1 text-right tabular-nums">{formatEur(byEmployee.reduce((sum, l) => sum + l.totalEarned, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
             <div className="space-y-3">
               {byEmployee.map((line) => (
                 <div key={line.employeeId} className="break-inside-avoid border-b border-gray-300 pb-2">
