@@ -69,7 +69,7 @@ export default function PayrollSummaryPage() {
   // building a second copy of that breakdown here. Rendered OUTSIDE the
   // `.no-print` wrapper below (own top-level block, after it closes) —
   // PayrollFundWidget mounts its own nested `<PrintArea>`
-  // (PayrollFundEstimatePrint), and `.no-print`'s `display:none` at print
+  // (OrderPayrollPrint), and `.no-print`'s `display:none` at print
   // time is inherited by every descendant with no way to escape it (unlike
   // the visibility trick `.print-area--active` itself uses), so nesting it
   // inside `.no-print` would silently break that widget's own print button

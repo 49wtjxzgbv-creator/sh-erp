@@ -19,7 +19,7 @@ import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/c
  *
  * MUST use `usePrintOptions`/`printAreaId`, not a plain `PrintButton` — this
  * order page already hosts several other `<PrintArea>`s (CustomerOrderPrint,
- * ProductionProgressPrint, PayrollFundEstimatePrint), every one of which
+ * ProductionProgressPrint, OrderPayrollPrint), every one of which
  * starts `print-area--active` by default (print-area.tsx). A plain
  * `window.print()` here left every one of them active at once — real
  * reported bug (2026-09-11: "не друкує сам звіт"), the printed output was

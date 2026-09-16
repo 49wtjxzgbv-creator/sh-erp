@@ -1,29 +1,34 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
-import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { usePrintOptions } from '@/components/domain/print/print-options';
+import { Button } from '@/components/ui/button';
 
 /**
- * "Друк звіту по зарплаті замовлення" (2026-09-16 user request) — the full
- * payroll picture for one order in a single printable document: fund
- * totals (Оцінено/Закладено фактично/Зароблено), the real earned-by-article
- * breakdown (`byArticle` — distinct from `estimatedByArticle`, which
- * PayrollFundEstimatePrint already covers on its own), and the per-employee
- * breakdown (`getOrderPayrollByEmployee`, which had no print view at all
- * before this). Same data these two already-shipped on-screen
- * views (PayrollFundWidget, OrderPayrollByEmployee) show — printed from the
- * same hooks so the two can never drift apart.
+ * "Друк звіту по зарплаті замовлення" — the payroll picture for one order in
+ * a single printable document: the real earned total (`earnedActual`) and
+ * the per-employee breakdown (`getOrderPayrollByEmployee`). Same data the
+ * two on-screen views (PayrollFundWidget, OrderPayrollByEmployee) show —
+ * printed from the same hooks so the two can never drift apart.
+ *
+ * 2026-09-16 user request: dropped the estimated/frozen-actual fund figures
+ * and the per-article "Виготовлено працівниками" aggregate from this
+ * printout — same reduction as PayrollFundWidget's own header comment
+ * describes. No column toggle needed anymore (a single section), so this
+ * uses a plain button (matching production-progress-print.tsx's own
+ * pattern) instead of the PrintOptionsDialog flow.
  *
  * `usePrintOptions`/`printAreaId` — required, not optional: every page this
  * renders on already hosts other `<PrintArea>`s (Sales order page:
- * CustomerOrderPrint/ProductionProgressPrint/PayrollFundEstimatePrint/
- * ProfitReportPrint; HR payroll summary page: its own whole-summary and
- * per-employee prints), each starting `print-area--active` by default. See
- * profit-report-print.tsx's own header comment for the real bug this
- * exact omission caused before (2026-09-11: "не друкує сам звіт").
+ * CustomerOrderPrint/ProductionProgressPrint/ProfitReportPrint; HR payroll
+ * summary page: its own whole-summary and per-employee prints), each
+ * starting `print-area--active` by default. See profit-report-print.tsx's
+ * own header comment for the real bug this exact omission caused before
+ * (2026-09-11: "не друкує сам звіт").
  */
 export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
@@ -31,25 +36,17 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
   const tp = useTranslations('print');
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
-
-  const columns: PrintColumnOption[] = [
-    { id: 'byArticle', label: t('payrollFundProducedByWorkers') },
-    { id: 'byEmployee', label: t('payrollByOrderPrintByEmployee') },
-  ];
-  const printOptions = usePrintOptions({ columns });
+  const printOptions = usePrintOptions({ columns: [] });
 
   if (!fund) return null;
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <PrintOptionsDialog
-          open={printOptions.open}
-          onOpenChange={printOptions.setOpen}
-          columns={columns}
-          onConfirm={printOptions.confirm}
-          triggerLabel={tp('printOrderPayroll')}
-        />
+        <Button type="button" variant="outline" size="sm" onClick={() => printOptions.confirm(new Set(), false)}>
+          <Printer className="mr-2 h-4 w-4" />
+          {tp('printOrderPayroll')}
+        </Button>
         <PreviewButton />
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
@@ -58,51 +55,13 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
         <table className="mb-4">
           <tbody>
             <tr>
-              <td>{t('payrollFundEstimated')}</td>
-              <td className="font-bold">{formatEur(fund.estimated)}</td>
-            </tr>
-            <tr>
-              <td>{t('payrollFundActual')}</td>
-              <td className="font-bold">{formatEur(fund.actual)}</td>
-            </tr>
-            <tr style={{ borderTop: '2px solid #333' }}>
-              <td style={{ borderTop: '2px solid #333' }}>{t('payrollFundEarned')}</td>
-              <td className="font-bold" style={{ borderTop: '2px solid #333' }}>
-                {formatEur(fund.earnedActual)}
-              </td>
+              <td>{t('payrollFundEarned')}</td>
+              <td className="font-bold">{formatEur(fund.earnedActual)}</td>
             </tr>
           </tbody>
         </table>
 
-        {printOptions.isColumnVisible('byArticle') && fund.byArticle.length > 0 && (
-          <div className="mb-4">
-            <h3 className="mb-1 font-semibold">{t('payrollFundProducedByWorkers')}</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('payrollFundArticle')}</th>
-                  <th>{t('payrollFundUnitsProduced')}</th>
-                  <th>{t('payrollFundEarned')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fund.byArticle.map((a) => (
-                  <tr key={a.assemblyId ?? 'general'}>
-                    <td>
-                      {a.assemblyId
-                        ? `${a.article ? `${a.article} — ` : ''}${a.assemblyName}`
-                        : t('payrollFundGeneralWork')}
-                    </td>
-                    <td>{a.unitsProduced || '—'}</td>
-                    <td>{formatEur(a.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {printOptions.isColumnVisible('byEmployee') && byEmployee && byEmployee.length > 0 && (
+        {byEmployee && byEmployee.length > 0 && (
           <div>
             <h3 className="mb-2 font-semibold">{t('payrollByOrderPrintByEmployee')}</h3>
             {/* Same flat summary-table-then-per-employee-blocks layout as

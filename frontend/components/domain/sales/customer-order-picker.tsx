@@ -43,9 +43,15 @@ export function CustomerOrderPicker({ value, onChange, placeholder }: CustomerOr
       getKey={(order) => order.id}
       isSelected={(order) => order.id === value}
       onSelect={(order) => {
+        const label = order.orderNumber ? `${order.clientName} — № ${order.orderNumber}` : order.clientName;
         setQuery(order.orderNumber ? `${order.orderNumber} — ${order.clientName}` : order.clientName);
         setOpen(false);
-        onChange(order.id, order.clientName);
+        // Includes orderNumber when present (2026-09-16 user request — HR's
+        // "Зарплата по замовленню" print/subtitle was missing it, having
+        // only ever received clientName here) — same "clientName — №
+        // orderNumber" convention sales/[id]/page.tsx already composes by
+        // hand for its own widgets' orderLabel prop.
+        onChange(order.id, label);
       }}
       placeholder={placeholder ?? t('searchOrders')}
       renderItem={(order) => (

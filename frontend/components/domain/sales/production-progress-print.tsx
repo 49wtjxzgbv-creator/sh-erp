@@ -97,7 +97,7 @@ function ProductionProgressPrintItem({ orderId, item }: { orderId: string; item:
  * toggle makes sense for this view — the whole tree always prints) — still
  * needed for the activate-only-this-print-area + wait-for-fetch behavior,
  * since this order page hosts several other `<PrintArea>`s at once
- * (CustomerOrderPrint, PayrollFundEstimatePrint, ProfitReportPrint). A plain
+ * (CustomerOrderPrint, OrderPayrollPrint, ProfitReportPrint). A plain
  * `PrintButton`/`window.print()` here left every one of them
  * `print-area--active` simultaneously — real reported bug (2026-09-11: "не
  * друкує сам звіт", found via ProfitReportPrint but equally present here —
