@@ -85,18 +85,19 @@ export interface ProductionTreeNode {
    * pairing.
    *
    * 2026-09-17 fix ("вироби які ми вказали що купимо готові попали в
-   * Оцінено"): the shortfall also subtracts `qtyConsumedForThisOrder` — the
-   * portion of THIS SAME claim that already got FIFO-consumed into another
-   * виріб's batch for this order (see `done`'s own doc comment just above).
-   * Without this, a fully-claimed "Зі складу" node's estimate silently grew
-   * back from 0 the moment its stock got used, because `consume()` shrinks
-   * the live reservation row by the same amount — the claim and its
-   * already-spent portion together are what "no labor needed" actually
-   * means, not the claim alone. This does NOT reintroduce the tail-eating
-   * problem above: `qtyConsumedForThisOrder` only ever reflects a
-   * sub-assembly being eaten as a component into a DIFFERENT node's batch
-   * (production-orders.service.ts's assemblyLines loop), never THIS node's
-   * own batch output (which stays IN_STOCK, not CONSUMED).
+   * Оцінено"): `qtyClaimedFromStock` here comes from
+   * `getClaimedIncludingConsumedForOrder`, NOT the plain live claim — a
+   * first attempt at this fix reused the same `qtyConsumedForThisOrder`
+   * (FinishedGood-count) signal `done` uses above, but that counts ANY
+   * consumption of this assembly for this order, including a MANUFACTURED
+   * (never claimed "Зі складу") sub-assembly that later gets FIFO-consumed
+   * into its own parent's batch — which wrongly zeroed real, planned labor
+   * the moment production got that far ("має бути все що було в замовленні
+   * окрім того що купили на склад"). `getClaimedIncludingConsumedForOrder`
+   * is scoped precisely to THIS claim's own history (live `qty` +
+   * SubAssemblyReservation's own `consumedQty`), so a manufactured node
+   * with no claim at all stays completely unaffected, and only a genuine
+   * "Зі складу" choice — spent or not — zeroes the shortfall.
    */
   laborFundEstimate: number;
   /** This node's own ASSEMBLY-type components, same shape, recursively — [] for a leaf (no sub-assemblies). */
@@ -715,7 +716,7 @@ export class AssembliesService {
             where: { assemblyId, status: 'CONSUMED', consumedInProductionOrderId: { in: consumedIntoProductionOrderIds } },
           })
         : Promise.resolve(0),
-      this.subAssemblyReservationService.getClaimForOrder(user, customerOrderId, assemblyId),
+      this.subAssemblyReservationService.getClaimedIncludingConsumedForOrder(user, customerOrderId, assemblyId),
       this.prisma.tenant.assemblyComponent.findMany({ where: { assemblyId, componentType: 'ASSEMBLY' } }),
     ]);
     if (!assembly) throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
@@ -756,7 +757,7 @@ export class AssembliesService {
       // is scoped to consumption tied to THIS customer order's own batches
       // only (see getProductionTree), never another order's.
       done: qtyInStock + qtyConsumedForThisOrder >= Math.ceil(qty),
-      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock - qtyConsumedForThisOrder, 0),
+      laborFundEstimate: Number(assembly.laborCostPerUnit) * Math.max(qty - qtyClaimedFromStock, 0),
       children,
     };
   }

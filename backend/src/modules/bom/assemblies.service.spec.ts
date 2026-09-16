@@ -40,7 +40,7 @@ describe('AssembliesService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn() };
-    subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]), getClaimForOrder: jest.fn().mockResolvedValue(0) };
+    subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]), getClaimedIncludingConsumedForOrder: jest.fn().mockResolvedValue(0) };
     service = new AssembliesService(prisma, audit, stock, subAssemblyReservationService);
   });
 
@@ -352,7 +352,7 @@ describe('AssembliesService', () => {
       // despite live stock covering it), sub1 has its full qty claimed (no
       // labor charged despite live stock NOT covering it) — proves the two
       // are genuinely decoupled, not just both happening to move together.
-      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
+      subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
@@ -395,8 +395,8 @@ describe('AssembliesService', () => {
           OR: [{ productionOrderId: null }, { confirmedByExecutionId: { not: null } }],
         });
       }
-      expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'a1');
-      expect(subAssemblyReservationService.getClaimForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');
+      expect(subAssemblyReservationService.getClaimedIncludingConsumedForOrder).toHaveBeenCalledWith(user, 'order-1', 'a1');
+      expect(subAssemblyReservationService.getClaimedIncludingConsumedForOrder).toHaveBeenCalledWith(user, 'order-1', 'sub1');
     });
 
     it('a sub-assembly bought ready-made and consumed into another виріб for THIS order still counts as `done` AND stays free of labor estimate, even after its "Зі складу" claim row is fully spent (2026-09-17 fix — used to flip to "потрібно виготовити" / re-add labor cost)', async () => {
@@ -414,11 +414,12 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order (none — a1 is the top-level виріб)
         .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf
         .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order — the 2 units built into a1
-      // SubAssemblyReservationService#consume already shrank this order's
-      // claim row on sub1 down to 0 as those 2 units got eaten by a1's
-      // batch — matching production-orders.service.ts's own `consume()`
-      // call right after the FIFO write-off.
-      subAssemblyReservationService.getClaimForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      // SubAssemblyReservationService#consume shrank sub1's LIVE claim to 0
+      // as those 2 units got eaten by a1's batch, but
+      // getClaimedIncludingConsumedForOrder folds the live qty and the
+      // running consumedQty back together, so this order's own labor
+      // estimate still sees the full original claim (2), not 0.
+      subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(2);
       prisma.tenant.assemblyComponent.findMany
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
@@ -432,7 +433,7 @@ describe('AssembliesService', () => {
         qtyNeeded: 2,
         qtyInStock: 0,
         done: true, // 0 on the shelf + 2 already consumed into a1's own batch for this order = fulfilled
-        laborFundEstimate: 0, // claim row is 0 now, but qtyConsumedForThisOrder (2) still credits the shortfall to 0 — not 4*2=8
+        laborFundEstimate: 0, // getClaimedIncludingConsumedForOrder still reports the full original claim (2), not the shrunk live qty (0)
         children: [],
       });
       expect(prisma.tenant.customerOrderItem.findMany).toHaveBeenCalledWith({ where: { customerOrderId: 'order-1' }, select: { id: true } });
@@ -443,6 +444,40 @@ describe('AssembliesService', () => {
       for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.status === 'CONSUMED')) {
         expect(call[0].where).toEqual({ assemblyId: expect.any(String), status: 'CONSUMED', consumedInProductionOrderId: { in: ['po1'] } });
       }
+    });
+
+    it('a MANUFACTURED (never claimed "Зі складу") sub-assembly keeps its full labor estimate even after it gets consumed into its parent\'s batch (2026-09-17 regression — "має бути все що було в замовленні окрім того що купили на склад")', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] })
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: 'ART-A1', laborCostPerUnit: 10 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: null, laborCostPerUnit: 4 });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1' }]);
+      prisma.tenant.productionOrder.findMany.mockResolvedValue([{ id: 'po1' }]);
+      // sub1 was chosen "Виготовити" (never claimed "Зі складу"), manufactured
+      // via its own batch, then FIFO-consumed into a1's batch same as any
+      // other sub-assembly — done via done, but real labor WAS needed.
+      prisma.tenant.finishedGood.count
+        .mockResolvedValueOnce(2) // a1: IN_STOCK
+        .mockResolvedValueOnce(0) // a1: CONSUMED-for-this-order
+        .mockResolvedValueOnce(0) // sub1: IN_STOCK — none left on the shelf, all consumed into a1
+        .mockResolvedValueOnce(2); // sub1: CONSUMED-for-this-order
+      subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValueOnce(0).mockResolvedValueOnce(0); // no claim ever made on either node
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+
+      expect(result.children[0]).toEqual({
+        assemblyId: 'sub1',
+        name: 'Sub1',
+        article: null,
+        qtyNeeded: 2,
+        qtyInStock: 0,
+        done: true, // fulfilled — it got manufactured and used
+        laborFundEstimate: 8, // 4 * 2 — real labor, must NOT be zeroed just because it was already consumed into a1
+        children: [],
+      });
     });
 
     it('skips the CONSUMED-stock lookup entirely when this order has no items/batches yet, instead of querying with an empty `in`', async () => {

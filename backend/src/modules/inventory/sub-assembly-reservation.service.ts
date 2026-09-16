@@ -34,19 +34,28 @@ export class SubAssemblyReservationService {
     } as any);
   }
 
-  /** Shrinks (or removes) this order's claim on `assemblyId` as units are actually consumed at batch start — never goes below 0. */
+  /**
+   * Shrinks this order's LIVE claim on `assemblyId` as units are actually
+   * consumed at batch start — never goes below 0. Deliberately keeps the
+   * row alive at `qty: 0` instead of deleting it (2026-09-17 fix — used to
+   * `delete` here, which lost the running `consumedQty` total below the
+   * instant a claim was fully spent): `getBreakdown`'s `qty: { gt: 0 }`
+   * filter already hides a fully-consumed row from the "Підвироби" dialog
+   * either way, so nothing user-visible changes.
+   */
   async consume(user: RequestUser, customerOrderId: string, assemblyId: string, qty: number): Promise<void> {
     if (qty <= 0) return;
     const row = await this.prisma.tenant.subAssemblyReservation.findUnique({
       where: { companyId_customerOrderId_assemblyId: { companyId: user.companyId, customerOrderId, assemblyId } },
     } as any);
     if (!row) return;
-    const remaining = Math.max(0, Number((row as any).qty) - qty);
-    if (remaining === 0) {
-      await this.prisma.tenant.subAssemblyReservation.delete({ where: { id: (row as any).id } });
-    } else {
-      await this.prisma.tenant.subAssemblyReservation.update({ where: { id: (row as any).id }, data: { qty: remaining } });
-    }
+    const currentQty = Number((row as any).qty);
+    const deducted = Math.min(currentQty, qty);
+    const remaining = Math.max(0, currentQty - qty);
+    await this.prisma.tenant.subAssemblyReservation.update({
+      where: { id: (row as any).id },
+      data: { qty: remaining, consumedQty: { increment: deducted } },
+    });
   }
 
   /** Every claim this order holds, released in full — order cancel (CustomerOrdersService#cancel); order delete cascades on its own. */
@@ -60,6 +69,23 @@ export class SubAssemblyReservationService {
       where: { companyId_customerOrderId_assemblyId: { companyId: user.companyId, customerOrderId, assemblyId } },
     } as any);
     return row ? Number((row as any).qty) : 0;
+  }
+
+  /**
+   * This order's FULL "Зі складу" claim on `assemblyId`, ever — the live
+   * outstanding portion (`qty`, same as `getClaimForOrder`) plus whatever's
+   * already been consumed out of that same claim (`consumedQty`). Unlike
+   * `getClaimForOrder` alone, this never shrinks back down as stock gets
+   * used, which is exactly what the labor estimate needs: a "Зі складу"
+   * choice at order creation must zero that node's labor forever, not just
+   * until the claimed stock actually gets pulled into a batch (see
+   * ProductionTreeNode#laborFundEstimate's own doc comment).
+   */
+  async getClaimedIncludingConsumedForOrder(user: RequestUser, customerOrderId: string, assemblyId: string): Promise<number> {
+    const row = await this.prisma.tenant.subAssemblyReservation.findUnique({
+      where: { companyId_customerOrderId_assemblyId: { companyId: user.companyId, customerOrderId, assemblyId } },
+    } as any);
+    return row ? Number((row as any).qty) + Number((row as any).consumedQty ?? 0) : 0;
   }
 
   /** Sum of every OTHER order's active claim on this assembly — what a new order's own dialog, or a batch's own start(), must treat as unavailable. */

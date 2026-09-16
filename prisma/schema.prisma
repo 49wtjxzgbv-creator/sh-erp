@@ -1145,6 +1145,17 @@ model SubAssemblyReservation {
   assemblyId      String   @db.Uuid
   customerOrderId String   @db.Uuid
   qty             Decimal  @default(0) @db.Decimal(14, 3)
+  // 2026-09-17: a running, NEVER-shrinking total of how much of this same
+  // claim has already been FIFO-consumed into another node's batch for
+  // this order (SubAssemblyReservationService#consume) — `qty` above is
+  // deliberately the LIVE outstanding claim (must shrink, so availability
+  // checks like getReservedByOthers stop treating already-used-up stock as
+  // still held). Payroll's own labor estimate needs the opposite: a value
+  // that stays flat for the life of the order once a "Зі складу" choice is
+  // made, so it doesn't silently re-charge labor for a ready-made item the
+  // moment its stock actually gets used (see ProductionTreeNode#laborFundEstimate's
+  // own doc comment for the full incident this fixes).
+  consumedQty     Decimal  @default(0) @db.Decimal(14, 3)
   createdById     String   @db.Uuid
   createdAt       DateTime @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @db.Timestamptz(3)
