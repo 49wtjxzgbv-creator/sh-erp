@@ -139,7 +139,7 @@ export function ProductionPlanOrderDetail({ orderId }: { orderId: string }) {
         </TabsContent>
 
         <TabsContent value="payroll-by-employee">
-          <OrderPayrollByEmployee orderId={order.id} />
+          <OrderPayrollByEmployee orderId={order.id} orderLabel={`${order.clientName}${order.orderNumber ? ` — № ${order.orderNumber}` : ''}`} />
         </TabsContent>
       </Tabs>
     </div>

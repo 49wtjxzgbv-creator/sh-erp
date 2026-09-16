@@ -1,8 +1,8 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { ChevronDown, ChevronRight, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Printer, Users } from 'lucide-react';
 import { useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur, formatQty } from '@/lib/utils';
@@ -11,6 +11,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Button } from '@/components/ui/button';
+import { PrintArea, PrintDocumentHeader } from '@/components/domain/print/print-area';
+import { EmployeePayrollPrintBlock } from '@/components/domain/sales/employee-payroll-print-block';
+
+/** Same inlined exclusivity toggle hr/payroll/summary/page.tsx's own per-employee print uses — see that file's own header comment for why this is a plain DOM toggle rather than usePrintOptions (no columns/photos dialog needed for a single "print now" click). */
+function activateOnlyPrintArea(id: string) {
+  document.querySelectorAll('.print-area').forEach((el) => {
+    el.classList.toggle('print-area--active', el.getAttribute('data-print-area-id') === id);
+  });
+}
 
 /**
  * "По працівниках" tab on План виробництва's order detail, and HR's
@@ -29,12 +39,22 @@ import { EmptyState } from '@/components/ui/empty-state';
  * employee-level events, not order-scoped), so unlike the general summary's
  * table this has no columns for them, and "grand total" is simply the sum
  * of what's shown, not a signed net.
+ *
+ * Same visit's follow-up: a per-row print button ("також додай можливість
+ * друкувати по конкретному працівнику") — isolates just that one employee's
+ * block (`EmployeePayrollPrintBlock`, shared with `OrderPayrollPrint`'s own
+ * full-report section) into its own `<PrintArea>`, same
+ * mounted-but-inactive-by-default + explicit-activate-before-print pattern
+ * every multi-print-area page in this app already uses.
  */
-export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
+export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
   const th = useTranslations('hr');
+  const tp = useTranslations('print');
   const { data: lines, isLoading } = useOrderPayrollByEmployee(orderId);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [printEmployeeId, setPrintEmployeeId] = useState<string | null>(null);
+  const employeePrintAreaId = useId();
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();
     for (const line of lines ?? []) for (const a of line.byArticle) if (a.assemblyId) ids.add(a.assemblyId);
@@ -51,6 +71,15 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
     });
   }
 
+  function handlePrintEmployee(employeeId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setPrintEmployeeId(employeeId);
+    window.setTimeout(() => {
+      activateOnlyPrintArea(employeePrintAreaId);
+      window.print();
+    }, 50);
+  }
+
   if (isLoading) return <LoadingBlock />;
   if (!lines || lines.length === 0) {
     return (
@@ -63,6 +92,7 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
   }
 
   const grandTotal = lines.reduce((sum, line) => sum + line.totalEarned, 0);
+  const printLine = lines.find((l) => l.employeeId === printEmployeeId) ?? null;
 
   return (
     <Card>
@@ -76,6 +106,7 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
               <TableHead className="w-8" />
               <TableHead>{th('employee')}</TableHead>
               <TableHead>{t('payrollFundEarned')}</TableHead>
+              <TableHead className="w-8" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -89,10 +120,22 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
                     </TableCell>
                     <TableCell>{line.employeeName}</TableCell>
                     <TableCell className="font-medium">{formatEur(line.totalEarned)}</TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title={tp('printAction')}
+                        onClick={(e) => handlePrintEmployee(line.employeeId, e)}
+                      >
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                   {isOpen && line.byArticle.length > 0 && (
                     <TableRow>
-                      <TableCell colSpan={3} className="bg-muted/20 py-3">
+                      <TableCell colSpan={4} className="bg-muted/20 py-3">
                         <div className="space-y-1 pl-8">
                           <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground">
                             <span>{t('payrollFundArticle')}</span>
@@ -129,10 +172,18 @@ export function OrderPayrollByEmployee({ orderId }: { orderId: string }) {
               <TableCell />
               <TableCell>{th('grandTotal')}</TableCell>
               <TableCell>{formatEur(grandTotal)}</TableCell>
+              <TableCell />
             </TableRow>
           </TableBody>
         </Table>
       </CardContent>
+
+      {printLine && (
+        <PrintArea printAreaId={employeePrintAreaId}>
+          <PrintDocumentHeader title={tp('orderPayrollTitle')} subtitle={orderLabel ? `${orderLabel} — ${printLine.employeeName}` : printLine.employeeName} />
+          <EmployeePayrollPrintBlock line={printLine} photosByAssembly={photosByAssembly} />
+        </PrintArea>
+      )}
     </Card>
   );
 }

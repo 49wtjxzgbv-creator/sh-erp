@@ -342,7 +342,7 @@ export default function PayrollSummaryPage() {
       {payrollOrderId && (
         <div className="space-y-4">
           <PayrollFundWidget orderId={payrollOrderId} orderLabel={payrollOrderLabel} defaultOpen />
-          <OrderPayrollByEmployee orderId={payrollOrderId} />
+          <OrderPayrollByEmployee orderId={payrollOrderId} orderLabel={payrollOrderLabel} />
         </div>
       )}
 
