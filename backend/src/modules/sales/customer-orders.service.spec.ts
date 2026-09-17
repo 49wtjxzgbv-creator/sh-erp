@@ -768,6 +768,57 @@ describe('CustomerOrdersService', () => {
     });
   });
 
+  describe('getShippableGoods (2026-09-17, "організуй відвантаження по замовленнях")', () => {
+    it('lists each item\'s own IN_STOCK units, oldest first, scoped to customerOrderItemId batches only (never subAssemblyForItemId)', async () => {
+      mockProductionOrdersFindMany([
+        { id: 'po-item1', customerOrderItemId: 'item1', assemblyId: 'a1' },
+        { id: 'po-sub', customerOrderItemId: null, subAssemblyForItemId: 'item1', assemblyId: 'a-sub' }, // must NOT contribute — sub-assembly batch, not a top-level one
+      ]);
+      prisma.tenant.assembly.findMany.mockResolvedValue([
+        { id: 'a1', name: 'Widget', article: 'W-1' },
+        { id: 'a2', name: 'Gadget', article: 'G-1' },
+      ]);
+      prisma.tenant.finishedGood.findMany.mockImplementation(({ where }: any) => {
+        expect(where.status).toBe('IN_STOCK');
+        expect(where.productionOrderId.in).toEqual(['po-item1']); // po-sub excluded
+        return Promise.resolve([
+          { id: 'fg-2', serialNumber: 'SN-2', manufactureDate: new Date('2026-09-02'), productionOrderId: 'po-item1' },
+          { id: 'fg-1', serialNumber: 'SN-1', manufactureDate: new Date('2026-09-01'), productionOrderId: 'po-item1' },
+        ]);
+      });
+
+      const result = await service.getShippableGoods(user, 'co1');
+
+      expect(result).toEqual([
+        {
+          itemId: 'item1',
+          assemblyId: 'a1',
+          assemblyName: 'Widget',
+          article: 'W-1',
+          qtyOrdered: 3,
+          qtyAvailable: 2,
+          finishedGoods: [
+            { id: 'fg-1', serialNumber: 'SN-1', manufactureDate: new Date('2026-09-01') },
+            { id: 'fg-2', serialNumber: 'SN-2', manufactureDate: new Date('2026-09-02') },
+          ],
+        },
+        { itemId: 'item2', assemblyId: 'a2', assemblyName: 'Gadget', article: 'G-1', qtyOrdered: 2, qtyAvailable: 0, finishedGoods: [] },
+      ]);
+    });
+
+    it('returns every item with zero availability, without querying FinishedGood at all, when nothing has been given to production yet', async () => {
+      mockProductionOrdersFindMany([]);
+
+      const result = await service.getShippableGoods(user, 'co1');
+
+      expect(result).toEqual([
+        { itemId: 'item1', assemblyId: 'a1', assemblyName: null, article: null, qtyOrdered: 3, qtyAvailable: 0, finishedGoods: [] },
+        { itemId: 'item2', assemblyId: 'a2', assemblyName: null, article: null, qtyOrdered: 2, qtyAvailable: 0, finishedGoods: [] },
+      ]);
+      expect(prisma.tenant.finishedGood.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('giveAllToProduction', () => {
     it('only processes lines that have not already been given', async () => {
       productionOrdersService.create.mockResolvedValue({ id: 'po-new', status: 'PLANNED' });

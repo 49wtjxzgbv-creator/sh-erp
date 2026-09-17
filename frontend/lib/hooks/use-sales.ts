@@ -16,6 +16,7 @@ import {
   getProfitReport,
   getOrderPayrollByEmployee,
   getOrderProductionUnits,
+  getShippableGoods,
   giveAllToProduction,
   getShortagePreview,
   createPurchaseOrdersFromShortage,
@@ -174,6 +175,15 @@ export function useOrderProductionUnits(orderId: string) {
   });
 }
 
+/** "Відвантажити" order-scoped picker — per item, every IN_STOCK unit ready to ship, oldest first. */
+export function useShippableGoods(orderId: string | undefined) {
+  return useQuery({
+    queryKey: ['customer-orders', orderId ?? '', 'shippable-goods'] as const,
+    queryFn: () => getShippableGoods(orderId as string),
+    enabled: Boolean(orderId),
+  });
+}
+
 export function useGiveAllToProduction(orderId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -231,10 +241,12 @@ export function useCreateShipment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dto: CreateShipmentInput) => createShipment(dto),
-    onSuccess: () => {
+    onSuccess: (_data, dto) => {
       // Shipping flips FinishedGood.status IN_STOCK -> SHIPPED — finished-goods views go stale too.
       qc.invalidateQueries({ queryKey: ['shipments'] });
       qc.invalidateQueries({ queryKey: ['finished-goods'] });
+      // Invalidates that order's shippable-goods list too (nested under this same key prefix).
+      if (dto.customerOrderId) qc.invalidateQueries({ queryKey: customerOrderKey(dto.customerOrderId) });
     },
   });
 }

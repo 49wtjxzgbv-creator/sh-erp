@@ -991,6 +991,81 @@ export class CustomerOrdersService {
   }
 
   /**
+   * "Відвантажити" per order item (2026-09-17 user request — "організуй
+   * відвантаження по замовленнях, щоб можна було обрати готові вироби
+   * замовлення всі чи частково"): every IN_STOCK FinishedGood unit
+   * traceable to THIS order's own top-level items, oldest first (FIFO —
+   * same convention ProductionOrdersService's own sub-assembly consumption
+   * uses), so the shipment screen can offer "ship N of M ready units" per
+   * line instead of making staff hunt through a bare, order-agnostic
+   * serial list (frontend/components/domain/sales/finished-good-selector.tsx's
+   * older generic picker).
+   *
+   * Scoped to `customerOrderItemId` ONLY, never `subAssemblyForItemId` — a
+   * customer is shipped the ordered виріб itself, never one of its own
+   * підвироби (those get consumed into the parent long before shipping,
+   * see ProductionOrdersService#start's own FIFO consumption). `status:
+   * 'IN_STOCK'` only, matching ShipmentsService#create's own requirement —
+   * `confirmedByExecutionId` is deliberately NOT required here: a unit is
+   * physically ready to hand to a carrier the moment it's built, regardless
+   * of whether payroll has been closed for the execution that made it yet
+   * (that gate matters for "Що зроблено"/getOrderProductionUnits above, not
+   * for shipping).
+   */
+  async getShippableGoods(user: RequestUser, orderId: string) {
+    const order = await this.findOne(user, orderId);
+    const items = order.items as any[];
+    const itemIds = items.map((i) => i.id);
+
+    const batches = itemIds.length
+      ? await this.prisma.tenant.productionOrder.findMany({ where: { customerOrderItemId: { in: itemIds } }, select: { id: true, customerOrderItemId: true } })
+      : [];
+    const batchIdsByItemId = new Map<string, string[]>();
+    for (const b of batches as any[]) {
+      const list = batchIdsByItemId.get(b.customerOrderItemId) ?? [];
+      list.push(b.id);
+      batchIdsByItemId.set(b.customerOrderItemId, list);
+    }
+    const allBatchIds = (batches as any[]).map((b) => b.id);
+    const goods = allBatchIds.length
+      ? await this.prisma.tenant.finishedGood.findMany({
+          where: { productionOrderId: { in: allBatchIds }, status: 'IN_STOCK' },
+          orderBy: { manufactureDate: 'asc' },
+          select: { id: true, serialNumber: true, manufactureDate: true, productionOrderId: true },
+        })
+      : [];
+    const goodsByBatchId = new Map<string, any[]>();
+    for (const g of goods as any[]) {
+      const list = goodsByBatchId.get(g.productionOrderId as string) ?? [];
+      list.push(g);
+      goodsByBatchId.set(g.productionOrderId as string, list);
+    }
+
+    const assemblyIds = Array.from(new Set(items.map((i) => i.assemblyId)));
+    const assemblies = assemblyIds.length
+      ? await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } }, select: { id: true, name: true, article: true } })
+      : [];
+    const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
+
+    return items.map((item) => {
+      const batchIds = batchIdsByItemId.get(item.id) ?? [];
+      const finishedGoods = batchIds
+        .flatMap((id) => goodsByBatchId.get(id) ?? [])
+        .sort((a, b) => new Date(a.manufactureDate).getTime() - new Date(b.manufactureDate).getTime());
+      const assembly = assemblyById.get(item.assemblyId);
+      return {
+        itemId: item.id,
+        assemblyId: item.assemblyId,
+        assemblyName: assembly?.name ?? null,
+        article: assembly?.article ?? null,
+        qtyOrdered: Number(item.qty),
+        qtyAvailable: finishedGoods.length,
+        finishedGoods: finishedGoods.map((g) => ({ id: g.id, serialNumber: g.serialNumber, manufactureDate: g.manufactureDate })),
+      };
+    });
+  }
+
+  /**
    * Whole-order variant (Phase 1 §6.2's `createProductionOrdersFromCustomerOrder`)
    * — calls `giveItemToProduction` for every line that still has remaining
    * (not-yet-given) quantity, giving each its full remaining amount as one

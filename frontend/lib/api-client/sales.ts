@@ -322,6 +322,27 @@ export function getOrderProductionUnits(orderId: string): Promise<OrderProductio
   return apiClient.get<OrderProductionUnits>(`customer-orders/${orderId}/production-units`);
 }
 
+/** "Відвантажити" — the order-scoped shipment picker's data source: per top-level item, every IN_STOCK unit ready to ship, oldest first. */
+export interface ShippableGoodUnit {
+  id: string;
+  serialNumber: string;
+  manufactureDate: string;
+}
+
+export interface ShippableItemLine {
+  itemId: string;
+  assemblyId: string;
+  assemblyName: string | null;
+  article: string | null;
+  qtyOrdered: number;
+  qtyAvailable: number;
+  finishedGoods: ShippableGoodUnit[];
+}
+
+export function getShippableGoods(orderId: string): Promise<ShippableItemLine[]> {
+  return apiClient.get<ShippableItemLine[]>(`customer-orders/${orderId}/shippable-goods`);
+}
+
 export interface ShortageSupplierOption {
   supplierId: string;
   supplierName: string;

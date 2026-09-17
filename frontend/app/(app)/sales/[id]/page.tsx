@@ -38,6 +38,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
+import { OrderShipmentDialog } from '@/components/domain/sales/order-shipment-dialog';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
 import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
@@ -359,6 +360,7 @@ export default function CustomerOrderDetailPage() {
               <Link href={`/sales/${order.id}/shortage`}>{t('shortagePreview')}</Link>
             </Button>
           )}
+          <OrderShipmentDialog orderId={order.id} />
           {canComplete && canManage && (
             <Dialog>
               <DialogTrigger asChild>

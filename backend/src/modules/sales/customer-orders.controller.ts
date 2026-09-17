@@ -145,6 +145,17 @@ export class CustomerOrdersController {
     return this.customerOrdersService.getOrderProductionUnits(user, id);
   }
 
+  @Get(':id/shippable-goods')
+  @RequirePermissions('customer-orders:read')
+  @ApiOperation({
+    summary:
+      'Per order item: every IN_STOCK FinishedGood unit traceable to that item\'s own production, oldest first — ' +
+      'backs the order-scoped shipment picker ("обрати готові вироби замовлення всі чи частково").',
+  })
+  async getShippableGoods(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.customerOrdersService.getShippableGoods(user, id);
+  }
+
   @Post(':id/give-all-to-production')
   @RequirePermissions('customer-orders:manage')
   @ApiOperation({ summary: 'Hand every not-yet-given line off to production in one call.' })
