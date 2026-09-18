@@ -63,7 +63,12 @@ export function AssemblyListPrint({ assemblies }: { assemblies: Assembly[] }) {
     { id: 'createdAt', label: t('createdAt') },
     { id: 'itemCost', label: t('itemCost') },
   ];
-  const rows: PrintRowOption[] = assemblies.map((a) => ({ id: a.id, label: a.article ? `${a.article} — ${a.name}` : a.name }));
+  // photoUrl (2026-09-18 follow-up — "перед артикулами додай також фото специфікацій"): same ASSEMBLY_PHOTO lookup the table body's own Avatar column uses below.
+  const rows: PrintRowOption[] = assemblies.map((a) => ({
+    id: a.id,
+    label: a.article ? `${a.article} — ${a.name}` : a.name,
+    photoUrl: photosByAssembly?.[a.id]?.[0]?.downloadUrl,
+  }));
   const printOptions = usePrintOptions({ columns, hasPhotos: true, id: 'assembly-list-print' });
   // "Курс EUR -> UAH" (2026-09-18 user request — "додай для друку
   // можливість конвертувати євро в гривні і вводити курс вручну", then

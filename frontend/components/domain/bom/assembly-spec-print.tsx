@@ -294,11 +294,8 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
   // lines have no id of their own). `ownCostLines` (labor/packaging/etc.)
   // stay unconditionally printed whenever the `cost` column is on — they're
   // overhead summary rows, not BOM "positions" — so they're deliberately
-  // NOT part of this checklist.
-  const rows: PrintRowOption[] = (cost?.breakdown ?? []).map((line, i) => ({
-    id: String(i),
-    label: lineLabel(line, productsById ?? EMPTY_PRODUCTS_MAP, assembliesById ?? EMPTY_ASSEMBLIES_MAP),
-  }));
+  // NOT part of this checklist. `photoUrl` populated below, once
+  // `lineDownloadUrl` (needing the early-return guard past it) exists.
   // Stable `id` (2026-09-18, needed now that PreviewButton below passes
   // `printAreaId`): this view coexists with PickListPrint's own separate
   // print area on production/[id]/page.tsx, and useId()'s auto-generated
@@ -330,6 +327,14 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
     if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
     return undefined;
   }
+
+  // 2026-09-18 follow-up — "перед артикулами додай також фото специфікацій"
+  // in the print-options row checklist.
+  const rows: PrintRowOption[] = cost.breakdown.map((line, i) => ({
+    id: String(i),
+    label: lineLabel(line, productsById ?? EMPTY_PRODUCTS_MAP, assembliesById ?? EMPTY_ASSEMBLIES_MAP),
+    photoUrl: lineDownloadUrl(line),
+  }));
 
   return (
     <>

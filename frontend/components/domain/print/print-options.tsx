@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Printer, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Avatar } from '@/components/ui/avatar';
 
 export interface PrintColumnOption {
   id: string;
@@ -16,6 +17,8 @@ export interface PrintColumnOption {
 export interface PrintRowOption {
   id: string;
   label: string;
+  /** Optional thumbnail shown before the label (2026-09-18 follow-up — "перед артикулами додай також фото специфікацій"), same small Avatar every other picker/checklist in this app already uses. Omitted entirely when a caller has no photo for that row. */
+  photoUrl?: string;
 }
 
 // Deep print views (e.g. an order's full assembly/sub-assembly/product
@@ -187,6 +190,10 @@ export function PrintOptionsDialog({ open, onOpenChange, columns, hasPhotos, row
   const [checked, setChecked] = useState<Set<string>>(() => new Set(columns.map((c) => c.id)));
   const [photos, setPhotos] = useState(Boolean(hasPhotos));
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set((rows ?? []).map((r) => r.id)));
+  // Only reserve the thumbnail slot at all when at least one row actually
+  // has a photo — a caller whose rows never set `photoUrl` shouldn't get a
+  // checklist full of bare fallback-icon placeholders.
+  const rowsHavePhotos = (rows ?? []).some((r) => r.photoUrl !== undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -280,6 +287,7 @@ export function PrintOptionsDialog({ open, onOpenChange, columns, hasPhotos, row
                         checked={checkedRows.has(r.id)}
                         onChange={() => toggleRow(r.id)}
                       />
+                      {rowsHavePhotos && <Avatar src={r.photoUrl} size="sm" />}
                       <span className="truncate" title={r.label}>
                         {r.label}
                       </span>
