@@ -4,10 +4,12 @@ import { useTranslations } from 'next-intl';
 import { useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { formatEurAndUah } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption, type PrintRowOption } from '@/components/domain/print/print-options';
+import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 import { Avatar } from '@/components/ui/avatar';
 
 /**
@@ -63,6 +65,13 @@ export function AssemblyListPrint({ assemblies }: { assemblies: Assembly[] }) {
   ];
   const rows: PrintRowOption[] = assemblies.map((a) => ({ id: a.id, label: a.article ? `${a.article} — ${a.name}` : a.name }));
   const printOptions = usePrintOptions({ columns, hasPhotos: true, id: 'assembly-list-print' });
+  // "Курс EUR -> UAH" (2026-09-18 user request — "додай для друку
+  // можливість конвертувати євро в гривні і вводити курс вручну"): every
+  // EUR cost cell below also shows its exact UAH equivalent in parens once
+  // a rate is entered (formatEurAndUah — NOT payroll's round-up-to-100
+  // rule, see that helper's own doc comment). Not part of PrintOptions'
+  // column set: it's a per-print rate entry, not a fixed column to toggle.
+  const [eurUahRate, setEurUahRate] = useEurUahRate();
 
   const visibleAssemblies = assemblies.filter((a) => printOptions.isRowVisible(a.id));
 
@@ -79,6 +88,7 @@ export function AssemblyListPrint({ assemblies }: { assemblies: Assembly[] }) {
           triggerLabel={tp('printSpecificationsList')}
         />
         <PreviewButton printAreaId={printOptions.printAreaId} />
+        <EurUahRateField rate={eurUahRate} onChange={setEurUahRate} />
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader title={tp('specificationsListTitle')} />
@@ -113,14 +123,14 @@ export function AssemblyListPrint({ assemblies }: { assemblies: Assembly[] }) {
                   )}
                   {printOptions.isColumnVisible('article') && <td className="font-bold">{a.article ?? ''}</td>}
                   {printOptions.isColumnVisible('name') && <td>{a.name}</td>}
-                  {printOptions.isColumnVisible('laborCostPerUnit') && <td>{formatEur(Number(a.laborCostPerUnit))}</td>}
+                  {printOptions.isColumnVisible('laborCostPerUnit') && <td>{formatEurAndUah(Number(a.laborCostPerUnit), eurUahRate)}</td>}
                   {printOptions.isColumnVisible('note') && <td>{a.note ?? ''}</td>}
-                  {printOptions.isColumnVisible('packagingCostPerUnit') && <td>{formatEur(Number(a.packagingCostPerUnit))}</td>}
-                  {printOptions.isColumnVisible('deliveryCostPerUnit') && <td>{formatEur(Number(a.deliveryCostPerUnit))}</td>}
-                  {printOptions.isColumnVisible('otherCostPerUnit') && <td>{formatEur(Number(a.otherCostPerUnit))}</td>}
+                  {printOptions.isColumnVisible('packagingCostPerUnit') && <td>{formatEurAndUah(Number(a.packagingCostPerUnit), eurUahRate)}</td>}
+                  {printOptions.isColumnVisible('deliveryCostPerUnit') && <td>{formatEurAndUah(Number(a.deliveryCostPerUnit), eurUahRate)}</td>}
+                  {printOptions.isColumnVisible('otherCostPerUnit') && <td>{formatEurAndUah(Number(a.otherCostPerUnit), eurUahRate)}</td>}
                   {printOptions.isColumnVisible('supplier') && <td>{a.defaultSupplierId ? (supplierById.get(a.defaultSupplierId) ?? '') : ''}</td>}
                   {printOptions.isColumnVisible('createdAt') && <td>{new Date(a.createdAt).toLocaleDateString()}</td>}
-                  {printOptions.isColumnVisible('itemCost') && <td>{cost != null ? formatEur(cost) : ''}</td>}
+                  {printOptions.isColumnVisible('itemCost') && <td>{cost != null ? formatEurAndUah(cost, eurUahRate) : ''}</td>}
                 </tr>
               );
             })}

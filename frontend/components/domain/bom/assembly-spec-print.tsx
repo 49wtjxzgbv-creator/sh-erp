@@ -5,9 +5,11 @@ import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost, useAssembliesByIds } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { formatEur } from '@/lib/utils';
+import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { formatEur, formatEurAndUah } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption, type PrintRowOption } from '@/components/domain/print/print-options';
+import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 import { Avatar } from '@/components/ui/avatar';
 import type { CostBreakdownLine, Assembly } from '@/lib/api-client/bom';
 import type { Product } from '@/lib/api-client/catalog';
@@ -127,7 +129,20 @@ export function useOwnCostLines(assembly: { laborCostPerUnit: string; packagingC
  * — the printed document's own top-level subject already has its own
  * header/table, this is only ever supplementary detail below it).
  */
-export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }: { assemblyId: string; qty: number; depth: number; showPrice: boolean }) {
+export function AssemblyCompositionSection({
+  assemblyId,
+  qty,
+  depth,
+  showPrice,
+  eurUahRate = null,
+}: {
+  assemblyId: string;
+  qty: number;
+  depth: number;
+  showPrice: boolean;
+  /** Optional (2026-09-18) — only AssemblySpecPrint's own "full composition" section passes a live rate; customer-order-print.tsx's use of this same component stays plain-EUR, unaffected. */
+  eurUahRate?: number | null;
+}) {
   const t = useTranslations('bom');
   const tp = useTranslations('print');
   const ts = useTranslations('sales');
@@ -200,8 +215,8 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
               </td>
               <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
               <td>{line.qtyPerUnit * qty}</td>
-              {showPrice && <td>{formatEur(line.unitCost)}</td>}
-              {showPrice && <td>{formatEur(line.unitCost * line.qtyPerUnit * qty)}</td>}
+              {showPrice && <td>{formatEurAndUah(line.unitCost, eurUahRate)}</td>}
+              {showPrice && <td>{formatEurAndUah(line.unitCost * line.qtyPerUnit * qty, eurUahRate)}</td>}
             </tr>
           ))}
           {ownCostLines.map((line) => (
@@ -211,21 +226,28 @@ export function AssemblyCompositionSection({ assemblyId, qty, depth, showPrice }
               <td>{line.label}</td>
               <td>{t('componentTypeOwn')}</td>
               <td>{qty}</td>
-              {showPrice && <td>{formatEur(line.value)}</td>}
-              {showPrice && <td>{formatEur(line.value * qty)}</td>}
+              {showPrice && <td>{formatEurAndUah(line.value, eurUahRate)}</td>}
+              {showPrice && <td>{formatEurAndUah(line.value * qty, eurUahRate)}</td>}
             </tr>
           ))}
         </tbody>
       </table>
       {showPrice && (
         <p className="mt-1 text-sm">
-          {t('cost')}: {formatEur(cost.costPerUnit * qty)}
+          {t('cost')}: {formatEurAndUah(cost.costPerUnit * qty, eurUahRate)}
         </p>
       )}
       {cost.breakdown
         .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId))
         .map((l, i) => (
-          <AssemblyCompositionSection key={i} assemblyId={l.subAssemblyId} qty={l.qtyPerUnit * qty} depth={depth + 1} showPrice={showPrice} />
+          <AssemblyCompositionSection
+            key={i}
+            assemblyId={l.subAssemblyId}
+            qty={l.qtyPerUnit * qty}
+            depth={depth + 1}
+            showPrice={showPrice}
+            eurUahRate={eurUahRate}
+          />
         ))}
     </div>
   );
@@ -277,7 +299,19 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
     id: String(i),
     label: lineLabel(line, productsById ?? EMPTY_PRODUCTS_MAP, assembliesById ?? EMPTY_ASSEMBLIES_MAP),
   }));
-  const printOptions = usePrintOptions({ columns, hasPhotos: true });
+  // Stable `id` (2026-09-18, needed now that PreviewButton below passes
+  // `printAreaId`): this view coexists with PickListPrint's own separate
+  // print area on production/[id]/page.tsx, and useId()'s auto-generated
+  // fallback is only stable WITHIN one mount — a fresh preview tab's own
+  // useId() call would never match it, leaving Preview permanently blank
+  // (the exact 2026-09-16 bug usePrintOptions's own `id` param exists to
+  // avoid — see its header comment).
+  const printOptions = usePrintOptions({ columns, hasPhotos: true, id: 'assembly-spec-print' });
+  // "Курс EUR -> UAH" (2026-09-18 user request) — see AssemblyListPrint's
+  // own doc comment for why this isn't a toggleable column: it's a per-
+  // print rate entry, applied to every EUR cell (including recursive
+  // "full composition" sections below) via formatEurAndUah.
+  const [eurUahRate, setEurUahRate] = useEurUahRate();
 
   if (!assembly || !cost) return null;
 
@@ -309,7 +343,8 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
           onConfirm={printOptions.confirm}
           triggerLabel={tp('printSpecification')}
         />
-        <PreviewButton />
+        <PreviewButton printAreaId={printOptions.printAreaId} />
+        <EurUahRateField rate={eurUahRate} onChange={setEurUahRate} />
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
         <PrintDocumentHeader
@@ -360,7 +395,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{line.qtyPerUnit * qty}</td>}
-                {printOptions.isColumnVisible('cost') && <td>{formatEur(line.lineCost * qty)}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatEurAndUah(line.lineCost * qty, eurUahRate)}</td>}
               </tr>
             ))}
             {printOptions.isColumnVisible('cost') &&
@@ -373,7 +408,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                   {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
                   {printOptions.isColumnVisible('qtyPerUnit') && <td>—</td>}
                   {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{qty}</td>}
-                  <td>{formatEur(line.value * qty)}</td>
+                  <td>{formatEurAndUah(line.value * qty, eurUahRate)}</td>
                 </tr>
               ))}
           </tbody>
@@ -382,11 +417,11 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
           <p className="mt-4 text-sm font-semibold">
             {qty === 1 ? (
               <>
-                {t('cost')}: {formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()}
+                {t('cost')}: {formatEurAndUah(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()}
               </>
             ) : (
               <>
-                {t('cost')}: {formatEur(cost.costPerUnit * qty)} ({formatEur(cost.costPerUnit)} / {tp('units').toLowerCase()} × {qty})
+                {t('cost')}: {formatEurAndUah(cost.costPerUnit * qty, eurUahRate)} ({formatEurAndUah(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()} × {qty})
               </>
             )}
           </p>
@@ -401,6 +436,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                 qty={l.qtyPerUnit * qty}
                 depth={1}
                 showPrice={printOptions.isColumnVisible('cost')}
+                eurUahRate={eurUahRate}
               />
             ))}
           </div>

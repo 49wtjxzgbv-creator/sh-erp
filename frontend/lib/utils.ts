@@ -53,6 +53,20 @@ export function formatUah(value: number, rate: number | null): string {
 }
 
 /**
+ * EUR alongside its exact UAH equivalent (2026-09-18 user request — BOM
+ * print views' "конвертувати євро в гривні"), e.g. "45.05 € (1802.00 ₴)".
+ * Deliberately NOT `uahRoundUp`'s round-up-to-100 rule — that rule exists
+ * specifically for payroll PAYOUT amounts (large, round-number-friendly
+ * sums; see its own header comment), not per-unit material/labor costs,
+ * where rounding a few-euro line to the nearest hundred hryvnia would
+ * distort it wildly. Falls back to plain EUR when no rate is entered.
+ */
+export function formatEurAndUah(value: number, rate: number | null): string {
+  if (!rate || rate <= 0) return formatEur(value);
+  return `${formatEur(value)} (${(value * rate).toFixed(2)} ₴)`;
+}
+
+/**
  * План-графік planned dates need date AND time (Timestamptz in the DB),
  * not just a day — these two converters are the one place that logic
  * lives, used by every planned-date `<input type="datetime-local">` this
