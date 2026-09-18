@@ -12,6 +12,12 @@ export interface PrintColumnOption {
   label: string;
 }
 
+/** A selectable print ROW (2026-09-18 — "обирати які позиції друкувати"), e.g. one BOM component line. `id` only needs to be unique within one print view (an array index is fine). */
+export interface PrintRowOption {
+  id: string;
+  label: string;
+}
+
 // Deep print views (e.g. an order's full assembly/sub-assembly/product
 // composition — customer-order-print.tsx's AssemblyCompositionSection)
 // mount a chain of N+1 useAssembly/useAssemblyCost/useFilesForEntities
@@ -88,6 +94,17 @@ export function usePrintOptions({
   const [open, setOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => new Set(columns.map((c) => c.id)));
   const [includePhotos, setIncludePhotos] = useState(hasPhotos);
+  // `null` = "never explicitly confirmed a row selection" -> every row
+  // prints. Deliberately NOT seeded from a `rows` list at hook-call time the
+  // way `visibleColumns` seeds from `columns`: `rows` for a view like
+  // AssemblySpecPrint only exists once its own async data has loaded, well
+  // after this hook's first render, so a `useState(() => new Set(rows...))`
+  // initializer would permanently freeze on an empty Set from before that
+  // data arrived. `PrintOptionsDialog` re-seeds ITS OWN row checkboxes from
+  // the (by-then-loaded) `rows` prop fresh every time it opens instead — see
+  // its own effect — so by the time `confirm` ever supplies a concrete Set
+  // here, it always reflects the real row list.
+  const [visibleRows, setVisibleRows] = useState<Set<string> | null>(null);
   const [printRequestId, setPrintRequestId] = useState(0);
   const isFetching = useIsFetching();
   const printedRequestId = useRef(0);
@@ -123,9 +140,10 @@ export function usePrintOptions({
     return () => clearTimeout(timer);
   }, [printRequestId, activateOnlyThisPrintArea]);
 
-  function confirm(nextVisibleColumns: Set<string>, nextIncludePhotos: boolean) {
+  function confirm(nextVisibleColumns: Set<string>, nextIncludePhotos: boolean, nextVisibleRows?: Set<string>) {
     setVisibleColumns(nextVisibleColumns);
     setIncludePhotos(nextIncludePhotos);
+    if (nextVisibleRows) setVisibleRows(nextVisibleRows);
     setOpen(false);
     setPrintRequestId((n) => n + 1);
   }
@@ -137,6 +155,7 @@ export function usePrintOptions({
     includePhotos,
     confirm,
     isColumnVisible: (id: string) => visibleColumns.has(id),
+    isRowVisible: (id: string) => visibleRows === null || visibleRows.has(id),
     printAreaId,
   };
 }
@@ -146,31 +165,48 @@ export interface PrintOptionsDialogProps {
   onOpenChange: (open: boolean) => void;
   columns: PrintColumnOption[];
   hasPhotos?: boolean;
-  onConfirm: (visibleColumns: Set<string>, includePhotos: boolean) => void;
+  /** Optional per-row checklist (2026-09-18 — "обирати які позиції друкувати"), e.g. one BOM component line per row. Omit entirely for views with nothing row-level to pick. */
+  rows?: PrintRowOption[];
+  onConfirm: (visibleColumns: Set<string>, includePhotos: boolean, visibleRows: Set<string>) => void;
   triggerLabel: string;
 }
 
 /**
- * Trigger button + the actual options dialog. Column checkboxes and the
- * photo toggle re-seed to "everything on" each time the dialog opens (not
- * once at mount) so a cancel-then-reopen doesn't carry a half-picked state
- * from an abandoned attempt.
+ * Trigger button + the actual options dialog. Column checkboxes, the photo
+ * toggle, and the optional row checklist all re-seed to "everything on"
+ * each time the dialog opens (not once at mount) so a cancel-then-reopen
+ * doesn't carry a half-picked state from an abandoned attempt — the row
+ * checklist re-seeding from `rows` on every open is also what makes it safe
+ * to use even though `rows` itself only becomes non-empty once its own
+ * async data has loaded well after mount (see usePrintOptions's own
+ * `visibleRows` doc comment).
  */
-export function PrintOptionsDialog({ open, onOpenChange, columns, hasPhotos, onConfirm, triggerLabel }: PrintOptionsDialogProps) {
+export function PrintOptionsDialog({ open, onOpenChange, columns, hasPhotos, rows, onConfirm, triggerLabel }: PrintOptionsDialogProps) {
   const tp = useTranslations('print');
   const tc = useTranslations('common');
   const [checked, setChecked] = useState<Set<string>>(() => new Set(columns.map((c) => c.id)));
   const [photos, setPhotos] = useState(Boolean(hasPhotos));
+  const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set((rows ?? []).map((r) => r.id)));
 
   useEffect(() => {
     if (!open) return;
     setChecked(new Set(columns.map((c) => c.id)));
     setPhotos(Boolean(hasPhotos));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-seed on open only, columns/hasPhotos are stable per print view
+    setCheckedRows(new Set((rows ?? []).map((r) => r.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-seed on open only, columns/hasPhotos/rows are stable-enough per print view
   }, [open]);
 
   function toggleColumn(id: string) {
     setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleRow(id: string) {
+    setCheckedRows((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -217,13 +253,48 @@ export function PrintOptionsDialog({ open, onOpenChange, columns, hasPhotos, onC
                 {tp('includePhotos')}
               </label>
             )}
+
+            {rows && rows.length > 0 && (
+              <div className="border-t border-border pt-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-medium">{tp('rowsToInclude')}</p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline"
+                      onClick={() => setCheckedRows(new Set(rows.map((r) => r.id)))}
+                    >
+                      {tp('selectAll')}
+                    </button>
+                    <button type="button" className="text-xs text-primary hover:underline" onClick={() => setCheckedRows(new Set())}>
+                      {tp('selectNone')}
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+                  {rows.map((r) => (
+                    <label key={r.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 shrink-0 rounded border-input"
+                        checked={checkedRows.has(r.id)}
+                        onChange={() => toggleRow(r.id)}
+                      />
+                      <span className="truncate" title={r.label}>
+                        {r.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {tc('cancel')}
             </Button>
-            <Button type="button" onClick={() => onConfirm(checked, photos)}>
+            <Button type="button" onClick={() => onConfirm(checked, photos, checkedRows)}>
               <Printer className="mr-2 h-4 w-4" />
               {tp('printAction')}
             </Button>

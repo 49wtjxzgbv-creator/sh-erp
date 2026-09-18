@@ -7,7 +7,7 @@ import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
-import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption, type PrintRowOption } from '@/components/domain/print/print-options';
 import { Avatar } from '@/components/ui/avatar';
 import type { CostBreakdownLine, Assembly } from '@/lib/api-client/bom';
 import type { Product } from '@/lib/api-client/catalog';
@@ -65,6 +65,18 @@ export function ComponentArticleCell({
   }
   const subAssembly = line.subAssemblyId ? assembliesById.get(line.subAssemblyId) : undefined;
   return <>{subAssembly?.article ?? ''}</>;
+}
+
+/** Plain-string counterpart of ComponentArticleCell/ComponentNameCell (2026-09-18) — for the print-options dialog's row checklist, which needs a label string rather than JSX. Same fallback-to-raw-id rule as those two. */
+function lineLabel(line: CostBreakdownLine, productsById: Map<string, Product>, assembliesById: Map<string, Assembly>): string {
+  if (line.componentType === 'PRODUCT') {
+    const product = line.productId ? productsById.get(line.productId) : undefined;
+    const name = product?.name ?? line.productId ?? '';
+    return product?.article ? `${product.article} — ${name}` : name;
+  }
+  const subAssembly = line.subAssemblyId ? assembliesById.get(line.subAssemblyId) : undefined;
+  const name = subAssembly?.name ?? line.subAssemblyId ?? '';
+  return subAssembly?.article ? `${subAssembly.article} — ${name}` : name;
 }
 
 /**
@@ -255,17 +267,29 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
     { id: 'cost', label: t('cost') },
     { id: 'composition', label: t('fullComposition') },
   ];
+  // 2026-09-18 user request ("обирати які позиції друкувати") — one
+  // selectable row per BOM component line, keyed by array index (component
+  // lines have no id of their own). `ownCostLines` (labor/packaging/etc.)
+  // stay unconditionally printed whenever the `cost` column is on — they're
+  // overhead summary rows, not BOM "positions" — so they're deliberately
+  // NOT part of this checklist.
+  const rows: PrintRowOption[] = (cost?.breakdown ?? []).map((line, i) => ({
+    id: String(i),
+    label: lineLabel(line, productsById ?? EMPTY_PRODUCTS_MAP, assembliesById ?? EMPTY_ASSEMBLIES_MAP),
+  }));
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
   if (!assembly || !cost) return null;
+
+  const visibleBreakdown = cost.breakdown.map((line, i) => ({ line, originalIndex: i })).filter(({ originalIndex }) => printOptions.isRowVisible(String(originalIndex)));
 
   // Only worth a second "needed for the whole batch" column when qty !== 1
   // — at qty === 1 (the plain BOM-reference case, e.g. bom/[id]/components)
   // it would just repeat the same numbers as qtyPerUnit.
   const showQtyNeededColumn = qty !== 1;
-  const subAssemblyLines = cost.breakdown.filter(
-    (l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId),
-  );
+  const subAssemblyLines = visibleBreakdown
+    .map(({ line }) => line)
+    .filter((l): l is CostBreakdownLine & { subAssemblyId: string } => l.componentType === 'ASSEMBLY' && Boolean(l.subAssemblyId));
 
   function lineDownloadUrl(line: CostBreakdownLine): string | undefined {
     if (line.componentType === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
@@ -281,6 +305,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
           onOpenChange={printOptions.setOpen}
           columns={columns}
           hasPhotos
+          rows={rows}
           onConfirm={printOptions.confirm}
           triggerLabel={tp('printSpecification')}
         />
@@ -306,8 +331,8 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
             </tr>
           </thead>
           <tbody>
-            {cost.breakdown.map((line, i) => (
-              <tr key={i}>
+            {visibleBreakdown.map(({ line, originalIndex }, i) => (
+              <tr key={originalIndex}>
                 <td>{i + 1}</td>
                 {printOptions.includePhotos && (
                   <td>
@@ -341,7 +366,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
             {printOptions.isColumnVisible('cost') &&
               ownCostLines.map((line, i) => (
                 <tr key={`own-${line.key}`}>
-                  <td>{cost.breakdown.length + i + 1}</td>
+                  <td>{visibleBreakdown.length + i + 1}</td>
                   {printOptions.includePhotos && <td />}
                   {printOptions.isColumnVisible('component') && <td />}
                   {printOptions.isColumnVisible('component') && <td>{line.label}</td>}
