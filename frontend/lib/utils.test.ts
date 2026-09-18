@@ -1,4 +1,4 @@
-import { cn, formatEur, formatUah, formatEurAndUah, uahRoundUp } from './utils';
+import { cn, formatEur, formatUah, formatUahExact, uahRoundUp } from './utils';
 
 describe('cn', () => {
   it('merges class lists', () => {
@@ -57,13 +57,13 @@ describe('uahRoundUp', () => {
   });
 });
 
-describe('formatEurAndUah', () => {
-  it('appends the exact UAH equivalent in parens, NOT rounded up to the nearest 100 — a per-unit BOM cost is nothing like a payroll payout', () => {
-    expect(formatEurAndUah(45.05, 40)).toBe('45.05 € (1802.00 ₴)');
+describe('formatUahExact', () => {
+  it('shows the exact UAH equivalent ONLY (2026-09-18 — "якщо вводимо курс євро то для друку відображатимуться тільки гривні"), NOT rounded up to the nearest 100 — a per-unit BOM cost is nothing like a payroll payout', () => {
+    expect(formatUahExact(45.05, 40)).toBe('1802.00 ₴');
   });
 
   it('falls back to plain EUR when no rate has been entered', () => {
-    expect(formatEurAndUah(45.05, null)).toBe('45.05 €');
-    expect(formatEurAndUah(45.05, 0)).toBe('45.05 €');
+    expect(formatUahExact(45.05, null)).toBe('45.05 €');
+    expect(formatUahExact(45.05, 0)).toBe('45.05 €');
   });
 });

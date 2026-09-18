@@ -53,17 +53,21 @@ export function formatUah(value: number, rate: number | null): string {
 }
 
 /**
- * EUR alongside its exact UAH equivalent (2026-09-18 user request — BOM
- * print views' "конвертувати євро в гривні"), e.g. "45.05 € (1802.00 ₴)".
- * Deliberately NOT `uahRoundUp`'s round-up-to-100 rule — that rule exists
- * specifically for payroll PAYOUT amounts (large, round-number-friendly
- * sums; see its own header comment), not per-unit material/labor costs,
- * where rounding a few-euro line to the nearest hundred hryvnia would
- * distort it wildly. Falls back to plain EUR when no rate is entered.
+ * Exact UAH equivalent, REPLACING the euro figure entirely (2026-09-18
+ * user follow-up — "якщо вводимо курс євро то для друку відображатимуться
+ * тільки гривні": an earlier version of this showed both, "45.05 €
+ * (1802.00 ₴)" — corrected to UAH-only once a rate is entered, same "show
+ * the converted currency, not both" rule `formatUah` already follows for
+ * payroll). Deliberately NOT `uahRoundUp`'s round-up-to-100 rule though —
+ * that rule exists specifically for payroll PAYOUT amounts (large, round-
+ * number-friendly sums; see its own header comment), not per-unit
+ * material/labor costs, where rounding a few-euro line to the nearest
+ * hundred hryvnia would distort it wildly. Falls back to plain EUR
+ * (`formatEur`) when no rate is entered.
  */
-export function formatEurAndUah(value: number, rate: number | null): string {
+export function formatUahExact(value: number, rate: number | null): string {
   if (!rate || rate <= 0) return formatEur(value);
-  return `${formatEur(value)} (${(value * rate).toFixed(2)} ₴)`;
+  return `${(value * rate).toFixed(2)} ₴`;
 }
 
 /**

@@ -6,7 +6,7 @@ import { useAssembly, useAssemblyCost, useAssembliesByIds } from '@/lib/hooks/us
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
-import { formatEur, formatEurAndUah } from '@/lib/utils';
+import { formatEur, formatUahExact } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption, type PrintRowOption } from '@/components/domain/print/print-options';
 import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
@@ -215,8 +215,8 @@ export function AssemblyCompositionSection({
               </td>
               <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>
               <td>{line.qtyPerUnit * qty}</td>
-              {showPrice && <td>{formatEurAndUah(line.unitCost, eurUahRate)}</td>}
-              {showPrice && <td>{formatEurAndUah(line.unitCost * line.qtyPerUnit * qty, eurUahRate)}</td>}
+              {showPrice && <td>{formatUahExact(line.unitCost, eurUahRate)}</td>}
+              {showPrice && <td>{formatUahExact(line.unitCost * line.qtyPerUnit * qty, eurUahRate)}</td>}
             </tr>
           ))}
           {ownCostLines.map((line) => (
@@ -226,15 +226,15 @@ export function AssemblyCompositionSection({
               <td>{line.label}</td>
               <td>{t('componentTypeOwn')}</td>
               <td>{qty}</td>
-              {showPrice && <td>{formatEurAndUah(line.value, eurUahRate)}</td>}
-              {showPrice && <td>{formatEurAndUah(line.value * qty, eurUahRate)}</td>}
+              {showPrice && <td>{formatUahExact(line.value, eurUahRate)}</td>}
+              {showPrice && <td>{formatUahExact(line.value * qty, eurUahRate)}</td>}
             </tr>
           ))}
         </tbody>
       </table>
       {showPrice && (
         <p className="mt-1 text-sm">
-          {t('cost')}: {formatEurAndUah(cost.costPerUnit * qty, eurUahRate)}
+          {t('cost')}: {formatUahExact(cost.costPerUnit * qty, eurUahRate)}
         </p>
       )}
       {cost.breakdown
@@ -310,7 +310,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
   // "Курс EUR -> UAH" (2026-09-18 user request) — see AssemblyListPrint's
   // own doc comment for why this isn't a toggleable column: it's a per-
   // print rate entry, applied to every EUR cell (including recursive
-  // "full composition" sections below) via formatEurAndUah.
+  // "full composition" sections below) via formatUahExact.
   const [eurUahRate, setEurUahRate] = useEurUahRate();
 
   if (!assembly || !cost) return null;
@@ -395,7 +395,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                 {printOptions.isColumnVisible('componentType') && <td>{line.componentType === 'PRODUCT' ? t('componentTypeProduct') : t('componentTypeAssembly')}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && <td>{line.qtyPerUnit}</td>}
                 {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{line.qtyPerUnit * qty}</td>}
-                {printOptions.isColumnVisible('cost') && <td>{formatEurAndUah(line.lineCost * qty, eurUahRate)}</td>}
+                {printOptions.isColumnVisible('cost') && <td>{formatUahExact(line.lineCost * qty, eurUahRate)}</td>}
               </tr>
             ))}
             {printOptions.isColumnVisible('cost') &&
@@ -408,7 +408,7 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
                   {printOptions.isColumnVisible('componentType') && <td>{t('componentTypeOwn')}</td>}
                   {printOptions.isColumnVisible('qtyPerUnit') && <td>—</td>}
                   {printOptions.isColumnVisible('qtyPerUnit') && showQtyNeededColumn && <td>{qty}</td>}
-                  <td>{formatEurAndUah(line.value * qty, eurUahRate)}</td>
+                  <td>{formatUahExact(line.value * qty, eurUahRate)}</td>
                 </tr>
               ))}
           </tbody>
@@ -417,11 +417,11 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
           <p className="mt-4 text-sm font-semibold">
             {qty === 1 ? (
               <>
-                {t('cost')}: {formatEurAndUah(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()}
+                {t('cost')}: {formatUahExact(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()}
               </>
             ) : (
               <>
-                {t('cost')}: {formatEurAndUah(cost.costPerUnit * qty, eurUahRate)} ({formatEurAndUah(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()} × {qty})
+                {t('cost')}: {formatUahExact(cost.costPerUnit * qty, eurUahRate)} ({formatUahExact(cost.costPerUnit, eurUahRate)} / {tp('units').toLowerCase()} × {qty})
               </>
             )}
           </p>
