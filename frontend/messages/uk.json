@@ -1195,6 +1195,8 @@
     "receivedBy": "Отримав",
     "printSpecification": "Друк специфікації",
     "specificationTitle": "Специфікація складання",
+    "printSpecificationsList": "Друк списку специфікацій",
+    "specificationsListTitle": "Список специфікацій",
     "printOrder": "Друкувати замовлення",
     "customerOrderTitle": "Замовлення клієнта",
     "printProductionProgress": "Друк ходу виробництва",

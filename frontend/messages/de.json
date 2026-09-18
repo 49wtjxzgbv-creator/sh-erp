@@ -1070,6 +1070,8 @@
     "receivedBy": "Received by",
     "printSpecification": "Print specification",
     "specificationTitle": "Assembly specification",
+    "printSpecificationsList": "Print list of specifications",
+    "specificationsListTitle": "List of specifications",
     "printOrder": "Print order",
     "customerOrderTitle": "Customer order",
     "printProductionProgress": "Print production progress",

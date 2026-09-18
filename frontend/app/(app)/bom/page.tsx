@@ -14,6 +14,7 @@ import { formatEur } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
+import { AssemblyListPrint } from '@/components/domain/bom/assembly-list-print';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
@@ -170,7 +171,10 @@ export default function BomPage() {
           }}
           className="max-w-sm"
         />
-        <ColumnVisibilityMenu columns={columnOptions} hidden={hiddenColumns} onToggle={toggleColumn} />
+        <div className="flex items-center gap-2">
+          <ColumnVisibilityMenu columns={columnOptions} hidden={hiddenColumns} onToggle={toggleColumn} />
+          <AssemblyListPrint assemblies={data?.items ?? []} />
+        </div>
       </div>
 
       <DataTable
