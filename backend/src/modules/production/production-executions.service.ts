@@ -398,12 +398,25 @@ export class ProductionExecutionsService {
     await this.payrollPeriodsService.assertDateNotClosed(now);
 
     for (const alloc of execution.allocations) {
+      // 2026-09-20 real bug found live (a bulk labor-rate recalculation
+      // exposed it at scale — "кількість виробів які хто зробив... не
+      // сходиться"): this compensating entry always negated `amount`
+      // correctly but left `unitsProduced` at its default (null/0), so a
+      // voided-then-replaced execution's units got counted TWICE in any
+      // report that sums PayrollEntry.unitsProduced per employee/article
+      // (getPayrollSummaryReport, getOrderPayrollByEmployee, etc.) — the
+      // original entry's units, uncancelled, plus the replacement's own.
+      // The original entry (fetched via sourceAllocationId, @unique to
+      // exactly this allocation, guaranteed to exist since only a
+      // CONFIRMED execution — checked above — can reach this point) is the
+      // one true source for how many units this compensation must negate.
+      const originalEntry = await this.prisma.tenant.payrollEntry.findUnique({ where: { sourceAllocationId: alloc.id } });
       await this.prisma.tenant.payrollEntry.create({
         data: {
           employeeId: alloc.employeeId,
           type: 'PIECEWORK',
           productionOrderId: execution.productionOrderId ?? undefined,
-          unitsProduced: undefined,
+          unitsProduced: originalEntry?.unitsProduced != null ? -Number(originalEntry.unitsProduced) : undefined,
           amount: -Number(alloc.amount),
           entryDate: now,
           comment: `VOID compensation for execution ${execution.id}${dto.note ? ` — ${dto.note}` : ''}`,

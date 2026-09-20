@@ -43,7 +43,7 @@ describe('ProductionExecutionsService', () => {
           update: jest.fn().mockResolvedValue({}),
           deleteMany: jest.fn(),
         },
-        payrollEntry: { create: jest.fn().mockResolvedValue({ id: 'pe1' }) },
+        payrollEntry: { create: jest.fn().mockResolvedValue({ id: 'pe1' }), findUnique: jest.fn().mockResolvedValue(null) },
         productionOrder: { findUnique: jest.fn().mockResolvedValue(startedOrder) },
         assembly: { findUnique: jest.fn().mockResolvedValue(soloAllowedAssembly) },
         workTask: { findUnique: jest.fn().mockResolvedValue(openWorkTask) },
@@ -324,6 +324,21 @@ describe('ProductionExecutionsService', () => {
       expect(data.amount).toBe(-50);
       expect(data.sourceAllocationId).toBeUndefined();
       expect(data.comment).toContain('ex1');
+    });
+
+    it('negates unitsProduced too, not just amount (2026-09-20 real bug — a bulk labor-rate recalculation left "кількість виробів" double-counted because this compensating entry only ever negated amount, leaving units uncancelled)', async () => {
+      prisma.tenant.payrollEntry.findUnique.mockResolvedValue({ unitsProduced: 3.5 });
+      await service.void_(user, 'ex1', {});
+      expect(prisma.tenant.payrollEntry.findUnique).toHaveBeenCalledWith({ where: { sourceAllocationId: 'al1' } });
+      const data = prisma.tenant.payrollEntry.create.mock.calls[0][0].data;
+      expect(data.unitsProduced).toBe(-3.5);
+    });
+
+    it('leaves unitsProduced undefined when the original entry never had one (GENERAL work, or somehow missing) — never fabricates a negative 0', async () => {
+      prisma.tenant.payrollEntry.findUnique.mockResolvedValue(null);
+      await service.void_(user, 'ex1', {});
+      const data = prisma.tenant.payrollEntry.create.mock.calls[0][0].data;
+      expect(data.unitsProduced).toBeUndefined();
     });
 
     it('never mutates the original execution/allocation rows — only sets status VOIDED on the execution itself', async () => {
