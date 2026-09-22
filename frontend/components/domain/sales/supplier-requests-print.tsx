@@ -7,6 +7,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
+import { AssemblyCompositionSection } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
@@ -48,6 +49,17 @@ export interface SupplierRequestsPrintProps {
  * page's own live `groups` state (the qty the user has actually typed in,
  * not the raw preview) so what prints matches what "Create purchase orders"
  * would actually submit.
+ *
+ * "Повний склад" (2026-09-22 user request — a supplier line can be a whole
+ * виріб/підвиріб bought as one unit (`kind: 'ASSEMBLY'`, "bought whole" per
+ * CustomerOrderShortageService's own walkAssembly comment), not just a raw
+ * product): ticking "full composition" in print options additionally
+ * explodes each ASSEMBLY line's own BOM breakdown below that supplier's
+ * table (AssemblyCompositionSection, recursive — same shared component
+ * AssemblySpecPrint/PickListPrint/customer-order-print.tsx already use),
+ * so what prints isn't just an opaque "виріб X, qty N" line. Off by default
+ * — this is internal detail, not necessarily meant for the supplier's own
+ * copy of the request.
  */
 export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPrintProps) {
   const t = useTranslations('sales');
@@ -79,6 +91,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     { id: 'qtyToOrder', label: t('qtyToOrder') },
     { id: 'unitPrice', label: t('unitPrice') },
     { id: 'price', label: t('expectedPrice') },
+    { id: 'composition', label: t('fullComposition') },
   ];
 
   function groupTotal(group: SupplierRequestGroupForPrint): number {
@@ -164,6 +177,23 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                 </tfoot>
               )}
             </table>
+            {printOptions.isColumnVisible('composition') && (
+              <>
+                {group.lines
+                  .filter((l): l is SupplierRequestLineForPrint & { subAssemblyId: string } => l.kind === 'ASSEMBLY' && l.qty > 0 && Boolean(l.subAssemblyId))
+                  .map((line, li) => (
+                    <div key={li} className="mt-4">
+                      <h3 className="mb-1 text-sm font-semibold">{line.description} — {t('fullComposition')}</h3>
+                      <AssemblyCompositionSection
+                        assemblyId={line.subAssemblyId}
+                        qty={line.qty}
+                        depth={1}
+                        showPrice={printOptions.isColumnVisible('unitPrice')}
+                      />
+                    </div>
+                  ))}
+              </>
+            )}
           </div>
         ))}
       </PrintArea>
