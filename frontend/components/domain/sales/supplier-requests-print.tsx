@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { ExternalLink } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import type { FileAssetWithUrl } from '@/lib/api-client/files';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
@@ -73,6 +74,15 @@ export interface SupplierRequestsPrintProps {
  * layout: fixed` would otherwise give it an equal share of the table
  * width as every text column next to it, same reasoning `.print-photo-col`
  * already documents.
+ *
+ * "Вкладені документи" (2026-09-23 user request): ticking "include attached
+ * documents" additionally appends every PDF/image attached to a line's own
+ * product or assembly (PRODUCT_DOCUMENT/ASSEMBLY_DOCUMENT) as its own full
+ * print page, headed by that line's article + name (`.print-document-page`,
+ * globals.css — `page-break-before`, unlike the `-after` trick
+ * `.print-page-break` uses between suppliers, since documents follow a
+ * table + optional composition section of unpredictable length). CAD
+ * sources (STEP/DXF) have no printable page rendering and are skipped.
  */
 export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPrintProps) {
   const t = useTranslations('sales');
@@ -92,11 +102,32 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   );
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  const { data: documentsByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_DOCUMENT');
+  const { data: documentsByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_DOCUMENT');
 
   function lineDownloadUrl(line: SupplierRequestLineForPrint): string | undefined {
     if (line.kind === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
     if (line.kind === 'ASSEMBLY' && line.subAssemblyId) return photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl;
     return undefined;
+  }
+
+  /**
+   * "Вкладені документи" (2026-09-23 user request): every PRODUCT_DOCUMENT/
+   * ASSEMBLY_DOCUMENT file attached to a line's own product/assembly, each
+   * printed on its own full page (.print-document-page, globals.css) with
+   * the line's article + name as a page header. Only PDF and image
+   * attachments can actually be flattened onto a printed page this way —
+   * CAD sources (STEP/DXF) have no printable page rendering here, so those
+   * are silently skipped rather than left as dead space.
+   */
+  function lineDocuments(line: SupplierRequestLineForPrint): FileAssetWithUrl[] {
+    if (line.kind === 'PRODUCT' && line.productId) return documentsByProduct?.[line.productId] ?? [];
+    if (line.kind === 'ASSEMBLY' && line.subAssemblyId) return documentsByAssembly?.[line.subAssemblyId] ?? [];
+    return [];
+  }
+
+  function isPrintableDocument(doc: FileAssetWithUrl): boolean {
+    return doc.mimeType === 'application/pdf' || doc.mimeType.startsWith('image/');
   }
 
   /**
@@ -120,6 +151,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     { id: 'unitPrice', label: t('unitPrice') },
     { id: 'price', label: t('expectedPrice') },
     { id: 'composition', label: t('fullComposition') },
+    { id: 'documents', label: t('includeAttachedDocuments') },
   ];
 
   function groupTotal(group: SupplierRequestGroupForPrint): number {
@@ -221,6 +253,26 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                         depth={1}
                         showPrice={printOptions.isColumnVisible('unitPrice')}
                       />
+                    </div>
+                  ))}
+              </>
+            )}
+            {printOptions.isColumnVisible('documents') && (
+              <>
+                {group.lines
+                  .filter((l) => l.qty > 0)
+                  .flatMap((line) => lineDocuments(line).filter(isPrintableDocument).map((doc) => ({ line, doc })))
+                  .map(({ line, doc }) => (
+                    <div key={doc.id} className="print-document-page">
+                      <h3 className="mb-2 text-sm font-semibold">
+                        {line.article ? `${line.article} — ` : ''}
+                        {descriptionWithoutArticle(line)}
+                      </h3>
+                      {doc.mimeType === 'application/pdf' ? (
+                        <iframe src={doc.downloadUrl} title={doc.originalName} className="print-document-frame" />
+                      ) : (
+                        <img src={doc.downloadUrl} alt={doc.originalName} className="print-document-image" />
+                      )}
                     </div>
                   ))}
               </>
