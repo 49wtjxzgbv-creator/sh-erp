@@ -282,9 +282,15 @@
    * виробів була вужчою на ширину 3 символи"): same table-layout: fixed
    * reasoning as .print-photo-col above — a bare "#" column would
    * otherwise claim an equal share of the table width as every text
-   * column next to it. */
+   * column next to it. `calc(3ch + 12px)`, not a bare `3ch` (real
+   * regression, same day): Tailwind's Preflight sets `box-sizing:
+   * border-box` globally, so a bare `width: 3ch` here counted this cell's
+   * own `padding: 4px 6px` (12px left+right) AS PART OF that 3ch — leaving
+   * barely one digit of actual room and wrapping "10" onto two lines. The
+   * `+ 12px` gives the padding back, so the 3ch is genuinely 3 characters
+   * of text space. */
   .print-area .print-index-col {
-    width: 3ch;
+    width: calc(3ch + 12px);
   }
   .print-area .print-page-break {
     page-break-after: always;
@@ -486,7 +492,7 @@
   width: 80px;
 }
 .print-preview-mode .print-area .print-index-col {
-  width: 3ch;
+  width: calc(3ch + 12px);
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;
