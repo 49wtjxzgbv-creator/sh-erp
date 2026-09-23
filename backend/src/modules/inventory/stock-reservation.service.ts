@@ -303,20 +303,35 @@ export class StockReservationService {
    * other active order has been waiting longest — never more than each
    * order's own outstanding need, so a delivery larger than what's owed
    * simply leaves the rest as ordinary free stock.
+   *
+   * Real incident (2026-09-24, order 440172 IN_PRODUCTION blocked by order
+   * 442581 which was still NEW): a NEW order's OWN purchase, once received,
+   * used to top itself up here via `preferredOrderId` — completely
+   * bypassing the NEW-status gate `ensureRequirementsAndAutoReserve` added
+   * (2026-09-23), because that gate only covers the AUTO-reservation at
+   * order creation, not a later stock receipt. Both branches below now only
+   * ever grant to an order that is genuinely IN_PRODUCTION — a NEW order's
+   * `preferredOrderId` share (and its place in line in the general loop)
+   * is skipped entirely and left for whichever order actually needs it now;
+   * that NEW order still gets its fair, real claim once IT flips to
+   * IN_PRODUCTION (ensureRequirementsAndAutoReserve re-run there).
    */
   async topUp(user: RequestUser, input: { productId: string; warehouseId: string; qtyAvailable: number; preferredOrderId?: string }): Promise<number> {
     let remaining = input.qtyAvailable;
     if (remaining <= 0) return 0;
 
     if (input.preferredOrderId) {
-      const outstanding = await this.getOutstandingForOrder(user, input.preferredOrderId, input.productId, input.warehouseId);
-      if (outstanding > 0) {
-        const grant = await this.reserveCapped(
-          user,
-          { productId: input.productId, warehouseId: input.warehouseId, customerOrderId: input.preferredOrderId, source: 'PURCHASE' },
-          Math.min(remaining, outstanding),
-        );
-        remaining -= grant.grantedQty;
+      const preferredOrder = await this.prisma.tenant.customerOrder.findUnique({ where: { id: input.preferredOrderId }, select: { status: true } });
+      if (preferredOrder?.status === 'IN_PRODUCTION') {
+        const outstanding = await this.getOutstandingForOrder(user, input.preferredOrderId, input.productId, input.warehouseId);
+        if (outstanding > 0) {
+          const grant = await this.reserveCapped(
+            user,
+            { productId: input.productId, warehouseId: input.warehouseId, customerOrderId: input.preferredOrderId, source: 'PURCHASE' },
+            Math.min(remaining, outstanding),
+          );
+          remaining -= grant.grantedQty;
+        }
       }
     }
     if (remaining <= 0) return 0;
@@ -325,7 +340,7 @@ export class StockReservationService {
       where: {
         productId: input.productId,
         customerOrderId: input.preferredOrderId ? { not: input.preferredOrderId } : undefined,
-        customerOrder: { status: { in: [...ACTIVE_ORDER_STATUSES] } },
+        customerOrder: { status: 'IN_PRODUCTION' },
       },
       include: { customerOrder: { select: { createdAt: true } } },
     });

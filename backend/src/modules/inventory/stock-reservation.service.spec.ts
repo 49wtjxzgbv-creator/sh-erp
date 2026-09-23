@@ -14,7 +14,7 @@ describe('StockReservationService', () => {
         warehouseStock: { findUnique: jest.fn() },
         stockReservation: { upsert: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { consumedQty: null } }) },
         orderMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
-        customerOrder: { findMany: jest.fn() },
+        customerOrder: { findMany: jest.fn(), findUnique: jest.fn().mockResolvedValue({ status: 'IN_PRODUCTION' }) },
         $queryRaw: jest.fn(),
         $executeRaw: jest.fn(),
       },
@@ -148,9 +148,22 @@ describe('StockReservationService', () => {
       const leftover = await service.topUp(user, { productId: 'p1', warehouseId: 'w1', qtyAvailable: 12, preferredOrderId: 'co-preferred' });
 
       expect(prisma.tenant.orderMaterialRequirement.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ productId: 'p1', customerOrderId: { not: 'co-preferred' } }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ productId: 'p1', customerOrderId: { not: 'co-preferred' }, customerOrder: { status: 'IN_PRODUCTION' } }),
+        }),
       );
       expect(leftover).toBe(0);
+    });
+
+    it('a NEW preferred order gets skipped entirely (2026-09-24 real incident — order 440172 IN_PRODUCTION blocked by order 442581, still NEW, topping itself up here on receipt) — the stock flows to the general loop instead, never to a NEW order', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValueOnce({ status: 'NEW' });
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([]); // no other IN_PRODUCTION order waiting either
+
+      const leftover = await service.topUp(user, { productId: 'p1', warehouseId: 'w1', qtyAvailable: 12, preferredOrderId: 'co-preferred-new' });
+
+      expect(prisma.tenant.orderMaterialRequirement.findUnique).not.toHaveBeenCalled(); // never even checked the NEW order's own outstanding need
+      expect(prisma.tenant.stockReservation.upsert).not.toHaveBeenCalled();
+      expect(leftover).toBe(12); // left over as ordinary free stock rather than handed to a NEW order
     });
 
     it('leaves any true leftover unallocated once every outstanding order is satisfied (becomes ordinary free stock)', async () => {
