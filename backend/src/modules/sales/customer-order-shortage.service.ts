@@ -93,15 +93,23 @@ export class CustomerOrderShortageService {
   ) {}
 
   /**
-   * Called once, right after a customer order is created
-   * (CustomerOrdersService#create): by default, every raw-material
-   * component gets reserved from whatever's already on hand, no manual
-   * decision required — the simplified spec's core request. Persists one
+   * Called right after a customer order is created (CustomerOrdersService
+   * #create) AND again the moment it flips NEW -> IN_PRODUCTION
+   * (giveItemToProduction/giveSubAssemblyToProduction): persists one
    * OrderMaterialRequirement per (order, product) with `requiredQty` locked
    * at this moment (same "lock at creation" philosophy as
-   * ProductionOrder.assemblyVersionId) and `qtyFromStock` set to whatever
-   * `reserveCapped` actually managed to grant (never throws — an order is
-   * always allowed to exist with some or all of its material unreserved).
+   * ProductionOrder.assemblyVersionId).
+   *
+   * `qtyFromStock` behaves differently depending on the order's own status
+   * (2026-09-23 user request — "замовлення зі статусом нове не мають нічого
+   * їсти зі складу": a NEW order must not lock stock away from an order
+   * that's already IN_PRODUCTION, e.g. blocking its production start).
+   * While NEW, this only PREVIEWS what's currently on the shelf
+   * (`previewAvailable` — read-only, for accurate purchasing guidance on
+   * the shortage page) without claiming anything. Once IN_PRODUCTION, this
+   * method performs the real, capped claim (`reserveCapped` — never
+   * throws, an order is always allowed to exist with some or all of its
+   * material unreserved).
    */
   async ensureRequirementsAndAutoReserve(user: RequestUser, orderId: string): Promise<void> {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId }, include: { items: true } });
@@ -110,8 +118,11 @@ export class CustomerOrderShortageService {
     if (productPool.size === 0) return;
 
     const warehouseId = await this.resolveDefaultWarehouseId();
+    const claimForReal = order.status !== 'NEW';
     for (const [productId, requiredQty] of productPool) {
-      const grant = await this.stockReservationService.reserveCapped(user, { productId, warehouseId, customerOrderId: orderId, source: 'STOCK' }, requiredQty);
+      const grant = claimForReal
+        ? await this.stockReservationService.reserveCapped(user, { productId, warehouseId, customerOrderId: orderId, source: 'STOCK' }, requiredQty)
+        : await this.stockReservationService.previewAvailable(user, productId, warehouseId, requiredQty);
       await this.prisma.tenant.orderMaterialRequirement.upsert({
         where: { customerOrderId_productId: { customerOrderId: orderId, productId } },
         create: {

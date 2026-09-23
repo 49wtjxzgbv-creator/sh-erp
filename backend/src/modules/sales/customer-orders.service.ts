@@ -135,17 +135,22 @@ export class CustomerOrdersService {
             itemDto.subAssembliesToProduce && itemDto.subAssembliesToProduce.length > 0
               ? (itemDto.subAssembliesToProduce as any)
               : undefined,
+          // "Зі складу" choices from the same dialog — recorded as intent
+          // ONLY here (2026-09-23 user request: "замовлення зі статусом
+          // нове не мають нічого їсти зі складу"), mirroring
+          // plannedSubAssemblies above. Previously claimed immediately via
+          // SubAssemblyReservationService, which stole stock away from an
+          // order already IN_PRODUCTION; the real claim now happens once
+          // THIS order itself flips to IN_PRODUCTION (see
+          // claimPlannedSubAssembliesFromStock, called from
+          // giveItemToProduction/giveSubAssemblyToProduction).
+          plannedSubAssembliesFromStock:
+            itemDto.subAssembliesFromStock && itemDto.subAssembliesFromStock.length > 0
+              ? (itemDto.subAssembliesFromStock as any)
+              : undefined,
         } as any,
       });
       items.push(item);
-
-      // "Зі складу" choices from the same dialog (2026-08-27): claim
-      // IN_STOCK finished-goods units via SubAssemblyReservation so a
-      // LATER order's own dialog sees this stock was already spoken for —
-      // see SubAssemblyReservationService's header comment.
-      for (const sub of itemDto.subAssembliesFromStock ?? []) {
-        await this.subAssemblyReservationService.reserve(user, order.id, sub.assemblyId, sub.qty);
-      }
     }
 
     const fullOrder = { ...order, items };
@@ -162,6 +167,24 @@ export class CustomerOrdersService {
     await this.shortageService.ensureRequirementsAndAutoReserve(user, order.id);
 
     return fullOrder;
+  }
+
+  /**
+   * The real counterpart to `plannedSubAssembliesFromStock` (see that
+   * field's schema comment) — claims every item's "Зі складу" picks via
+   * SubAssemblyReservation for real. Called once, right after this order's
+   * status flips NEW -> IN_PRODUCTION (giveItemToProduction/
+   * giveSubAssemblyToProduction), never at order creation (2026-09-23 user
+   * request).
+   */
+  private async claimPlannedSubAssembliesFromStock(user: RequestUser, orderId: string): Promise<void> {
+    const items = await this.prisma.tenant.customerOrderItem.findMany({ where: { customerOrderId: orderId } });
+    for (const item of items as any[]) {
+      const picks = (item.plannedSubAssembliesFromStock ?? []) as Array<{ assemblyId: string; qty: number }>;
+      for (const pick of picks) {
+        await this.subAssemblyReservationService.reserve(user, orderId, pick.assemblyId, pick.qty);
+      }
+    }
   }
 
   async findOne(user: RequestUser, id: string) {
@@ -519,6 +542,11 @@ export class CustomerOrdersService {
 
     if (order.status === 'NEW') {
       await this.prisma.tenant.customerOrder.update({ where: { id: orderId }, data: { status: 'IN_PRODUCTION' } });
+      // Only now, with the order genuinely IN_PRODUCTION, does it actually
+      // claim shared stock — see ensureRequirementsAndAutoReserve's own
+      // 2026-09-23 doc comment.
+      await this.shortageService.ensureRequirementsAndAutoReserve(user, orderId);
+      await this.claimPlannedSubAssembliesFromStock(user, orderId);
     }
 
     await this.auditService.record({
@@ -556,6 +584,11 @@ export class CustomerOrdersService {
 
     if (order.status === 'NEW') {
       await this.prisma.tenant.customerOrder.update({ where: { id: orderId }, data: { status: 'IN_PRODUCTION' } });
+      // Only now, with the order genuinely IN_PRODUCTION, does it actually
+      // claim shared stock — see ensureRequirementsAndAutoReserve's own
+      // 2026-09-23 doc comment.
+      await this.shortageService.ensureRequirementsAndAutoReserve(user, orderId);
+      await this.claimPlannedSubAssembliesFromStock(user, orderId);
     }
 
     await this.auditService.record({

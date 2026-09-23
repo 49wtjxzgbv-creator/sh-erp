@@ -56,8 +56,12 @@ const ACTIVE_ORDER_STATUSES = ['NEW', 'IN_PRODUCTION'] as const;
  * engine (customer-order-shortage.service.ts) has always treated a whole
  * order as one pool, and matching the simplified UI, which now lives on the
  * existing "Аналіз дефіциту" page. Two entry points create/grow a
- * reservation: (1) order creation auto-reserves whatever's available
- * (`reserveCapped`, source=STOCK), and the "Забронювати зі складу" button
+ * reservation: (1) once an order flips NEW -> IN_PRODUCTION it auto-reserves
+ * whatever's available (`reserveCapped`, source=STOCK — see
+ * CustomerOrderShortageService#ensureRequirementsAndAutoReserve's own doc
+ * comment; 2026-09-23 revision: a NEW order only PREVIEWS this via
+ * `previewAvailable`, it does not claim, so it can't lock stock away from an
+ * order already IN_PRODUCTION), and the "Забронювати зі складу" button
  * adjusts it; (2) ANY stock increase (a receipt or a plain manual addition)
  * runs `topUp`, which fills outstanding order demand for that product —
  * targeting a specific order first if the movement is linked to one, then
@@ -268,9 +272,26 @@ export class StockReservationService {
     return grant;
   }
 
-  /** Capped, never throws — used for order-creation's automatic default reservation (§ simplified spec: reserve whatever's on hand, no user decision required). */
+  /** Capped, never throws — used once an order is IN_PRODUCTION to actually claim its material need (§ simplified spec: reserve whatever's on hand, no user decision required). */
   async reserveCapped(user: RequestUser, target: ReservationTarget, qty: number): Promise<ReservationGrant> {
     return this.grantReservation(user, target, qty);
+  }
+
+  /**
+   * Read-only counterpart to `reserveCapped` — reports what WOULD currently
+   * be grantable against on-hand stock, without claiming/writing anything.
+   * A NEW order's shortage preview uses this instead of `reserveCapped`
+   * (2026-09-23 user request: "замовлення зі статусом нове не мають нічого
+   * їсти зі складу" — a NEW order must not lock stock away from an order
+   * that's already IN_PRODUCTION). Purely informational, so it can go stale
+   * between the read and any later real reservation — expected and fine for
+   * a "what's on the shelf right now" purchasing estimate.
+   */
+  async previewAvailable(user: RequestUser, productId: string, warehouseId: string, qty: number): Promise<ReservationGrant> {
+    if (qty <= 0) return { grantedQty: 0, shortfallQty: 0 };
+    const { available } = await this.getAvailability(user, productId, warehouseId);
+    const grantedQty = Math.min(qty, Math.max(available, 0));
+    return { grantedQty, shortfallQty: qty - grantedQty };
   }
 
   /**

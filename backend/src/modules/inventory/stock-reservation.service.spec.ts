@@ -87,6 +87,32 @@ describe('StockReservationService', () => {
     });
   });
 
+  describe('previewAvailable — read-only, never claims/writes (2026-09-23 user request: a NEW order must not lock stock away from an order already IN_PRODUCTION)', () => {
+    it('reports what would be grantable against on-hand stock without touching the database', async () => {
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 50, reservedQty: 40 }); // available = 10
+
+      const result = await service.previewAvailable(user, 'p1', 'w1', 15);
+
+      expect(result).toEqual({ grantedQty: 10, shortfallQty: 5 });
+      expect(prisma.tenant.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.tenant.stockReservation.upsert).not.toHaveBeenCalled();
+    });
+
+    it('never reports a negative grant when reservations already exceed physical stock', async () => {
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 12 }); // available = -7
+
+      const result = await service.previewAvailable(user, 'p1', 'w1', 10);
+
+      expect(result).toEqual({ grantedQty: 0, shortfallQty: 10 });
+    });
+
+    it('is a no-op for a zero/negative request', async () => {
+      const result = await service.previewAvailable(user, 'p1', 'w1', 0);
+      expect(result).toEqual({ grantedQty: 0, shortfallQty: 0 });
+      expect(prisma.tenant.warehouseStock.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('topUp — §ordering (any positive stock movement fills outstanding order demand)', () => {
     it('tops up the preferred order first, capped to its own outstanding need, before considering any other order', async () => {
       prisma.tenant.orderMaterialRequirement.findUnique.mockResolvedValue({ requiredQty: 20 }); // preferred order's requirement

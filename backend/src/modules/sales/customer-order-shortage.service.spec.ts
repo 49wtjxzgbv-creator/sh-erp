@@ -27,6 +27,7 @@ describe('CustomerOrderShortageService', () => {
     purchaseOrdersService = { create: jest.fn() };
     stockReservationService = {
       reserveCapped: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }),
+      previewAvailable: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }),
       reserveFromStock: jest.fn().mockResolvedValue({ grantedQty: 0, shortfallQty: 0 }),
       release: jest.fn().mockResolvedValue(0),
       getAvailability: jest.fn().mockResolvedValue({ physical: 0, reserved: 0, available: 0 }),
@@ -339,9 +340,9 @@ describe('CustomerOrderShortageService', () => {
     });
   });
 
-  describe('ensureRequirementsAndAutoReserve — §ordering, simplified spec: reserve by default at order creation', () => {
-    it('reserves whatever is available for every raw-material need and persists requiredQty/qtyFromStock/qtyToPurchase', async () => {
-      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 2 }] });
+  describe('ensureRequirementsAndAutoReserve — §ordering, simplified spec: reserve by default, status-gated (2026-09-23 revision)', () => {
+    it('an IN_PRODUCTION order really claims (reserveCapped) whatever is available and persists requiredQty/qtyFromStock/qtyToPurchase', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', status: 'IN_PRODUCTION', items: [{ assemblyId: 'a1', qty: 2 }] });
       prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 5 }]);
       // needs 10, only 6 available
       stockReservationService.reserveCapped.mockResolvedValue({ grantedQty: 6, shortfallQty: 4 });
@@ -353,6 +354,7 @@ describe('CustomerOrderShortageService', () => {
         { productId: 'p1', warehouseId: 'wDefault', customerOrderId: 'co1', source: 'STOCK' },
         10,
       );
+      expect(stockReservationService.previewAvailable).not.toHaveBeenCalled();
       expect(prisma.tenant.orderMaterialRequirement.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { customerOrderId_productId: { customerOrderId: 'co1', productId: 'p1' } },
@@ -362,10 +364,28 @@ describe('CustomerOrderShortageService', () => {
       );
     });
 
+    it('a NEW order (2026-09-23 user request: "не мають нічого їсти зі складу") only PREVIEWS availability — never calls reserveCapped, so it cannot lock stock away from an order already IN_PRODUCTION', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', status: 'NEW', items: [{ assemblyId: 'a1', qty: 2 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 5 }]);
+      stockReservationService.previewAvailable.mockResolvedValue({ grantedQty: 6, shortfallQty: 4 });
+
+      await service.ensureRequirementsAndAutoReserve(user, 'co1');
+
+      expect(stockReservationService.previewAvailable).toHaveBeenCalledWith(user, 'p1', 'wDefault', 10);
+      expect(stockReservationService.reserveCapped).not.toHaveBeenCalled();
+      expect(prisma.tenant.orderMaterialRequirement.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ requiredQty: 10, qtyFromStock: 6, qtyToPurchase: 4 }),
+          update: expect.objectContaining({ requiredQty: 10, qtyFromStock: 6, qtyToPurchase: 4 }),
+        }),
+      );
+    });
+
     it('is a no-op for an order with no raw-material components', async () => {
-      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [] });
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', status: 'NEW', items: [] });
       await service.ensureRequirementsAndAutoReserve(user, 'co1');
       expect(stockReservationService.reserveCapped).not.toHaveBeenCalled();
+      expect(stockReservationService.previewAvailable).not.toHaveBeenCalled();
     });
   });
 

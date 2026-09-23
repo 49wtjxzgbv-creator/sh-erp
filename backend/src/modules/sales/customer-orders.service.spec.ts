@@ -58,7 +58,7 @@ describe('CustomerOrdersService', () => {
     prisma = {
       tenant: {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        customerOrderItem: { create: jest.fn(), update: jest.fn() },
+        customerOrderItem: { create: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         productionOrder: { findMany: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
         payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
@@ -166,7 +166,7 @@ describe('CustomerOrdersService', () => {
       expect(result.status).toBe('NEW');
     });
 
-    it('"Зі складу" choices (2026-08-27): claims a SubAssemblyReservation per line, separate from plannedSubAssemblies', async () => {
+    it('"Зі складу" choices (2026-09-23 revision): records intent on the item (plannedSubAssembliesFromStock) WITHOUT claiming anything yet — a NEW order must not eat stock away from an order already IN_PRODUCTION', async () => {
       prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
       prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
 
@@ -175,13 +175,19 @@ describe('CustomerOrdersService', () => {
         items: [{ assemblyId: 'a1', qty: 3, subAssembliesFromStock: [{ assemblyId: 'sub2', qty: 4 }] }],
       });
 
-      expect(subAssemblyReservationService.reserve).toHaveBeenCalledWith(user, 'co1', 'sub2', 4);
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ plannedSubAssembliesFromStock: [{ assemblyId: 'sub2', qty: 4 }] }),
+      });
+      expect(subAssemblyReservationService.reserve).not.toHaveBeenCalled();
     });
 
-    it('claims nothing when the line has no "Зі складу" choices', async () => {
+    it('does not set plannedSubAssembliesFromStock when the line has no "Зі складу" choices', async () => {
       prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
       prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1' });
       await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ plannedSubAssembliesFromStock: undefined }),
+      });
       expect(subAssemblyReservationService.reserve).not.toHaveBeenCalled();
     });
   });
@@ -225,8 +231,9 @@ describe('CustomerOrdersService', () => {
       await expect(service.giveItemToProduction(user, 'co1', 'not-an-item', {})).rejects.toThrow(NotFoundException);
     });
 
-    it('creates a ProductionOrder locked onto the item (via ProductionOrder.customerOrderItemId, batching support — no direct FK on the item anymore), moving the order to IN_PRODUCTION', async () => {
+    it('creates a ProductionOrder locked onto the item (via ProductionOrder.customerOrderItemId, batching support — no direct FK on the item anymore), moving the order to IN_PRODUCTION and only NOW actually claiming stock (2026-09-23)', async () => {
       productionOrdersService.create.mockResolvedValue({ id: 'po-new', status: 'PLANNED' });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1', plannedSubAssembliesFromStock: [{ assemblyId: 'sub2', qty: 4 }] }]);
 
       const result = await service.giveItemToProduction(user, 'co1', 'item1', {});
 
@@ -235,16 +242,20 @@ describe('CustomerOrdersService', () => {
         expect.objectContaining({ assemblyId: 'a1', unitsPlanned: 3, customerOrderItemId: 'item1' }),
       );
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.reserve).toHaveBeenCalledWith(user, 'co1', 'sub2', 4);
       expect(result.productionOrder.id).toBe('po-new');
     });
 
-    it('does not re-transition the order status if it is already past NEW', async () => {
+    it('does not re-transition the order status (nor re-claim stock) if it is already past NEW', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status: 'IN_PRODUCTION' });
       productionOrdersService.create.mockResolvedValue({ id: 'po-new', status: 'PLANNED' });
 
       await service.giveItemToProduction(user, 'co1', 'item1', {});
 
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+      expect(shortageService.ensureRequirementsAndAutoReserve).not.toHaveBeenCalled();
+      expect(subAssemblyReservationService.reserve).not.toHaveBeenCalled();
     });
   });
 
@@ -254,23 +265,28 @@ describe('CustomerOrdersService', () => {
       expect(productionOrdersService.create).not.toHaveBeenCalled();
     });
 
-    it('plans a batch for the given tree node, linked via subAssemblyForItemId (never customerOrderItemId), moving the order to IN_PRODUCTION', async () => {
+    it('plans a batch for the given tree node, linked via subAssemblyForItemId (never customerOrderItemId), moving the order to IN_PRODUCTION and only NOW actually claiming stock (2026-09-23)', async () => {
       productionOrdersService.create.mockResolvedValue({ id: 'po-sub', status: 'PLANNED' });
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item1', plannedSubAssembliesFromStock: [{ assemblyId: 'sub2', qty: 4 }] }]);
 
       const result = await service.giveSubAssemblyToProduction(user, 'co1', 'item1', { assemblyId: 'sub1', qty: 4 });
 
       expect(productionOrdersService.create).toHaveBeenCalledWith(user, { assemblyId: 'sub1', unitsPlanned: 4, subAssemblyForItemId: 'item1' });
       expect(prisma.tenant.customerOrder.update).toHaveBeenCalledWith({ where: { id: 'co1' }, data: { status: 'IN_PRODUCTION' } });
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.reserve).toHaveBeenCalledWith(user, 'co1', 'sub2', 4);
       expect(result.id).toBe('po-sub');
     });
 
-    it('does not re-transition the order status if it is already past NEW', async () => {
+    it('does not re-transition the order status (nor re-claim stock) if it is already past NEW', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status: 'IN_PRODUCTION' });
       productionOrdersService.create.mockResolvedValue({ id: 'po-sub', status: 'PLANNED' });
 
       await service.giveSubAssemblyToProduction(user, 'co1', 'item1', { assemblyId: 'sub1', qty: 4 });
 
       expect(prisma.tenant.customerOrder.update).not.toHaveBeenCalled();
+      expect(shortageService.ensureRequirementsAndAutoReserve).not.toHaveBeenCalled();
+      expect(subAssemblyReservationService.reserve).not.toHaveBeenCalled();
     });
   });
 
