@@ -99,6 +99,21 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     return undefined;
   }
 
+  /**
+   * `description` still carries "ARTICLE — Name" as one string at the
+   * source (customer-order-shortage.service.ts — kept as-is there since
+   * the on-screen shortage table still shows it combined, with no article
+   * column of its own). Now that print has its own dedicated article
+   * column, showing that same prefix again in the description cell would
+   * just repeat it — strip it here, print-display only.
+   */
+  function descriptionWithoutArticle(line: SupplierRequestLineForPrint): string {
+    if (line.article && line.description.startsWith(`${line.article} — `)) {
+      return line.description.slice(line.article.length + 3);
+    }
+    return line.description;
+  }
+
   const columns: PrintColumnOption[] = [
     { id: 'description', label: t('description') },
     { id: 'qtyToOrder', label: t('qtyToOrder') },
@@ -163,7 +178,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                         </td>
                       )}
                       <td className="font-bold">{line.article ?? ''}</td>
-                      {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
+                      {printOptions.isColumnVisible('description') && <td>{descriptionWithoutArticle(line)}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                       {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
                       {printOptions.isColumnVisible('price') && (
