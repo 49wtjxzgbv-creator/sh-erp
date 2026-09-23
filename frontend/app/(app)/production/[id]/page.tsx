@@ -68,25 +68,84 @@ function fmtEur(v: string | null | undefined): string {
 
 /**
  * Resolves a start()-failure shortage line's raw productId/subAssemblyId to
- * a real name — same "raw id isn't acceptable to show a user" fix applied
- * everywhere else (bom/[id]/availability/page.tsx's ShortageProductCell).
- * ASSEMBLY-kind lines mean the required sub-assembly hasn't been *produced*
- * yet (start() checks `FinishedGood` rows with status IN_STOCK, not
- * whether it's composable) — worth a visible hint since "start production"
- * failing here isn't a data problem, it's "produce the sub-assembly first".
+ * a real name/photo — same "raw id isn't acceptable to show a user" fix
+ * applied everywhere else (bom/[id]/availability/page.tsx's
+ * ShortageProductCell, which this now matches: Avatar + name + a linked
+ * article). ASSEMBLY-kind lines mean the required sub-assembly hasn't been
+ * *produced* yet (start() checks `FinishedGood` rows with status IN_STOCK,
+ * not whether it's composable) — worth a visible hint since "start
+ * production" failing here isn't a data problem, it's "produce the
+ * sub-assembly first".
+ *
+ * "Артикул з активним посиланням на склад" (2026-09-24 user request): the
+ * article opens the relevant warehouse view in a new tab — `/inventory`
+ * (raw stock) seeded with `?search=<article>` for a PRODUCT line, since
+ * that page's own search box is a plain client-side name/article filter
+ * (no id-based deep link exists there); `/inventory/finished-goods/
+ * [assemblyId]` for an ASSEMBLY line, an existing route that needs no
+ * query param — this is specifically about produced-but-not-yet-enough
+ * finished goods, not raw stock.
  */
 function ShortageComponentCell({ line }: { line: ProductionShortageLine }) {
   const t = useTranslations('production');
   const { data: product } = useProduct(line.kind === 'PRODUCT' ? line.productId : undefined);
   const { data: subAssembly } = useAssembly(line.kind === 'ASSEMBLY' ? line.subAssemblyId : undefined);
+  const { data: photosByProduct } = useFilesForEntities('Product', line.kind === 'PRODUCT' && line.productId ? [line.productId] : [], 'PRODUCT_PHOTO');
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', line.kind === 'ASSEMBLY' && line.subAssemblyId ? [line.subAssemblyId] : [], 'ASSEMBLY_PHOTO');
+
   if (line.kind === 'PRODUCT') {
-    return <>{product ? `${product.name}${product.article ? ` (${product.article})` : ''}` : line.productId}</>;
+    const photoUrl = line.productId ? photosByProduct?.[line.productId]?.[0]?.downloadUrl : undefined;
+    return (
+      <div className="flex items-center gap-2.5">
+        <Avatar src={photoUrl} size="sm" />
+        <span>
+          {product?.name ?? line.productId}
+          {product?.article && (
+            <>
+              {' '}
+              (
+              <Link
+                href={`/inventory?search=${encodeURIComponent(product.article)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline-offset-2 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {product.article}
+              </Link>
+              )
+            </>
+          )}
+        </span>
+      </div>
+    );
   }
-  const name = subAssembly ? `${subAssembly.name}${subAssembly.article ? ` (${subAssembly.article})` : ''}` : line.subAssemblyId;
+
+  const photoUrl = line.subAssemblyId ? photosByAssembly?.[line.subAssemblyId]?.[0]?.downloadUrl : undefined;
   return (
-    <>
-      {name} <span className="text-muted-foreground">— {t('subAssemblyNotProduced')}</span>
-    </>
+    <div className="flex items-center gap-2.5">
+      <Avatar src={photoUrl} size="sm" />
+      <span>
+        {subAssembly?.name ?? line.subAssemblyId}
+        {subAssembly?.article && (
+          <>
+            {' '}
+            (
+            <Link
+              href={`/inventory/finished-goods/${line.subAssemblyId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline-offset-2 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {subAssembly.article}
+            </Link>
+            )
+          </>
+        )}{' '}
+        <span className="text-muted-foreground">— {t('subAssemblyNotProduced')}</span>
+      </span>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
@@ -48,8 +49,13 @@ export default function StockLevelsPage() {
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
-  const [search, setSearch] = useState('');
+  // `?search=` (2026-09-24 user request): the "insufficient stock" shortage
+  // list now links a component's article straight here, in a new tab — the
+  // article text goes right into this same client-side name/article filter
+  // (see filteredLevels below), no separate id-based highlighting needed.
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [movementOpen, setMovementOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [savingCell, setSavingCell] = useState<string | null>(null);
