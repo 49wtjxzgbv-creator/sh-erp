@@ -18,6 +18,8 @@ export interface ShortageLine {
   productId?: string;
   subAssemblyId?: string;
   description: string;
+  /** Own article/SKU (2026-09-23 user request — a separate printed column, not folded into `description`) — already the leading part of `description` for a PRODUCT line, but never was for ASSEMBLY, so this is the only reliable source for both kinds. Null when the product/assembly genuinely has none set. */
+  article: string | null;
   neededQty: number;
   currentStock: number;
   /**
@@ -252,6 +254,7 @@ export class CustomerOrderShortageService {
         kind: 'PRODUCT',
         productId,
         description: product ? `${product.article} — ${product.name}` : productId,
+        article: product?.article ?? null,
         neededQty,
         currentStock: Number(product?.qty ?? 0),
         price: null,
@@ -284,6 +287,7 @@ export class CustomerOrderShortageService {
         kind: 'ASSEMBLY',
         subAssemblyId,
         description: assembly?.name ?? subAssemblyId,
+        article: assembly?.article ?? null,
         neededQty,
         currentStock: inStockCount,
         price: null,

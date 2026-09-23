@@ -103,8 +103,8 @@ describe('CustomerOrderShortageService', () => {
         // if this were called for purchasedSub's own components, the "stop recursion" behavior is broken
         return Promise.resolve([{ componentType: 'PRODUCT', productId: 'shouldNotAppear', qtyPerUnit: 1 }]);
       });
-      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'purchasedSub', name: 'Bought Sub', defaultSupplierId: 'sup1' });
-      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'purchasedSub', name: 'Bought Sub', defaultSupplierId: 'sup1' }]);
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'purchasedSub', name: 'Bought Sub', article: 'BS-1', defaultSupplierId: 'sup1' });
+      prisma.tenant.assembly.findMany.mockResolvedValue([{ id: 'purchasedSub', name: 'Bought Sub', article: 'BS-1', defaultSupplierId: 'sup1' }]);
       prisma.tenant.supplier.findMany.mockResolvedValue([{ id: 'sup1', name: 'Acme Supplier' }]);
       // Only "purchasedSub" (the bought-whole line, checked for its own
       // currentStock display) has finished stock — "parent" (the top-level
@@ -117,8 +117,9 @@ describe('CustomerOrderShortageService', () => {
 
       const group = result.groups.find((g) => g.supplierId === 'sup1')!;
       expect(group.supplierName).toBe('Acme Supplier');
+      // article (2026-09-23): the ASSEMBLY line's own — never available at all before this field existed.
       expect(group.lines).toEqual([
-        { kind: 'ASSEMBLY', subAssemblyId: 'purchasedSub', description: 'Bought Sub', neededQty: 6, currentStock: 1, price: null },
+        { kind: 'ASSEMBLY', subAssemblyId: 'purchasedSub', description: 'Bought Sub', article: 'BS-1', neededQty: 6, currentStock: 1, price: null },
       ]);
       // 'shouldNotAppear' must never have been reached
       expect(result.groups.some((g) => g.lines.some((l: any) => l.productId === 'shouldNotAppear'))).toBe(false);

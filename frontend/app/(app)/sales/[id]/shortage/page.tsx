@@ -19,6 +19,8 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 interface EditableLine extends Omit<ShortageGroupLineInput, 'price'> {
+  /** Own article/SKU — display/print only, never submitted back (not part of ShortageGroupLineInput). */
+  article: string | null;
   /** Frozen at hydration — the original gross requirement, kept visible and never mutated by editing `qty`. */
   neededQty: number;
   currentStock: number;
@@ -147,6 +149,7 @@ function ShortagePreviewPageInner() {
           productId: line.productId,
           subAssemblyId: line.subAssemblyId,
           description: line.description,
+          article: line.article,
           qty: previewQtyOverrides?.get(lineId(line)) ?? line.qtyToPurchase ?? line.neededQty,
           neededQty: line.neededQty,
           currentStock: line.currentStock,
@@ -162,6 +165,7 @@ function ShortagePreviewPageInner() {
         productId: line.productId,
         subAssemblyId: line.subAssemblyId,
         description: line.description,
+        article: line.article,
         qty: line.qtyToPurchase ?? line.neededQty,
         neededQty: line.neededQty,
         currentStock: line.currentStock,

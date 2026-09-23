@@ -354,6 +354,8 @@ export interface ShortageLine {
   productId?: string;
   subAssemblyId?: string;
   description: string;
+  /** Own article/SKU — a separate field from `description` (which already leads with it for a PRODUCT line, but never carried one for ASSEMBLY). Null when genuinely unset. */
+  article: string | null;
   /** Real JSON number — computed result, not a Prisma Decimal field. See file header. */
   neededQty: number;
   /** Real JSON number. Shown side-by-side with neededQty, never auto-subtracted ("no hidden arithmetic" rule) — the human decides the actual order qty. */

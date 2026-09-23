@@ -278,6 +278,14 @@
   .print-area .print-photo-col {
     width: 80px;
   }
+  /* Row-numbering column (2026-09-23 user request — "нумерацією товарів і
+   * виробів була вужчою на ширину 3 символи"): same table-layout: fixed
+   * reasoning as .print-photo-col above — a bare "#" column would
+   * otherwise claim an equal share of the table width as every text
+   * column next to it. */
+  .print-area .print-index-col {
+    width: 3ch;
+  }
   .print-area .print-page-break {
     page-break-after: always;
   }
@@ -476,6 +484,9 @@
 }
 .print-preview-mode .print-area .print-photo-col {
   width: 80px;
+}
+.print-preview-mode .print-area .print-index-col {
+  width: 3ch;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;

@@ -16,6 +16,8 @@ export interface SupplierRequestLineForPrint {
   productId?: string;
   subAssemblyId?: string;
   description: string;
+  /** Own article/SKU, printed as its own column right after the photo (2026-09-23 user request) — null/undefined when genuinely unset. */
+  article?: string | null;
   qty: number;
   /** The resolved supplier's price, null/undefined when unknown — printed only when the "Ціна" column is selected. */
   price?: number | null;
@@ -60,6 +62,17 @@ export interface SupplierRequestsPrintProps {
  * so what prints isn't just an opaque "виріб X, qty N" line. Off by default
  * — this is internal detail, not necessarily meant for the supplier's own
  * copy of the request.
+ *
+ * 2026-09-23 user request: an "Артикул" column, always shown right after
+ * the photo (not toggleable — unlike the other columns, this isn't
+ * optional detail). Comes straight off `ShortageLine.article`
+ * (customer-order-shortage.service.ts) — previously only ever folded into
+ * `description`'s own "ARTICLE — Name" prefix for a PRODUCT line, and
+ * never available at all for an ASSEMBLY line. The `#` row-numbering
+ * column is pinned to `.print-index-col` (3ch, globals.css) — `table-
+ * layout: fixed` would otherwise give it an equal share of the table
+ * width as every text column next to it, same reasoning `.print-photo-col`
+ * already documents.
  */
 export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPrintProps) {
   const t = useTranslations('sales');
@@ -129,8 +142,9 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
             <table className="mb-6">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th className="print-index-col">#</th>
                   {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
+                  <th>{t('article')}</th>
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
                   {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
@@ -142,12 +156,13 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   .filter((l) => l.qty > 0)
                   .map((line, li) => (
                     <tr key={li}>
-                      <td>{li + 1}</td>
+                      <td className="print-index-col">{li + 1}</td>
                       {printOptions.includePhotos && (
                         <td>
                           <Avatar src={lineDownloadUrl(line)} size="lg" />
                         </td>
                       )}
+                      <td className="font-bold">{line.article ?? ''}</td>
                       {printOptions.isColumnVisible('description') && <td>{line.description}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                       {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
@@ -162,7 +177,8 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   <tr>
                     <td
                       colSpan={
-                        1 +
+                        1 + // #
+                        1 + // article — always shown, see the header <th> above
                         (printOptions.includePhotos ? 1 : 0) +
                         (printOptions.isColumnVisible('description') ? 1 : 0) +
                         (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
