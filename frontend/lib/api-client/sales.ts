@@ -424,6 +424,23 @@ export function createPurchaseOrdersFromShortage(
   return apiClient.post<unknown[]>(`customer-orders/${orderId}/purchase-orders-from-shortage`, { groups });
 }
 
+export interface SupplierRequestDocumentItem {
+  fileAssetId: string;
+  /** The line's article + product/assembly name, exactly as shown in the print preview — printed at the top of that attachment's page(s). */
+  heading: string;
+}
+
+/**
+ * "Вкладені документи" (2026-09-23 user request, revised same day): merges
+ * every attached PDF/image into one real PDF (each on its own page, headed
+ * by article + name) server-side — replaces the earlier client-side
+ * `<iframe>`-in-print-DOM approach, which the user reported rasterizes into
+ * a blurry bitmap instead of inserting the real file.
+ */
+export function generateSupplierRequestDocumentsPdf(items: SupplierRequestDocumentItem[]): Promise<Blob> {
+  return apiClient.postBlob('customer-orders/supplier-request-documents-pdf', { items });
+}
+
 export interface SaveReservationDecisionInput {
   productId: string;
   qtyFromStock: number;

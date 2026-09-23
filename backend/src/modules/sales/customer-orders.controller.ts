@@ -1,12 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CustomerOrdersService } from './customer-orders.service';
+import { SupplierRequestDocumentsPdfService } from './supplier-request-documents-pdf.service';
 import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
 import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
+import { GenerateSupplierRequestDocumentsPdfDto } from './dto/supplier-request-documents-pdf.dto';
 
 @ApiTags('sales')
 @Controller({ path: 'customer-orders', version: '1' })
@@ -14,6 +17,7 @@ export class CustomerOrdersController {
   constructor(
     private readonly customerOrdersService: CustomerOrdersService,
     private readonly shortageService: CustomerOrderShortageService,
+    private readonly documentsPdfService: SupplierRequestDocumentsPdfService,
   ) {}
 
   @Post()
@@ -190,5 +194,21 @@ export class CustomerOrdersController {
   @ApiOperation({ summary: '"Забронювати зі складу" — batch-adjust this order\'s stock-reserved qty for one or more products.' })
   async saveReservationDecisions(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: SaveReservationDecisionsDto) {
     return this.shortageService.saveReservationDecisions(user, id, dto);
+  }
+
+  @Post('supplier-request-documents-pdf')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({
+    summary:
+      'Merge attached PDF/image documents for a set of supplier-request lines into one real PDF (each on its own ' +
+      'page, headed by article + name) — a real file, not the rasterized <iframe>-in-print-DOM approach it replaces.',
+  })
+  async supplierRequestDocumentsPdf(@CurrentUser() user: RequestUser, @Body() dto: GenerateSupplierRequestDocumentsPdfDto, @Res() res: Response) {
+    const buffer = await this.documentsPdfService.generate(user, dto.items);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="supplier-request-documents.pdf"',
+    });
+    res.send(buffer);
   }
 }

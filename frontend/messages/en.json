@@ -649,6 +649,7 @@
     "pricePending": "not yet determined",
     "fullComposition": "Full composition (incl. sub-assemblies)",
     "includeAttachedDocuments": "Include attached documents (drawings)",
+    "downloadAttachedDocumentsPdf": "Download documents (PDF)",
     "addLine": "Add line",
     "searchPlaceholder": "Search by client name…",
     "filterByStatus": "Filter by status",

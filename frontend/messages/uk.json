@@ -746,6 +746,7 @@
     "pricePending": "ще не визначено",
     "fullComposition": "Повний склад (з підвиробами)",
     "includeAttachedDocuments": "Додати вкладені документи (креслення)",
+    "downloadAttachedDocumentsPdf": "Завантажити документи (PDF)",
     "addLine": "Додати рядок",
     "searchPlaceholder": "Пошук за іменем клієнта…",
     "filterByStatus": "Фільтр за статусом",

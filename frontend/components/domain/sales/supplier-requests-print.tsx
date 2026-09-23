@@ -2,9 +2,11 @@
 
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { ExternalLink } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { ExternalLink, FileText } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
+import { generateSupplierRequestDocumentsPdf } from '@/lib/api-client/sales';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
@@ -75,14 +77,18 @@ export interface SupplierRequestsPrintProps {
  * width as every text column next to it, same reasoning `.print-photo-col`
  * already documents.
  *
- * "Вкладені документи" (2026-09-23 user request): ticking "include attached
- * documents" additionally appends every PDF/image attached to a line's own
- * product or assembly (PRODUCT_DOCUMENT/ASSEMBLY_DOCUMENT) as its own full
- * print page, headed by that line's article + name (`.print-document-page`,
- * globals.css — `page-break-before`, unlike the `-after` trick
- * `.print-page-break` uses between suppliers, since documents follow a
- * table + optional composition section of unpredictable length). CAD
- * sources (STEP/DXF) have no printable page rendering and are skipped.
+ * "Вкладені документи" (2026-09-23 user request, revised same day): ticking
+ * "include attached documents" reveals a "download documents PDF" button.
+ * The first version instead embedded each attachment inline into this DOM
+ * (`<iframe>`/`<img>`) and relied on `window.print()` — the user reported
+ * this "looks bad" because Chromium's print pipeline rasterizes an embedded
+ * PDF into a blurry bitmap instead of inserting the real file. The button
+ * now POSTs the printable lines' attached-document ids + headings (article
+ * + name) to a backend endpoint (SupplierRequestDocumentsPdfService) that
+ * merges the real PDF pages (or draws an image attachment onto its own
+ * heading page) into one genuine downloadable PDF — never rasterized. CAD
+ * sources (STEP/DXF) have no printable page rendering and are skipped, same
+ * as before.
  */
 export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPrintProps) {
   const t = useTranslations('sales');
@@ -161,6 +167,33 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   }
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
 
+  const documentItems = useMemo(
+    () =>
+      printable.flatMap((group) =>
+        group.lines
+          .filter((l) => l.qty > 0)
+          .flatMap((line) =>
+            lineDocuments(line)
+              .filter(isPrintableDocument)
+              .map((doc) => ({
+                fileAssetId: doc.id,
+                heading: `${line.article ? `${line.article} — ` : ''}${descriptionWithoutArticle(line)}`,
+              })),
+          ),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lineDocuments/descriptionWithoutArticle close over documentsByProduct/documentsByAssembly/printable, which are already the real deps below.
+    [printable, documentsByProduct, documentsByAssembly],
+  );
+
+  const downloadDocumentsMutation = useMutation({
+    mutationFn: () => generateSupplierRequestDocumentsPdf(documentItems),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+  });
+
   return (
     <>
       <div className="flex gap-2">
@@ -179,6 +212,18 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
           </Button>
         ) : (
           <PreviewButton />
+        )}
+        {printOptions.isColumnVisible('documents') && documentItems.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={downloadDocumentsMutation.isPending}
+            onClick={() => downloadDocumentsMutation.mutate()}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            {t('downloadAttachedDocumentsPdf')}
+          </Button>
         )}
       </div>
       <PrintArea printAreaId={printOptions.printAreaId}>
@@ -253,26 +298,6 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                         depth={1}
                         showPrice={printOptions.isColumnVisible('unitPrice')}
                       />
-                    </div>
-                  ))}
-              </>
-            )}
-            {printOptions.isColumnVisible('documents') && (
-              <>
-                {group.lines
-                  .filter((l) => l.qty > 0)
-                  .flatMap((line) => lineDocuments(line).filter(isPrintableDocument).map((doc) => ({ line, doc })))
-                  .map(({ line, doc }) => (
-                    <div key={doc.id} className="print-document-page">
-                      <h3 className="mb-2 text-sm font-semibold">
-                        {line.article ? `${line.article} — ` : ''}
-                        {descriptionWithoutArticle(line)}
-                      </h3>
-                      {doc.mimeType === 'application/pdf' ? (
-                        <iframe src={doc.downloadUrl} title={doc.originalName} className="print-document-frame" />
-                      ) : (
-                        <img src={doc.downloadUrl} alt={doc.originalName} className="print-document-image" />
-                      )}
                     </div>
                   ))}
               </>

@@ -347,6 +347,20 @@ export class FilesService {
   }
 
   /**
+   * Raw object bytes for a FileAsset the caller already knows the id of —
+   * unlike every other file flow (always a presigned R2 URL handed to the
+   * browser), this is for server-side consumers that need the actual bytes
+   * in-process (SupplierRequestDocumentsPdfService merging attached PDFs
+   * into one real PDF, 2026-09-23).
+   */
+  async getFileAssetBytes(user: RequestUser, fileAssetId: string): Promise<{ bytes: Buffer; mimeType: string; originalName: string }> {
+    const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
+    if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
+    const bytes = await this.getObjectBytes(fileAsset.storageKey);
+    return { bytes, mimeType: fileAsset.mimeType, originalName: fileAsset.originalName };
+  }
+
+  /**
    * Server-side parsed preview for a spreadsheet attachment (Finance
    * documents point in the pre-production feedback: "перегляд Excel без
    * завантаження"). Files are otherwise never proxied through the API

@@ -153,6 +153,37 @@ class ApiClient {
     }
     return res.blob();
   }
+
+  /**
+   * POST-with-JSON-body counterpart to `getBlob` — for the (so far one-off)
+   * case where the backend needs a request body to build the file it
+   * streams back, e.g. `lib/api-client/sales.ts#generateSupplierRequestDocumentsPdf`,
+   * which posts the list of attachments to merge into one real PDF.
+   */
+  async postBlob(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<Blob> {
+    const url = new URL(path.replace(/^\//, ''), API_BASE_URL.replace(/\/?$/, '/'));
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (!options.skipAuth) {
+      const token = getAccessToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify(body), signal: options.signal });
+
+    if (res.status === 401 && !options.skipAuth && !options.skipRefreshRetry) {
+      const refreshed = await this.trySilentRefresh();
+      if (refreshed) return this.postBlob(path, body, { ...options, skipRefreshRetry: true });
+      useSessionStore.getState().clearSession();
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : undefined;
+      throw new ApiError(res.status, data as ApiErrorBody, res.statusText);
+    }
+    return res.blob();
+  }
+
   post<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
     return this.request<T>('POST', path, body, options);
   }

@@ -295,24 +295,6 @@
   .print-area .print-page-break {
     page-break-after: always;
   }
-  /* Attached documents ("додати вкладені документи" — 2026-09-23 user
-   * request): each attached PRODUCT_DOCUMENT/ASSEMBLY_DOCUMENT prints on its
-   * own page. `page-break-before` (not `-after`, unlike .print-page-break
-   * above) because documents render after a table + optional composition
-   * section of unpredictable length — every document must force a fresh
-   * page regardless of what happens to precede it. */
-  .print-area .print-document-page {
-    page-break-before: always;
-    break-before: page;
-  }
-  .print-area .print-document-frame,
-  .print-area .print-document-image {
-    display: block;
-    width: 100%;
-    height: 250mm;
-    border: none;
-    object-fit: contain;
-  }
   .no-print {
     display: none !important;
   }
@@ -511,14 +493,6 @@
 }
 .print-preview-mode .print-area .print-index-col {
   width: calc(3ch + 12px);
-}
-.print-preview-mode .print-area .print-document-frame,
-.print-preview-mode .print-area .print-document-image {
-  display: block;
-  width: 100%;
-  height: 250mm;
-  border: none;
-  object-fit: contain;
 }
 .print-preview-mode .planner-print-table {
   table-layout: fixed;

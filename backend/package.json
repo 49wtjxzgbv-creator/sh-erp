@@ -40,6 +40,7 @@
     "nestjs-pino": "^4.1.0",
     "nodemailer": "^6.9.15",
     "occt-import-js": "^0.0.23",
+    "pdf-lib": "^1.17.1",
     "pino-http": "^10.3.0",
     "playwright": "^1.62.1",
     "reflect-metadata": "^0.2.2",
