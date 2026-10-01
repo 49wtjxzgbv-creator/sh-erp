@@ -6,6 +6,7 @@ describe('TelegramBotService (2026-10-01)', () => {
   let pairingPrisma: any;
   let prisma: any;
   let productionExecutionsService: any;
+  let filesService: any;
   let telegram: any;
   let tx: any;
 
@@ -32,8 +33,9 @@ describe('TelegramBotService (2026-10-01)', () => {
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     productionExecutionsService = { create: jest.fn() };
-    telegram = { sendMessage: jest.fn(), answerCallbackQuery: jest.fn() };
-    service = new TelegramBotService(pairingPrisma, prisma, productionExecutionsService, telegram);
+    filesService = { listForEntities: jest.fn().mockResolvedValue({}) };
+    telegram = { sendMessage: jest.fn(), sendPhoto: jest.fn().mockResolvedValue(false), answerCallbackQuery: jest.fn() };
+    service = new TelegramBotService(pairingPrisma, prisma, productionExecutionsService, filesService, telegram);
   });
 
   describe('/start', () => {
@@ -85,7 +87,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
     });
 
-    it('filters IN_PROGRESS orders by article/name substring and shows them as inline buttons', async () => {
+    it('filters IN_PROGRESS orders by article/name substring and sends each as its own message with a single "Обрати" button', async () => {
       tx.productionOrder.findMany.mockResolvedValue([
         { id: 'po1', assemblyId: 'a1', unitsPlanned: 4, status: 'IN_PROGRESS' },
         { id: 'po2', assemblyId: 'a2', unitsPlanned: 2, status: 'IN_PROGRESS' },
@@ -97,9 +99,45 @@ describe('TelegramBotService (2026-10-01)', () => {
 
       await service.handleUpdate({ message: { chat: { id: 555 }, text: '409219' } });
 
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Оберіть'));
+      // no ASSEMBLY_PHOTO for a1 (filesService mock returns {}) -> falls back to a text message with the same single button
       expect(telegram.sendMessage).toHaveBeenCalledWith(
         '555',
-        expect.stringContaining('Оберіть'),
+        expect.stringContaining('409219.L'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'order:po1' })]] }),
+      );
+    });
+
+    it('sends a photo (2026-10-01 user request — "щоб при виборі виробу було також фото") when the assembly has an ASSEMBLY_PHOTO, with the same "Обрати" button as a caption', async () => {
+      tx.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1', unitsPlanned: 4, status: 'IN_PROGRESS' }]);
+      tx.assembly.findMany.mockResolvedValue([{ id: 'a1', article: '409219.L', name: 'Förderband' }]);
+      filesService.listForEntities.mockResolvedValue({ a1: [{ downloadUrl: 'https://r2.example/a1.jpg' }] });
+      telegram.sendPhoto.mockResolvedValue(true);
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '409219' } });
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Assembly', ['a1'], ['ASSEMBLY_PHOTO']);
+      expect(telegram.sendPhoto).toHaveBeenCalledWith(
+        '555',
+        'https://r2.example/a1.jpg',
+        expect.stringContaining('409219.L'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'order:po1' })]] }),
+      );
+      // sendPhoto succeeded -> no text-only fallback for this item
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith('555', expect.stringContaining('409219.L'), expect.anything());
+    });
+
+    it('falls back to a text message when sendPhoto fails even though a photo exists', async () => {
+      tx.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1', unitsPlanned: 4, status: 'IN_PROGRESS' }]);
+      tx.assembly.findMany.mockResolvedValue([{ id: 'a1', article: '409219.L', name: 'Förderband' }]);
+      filesService.listForEntities.mockResolvedValue({ a1: [{ downloadUrl: 'https://r2.example/a1.jpg' }] });
+      telegram.sendPhoto.mockResolvedValue(false);
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '409219' } });
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('409219.L'),
         expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'order:po1' })]] }),
       );
     });

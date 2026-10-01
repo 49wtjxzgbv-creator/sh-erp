@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FilesModule } from '../files/files.module';
 import { ProductionModule } from '../production/production.module';
 import { TelegramBotPrismaService } from '../../prisma/telegram-bot-prisma.service';
 import { TelegramApiClient } from './telegram-api.client';
@@ -10,8 +11,10 @@ import { TelegramBotService } from './telegram-bot.service';
   // ProductionOrder reads go straight through prisma.tenant inside
   // TelegramBotService itself, no AssembliesService/ProductionOrdersService
   // dependency needed for this V1 (PRODUCT-only — no WorkTask/GENERAL
-  // submission path yet).
-  imports: [ProductionModule],
+  // submission path yet). FilesModule — ASSEMBLY_PHOTO thumbnails on the
+  // search-results list (2026-10-01 user request — "щоб при виборі виробу
+  // було також фото").
+  imports: [ProductionModule, FilesModule],
   controllers: [TelegramBotController],
   // TelegramBotPrismaService is deliberately NOT exported — same usage
   // boundary as ImportPairingPrismaService (see that class's own header

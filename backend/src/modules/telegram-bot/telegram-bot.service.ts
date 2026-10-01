@@ -2,6 +2,8 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TelegramBotPrismaService } from '../../prisma/telegram-bot-prisma.service';
+import { FilesService } from '../files/files.service';
+import type { FileDomain } from '@prisma/client';
 import { CreateProductionExecutionDto } from '../production/dto/production-execution.dto';
 import { ProductionExecutionsService } from '../production/production-executions.service';
 import { TelegramApiClient } from './telegram-api.client';
@@ -47,6 +49,7 @@ export class TelegramBotService {
     private readonly pairingPrisma: TelegramBotPrismaService,
     private readonly prisma: PrismaService,
     private readonly productionExecutionsService: ProductionExecutionsService,
+    private readonly filesService: FilesService,
     private readonly telegram: TelegramApiClient,
   ) {}
 
@@ -197,12 +200,35 @@ export class TelegramBotService {
       }
 
       const shown = matches.slice(0, MAX_ORDER_RESULTS);
-      const buttons = shown.map((o) => {
+      const note = matches.length > shown.length ? ` (показано ${shown.length} з ${matches.length} — уточніть пошук, якщо не бачите потрібне)` : '';
+      await this.telegram.sendMessage(employee.telegramChatId, `Оберіть виріб${note}:`);
+
+      // One message per result (2026-10-01 user request — "щоб при виборі
+      // виробу було також фото"): Telegram's inline keyboards can't show an
+      // image per-button, so each match becomes its own sendPhoto, caption
+      // = article/name + qty, with the SAME single "обрати" button a plain
+      // text result would have had. Falls back to a text-only sendMessage
+      // for an assembly with no ASSEMBLY_PHOTO (or whose photo send fails)
+      // rather than silently dropping that result from the list.
+      const syntheticUser: RequestUser = { userId: employee.telegramLinkedByUserId ?? employee.id, companyId: employee.companyId, email: '', roleId: '' };
+      const shownAssemblyIds = Array.from(new Set(shown.map((o) => o.assemblyId)));
+      const photosByAssembly: Record<string, Array<{ downloadUrl: string }>> = await this.filesService.listForEntities(
+        syntheticUser,
+        'Assembly',
+        shownAssemblyIds,
+        ['ASSEMBLY_PHOTO'] satisfies FileDomain[],
+      );
+
+      for (const o of shown) {
         const a = assemblyById.get(o.assemblyId);
-        return [{ text: `${describeAssembly(a)} (${Number(o.unitsPlanned)} шт)`, callback_data: `order:${o.id}` }];
-      });
-      const note = matches.length > shown.length ? `\nПоказано ${shown.length} з ${matches.length} — уточніть пошук, якщо не бачите потрібне.` : '';
-      await this.telegram.sendMessage(employee.telegramChatId, `Оберіть виріб:${note}`, { inline_keyboard: buttons });
+        const caption = `${escapeHtml(describeAssembly(a))} (${Number(o.unitsPlanned)} шт)`;
+        const button = { inline_keyboard: [[{ text: 'Обрати', callback_data: `order:${o.id}` }]] };
+        const photoUrl = photosByAssembly[o.assemblyId]?.[0]?.downloadUrl;
+        const sentPhoto = photoUrl ? await this.telegram.sendPhoto(employee.telegramChatId, photoUrl, caption, button) : false;
+        if (!sentPhoto) {
+          await this.telegram.sendMessage(employee.telegramChatId, caption, button);
+        }
+      }
     });
   }
 

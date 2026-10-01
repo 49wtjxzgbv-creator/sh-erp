@@ -28,6 +28,18 @@ export class TelegramApiClient {
     await this.call('sendMessage', { chat_id: chatId, text, reply_markup: replyMarkup, parse_mode: 'HTML' });
   }
 
+  /**
+   * `photo` is a plain HTTPS URL (our R2 presigned download URL) —
+   * Telegram's own servers fetch it, no multipart upload needed. Returns
+   * whether it actually succeeded so the caller (TelegramBotService's
+   * search results) can fall back to a text-only `sendMessage` for an
+   * item with no usable photo, rather than silently dropping that result
+   * from the list.
+   */
+  async sendPhoto(chatId: string, photoUrl: string, caption: string, replyMarkup?: { inline_keyboard: TelegramInlineKeyboardButton[][] }): Promise<boolean> {
+    return this.call('sendPhoto', { chat_id: chatId, photo: photoUrl, caption, reply_markup: replyMarkup, parse_mode: 'HTML' });
+  }
+
   async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
     await this.call('answerCallbackQuery', { callback_query_id: callbackQueryId, text });
   }
@@ -36,7 +48,7 @@ export class TelegramApiClient {
     await this.call('setWebhook', { url, secret_token: secretToken });
   }
 
-  private async call(method: string, body: Record<string, unknown>): Promise<void> {
+  private async call(method: string, body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`${this.baseUrl}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,6 +57,8 @@ export class TelegramApiClient {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       this.logger.warn(`Telegram API ${method} failed: ${res.status} ${text}`);
+      return false;
     }
+    return true;
   }
 }
