@@ -13,6 +13,7 @@ const TABS = [
   { href: '/production/finished-goods', labelKey: 'finishedGoods' },
   { href: '/production/qc-checklist', labelKey: 'qcChecklist' },
   { href: '/production/work-tasks', labelKey: 'workTasksTitle' },
+  { href: '/production/confirmations', labelKey: 'confirmationsTitle' },
 ] as const;
 
 function isTabActive(tab: (typeof TABS)[number], pathname: string): boolean {

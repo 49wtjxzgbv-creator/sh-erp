@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useEmployee, useUpdateEmployee, useDeactivateEmployee, useReactivateEmployee } from '@/lib/hooks/use-hr';
 import { EmployeeForm } from '@/components/domain/hr/employee-form';
+import { TelegramPairingCard } from '@/components/domain/hr/telegram-pairing-card';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateEmployeeInput } from '@/lib/api-client/hr';
 import { Badge } from '@/components/ui/badge';
@@ -103,6 +104,7 @@ export default function EmployeeDetailPage() {
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <EmployeeForm employee={employee} onSubmit={handleSubmit} submitting={updateEmployee.isPending} submitError={null} />
+      <TelegramPairingCard employee={employee} />
     </div>
   );
 }

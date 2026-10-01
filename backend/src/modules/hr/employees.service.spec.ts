@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { EmployeesService } from './employees.service';
 
 describe('EmployeesService', () => {
@@ -52,5 +53,54 @@ describe('EmployeesService', () => {
     await service.reactivate(user, 'e1');
 
     expect(prisma.tenant.employee.update).toHaveBeenCalledWith({ where: { id: 'e1' }, data: { status: 'ACTIVE' } });
+  });
+
+  describe('generateTelegramPairingCode (2026-10-01)', () => {
+    it('writes a 6-char code + a ~15min expiry + records who generated it', async () => {
+      prisma.tenant.employee.findUnique.mockResolvedValue({ id: 'e1', status: 'ACTIVE' });
+      const expiresAt = new Date('2026-10-01T12:15:00Z');
+      prisma.tenant.employee.update.mockResolvedValue({ id: 'e1', telegramPairingCode: 'ABC123', telegramPairingCodeExpiresAt: expiresAt });
+
+      const result = await service.generateTelegramPairingCode(user, 'e1');
+
+      expect(prisma.tenant.employee.update).toHaveBeenCalledTimes(1);
+      const call = prisma.tenant.employee.update.mock.calls[0][0];
+      expect(call.where).toEqual({ id: 'e1' });
+      expect(call.data.telegramPairingCode).toHaveLength(6);
+      expect(call.data.telegramLinkedByUserId).toBe('u1');
+      expect(call.data.telegramPairingCodeExpiresAt).toBeInstanceOf(Date);
+      expect(result.pairingCode).toBe(call.data.telegramPairingCode);
+    });
+
+    it('retries with a fresh code on a unique-constraint collision (globally-unique code, shared across every company)', async () => {
+      prisma.tenant.employee.findUnique.mockResolvedValue({ id: 'e1', status: 'ACTIVE' });
+      const collision = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0' });
+      prisma.tenant.employee.update.mockRejectedValueOnce(collision).mockResolvedValueOnce({ id: 'e1', telegramPairingCode: 'ZZZ999' });
+
+      const result = await service.generateTelegramPairingCode(user, 'e1');
+
+      expect(prisma.tenant.employee.update).toHaveBeenCalledTimes(2);
+      expect(result.pairingCode).toHaveLength(6);
+    });
+  });
+
+  describe('unlinkTelegram (2026-10-01)', () => {
+    it('clears every Telegram-related field, including the pending-submission FSM state', async () => {
+      prisma.tenant.employee.findUnique.mockResolvedValue({ id: 'e1', telegramChatId: '12345' });
+      prisma.tenant.employee.update.mockResolvedValue({ id: 'e1', telegramChatId: null });
+
+      await service.unlinkTelegram(user, 'e1');
+
+      expect(prisma.tenant.employee.update).toHaveBeenCalledWith({
+        where: { id: 'e1' },
+        data: {
+          telegramChatId: null,
+          telegramLinkedAt: null,
+          telegramPendingProductionOrderId: null,
+          telegramPairingCode: null,
+          telegramPairingCodeExpiresAt: null,
+        },
+      });
+    });
   });
 });

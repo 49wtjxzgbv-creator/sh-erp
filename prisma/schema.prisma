@@ -1812,6 +1812,11 @@ model ProductionExecution {
   confirmedById     String?                   @db.Uuid
   confirmedAt       DateTime?                 @db.Timestamptz(3)
   note              String?
+  // "Подано через Telegram" (2026-10-01) — cosmetic provenance flag only,
+  // never read by any fund/payroll math; lets the confirmations queue show
+  // a Telegram badge and lets a confirming supervisor see at a glance that
+  // nobody at a desk typed this in.
+  submittedViaTelegram Boolean @default(false)
 
   // Correction chain: the NEW execution points back at the VOIDED one it
   // replaces. @unique so at most one correction can claim to replace a
@@ -2589,6 +2594,38 @@ model Employee {
   notes     String?
 
   legacyId String?
+
+  // Telegram bot pairing (2026-10-01 user request — "бот через який
+  // працівники зможуть подавати виконану роботу"). ONE shared platform bot
+  // across every company; `telegramChatId` is therefore globally unique
+  // (no companyId prefix — deliberately matches `telegramPairingCode`
+  // below), since it identifies one Telegram account regardless of which
+  // tenant's employee it belongs to. `telegramLinkedByUserId` is the
+  // HR/admin User who generated the pairing code — reused as every
+  // subsequent bot-submitted ProductionExecution's `recordedById` (a
+  // scalar User-id-by-convention field, same as everywhere else in this
+  // schema; see that field's own comment), since the bot itself is never a
+  // logged-in User. `telegramPairingCode`/`telegramPairingCodeExpiresAt`
+  // are cleared once used — same one-shot shape as
+  // ImportConnection.pairingCode. Resolving a bare chat-id or pairing code
+  // (before any tenant context exists) requires the narrowly-scoped
+  // BYPASSRLS `telegram_bot_service` Postgres role — see
+  // backend/src/prisma/telegram-bot-prisma.service.ts and ADR-0009 for the
+  // exact precedent (ImportPairingPrismaService).
+  telegramChatId                String?   @unique
+  telegramLinkedByUserId        String?   @db.Uuid
+  telegramLinkedAt              DateTime? @db.Timestamptz(3)
+  telegramPairingCode           String?   @unique
+  telegramPairingCodeExpiresAt  DateTime? @db.Timestamptz(3)
+  // Tiny conversation-state field — the bot's FSM has exactly one step
+  // that must survive between two separate webhook calls: "employee tapped
+  // this production order, now waiting for them to type a quantity."
+  // Cleared the moment that qty message is processed (success OR error).
+  // Deliberately not a new table — this is the one piece of state that
+  // needs persistence (a backend restart between taps must not lose it);
+  // everything else in the bot's flow is stateless (driven entirely by
+  // inline-keyboard callback_data).
+  telegramPendingProductionOrderId String? @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

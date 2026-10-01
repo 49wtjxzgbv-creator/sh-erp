@@ -51,4 +51,18 @@ export class EmployeesController {
   async reactivate(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.employeesService.reactivate(user, id);
   }
+
+  @Post(':id/telegram-pairing-code')
+  @RequirePermissions('employees:manage')
+  @ApiOperation({ summary: 'Generate a one-time code for this employee to link their Telegram account to the shared platform bot — sent to the bot as /start <code>.' })
+  async generateTelegramPairingCode(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.employeesService.generateTelegramPairingCode(user, id);
+  }
+
+  @Post(':id/telegram-unlink')
+  @RequirePermissions('employees:manage')
+  @ApiOperation({ summary: 'Unlink this employee\'s Telegram account — e.g. staff turnover or a new device.' })
+  async unlinkTelegram(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.employeesService.unlinkTelegram(user, id);
+  }
 }

@@ -34,6 +34,7 @@ import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { SupplierPortalModule } from './modules/supplier-portal/supplier-portal.module';
 import { LegacyImportModule } from './modules/legacy-import/legacy-import.module';
 import { LandingPageModule } from './modules/landing-page/landing-page.module';
+import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { LandingPageModule } from './modules/landing-page/landing-page.module';
     SuperAdminModule,
     SupplierPortalModule,
     LandingPageModule,
+    TelegramBotModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

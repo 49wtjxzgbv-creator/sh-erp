@@ -51,6 +51,8 @@ export interface ProductionExecution {
   confirmedAt: string | null;
   note: string | null;
   supersedesId: string | null;
+  /** "Подано через Telegram" (2026-10-01) — cosmetic provenance only, never drives fund math. */
+  submittedViaTelegram: boolean;
   createdAt: string;
   allocations: ProductionExecutionAllocation[];
 }

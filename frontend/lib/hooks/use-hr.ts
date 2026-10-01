@@ -8,6 +8,8 @@ import {
   updateEmployee,
   deactivateEmployee,
   reactivateEmployee,
+  generateTelegramPairingCode,
+  unlinkTelegram,
   recordPayrollEntry,
   queryPayrollEntries,
   getPayrollSummary,
@@ -87,6 +89,28 @@ export function useReactivateEmployee(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => reactivateEmployee(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] });
+      qc.invalidateQueries({ queryKey: employeeKey(id) });
+    },
+  });
+}
+
+export function useGenerateTelegramPairingCode(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateTelegramPairingCode(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] });
+      qc.invalidateQueries({ queryKey: employeeKey(id) });
+    },
+  });
+}
+
+export function useUnlinkTelegram(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unlinkTelegram(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] });
       qc.invalidateQueries({ queryKey: employeeKey(id) });

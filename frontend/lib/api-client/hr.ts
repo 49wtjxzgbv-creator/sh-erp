@@ -34,8 +34,19 @@ export interface Employee {
   hireDate: string | null;
   notes: string | null;
   status: EmployeeStatus;
+  /** Telegram bot pairing (2026-10-01) — set once the employee has sent the pairing code to the shared platform bot. Null until then. */
+  telegramChatId: string | null;
+  telegramLinkedAt: string | null;
+  /** Set right after "Згенерувати код" — null once used (pairing succeeds) or expired. */
+  telegramPairingCode: string | null;
+  telegramPairingCodeExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TelegramPairingCode {
+  pairingCode: string;
+  expiresAt: string;
 }
 
 export interface QueryEmployeesInput {
@@ -82,6 +93,13 @@ export function deactivateEmployee(id: string): Promise<Employee> {
 }
 export function reactivateEmployee(id: string): Promise<Employee> {
   return apiClient.post<Employee>(`employees/${id}/reactivate`);
+}
+/** One-time code the employee sends to the shared platform Telegram bot as /start <code> — see TelegramPairingCard. */
+export function generateTelegramPairingCode(id: string): Promise<TelegramPairingCode> {
+  return apiClient.post<TelegramPairingCode>(`employees/${id}/telegram-pairing-code`);
+}
+export function unlinkTelegram(id: string): Promise<Employee> {
+  return apiClient.post<Employee>(`employees/${id}/telegram-unlink`);
 }
 
 /** PIECEWORK is system-generated only, by ProductionExecutionsService#confirm (production-labor module, see lib/api-client/production-labor.ts) — never postable through recordManualEntry. */
