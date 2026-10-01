@@ -82,6 +82,68 @@ describe('TelegramBotService (2026-10-01)', () => {
     });
   });
 
+  describe('order list — default browse (2026-10-01 user report: typing a search query every time "дуже не зручно")', () => {
+    beforeEach(() => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+    });
+
+    function sixOrders() {
+      return Array.from({ length: 6 }, (_, i) => ({ id: `po${i}`, assemblyId: `a${i}`, unitsPlanned: i + 1, status: 'IN_PROGRESS' }));
+    }
+    function sixAssemblies() {
+      return Array.from({ length: 6 }, (_, i) => ({ id: `a${i}`, article: `ART-${i}`, name: `Виріб ${i}` }));
+    }
+
+    it('/start with no code, already paired, greets and shows page 1 of the active-order list — no search query needed', async () => {
+      tx.productionOrder.findMany.mockResolvedValue(sixOrders());
+      tx.assembly.findMany.mockResolvedValue(sixAssemblies());
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/start' } });
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Вітаю'));
+      // first page = 5 of the 6 orders (LIST_PAGE_SIZE)
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('ART-0'), expect.anything());
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('ART-4'), expect.anything());
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith('555', expect.stringContaining('ART-5'), expect.anything());
+      // pagination footer with a "Наступна" button, no "Попередня" on page 1
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Сторінка 1 з 2'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'list:1' })]] }),
+      );
+    });
+
+    it('"/роботи" re-shows the list at any time while idle', async () => {
+      tx.productionOrder.findMany.mockResolvedValue(sixOrders().slice(0, 2));
+      tx.assembly.findMany.mockResolvedValue(sixAssemblies().slice(0, 2));
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/роботи' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('ART-0'), expect.anything());
+    });
+
+    it('list:<page> callback shows the next page, with both ⬅️ Попередня and ➡️ Наступна when in the middle', async () => {
+      tx.productionOrder.findMany.mockResolvedValue(sixOrders());
+      tx.assembly.findMany.mockResolvedValue(sixAssemblies());
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'list:1', message: { chat: { id: 555 } } } });
+
+      expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1');
+      // page 2 (0-indexed page=1) has only the 6th order
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('ART-5'), expect.anything());
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith('555', expect.stringContaining('ART-0'), expect.anything());
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Сторінка 2 з 2'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'list:0' })]] }),
+      );
+    });
+
+    it('reports when there are no active orders at all, without a pagination footer', async () => {
+      tx.productionOrder.findMany.mockResolvedValue([]);
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/start' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Немає активних замовлень'));
+    });
+  });
+
   describe('search (paired, idle)', () => {
     beforeEach(() => {
       pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });

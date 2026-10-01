@@ -9,6 +9,7 @@ import { ProductionExecutionsService } from '../production/production-executions
 import { TelegramApiClient } from './telegram-api.client';
 
 const MAX_ORDER_RESULTS = 10;
+const LIST_PAGE_SIZE = 5;
 
 interface TelegramUpdate {
   message?: { chat: { id: number }; text?: string };
@@ -26,11 +27,16 @@ interface TelegramUpdate {
  *      via `TelegramBotPrismaService` (BYPASSRLS, employees-only — see
  *      that class's header comment for why this is structurally required
  *      before any tenant context exists).
- *   2. Paired, idle -> any text is treated as an article/name search
- *      against this employee's company's IN_PROGRESS production orders;
- *      tapping a result sets `Employee.telegramPendingProductionOrderId`
- *      and asks for a quantity. The next text message is parsed as that
- *      quantity and submitted as a DRAFT ProductionExecution via the SAME
+ *   2. Paired, idle -> by default shows a paginated, browsable list of
+ *      every active (IN_PROGRESS) production order (2026-10-01 user
+ *      report — typing a search query every single time "дуже не
+ *      зручно" (very inconvenient); `list:<page>` callback buttons page
+ *      through it, newest-started first). Typing any text instead is
+ *      still treated as an article/name search, for when the list is
+ *      long. Either way, tapping a result sets
+ *      `Employee.telegramPendingProductionOrderId` and asks for a
+ *      quantity. The next text message is parsed as that quantity and
+ *      submitted as a DRAFT ProductionExecution via the SAME
  *      `ProductionExecutionsService.create()` the web app's "Хід
  *      виробництва" panel uses — nothing about the confirm/payroll
  *      pipeline is duplicated, only a new way to reach `create()`.
@@ -94,18 +100,37 @@ export class TelegramBotService {
       return;
     }
 
+    // "Здати роботу"-equivalent commands — re-shows the browsable list
+    // without requiring a search query (2026-10-01 user request).
+    if (text === '/роботи' || text === '/list' || text.toLowerCase() === 'здати роботу') {
+      await this.sendOrderListPage(employee as PairedEmployee, 0);
+      return;
+    }
+
     await this.handleSearch(employee as PairedEmployee, text);
   }
 
   private async handleCallbackQuery(callback: { id: string; data?: string; message?: { chat: { id: number } } }): Promise<void> {
     const chatId = callback.message ? String(callback.message.chat.id) : undefined;
-    if (!chatId || !callback.data?.startsWith('order:')) {
+    if (!chatId || !callback.data) {
       await this.telegram.answerCallbackQuery(callback.id);
       return;
     }
     const employee = await this.findByChatId(chatId);
     if (!employee) {
       await this.telegram.answerCallbackQuery(callback.id, 'Ви не прив\'язані.');
+      return;
+    }
+
+    if (callback.data.startsWith('list:')) {
+      await this.telegram.answerCallbackQuery(callback.id);
+      const page = Number(callback.data.slice('list:'.length));
+      await this.sendOrderListPage(employee as PairedEmployee, Number.isFinite(page) && page >= 0 ? page : 0);
+      return;
+    }
+
+    if (!callback.data.startsWith('order:')) {
+      await this.telegram.answerCallbackQuery(callback.id);
       return;
     }
     const productionOrderId = callback.data.slice('order:'.length);
@@ -133,7 +158,8 @@ export class TelegramBotService {
   private async sendWelcome(chatId: string): Promise<void> {
     const employee = await this.findByChatId(chatId);
     if (employee) {
-      await this.telegram.sendMessage(chatId, `Вітаю, ${employee.fullName}! Напишіть частину артикулу або назви виробу, щоб здати виконану роботу.`);
+      await this.telegram.sendMessage(chatId, `Вітаю, ${employee.fullName}!`);
+      await this.sendOrderListPage(employee as PairedEmployee, 0);
     } else {
       await this.telegram.sendMessage(chatId, 'Щоб почати, отримайте код прив\'язки у HR і надішліть: /start КОД');
     }
@@ -164,7 +190,11 @@ export class TelegramBotService {
         telegramPairingCodeExpiresAt: null,
       },
     });
-    await this.telegram.sendMessage(chatId, `Готово, ${employee.fullName}! Напишіть частину артикулу або назви виробу, щоб здати виконану роботу.`);
+    await this.telegram.sendMessage(chatId, `Готово, ${employee.fullName}!`);
+    await this.sendOrderListPage(
+      { id: employee.id, companyId: employee.companyId, fullName: employee.fullName, telegramChatId: chatId, telegramLinkedByUserId: employee.telegramLinkedByUserId, telegramPendingProductionOrderId: null },
+      0,
+    );
   }
 
   private async findByChatId(chatId: string) {
@@ -172,8 +202,42 @@ export class TelegramBotService {
   }
 
   // ============================================================
-  // Search + submission
+  // Browse / search + submission
   // ============================================================
+
+  /**
+   * Default entry point (2026-10-01 user request — typing a search query
+   * every time "дуже не зручно"): every active production order, newest-
+   * started first, `LIST_PAGE_SIZE` at a time, with ⬅️/➡️ navigation
+   * (`list:<page>` callback buttons). Typing text instead still searches
+   * (`handleSearch` below) — the list is the default, search is the
+   * fallback for a long list, not the other way around anymore.
+   */
+  private async sendOrderListPage(employee: PairedEmployee, page: number): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: employee.companyId, userId: employee.telegramLinkedByUserId ?? employee.id }, async (tx) => {
+      const orders = await tx.productionOrder.findMany({ where: { status: 'IN_PROGRESS' }, orderBy: { createdAt: 'desc' } });
+      if (orders.length === 0) {
+        await this.telegram.sendMessage(employee.telegramChatId, 'Немає активних замовлень у виробництві зараз.');
+        return;
+      }
+      const assemblyById = await this.loadAssembliesFor(tx, orders);
+
+      const totalPages = Math.ceil(orders.length / LIST_PAGE_SIZE);
+      const clampedPage = Math.min(Math.max(page, 0), totalPages - 1);
+      const shown = orders.slice(clampedPage * LIST_PAGE_SIZE, clampedPage * LIST_PAGE_SIZE + LIST_PAGE_SIZE);
+
+      await this.sendOrderResults(employee, shown, assemblyById);
+
+      const navButtons = [];
+      if (clampedPage > 0) navButtons.push({ text: '⬅️ Попередня', callback_data: `list:${clampedPage - 1}` });
+      if (clampedPage < totalPages - 1) navButtons.push({ text: 'Наступна ➡️', callback_data: `list:${clampedPage + 1}` });
+      await this.telegram.sendMessage(
+        employee.telegramChatId,
+        `Сторінка ${clampedPage + 1} з ${totalPages}. Або напишіть частину артикулу/назви для пошуку.`,
+        navButtons.length > 0 ? { inline_keyboard: [navButtons] } : undefined,
+      );
+    });
+  }
 
   private async handleSearch(employee: PairedEmployee, query: string): Promise<void> {
     if (!query) {
@@ -183,9 +247,7 @@ export class TelegramBotService {
 
     await this.prisma.runInTenantTransaction({ companyId: employee.companyId, userId: employee.telegramLinkedByUserId ?? employee.id }, async (tx) => {
       const orders = await tx.productionOrder.findMany({ where: { status: 'IN_PROGRESS' }, orderBy: { createdAt: 'desc' }, take: 200 });
-      const assemblyIds = Array.from(new Set(orders.map((o) => o.assemblyId)));
-      const assemblies = assemblyIds.length ? await tx.assembly.findMany({ where: { id: { in: assemblyIds } } }) : [];
-      const assemblyById = new Map(assemblies.map((a) => [a.id, a]));
+      const assemblyById = await this.loadAssembliesFor(tx, orders);
 
       const q = query.toLowerCase();
       const matches = orders.filter((o) => {
@@ -202,34 +264,52 @@ export class TelegramBotService {
       const shown = matches.slice(0, MAX_ORDER_RESULTS);
       const note = matches.length > shown.length ? ` (показано ${shown.length} з ${matches.length} — уточніть пошук, якщо не бачите потрібне)` : '';
       await this.telegram.sendMessage(employee.telegramChatId, `Оберіть виріб${note}:`);
-
-      // One message per result (2026-10-01 user request — "щоб при виборі
-      // виробу було також фото"): Telegram's inline keyboards can't show an
-      // image per-button, so each match becomes its own sendPhoto, caption
-      // = article/name + qty, with the SAME single "обрати" button a plain
-      // text result would have had. Falls back to a text-only sendMessage
-      // for an assembly with no ASSEMBLY_PHOTO (or whose photo send fails)
-      // rather than silently dropping that result from the list.
-      const syntheticUser: RequestUser = { userId: employee.telegramLinkedByUserId ?? employee.id, companyId: employee.companyId, email: '', roleId: '' };
-      const shownAssemblyIds = Array.from(new Set(shown.map((o) => o.assemblyId)));
-      const photosByAssembly: Record<string, Array<{ downloadUrl: string }>> = await this.filesService.listForEntities(
-        syntheticUser,
-        'Assembly',
-        shownAssemblyIds,
-        ['ASSEMBLY_PHOTO'] satisfies FileDomain[],
-      );
-
-      for (const o of shown) {
-        const a = assemblyById.get(o.assemblyId);
-        const caption = `${escapeHtml(describeAssembly(a))} (${Number(o.unitsPlanned)} шт)`;
-        const button = { inline_keyboard: [[{ text: 'Обрати', callback_data: `order:${o.id}` }]] };
-        const photoUrl = photosByAssembly[o.assemblyId]?.[0]?.downloadUrl;
-        const sentPhoto = photoUrl ? await this.telegram.sendPhoto(employee.telegramChatId, photoUrl, caption, button) : false;
-        if (!sentPhoto) {
-          await this.telegram.sendMessage(employee.telegramChatId, caption, button);
-        }
-      }
+      await this.sendOrderResults(employee, shown, assemblyById);
     });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is PrismaService's extended, request-scoped transactional client; typing it precisely here would require threading TenantPrismaClient through, not worth it for a 2-line helper.
+  private async loadAssembliesFor(tx: any, orders: Array<{ assemblyId: string }>): Promise<Map<string, { article: string | null; name: string }>> {
+    const assemblyIds = Array.from(new Set(orders.map((o) => o.assemblyId)));
+    const assemblies: Array<{ id: string; article: string | null; name: string }> = assemblyIds.length
+      ? await tx.assembly.findMany({ where: { id: { in: assemblyIds } } })
+      : [];
+    return new Map(assemblies.map((a) => [a.id, a]));
+  }
+
+  /**
+   * One message per result (2026-10-01 user request — "щоб при виборі
+   * виробу було також фото"): Telegram's inline keyboards can't show an
+   * image per-button, so each order becomes its own sendPhoto, caption =
+   * article/name + planned qty, with a single "Обрати" button. Falls back
+   * to a text-only sendMessage for an assembly with no ASSEMBLY_PHOTO (or
+   * whose photo send fails) rather than silently dropping that result.
+   */
+  private async sendOrderResults(
+    employee: PairedEmployee,
+    orders: Array<{ id: string; assemblyId: string; unitsPlanned: unknown }>,
+    assemblyById: Map<string, { article: string | null; name: string }>,
+  ): Promise<void> {
+    if (orders.length === 0) return;
+    const syntheticUser: RequestUser = { userId: employee.telegramLinkedByUserId ?? employee.id, companyId: employee.companyId, email: '', roleId: '' };
+    const assemblyIds = Array.from(new Set(orders.map((o) => o.assemblyId)));
+    const photosByAssembly: Record<string, Array<{ downloadUrl: string }>> = await this.filesService.listForEntities(
+      syntheticUser,
+      'Assembly',
+      assemblyIds,
+      ['ASSEMBLY_PHOTO'] satisfies FileDomain[],
+    );
+
+    for (const o of orders) {
+      const a = assemblyById.get(o.assemblyId);
+      const caption = `${escapeHtml(describeAssembly(a))} (${Number(o.unitsPlanned)} шт)`;
+      const button = { inline_keyboard: [[{ text: 'Обрати', callback_data: `order:${o.id}` }]] };
+      const photoUrl = photosByAssembly[o.assemblyId]?.[0]?.downloadUrl;
+      const sentPhoto = photoUrl ? await this.telegram.sendPhoto(employee.telegramChatId, photoUrl, caption, button) : false;
+      if (!sentPhoto) {
+        await this.telegram.sendMessage(employee.telegramChatId, caption, button);
+      }
+    }
   }
 
   private async handleQtyMessage(employee: PairedEmployee, text: string): Promise<void> {
