@@ -2617,15 +2617,21 @@ model Employee {
   telegramLinkedAt              DateTime? @db.Timestamptz(3)
   telegramPairingCode           String?   @unique
   telegramPairingCodeExpiresAt  DateTime? @db.Timestamptz(3)
-  // Tiny conversation-state field — the bot's FSM has exactly one step
-  // that must survive between two separate webhook calls: "employee tapped
-  // this production order, now waiting for them to type a quantity."
-  // Cleared the moment that qty message is processed (success OR error).
-  // Deliberately not a new table — this is the one piece of state that
-  // needs persistence (a backend restart between taps must not lose it);
-  // everything else in the bot's flow is stateless (driven entirely by
-  // inline-keyboard callback_data).
+  // Conversation-state fields — the bot's FSM has two steps that must
+  // survive between separate webhook calls: (1) "employee tapped this
+  // production order, now waiting for them to type a quantity"
+  // (telegramPendingProductionOrderId); (2) once typed, "showing a review
+  // card, waiting for them to tap ✅/✏️/❌" (telegramPendingQty — stored as
+  // text to avoid Decimal round-tripping, parsed back with Number() on
+  // read; 2026-10-01 "зроби бота розумнішим" revision — a review step
+  // before the real submit catches a typo'd quantity instead of silently
+  // recording it). Both cleared the moment the submission resolves
+  // (success, cancel, or explicit edit). Deliberately not a new table —
+  // this is the only state that needs persistence (a backend restart
+  // between taps must not lose it); everything else in the bot's flow is
+  // stateless (driven entirely by inline-keyboard callback_data).
   telegramPendingProductionOrderId String? @db.Uuid
+  telegramPendingQty               String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
