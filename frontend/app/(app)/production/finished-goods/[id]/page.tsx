@@ -11,9 +11,12 @@ import {
   useRecordQcCheck,
   useDeleteFinishedGood,
 } from '@/lib/hooks/use-production';
+import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { formatEur } from '@/lib/utils';
 import type { QcResult, QcCheckResultLine, FinishedGoodStatus } from '@/lib/api-client/production';
+import { Avatar } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,6 +51,8 @@ export default function FinishedGoodDetailPage() {
   const apiErrorMessage = useApiErrorMessage();
 
   const { data: fg, isLoading } = useFinishedGood(params.id);
+  const { data: assembly } = useAssembly(fg?.assemblyId);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', fg?.assemblyId ? [fg.assemblyId] : [], 'ASSEMBLY_PHOTO');
   const { data: checklistItems } = useQcChecklistItems();
   const { data: qcChecks } = useQcChecksForFinishedGood(params.id);
   const recordCheck = useRecordQcCheck();
@@ -147,7 +152,12 @@ export default function FinishedGoodDetailPage() {
         <CardContent className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">{t('assembly')}</p>
-            <p className="max-w-[200px] truncate text-sm" title={fg.assemblyId}>{fg.assemblyId}</p>
+            <div className="flex items-center gap-2">
+              <Avatar src={photosByAssembly?.[fg.assemblyId]?.[0]?.downloadUrl} size="sm" />
+              <p className="max-w-[200px] truncate text-sm" title={assembly?.name ?? fg.assemblyId}>
+                {assembly ? `${assembly.article ? `${assembly.article} — ` : ''}${assembly.name}` : fg.assemblyId}
+              </p>
+            </div>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('manufactureDate')}</p>

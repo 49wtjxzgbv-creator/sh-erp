@@ -14,12 +14,14 @@ import {
 } from '@/lib/hooks/use-production-labor';
 import { useCustomerOrders, useCustomerOrder } from '@/lib/hooks/use-sales';
 import { useAssembly } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { ProductionExecutionsPanel } from '@/components/domain/production/production-executions-panel';
 import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
 import { formatEur } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { LoadingBlock } from '@/components/ui/loading-block';
+import { Avatar } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,8 +42,10 @@ import {
 /** Resolves a WorkTaskItem's tagged CustomerOrderItem back to a readable label — same "raw id isn't acceptable to show a user" fix as production/[id]/page.tsx's ShortageComponentCell. */
 function TaggedItemLabel({ assemblyId, orderNumber, qty }: { assemblyId: string; orderNumber: string | null; qty: string }) {
   const { data: assembly } = useAssembly(assemblyId);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
   return (
-    <span>
+    <span className="flex items-center gap-2">
+      <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size="sm" />
       {orderNumber ? `№${orderNumber}` : ''} — {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId} × {qty}
     </span>
   );

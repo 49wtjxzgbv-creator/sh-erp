@@ -8,9 +8,11 @@ import { useProductionOrder } from '@/lib/hooks/use-production';
 import { useWorkTask } from '@/lib/hooks/use-production-labor';
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { useEmployee } from '@/lib/hooks/use-hr';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { ProductionExecution } from '@/lib/api-client/production-labor';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
@@ -42,10 +44,12 @@ function ParentCell({ execution }: { execution: ProductionExecution }) {
   const { data: order } = useProductionOrder(execution.productionOrderId ?? undefined);
   const { data: assembly } = useAssembly(order?.assemblyId);
   const { data: workTask } = useWorkTask(execution.workTaskId ?? undefined);
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', order?.assemblyId ? [order.assemblyId] : [], 'ASSEMBLY_PHOTO');
 
   if (execution.productionOrderId) {
     return (
-      <Link href={`/production/${execution.productionOrderId}`} className="text-primary hover:underline">
+      <Link href={`/production/${execution.productionOrderId}`} className="flex items-center gap-2 text-primary hover:underline">
+        <Avatar src={order?.assemblyId ? photosByAssembly?.[order.assemblyId]?.[0]?.downloadUrl : undefined} size="sm" />
         {assembly ? `${assembly.article ? `${assembly.article} — ` : ''}${assembly.name}` : '…'}
       </Link>
     );
