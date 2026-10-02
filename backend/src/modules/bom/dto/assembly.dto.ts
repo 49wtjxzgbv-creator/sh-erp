@@ -71,6 +71,17 @@ export class CreateAssemblyDto {
   @IsOptional()
   @IsUUID()
   defaultSupplierId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Pure benchmarking input — the going price for this same item in Germany, entered manually for comparison ' +
+      'against our own calculated cost on the BOM cost page. Never used by any cost/pricing/quotation calculation.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  germanPriceEur?: number;
 }
 
 export class UpdateAssemblyDto extends PartialType(CreateAssemblyDto) {}

@@ -1341,6 +1341,14 @@ model Assembly {
   // calculations anywhere else in the app.
   baseSalePriceEur Decimal? @db.Decimal(14, 2)
 
+  // Pure benchmarking input (2026-10-02 user request): the going retail/market
+  // price for this same item in Germany, entered manually for comparison
+  // against our own costPerUnit (AssembliesService#calcAssemblyCostRecursive)
+  // on the BOM cost page. Never read by any cost/pricing/quotation
+  // calculation — exists only so a user can see at a glance how our cost
+  // stacks up against the German market.
+  germanPriceEur Decimal? @db.Decimal(14, 2)
+
   // Production-labor module (2026-08-24): whether a single worker is
   // allowed to execute this assembly alone, or a team/multiple workers is
   // required. A soft rule enforced only at ProductionExecution#confirm

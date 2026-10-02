@@ -6,6 +6,7 @@ import { RefreshCw } from 'lucide-react';
 import { useAssemblyCost, useAssembly } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { toNumber } from '@/lib/api-client/decimal';
 import { formatEur } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,20 +47,44 @@ export default function AssemblyCostPage() {
   const t = useTranslations('bom');
   const tc = useTranslations('common');
   const { data: cost, isLoading, refetch, isFetching } = useAssemblyCost(params.id);
+  const { data: assembly } = useAssembly(params.id);
 
   if (isLoading) {
     return <LoadingBlock />;
   }
 
+  const germanPrice = toNumber(assembly?.germanPriceEur);
+  const ourCost = cost?.costPerUnit ?? null;
+  const diff = germanPrice !== null && ourCost !== null ? germanPrice - ourCost : null;
+  const diffPct = diff !== null && ourCost ? (diff / ourCost) * 100 : null;
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-4">
+      <div className="flex flex-wrap gap-4">
         <Card className="flex-1">
           <CardHeader>
             <CardTitle className="text-base">{t('cost')}</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{cost ? formatEur(cost.costPerUnit) : '—'}</CardContent>
         </Card>
+        {germanPrice !== null && (
+          <>
+            <Card className="flex-1">
+              <CardHeader>
+                <CardTitle className="text-base">{t('germanPriceEur')}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{formatEur(germanPrice)}</CardContent>
+            </Card>
+            <Card className="flex-1">
+              <CardHeader>
+                <CardTitle className="text-base">{t('germanPriceDiff')}</CardTitle>
+              </CardHeader>
+              <CardContent className={`text-2xl font-semibold ${diff !== null && diff >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {diff !== null ? `${diff >= 0 ? '+' : ''}${formatEur(diff)}${diffPct !== null ? ` (${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(0)}%)` : ''}` : '—'}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       <div className="flex items-center justify-between">
