@@ -12,6 +12,7 @@ import {
   useCorrectProductionExecution,
 } from '@/lib/hooks/use-production-labor';
 import { useTeams } from '@/lib/hooks/use-hr';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type {
   ProductionExecution,
   ProductionExecutionMethod,
@@ -34,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import {
   Dialog,
@@ -114,6 +116,11 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
   const [deleteTarget, setDeleteTarget] = useState<ProductionExecution | null>(null);
 
   const items = useMemo(() => [...(data?.items ?? [])].sort((a, b) => +new Date(b.performedAt) - +new Date(a.performedAt)), [data]);
+  const { data: photosByExecution } = useFilesForEntities(
+    'ProductionExecution',
+    items.map((e) => e.id),
+    'PRODUCTION_EXECUTION_PHOTO',
+  );
 
   const { confirmedQty, confirmedAmount } = useMemo(() => {
     let qty = 0;
@@ -382,19 +389,20 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
               <TableHead>{t('totalAmountLabel')}</TableHead>
               <TableHead>{t('method')}</TableHead>
               <TableHead>{t('executionStatus')}</TableHead>
+              <TableHead>{t('confirmationsPhotoColumn')}</TableHead>
               <TableHead className="w-56">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                   {tc('loading')}
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                   {tc('noResults')}
                 </TableCell>
               </TableRow>
@@ -407,6 +415,11 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
                   <TableCell>{t(`method${execution.method}`)}</TableCell>
                   <TableCell>
                     <Badge variant={EXEC_STATUS_VARIANT[execution.status]}>{t(`executionStatus${execution.status}`)}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    {photosByExecution?.[execution.id]?.[0] && (
+                      <Avatar src={photosByExecution[execution.id][0].downloadUrl} size="sm" />
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">

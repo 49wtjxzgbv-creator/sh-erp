@@ -509,6 +509,7 @@
     "confirmationsDescription": "Усі подані записи роботи (включно з Telegram-ботом), що очікують підтвердження — з будь-якого замовлення чи загальної роботи.",
     "confirmationsItemColumn": "Замовлення / робота",
     "confirmationsEmployeeColumn": "Співробітник",
+    "confirmationsPhotoColumn": "Фото",
     "confirmationsGeneralWorkFallback": "Загальна робота",
     "confirmationsReject": "Скасувати",
     "confirmationsEditQtyTitle": "Скоригувати кількість",

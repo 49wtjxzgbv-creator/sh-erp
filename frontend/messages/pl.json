@@ -504,6 +504,7 @@
     "confirmationsDescription": "Every submitted work record (including via Telegram bot) awaiting confirmation — from any order or general work task.",
     "confirmationsItemColumn": "Order / task",
     "confirmationsEmployeeColumn": "Employee",
+    "confirmationsPhotoColumn": "Photo",
     "confirmationsGeneralWorkFallback": "General work",
     "confirmationsReject": "Reject",
     "confirmationsEditQtyTitle": "Correct quantity",

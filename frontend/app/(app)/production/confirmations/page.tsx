@@ -55,6 +55,21 @@ function EmployeeName({ employeeId, last }: { employeeId: string; last: boolean 
   );
 }
 
+/**
+ * Proof-of-work photo an employee optionally attaches right after a bot
+ * submission (TelegramBotService#handlePhotoMessage → FilesService
+ * #storeBotUploadedAsset, domain PRODUCTION_EXECUTION_PHOTO, entityId =
+ * this execution's id). A thumbnail here is the whole point of letting a
+ * supervisor see it before confirming — previously this was stored but
+ * never displayed anywhere (2026-10-02 fix).
+ */
+function ExecutionPhotoCell({ execution }: { execution: ProductionExecution }) {
+  const { data: photosByExecution } = useFilesForEntities('ProductionExecution', [execution.id], 'PRODUCTION_EXECUTION_PHOTO');
+  const photo = photosByExecution?.[execution.id]?.[0];
+  if (!photo) return null;
+  return <Avatar src={photo.downloadUrl} size="sm" />;
+}
+
 function ParentCell({ execution }: { execution: ProductionExecution }) {
   const t = useTranslations('production');
   const { data: order } = useProductionOrder(execution.productionOrderId ?? undefined);
@@ -200,19 +215,20 @@ export default function ProductionConfirmationsPage() {
             <TableHead>{t('qtyCompletedLabel')}</TableHead>
             <TableHead>{t('confirmationsEmployeeColumn')}</TableHead>
             <TableHead>{t('totalAmountLabel')}</TableHead>
+            <TableHead>{t('confirmationsPhotoColumn')}</TableHead>
             <TableHead className="w-64">{tc('actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                 <LoadingBlock />
               </TableCell>
             </TableRow>
           ) : items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
@@ -236,6 +252,9 @@ export default function ProductionConfirmationsPage() {
                   <EmployeeNames execution={execution} />
                 </TableCell>
                 <TableCell>{Number(execution.totalAmount).toFixed(2)} €</TableCell>
+                <TableCell>
+                  <ExecutionPhotoCell execution={execution} />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-2">
                     {canConfirm && (
