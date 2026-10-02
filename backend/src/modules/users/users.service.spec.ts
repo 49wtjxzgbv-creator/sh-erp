@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
@@ -36,13 +37,19 @@ describe('UsersService', () => {
   });
 
   describe('me() — self-service profile lookup (2026-09-06, dashboard greeting by name)', () => {
-    it('returns id/fullName/email for the current user, nothing else', async () => {
-      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', passwordHash: 'secret-hash' });
+    it('returns id/fullName/email/telegramPaired for the current user, nothing else (never the raw passwordHash/chat id)', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', passwordHash: 'secret-hash', telegramChatId: '555' });
 
       const result = await service.me(user);
 
-      expect(result).toEqual({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com' });
+      expect(result).toEqual({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramPaired: true });
       expect(prisma.tenant.user.findUnique).toHaveBeenCalledWith({ where: { id: 'u1' } });
+    });
+
+    it('telegramPaired is false when no Telegram chat id is set', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramChatId: null });
+      const result = await service.me(user);
+      expect(result.telegramPaired).toBe(false);
     });
 
     it('throws when the user row is somehow gone', async () => {
@@ -105,5 +112,43 @@ describe('UsersService', () => {
     await service.deactivate(user, 'otherUser');
 
     expect(prisma.tenant.companyMembership.delete).toHaveBeenCalledWith({ where: { id: 'm2' } });
+  });
+
+  describe('generateTelegramPairingCode (2026-10-01 — supervisor Telegram notifications)', () => {
+    it('writes a 6-char code + a ~15min expiry, no special permission required', async () => {
+      const expiresAt = new Date('2026-10-01T12:15:00Z');
+      prisma.tenant.user.update.mockResolvedValue({ telegramPairingCode: 'ABC123', telegramPairingCodeExpiresAt: expiresAt });
+
+      const result = await service.generateTelegramPairingCode(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledTimes(1);
+      const call = prisma.tenant.user.update.mock.calls[0][0];
+      expect(call.where).toEqual({ id: 'u1' });
+      expect(call.data.telegramPairingCode).toHaveLength(6);
+      expect(result.pairingCode).toBe(call.data.telegramPairingCode);
+    });
+
+    it('retries with a fresh code on a unique-constraint collision (globally-unique code, shared across every company)', async () => {
+      const collision = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0' });
+      prisma.tenant.user.update.mockRejectedValueOnce(collision).mockResolvedValueOnce({ telegramPairingCode: 'ZZZ999' });
+
+      const result = await service.generateTelegramPairingCode(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledTimes(2);
+      expect(result.pairingCode).toHaveLength(6);
+    });
+  });
+
+  describe('unlinkTelegram (2026-10-01)', () => {
+    it('clears every Telegram-related field on the User row', async () => {
+      prisma.tenant.user.update.mockResolvedValue({ id: 'u1', telegramChatId: null });
+
+      await service.unlinkTelegram(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { telegramChatId: null, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
+      });
+    });
   });
 });

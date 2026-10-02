@@ -42,6 +42,7 @@ export interface MyProfile {
   id: string;
   fullName: string;
   email: string;
+  telegramPaired: boolean;
 }
 
 export function getMyProfile(): Promise<MyProfile> {
@@ -81,4 +82,18 @@ export interface ChangePasswordInput {
 
 export function changeOwnPassword(dto: ChangePasswordInput): Promise<{ changed: boolean }> {
   return apiClient.patch<{ changed: boolean }>('users/me/password', dto);
+}
+
+/** Self-service Telegram notification opt-in (2026-10-01) — any authenticated user may pair, no special permission required; whether notifications actually arrive is re-checked live against production-executions:confirm at send time. */
+export interface TelegramPairingCode {
+  pairingCode: string;
+  expiresAt: string;
+}
+
+export function generateMyTelegramPairingCode(): Promise<TelegramPairingCode> {
+  return apiClient.post<TelegramPairingCode>('users/me/telegram-pairing-code');
+}
+
+export function unlinkMyTelegram(): Promise<{ unlinked: true }> {
+  return apiClient.post<{ unlinked: true }>('users/me/telegram-unlink');
 }

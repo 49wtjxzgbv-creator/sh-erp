@@ -17,26 +17,47 @@ describe('TelegramBotService (2026-10-01)', () => {
     telegramChatId: '555',
     telegramLinkedByUserId: 'u1',
     telegramPendingProductionOrderId: null as string | null,
+    telegramPendingWorkTaskId: null as string | null,
     telegramPendingQty: null as string | null,
+    telegramPendingAllocations: null as string | null,
+    telegramAwaitingPhotoForExecutionId: null as string | null,
   };
 
   beforeEach(() => {
     tx = {
       productionOrder: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       assembly: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-      workTask: { findMany: jest.fn().mockResolvedValue([]) },
-      productionExecution: { update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      workTask: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      productionExecution: { update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      employee: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
+      companyMembership: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
+      role: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
     };
     pairingPrisma = {
       employee: {
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...employee, ...data })),
       },
+      user: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      company: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
-    productionExecutionsService = { create: jest.fn() };
-    filesService = { listForEntities: jest.fn().mockResolvedValue({}) };
-    telegram = { sendMessage: jest.fn(), sendPhoto: jest.fn().mockResolvedValue(false), sendChatAction: jest.fn(), answerCallbackQuery: jest.fn(), setMyCommands: jest.fn() };
+    productionExecutionsService = { create: jest.fn(), confirm: jest.fn(), remove: jest.fn() };
+    filesService = { listForEntities: jest.fn().mockResolvedValue({}), storeBotUploadedAsset: jest.fn() };
+    telegram = {
+      sendMessage: jest.fn(),
+      sendPhoto: jest.fn().mockResolvedValue(false),
+      sendChatAction: jest.fn(),
+      answerCallbackQuery: jest.fn(),
+      setMyCommands: jest.fn(),
+      editMessageText: jest.fn(),
+      downloadPhoto: jest.fn(),
+    };
     service = new TelegramBotService(pairingPrisma, prisma, productionExecutionsService, filesService, telegram);
   });
 
@@ -159,7 +180,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       tx.productionOrder.findMany.mockResolvedValue(sixOrders());
       tx.assembly.findMany.mockResolvedValue(sixAssemblies());
 
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'list:1', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'list:1', message: { chat: { id: 555 }, message_id: 1 } } });
 
       expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1');
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('ART-5'), expect.anything());
@@ -300,9 +321,12 @@ describe('TelegramBotService (2026-10-01)', () => {
       tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
       tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
 
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'order:po1', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'order:po1', message: { chat: { id: 555 }, message_id: 1 } } });
 
-      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingProductionOrderId: 'po1', telegramPendingQty: null } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingProductionOrderId: 'po1', telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      });
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('кількість'));
     });
 
@@ -310,7 +334,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
       tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'COMPLETED' });
 
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'order:po1', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'order:po1', message: { chat: { id: 555 }, message_id: 1 } } });
 
       expect(pairingPrisma.employee.update).not.toHaveBeenCalled();
       expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1', expect.stringContaining('не доступне'));
@@ -326,11 +350,44 @@ describe('TelegramBotService (2026-10-01)', () => {
       tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
     });
 
-    it('typing a quantity shows a review card and does NOT submit yet', async () => {
+    it('typing a quantity stores it and asks who performed the work', async () => {
       await service.handleUpdate({ message: { chat: { id: 555 }, text: '5' } });
 
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingQty: '5' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Хто виконував'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'team:solo' }), expect.objectContaining({ callback_data: 'team:start' })]] }),
+      );
+    });
+
+    it('accepts a comma decimal (uk locale input)', async () => {
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '5,5' } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingQty: '5.5' } });
+    });
+
+    it('rejects non-numeric input without touching the pending state', async () => {
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: 'привіт' } });
+      expect(pairingPrisma.employee.update).not.toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('додатне число'));
+    });
+
+    it('/cancel clears the pending state without submitting anything', async () => {
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/cancel' } });
+      expect(productionExecutionsService.create).not.toHaveBeenCalled();
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      });
+    });
+
+    it('"🙋 Тільки я" shows the review card', async () => {
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '5' } });
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee, telegramPendingQty: '5' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:solo', message: { chat: { id: 555 }, message_id: 1 } } });
+
       expect(telegram.sendMessage).toHaveBeenCalledWith(
         '555',
         expect.stringContaining('Перевірте'),
@@ -341,23 +398,6 @@ describe('TelegramBotService (2026-10-01)', () => {
           ],
         }),
       );
-    });
-
-    it('accepts a comma decimal (uk locale input) on the review card', async () => {
-      await service.handleUpdate({ message: { chat: { id: 555 }, text: '5,5' } });
-      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('5.5'), expect.anything());
-    });
-
-    it('rejects non-numeric input without touching the pending state or showing a review card', async () => {
-      await service.handleUpdate({ message: { chat: { id: 555 }, text: 'привіт' } });
-      expect(pairingPrisma.employee.update).not.toHaveBeenCalled();
-      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('додатне число'));
-    });
-
-    it('/cancel clears the pending state without submitting anything', async () => {
-      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/cancel' } });
-      expect(productionExecutionsService.create).not.toHaveBeenCalled();
-      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingProductionOrderId: null, telegramPendingQty: null } });
     });
   });
 
@@ -374,7 +414,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
       tx.productionExecution.findMany.mockResolvedValue([{ qtyCompleted: 3 }]); // 3 already CONFIRMED before this submission
 
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
 
       expect(productionExecutionsService.create).toHaveBeenCalledWith(
         { userId: 'u1', companyId: 'c1', email: '', roleId: '' },
@@ -387,7 +427,11 @@ describe('TelegramBotService (2026-10-01)', () => {
         }),
       );
       expect(tx.productionExecution.update).toHaveBeenCalledWith({ where: { id: 'exec1' }, data: { submittedViaTelegram: true } });
-      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingProductionOrderId: null, telegramPendingQty: null } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPhotoForExecutionId: 'exec1' } });
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('✅'), expect.anything());
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('3 з 10'), expect.anything());
     });
@@ -397,7 +441,7 @@ describe('TelegramBotService (2026-10-01)', () => {
         new CodedConflictException('PRODUCTION_EXECUTION_QTY_EXCEEDS_PLANNED', "Quantity exceeds this batch's remaining unitsPlanned (2.000 left)."),
       );
 
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
 
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingQty: null } });
       expect(pairingPrisma.employee.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ telegramPendingProductionOrderId: null }) }));
@@ -405,15 +449,18 @@ describe('TelegramBotService (2026-10-01)', () => {
     });
 
     it('submit:editqty clears only the qty and re-prompts, keeping the order selected', async () => {
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:editqty', message: { chat: { id: 555 } } } });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:editqty', message: { chat: { id: 555 }, message_id: 1 } } });
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingQty: null } });
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('кількість'));
     });
 
-    it('submit:cancel clears both pending fields without submitting', async () => {
-      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:cancel', message: { chat: { id: 555 } } } });
-      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingProductionOrderId: null, telegramPendingQty: null } });
+    it('submit:cancel clears all pending fields without submitting', async () => {
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:cancel', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      });
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
     });
 
@@ -428,6 +475,282 @@ describe('TelegramBotService (2026-10-01)', () => {
       await service.handleUpdate({ message: { chat: { id: 555 }, text: 'ой' } });
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('кнопками'));
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('general work (WorkTask) — 2026-10-01 "давай все" revision', () => {
+    beforeEach(() => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+    });
+
+    it('"🛠 Загальні роботи" lists OPEN work tasks, newest first', async () => {
+      tx.workTask.findMany.mockResolvedValue([{ id: 'wt1', title: 'Прибирання цеху', status: 'OPEN' }]);
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '🛠 Загальні роботи' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Прибирання цеху'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'worktask:wt1' })]] }),
+      );
+    });
+
+    it('selecting a work task prompts for an amount in €, not a quantity', async () => {
+      tx.workTask.findUnique.mockResolvedValue({ id: 'wt1', title: 'Прибирання цеху', status: 'OPEN' });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'worktask:wt1', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingWorkTaskId: 'wt1', telegramPendingProductionOrderId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('суму'));
+    });
+
+    it('submitting a GENERAL execution sends totalAmount, not qtyCompleted, and never submittedViaTelegram-flags a PRODUCT field', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramPendingWorkTaskId: 'wt1', telegramPendingQty: '25' });
+      tx.workTask.findUnique.mockResolvedValue({ id: 'wt1', title: 'Прибирання цеху', status: 'OPEN' });
+      productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ workTaskId: 'wt1', productionOrderId: undefined, totalAmount: 25, qtyCompleted: undefined, method: 'SOLO' }),
+      );
+    });
+  });
+
+  describe('multi-worker — "давай все" revision', () => {
+    const pendingEmployee = { ...employee, telegramPendingProductionOrderId: 'po1', telegramPendingQty: '10' };
+
+    beforeEach(() => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee });
+      tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', unitsPlanned: 10, status: 'IN_PROGRESS' });
+      tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+    });
+
+    it('"👥 Разом з колегами" shows other ACTIVE employees (excluding self) as a toggleable list', async () => {
+      tx.employee.findMany.mockResolvedValue([{ id: 'emp2', fullName: 'Марія К.' }]);
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:start', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(tx.employee.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', id: { not: 'emp1' } } }));
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Оберіть колег'),
+        expect.objectContaining({ inline_keyboard: expect.arrayContaining([[expect.objectContaining({ callback_data: 'team:toggle:emp2' }), ]]) }),
+      );
+    });
+
+    it('toggling a colleague on, then off, edits the SAME message in place via editMessageText', async () => {
+      tx.employee.findMany.mockResolvedValue([{ id: 'emp2', fullName: 'Марія К.' }]);
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:toggle:emp2', message: { chat: { id: 555 }, message_id: 42 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingAllocations: JSON.stringify(['emp2']) } });
+      expect(telegram.editMessageText).toHaveBeenCalledWith('555', 42, expect.stringContaining('Оберіть колег'), expect.objectContaining({
+        inline_keyboard: expect.arrayContaining([[expect.objectContaining({ text: '✅ Марія К.' })]]),
+      }));
+
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee, telegramPendingAllocations: JSON.stringify(['emp2']) });
+      await service.handleUpdate({ callback_query: { id: 'cb2', data: 'team:toggle:emp2', message: { chat: { id: 555 }, message_id: 42 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingAllocations: JSON.stringify([]) } });
+    });
+
+    it('team:done with colleagues selected shows the review card listing participants', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee, telegramPendingAllocations: JSON.stringify(['emp2']) });
+      tx.employee.findMany.mockResolvedValue([{ fullName: 'Марія К.' }]);
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:done', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Марія К.'), expect.anything());
+    });
+
+    it('submitting with 1 colleague selected creates a MULTI_WORKER execution split 50/50', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee, telegramPendingAllocations: JSON.stringify(['emp2']) });
+      productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ method: 'MULTI_WORKER', allocations: [{ employeeId: 'emp1', percent: 50 }, { employeeId: 'emp2', percent: 50 }] }),
+      );
+    });
+  });
+
+  describe('/unlink — self-service', () => {
+    it('asks for confirmation before unlinking', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '/unlink' } });
+      expect(pairingPrisma.employee.update).not.toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining(employee.fullName),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'unlink:confirm' }), expect.objectContaining({ callback_data: 'unlink:cancel' })]] }),
+      );
+    });
+
+    it('unlink:confirm clears the Telegram chat id and all pending state', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'unlink:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: {
+          telegramChatId: null,
+          telegramLinkedAt: null,
+          telegramPendingProductionOrderId: null,
+          telegramPendingWorkTaskId: null,
+          telegramPendingQty: null,
+          telegramPendingAllocations: null,
+          telegramAwaitingPhotoForExecutionId: null,
+        },
+      });
+    });
+
+    it('unlink:cancel leaves everything untouched', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'unlink:cancel', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('optional proof photo', () => {
+    it('after a successful submission, the bot offers to attach a photo', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramPendingProductionOrderId: 'po1', telegramPendingQty: '5' });
+      tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', unitsPlanned: 10, status: 'IN_PROGRESS' });
+      tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+      productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPhotoForExecutionId: 'exec1' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('фото'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'photo:skip' })]] }),
+      );
+    });
+
+    it('a photo message while awaiting one uploads it via FilesService and clears the awaiting state', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramAwaitingPhotoForExecutionId: 'exec1' });
+      telegram.downloadPhoto.mockResolvedValue({ bytes: Buffer.from('fake'), mimeType: 'image/jpeg' });
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, photo: [{ file_id: 'f1', file_size: 100 }, { file_id: 'f2', file_size: 500 }] } });
+
+      expect(telegram.downloadPhoto).toHaveBeenCalledWith('f2'); // the larger of the two sizes
+      expect(filesService.storeBotUploadedAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ domain: 'PRODUCTION_EXECUTION_PHOTO', entityType: 'ProductionExecution', entityId: 'exec1', mimeType: 'image/jpeg' }),
+      );
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPhotoForExecutionId: null } });
+    });
+
+    it('a photo arriving when none is expected is silently ignored', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee });
+      await service.handleUpdate({ message: { chat: { id: 555 }, photo: [{ file_id: 'f1' }] } });
+      expect(telegram.downloadPhoto).not.toHaveBeenCalled();
+    });
+
+    it('"Пропустити" just clears the awaiting state', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramAwaitingPhotoForExecutionId: 'exec1' });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'photo:skip', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPhotoForExecutionId: null } });
+    });
+  });
+
+  describe('supervisor notification + approve/reject', () => {
+    beforeEach(() => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramPendingProductionOrderId: 'po1', telegramPendingQty: '5' });
+      tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', unitsPlanned: 10, status: 'IN_PROGRESS' });
+      tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+      productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+    });
+
+    it('notifies every company User holding production-executions:confirm who has their own Telegram paired, with approve/reject buttons', async () => {
+      tx.companyMembership.findMany.mockResolvedValue([{ userId: 'sup1', roleId: 'role1' }]);
+      tx.role.findMany.mockResolvedValue([{ id: 'role1', permissions: [{ permission: { key: 'production-executions:confirm' } }] }]);
+      tx.user.findMany.mockResolvedValue([{ telegramChatId: '999' }]);
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '999',
+        expect.stringContaining('Нове подання'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'approve:c1:exec1' }), expect.objectContaining({ callback_data: 'reject:c1:exec1' })]] }),
+      );
+    });
+
+    it('skips a supervisor-eligible User who has not paired their own Telegram', async () => {
+      tx.companyMembership.findMany.mockResolvedValue([{ userId: 'sup1', roleId: 'role1' }]);
+      tx.role.findMany.mockResolvedValue([{ id: 'role1', permissions: [{ permission: { key: 'production-executions:confirm' } }] }]);
+      tx.user.findMany.mockResolvedValue([{ telegramChatId: null }]);
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('Нове подання'), expect.anything());
+    });
+  });
+
+  describe('approve:/reject: callback (tapped by a Supervisor User, not an Employee)', () => {
+    it('approve: confirms the execution and notifies the submitting employee, only after re-verifying the permission live', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ id: 'sup1', email: 'sup@co.test' });
+      tx.companyMembership.findFirst.mockResolvedValue({ userId: 'sup1', roleId: 'role1' });
+      tx.role.findUnique.mockResolvedValue({ id: 'role1', permissions: [{ permission: { key: 'production-executions:confirm' } }] });
+      tx.productionExecution.findUnique.mockResolvedValue({ id: 'exec1', status: 'DRAFT', allocations: [{ employeeId: 'emp1' }] });
+      tx.employee.findUnique.mockResolvedValue({ telegramChatId: '555' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'approve:c1:exec1', message: { chat: { id: 999 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.confirm).toHaveBeenCalledWith({ userId: 'sup1', companyId: 'c1', email: 'sup@co.test', roleId: '' }, 'exec1');
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('підтверджено'));
+    });
+
+    it('reject: removes the DRAFT instead of confirming it', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ id: 'sup1', email: 'sup@co.test' });
+      tx.companyMembership.findFirst.mockResolvedValue({ userId: 'sup1', roleId: 'role1' });
+      tx.role.findUnique.mockResolvedValue({ id: 'role1', permissions: [{ permission: { key: 'production-executions:confirm' } }] });
+      tx.productionExecution.findUnique.mockResolvedValue({ id: 'exec1', status: 'DRAFT', allocations: [] });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'reject:c1:exec1', message: { chat: { id: 999 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.remove).toHaveBeenCalledWith({ userId: 'sup1', companyId: 'c1', email: 'sup@co.test', roleId: '' }, 'exec1');
+    });
+
+    it('rejects the tap if the User no longer holds production-executions:confirm, without calling confirm/remove', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ id: 'sup1', email: 'sup@co.test' });
+      tx.companyMembership.findFirst.mockResolvedValue({ userId: 'sup1', roleId: 'role1' });
+      tx.role.findUnique.mockResolvedValue({ id: 'role1', permissions: [] }); // demoted since the notification was sent
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'approve:c1:exec1', message: { chat: { id: 999 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.confirm).not.toHaveBeenCalled();
+      expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1', expect.stringContaining('прав'));
+    });
+
+    it('an unpaired chat tapping approve/reject is told it is not subscribed', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue(null);
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'approve:c1:exec1', message: { chat: { id: 999 }, message_id: 1 } } });
+      expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1', expect.stringContaining('підписані'));
+      expect(productionExecutionsService.confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('daily reminder (@Cron)', () => {
+    it('reminds only ACTIVE, Telegram-paired employees with zero submissions today', async () => {
+      process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+      pairingPrisma.company.findMany.mockResolvedValue([{ id: 'c1' }]);
+      tx.employee.findMany.mockResolvedValue([
+        { id: 'emp1', telegramChatId: '555' },
+        { id: 'emp2', telegramChatId: '666' },
+      ]);
+      tx.productionExecution.findMany.mockResolvedValue([{ allocations: [{ employeeId: 'emp1' }] }]); // emp1 already submitted today
+
+      await service.sendDailyReminders();
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith('666', expect.stringContaining('не подали'), expect.anything());
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith('555', expect.stringContaining('не подали'), expect.anything());
+    });
+
+    it('does nothing when TELEGRAM_BOT_TOKEN is unset', async () => {
+      const prev = process.env.TELEGRAM_BOT_TOKEN;
+      delete process.env.TELEGRAM_BOT_TOKEN;
+      await service.sendDailyReminders();
+      expect(pairingPrisma.company.findMany).not.toHaveBeenCalled();
+      process.env.TELEGRAM_BOT_TOKEN = prev;
     });
   });
 });

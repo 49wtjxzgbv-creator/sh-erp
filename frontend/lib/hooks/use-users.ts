@@ -8,6 +8,8 @@ import {
   deactivateUser,
   changeOwnPassword,
   getMyProfile,
+  generateMyTelegramPairingCode,
+  unlinkMyTelegram,
   type InviteUserInput,
   type ChangePasswordInput,
 } from '@/lib/api-client/users';
@@ -58,4 +60,21 @@ export function useDeactivateUser() {
 
 export function useChangeOwnPassword() {
   return useMutation({ mutationFn: (dto: ChangePasswordInput) => changeOwnPassword(dto) });
+}
+
+/** "Сповіщення керівнику в Telegram" (2026-10-01) — self-service, no special permission required; invalidates useMyProfile so the /notifications page's paired badge refreshes right away. */
+export function useGenerateMyTelegramPairingCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateMyTelegramPairingCode(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
+  });
+}
+
+export function useUnlinkMyTelegram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unlinkMyTelegram(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
+  });
 }

@@ -280,6 +280,57 @@ export class FilesService {
   }
 
   /**
+   * Telegram bot proof-of-work photo (2026-10-01) — a plain create (no
+   * `legacyId` to upsert against, each photo a genuinely new row, same
+   * reasoning as `storeGeneratedAsset` below) but opens its OWN
+   * `runInTenantTransaction` like `ingestPhotoAsset` above rather than
+   * assuming an ambient one: `TelegramBotService` is a webhook handler, not
+   * a `TenantScopeInterceptor`-wrapped HTTP request, so there is never an
+   * already-open tenant transaction to piggyback on.
+   */
+  async storeBotUploadedAsset(input: {
+    companyId: string;
+    actorUserId: string;
+    domain: FileDomain;
+    entityType: string;
+    entityId: string;
+    originalName: string;
+    mimeType: string;
+    bytes: Buffer;
+  }): Promise<{ fileAssetId: string }> {
+    const safeName = sanitizeFilename(input.originalName);
+    const storageKey = `tenants/${input.companyId}/${input.domain.toLowerCase()}/${input.entityType.toLowerCase()}/${input.entityId}/${randomUUID()}-${safeName}`;
+
+    await this.r2.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: storageKey,
+        Body: input.bytes,
+        ContentType: input.mimeType,
+        ContentLength: input.bytes.byteLength,
+      }),
+    );
+
+    const fileAsset = await this.prisma.runInTenantTransaction({ companyId: input.companyId, userId: input.actorUserId }, (tx) =>
+      tx.fileAsset.create({
+        data: {
+          companyId: input.companyId,
+          domain: input.domain,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          storageKey,
+          originalName: safeName,
+          mimeType: input.mimeType,
+          sizeBytes: input.bytes.byteLength,
+          uploadedById: input.actorUserId,
+        },
+      }),
+    );
+
+    return { fileAssetId: fileAsset.id };
+  }
+
+  /**
    * Plain create, not an upsert — unlike `ingestPhotoAsset` (idempotent
    * re-import keyed on `legacyId`), a system-generated document like a
    * rendered quotation PDF has no external stable id to upsert against and

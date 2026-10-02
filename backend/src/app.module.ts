@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
@@ -46,6 +47,7 @@ import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
       },
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]), // per-IP baseline; tightened per-route later (e.g. login) as Phase 5 continues
+    ScheduleModule.forRoot(), // TelegramBotService's daily "хто ще нічого не подав" reminder (2026-10-01) — the only @Cron consumer in this backend so far
     PrismaModule,
     AuditModule,
     IdentityModule,

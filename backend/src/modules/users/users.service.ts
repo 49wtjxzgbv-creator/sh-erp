@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -49,6 +50,13 @@ import {
  * is created, and the notification email says "added to a company", not
  * "here is your password".
  */
+const TELEGRAM_PAIRING_CODE_TTL_MINUTES = 15;
+const TELEGRAM_PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I — same as EmployeesService's own alphabet, avoids a typed-by-hand mixup
+
+function randomPairingCode(): string {
+  return Array.from({ length: 6 }, () => TELEGRAM_PAIRING_CODE_ALPHABET[randomInt(TELEGRAM_PAIRING_CODE_ALPHABET.length)]).join('');
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -197,11 +205,17 @@ export class UsersService {
     return { userId: targetUserId, removed: true };
   }
 
-  /** Self-service profile lookup (2026-09-06, dashboard greeting by name) — no special permission required beyond being authenticated, same as changeOwnPassword below. */
+  /**
+   * Self-service profile lookup (2026-09-06, dashboard greeting by name) —
+   * no special permission required beyond being authenticated, same as
+   * changeOwnPassword below. `telegramChatId` (2026-10-01) is exposed as a
+   * plain boolean-ish presence check, never the raw chat id itself — the
+   * /notifications page only needs "paired or not" to render its badge.
+   */
   async me(user: RequestUser) {
     const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
     if (!dbUser) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
-    return { id: dbUser.id, fullName: dbUser.fullName, email: dbUser.email };
+    return { id: dbUser.id, fullName: dbUser.fullName, email: dbUser.email, telegramPaired: Boolean(dbUser.telegramChatId) };
   }
 
   async changeOwnPassword(user: RequestUser, dto: ChangePasswordDto) {
@@ -224,6 +238,50 @@ export class UsersService {
     });
 
     return { changed: true };
+  }
+
+  /**
+   * "Сповіщення керівнику в Telegram" (2026-10-01) — self-service opt-in
+   * for the same shared platform bot employees use to submit work: no
+   * special permission required to PAIR (mirrors `me()`/
+   * `changeOwnPassword()` above), since whether notifications actually
+   * ARRIVE is re-checked live against `production-executions:confirm` at
+   * send time (TelegramBotService#notifySupervisors), not at pairing time
+   * — pairing without that permission is harmless, just silent.
+   * `telegramChatId`/`telegramPairingCode` are globally unique (one shared
+   * bot across every company, same as Employee's own fields) — collisions
+   * retried on the real DB constraint violation, same pattern
+   * EmployeesService#generateTelegramPairingCode already uses.
+   */
+  async generateTelegramPairingCode(user: RequestUser) {
+    const expiresAt = new Date(Date.now() + TELEGRAM_PAIRING_CODE_TTL_MINUTES * 60_000);
+    let updated;
+    let code = '';
+    for (let attempt = 0; attempt < 10; attempt++) {
+      code = randomPairingCode();
+      try {
+        updated = await this.prisma.tenant.user.update({
+          where: { id: user.userId },
+          data: { telegramPairingCode: code, telegramPairingCodeExpiresAt: expiresAt },
+        });
+        break;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
+        throw err;
+      }
+    }
+    if (!updated) {
+      throw new CodedConflictException('TELEGRAM_PAIRING_CODE_GENERATION_FAILED', 'Could not generate a unique pairing code — try again.');
+    }
+    return { pairingCode: code, expiresAt: updated.telegramPairingCodeExpiresAt };
+  }
+
+  async unlinkTelegram(user: RequestUser) {
+    await this.prisma.tenant.user.update({
+      where: { id: user.userId },
+      data: { telegramChatId: null, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
+    });
+    return { unlinked: true };
   }
 
   private async getMembershipOrThrow(companyId: string, userId: string) {

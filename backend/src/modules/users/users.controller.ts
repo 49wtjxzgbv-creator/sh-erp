@@ -54,4 +54,16 @@ export class UsersController {
   async changeOwnPassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
     return this.usersService.changeOwnPassword(user, dto);
   }
+
+  @Post('me/telegram-pairing-code')
+  @ApiOperation({ summary: 'Generate a one-time code to link your Telegram account to the shared platform bot, for push notifications on new submissions awaiting your confirmation.' })
+  async generateTelegramPairingCode(@CurrentUser() user: RequestUser) {
+    return this.usersService.generateTelegramPairingCode(user);
+  }
+
+  @Post('me/telegram-unlink')
+  @ApiOperation({ summary: 'Unlink your Telegram account from notifications.' })
+  async unlinkTelegram(@CurrentUser() user: RequestUser) {
+    return this.usersService.unlinkTelegram(user);
+  }
 }

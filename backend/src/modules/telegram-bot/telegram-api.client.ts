@@ -75,6 +75,40 @@ export class TelegramApiClient {
     await this.call('setMyCommands', { commands });
   }
 
+  /** In-place edit (2026-10-01, the colleague picker) — lets a toggled selection re-render as a ✅-prefixed button without spamming a new message per tap. */
+  async editMessageText(chatId: string, messageId: number, text: string, replyMarkup?: TelegramReplyMarkup): Promise<void> {
+    await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: replyMarkup, parse_mode: 'HTML' });
+  }
+
+  /**
+   * Downloads a photo the employee sent (proof-of-work attachment) via
+   * Telegram's two-step file API (`getFile` to resolve a `file_id` to a
+   * `file_path`, then a plain GET against `file.telegram.org`). Returns
+   * `null` on any failure — the caller treats a failed download as "skip
+   * the photo, the submission itself is already safely recorded" rather
+   * than erroring the whole flow over best-effort enrichment.
+   */
+  async downloadPhoto(fileId: string): Promise<{ bytes: Buffer; mimeType: string } | null> {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return null;
+    try {
+      const getFileRes = await fetch(`${this.baseUrl}/getFile?file_id=${encodeURIComponent(fileId)}`);
+      if (!getFileRes.ok) return null;
+      const getFileBody = (await getFileRes.json()) as { ok: boolean; result?: { file_path?: string } };
+      const filePath = getFileBody.result?.file_path;
+      if (!getFileBody.ok || !filePath) return null;
+
+      const fileRes = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+      if (!fileRes.ok) return null;
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const mimeType = fileRes.headers.get('content-type') ?? (filePath.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      return { bytes: Buffer.from(arrayBuffer), mimeType };
+    } catch (err) {
+      this.logger.warn(`downloadPhoto failed: ${String(err)}`);
+      return null;
+    }
+  }
+
   private async call(method: string, body: Record<string, unknown>): Promise<boolean> {
     const res = await fetch(`${this.baseUrl}/${method}`, {
       method: 'POST',

@@ -226,6 +226,21 @@ model User {
 
   legacyId String? // NOT unique-constrained, deliberately (Phase 4 decision): User is global, not company-scoped, and a local legacy row id from one company's spreadsheet has no guarantee of not colliding with another company's local legacy row id — a plain global unique here would be actively wrong. Migration load idempotency for User keys off `email` (already globally unique via citext) instead.
 
+  // Telegram bot notifications (2026-10-01 — "сповіщення керівнику в
+  // Telegram... з Підтвердити/Відхилити прямо з Telegram"): a self-service
+  // opt-in, paired from an already-authenticated ERP session
+  // (UsersService#generateTelegramPairingCode, /notifications page), unlike
+  // Employee's pairing (which exists purely so the bot can identify an
+  // anonymous chat — this one exists so the bot can PUSH a notification to
+  // a specific logged-in User). Globally unique for the same "one shared
+  // platform bot" reason as Employee.telegramChatId. Resolving a bare chat
+  // id pre-tenant-context uses the SAME `telegram_bot_service` BYPASSRLS
+  // role, grant extended to `users` (see
+  // prisma/migrations/20261001020000_telegram_bot_service_users_grant).
+  telegramChatId               String?   @unique
+  telegramPairingCode          String?   @unique
+  telegramPairingCodeExpiresAt DateTime?
+
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
@@ -612,6 +627,12 @@ enum FileDomain {
   // reused from CUSTOMER_ORDER_DOCUMENT (wrong entity family) or
   // FINANCE_DOCUMENT (that one is specifically PO financial paperwork).
   QUOTATION_DOCUMENT
+  // Telegram bot (2026-10-01) — entityType "ProductionExecution", entityId
+  // = ProductionExecution.id. Optional proof-of-work photo an employee
+  // attaches right after a bot submission (TelegramBotService), downloaded
+  // from Telegram's own CDN and re-uploaded to R2 — never a browser
+  // presigned-upload like every other PHOTO domain above.
+  PRODUCTION_EXECUTION_PHOTO
 }
 
 enum FileConversionStatus {
@@ -2632,6 +2653,25 @@ model Employee {
   // stateless (driven entirely by inline-keyboard callback_data).
   telegramPendingProductionOrderId String? @db.Uuid
   telegramPendingQty               String?
+  // Same idea, for a GENERAL/WorkTask submission instead of a PRODUCT one
+  // — XOR with telegramPendingProductionOrderId, never both at once
+  // (2026-10-01 "давай все" revision — general-work support in the bot).
+  // telegramPendingQty is reused as-is for this path too (it's just "the
+  // number", interpreted as totalAmount € instead of qtyCompleted units
+  // depending on which of the two parent fields is set).
+  telegramPendingWorkTaskId String? @db.Uuid
+  // Colleagues selected for a MULTI_WORKER submission (JSON array of
+  // Employee ids, self excluded) — null/"[]" means SOLO. Same reasoning
+  // as the other pending fields: must survive between webhook calls while
+  // the employee is still picking people.
+  telegramPendingAllocations String?
+  // Set right after a successful submission while the bot is offering an
+  // optional "додати фото" follow-up — cleared the moment a photo arrives
+  // or the employee taps "Пропустити". Deliberately NOT part of the
+  // pre-submit pending state above: the execution already exists by this
+  // point, a photo is pure best-effort enrichment, never blocks or
+  // reverses the submission itself.
+  telegramAwaitingPhotoForExecutionId String? @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

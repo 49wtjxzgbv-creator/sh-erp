@@ -1061,7 +1061,17 @@
     "lowStockCount": "{count} нижче мінімуму",
     "imminentCount": "{count} скоро закінчаться",
     "sendNow": "Надіслати зараз",
-    "sendSuccess": "Дайджест надіслано."
+    "sendSuccess": "Дайджест надіслано.",
+    "telegramSupervisorTitle": "Сповіщення про нові подання (Telegram)",
+    "telegramSupervisorDescription": "Отримуйте push-сповіщення в Telegram, коли через бота подано нову роботу, що очікує вашого підтвердження — з кнопками Підтвердити/Відхилити прямо в чаті.",
+    "telegramSupervisorPaired": "Підписано",
+    "telegramSupervisorNotPaired": "Не підписано",
+    "telegramSupervisorGenerateCode": "Згенерувати код",
+    "telegramSupervisorCodeLabel": "Код прив'язки",
+    "telegramSupervisorCodeExpiresAt": "Дійсний до {time}",
+    "telegramSupervisorUnlink": "Відписатись",
+    "telegramSupervisorUnlinkConfirmTitle": "Відписатись від сповіщень?",
+    "telegramSupervisorUnlinkConfirmDescription": "Ви більше не отримуватимете сповіщення про нові подання в Telegram, доки не підпишетесь знову."
   },
   "billing": {
     "title": "Тарифи та оплата",

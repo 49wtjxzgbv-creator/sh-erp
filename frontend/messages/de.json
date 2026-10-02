@@ -964,7 +964,17 @@
     "lowStockCount": "{count} below minimum",
     "imminentCount": "{count} running out soon",
     "sendNow": "Send now",
-    "sendSuccess": "Digest sent."
+    "sendSuccess": "Digest sent.",
+    "telegramSupervisorTitle": "New submission notifications (Telegram)",
+    "telegramSupervisorDescription": "Get a Telegram push notification when a bot submission arrives awaiting your confirmation — with Approve/Reject buttons right in the chat.",
+    "telegramSupervisorPaired": "Subscribed",
+    "telegramSupervisorNotPaired": "Not subscribed",
+    "telegramSupervisorGenerateCode": "Generate code",
+    "telegramSupervisorCodeLabel": "Pairing code",
+    "telegramSupervisorCodeExpiresAt": "Valid until {time}",
+    "telegramSupervisorUnlink": "Unsubscribe",
+    "telegramSupervisorUnlinkConfirmTitle": "Unsubscribe from notifications?",
+    "telegramSupervisorUnlinkConfirmDescription": "You will no longer receive new-submission notifications in Telegram until you subscribe again."
   },
   "billing": {
     "title": "Billing",
