@@ -23,6 +23,24 @@ describe('TelegramBotService (2026-10-01)', () => {
     telegramAwaitingPhotoForExecutionId: null as string | null,
   };
 
+  const adminUser = {
+    id: 'admin1',
+    email: 'admin@acme.test',
+    fullName: 'Марія Коваль',
+    telegramChatId: '777',
+    telegramAdminPendingEmployeeIds: null as string | null,
+    telegramAdminPendingProductionOrderId: null as string | null,
+    telegramAdminPendingWorkTaskId: null as string | null,
+    telegramAdminPendingQty: null as string | null,
+    telegramAdminAwaitingPhotoForExecutionId: null as string | null,
+  };
+
+  /** Grants `production-executions:record` to whatever user findAdminByChatId resolves — tx.companyMembership/tx.role back userHasPermission's own live check. */
+  function grantRecordPermission(): void {
+    tx.companyMembership.findFirst.mockResolvedValue({ userId: adminUser.id, roleId: 'role-admin' });
+    tx.role.findUnique.mockResolvedValue({ id: 'role-admin', permissions: [{ permission: { key: 'production-executions:record' } }] });
+  }
+
   beforeEach(() => {
     tx = {
       productionOrder: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
@@ -40,6 +58,10 @@ describe('TelegramBotService (2026-10-01)', () => {
         update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...employee, ...data })),
       },
       user: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...adminUser, ...data })),
+      },
+      companyMembership: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
       company: {
@@ -726,6 +748,241 @@ describe('TelegramBotService (2026-10-01)', () => {
       await service.handleUpdate({ callback_query: { id: 'cb1', data: 'approve:c1:exec1', message: { chat: { id: 999 }, message_id: 1 } } });
       expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1', expect.stringContaining('підписані'));
       expect(productionExecutionsService.confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeUserPairing — supervisor pairing code (2026-10-05 fix: the code-generation side existed, but /start CODE never consumed it)', () => {
+    it('with a valid code and production-executions:record, pairs the chat and shows the admin menu', async () => {
+      pairingPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        where.telegramPairingCode === 'XYZ789'
+          ? Promise.resolve({ ...adminUser, telegramChatId: null, telegramPairingCode: 'XYZ789', telegramPairingCodeExpiresAt: new Date(Date.now() + 60_000) })
+          : Promise.resolve(null),
+      );
+      pairingPrisma.companyMembership.findFirst.mockResolvedValue({ companyId: 'c1', userId: 'admin1' });
+      grantRecordPermission();
+
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/start XYZ789' } });
+
+      expect(pairingPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'admin1' },
+        data: { telegramChatId: '777', telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
+      });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('за інших працівників'), expect.objectContaining({ keyboard: expect.anything() }));
+    });
+
+    it('with a valid code but no production-executions:record, pairs for notifications only (no admin menu)', async () => {
+      pairingPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        where.telegramPairingCode === 'XYZ789'
+          ? Promise.resolve({ ...adminUser, telegramChatId: null, telegramPairingCode: 'XYZ789', telegramPairingCodeExpiresAt: new Date(Date.now() + 60_000) })
+          : Promise.resolve(null),
+      );
+      pairingPrisma.companyMembership.findFirst.mockResolvedValue({ companyId: 'c1', userId: 'admin1' });
+      tx.companyMembership.findFirst.mockResolvedValue({ userId: 'admin1', roleId: 'role-confirm-only' });
+      tx.role.findUnique.mockResolvedValue({ id: 'role-confirm-only', permissions: [{ permission: { key: 'production-executions:confirm' } }] });
+
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/start XYZ789' } });
+
+      expect(pairingPrisma.user.update).toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('підтвердження'));
+    });
+
+    it('rejects an expired code without pairing anything', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser, telegramPairingCode: 'OLD999', telegramPairingCodeExpiresAt: new Date(Date.now() - 1000) });
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/start OLD999' } });
+      expect(pairingPrisma.user.update).not.toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('прострочено'));
+    });
+
+    it('rejects a code already claimed by a different Telegram chat', async () => {
+      pairingPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        where.telegramPairingCode === 'XYZ789'
+          ? Promise.resolve({ ...adminUser, telegramChatId: null, telegramPairingCode: 'XYZ789', telegramPairingCodeExpiresAt: new Date(Date.now() + 60_000) })
+          : where.telegramChatId === '777'
+            ? Promise.resolve({ ...adminUser, id: 'admin2', telegramChatId: '777' })
+            : Promise.resolve(null),
+      );
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/start XYZ789' } });
+      expect(pairingPrisma.user.update).not.toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('уже прив\'язано'));
+    });
+  });
+
+  describe('admin — "Подати роботу за працівника" (2026-10-05 user request)', () => {
+    beforeEach(() => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser });
+      pairingPrisma.companyMembership.findFirst.mockResolvedValue({ companyId: 'c1', userId: 'admin1' });
+      grantRecordPermission();
+    });
+
+    it('a chat with no Employee pairing but holding production-executions:record sees the admin menu, not "not paired"', async () => {
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/start' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('Вітаю'), expect.objectContaining({ keyboard: expect.anything() }));
+      expect(telegram.sendMessage).not.toHaveBeenCalledWith('777', expect.stringContaining('ще не прив\'язані'));
+    });
+
+    it('a chat paired as a User WITHOUT production-executions:record gets a neutral message, not the HR-code prompt', async () => {
+      tx.companyMembership.findFirst.mockResolvedValue({ userId: 'admin1', roleId: 'role-confirm-only' });
+      tx.role.findUnique.mockResolvedValue({ id: 'role-confirm-only', permissions: [] });
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: 'привіт' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('сповіщення керівника'));
+    });
+
+    it('"👤 Подати роботу за працівника" shows a toggleable list of ACTIVE employees', async () => {
+      tx.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Петро Іваненко' }, { id: 'e2', fullName: 'Олена Сидоренко' }]);
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '👤 Подати роботу за працівника' } });
+      expect(tx.employee.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE' } }));
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '777',
+        expect.stringContaining('За кого подати роботу'),
+        expect.objectContaining({ inline_keyboard: expect.arrayContaining([[expect.objectContaining({ callback_data: 'admin:emp:toggle:e1' }), expect.anything()]]) }),
+      );
+    });
+
+    it('toggling an employee on edits the same message in place, then "✅ Готово" offers виріб/загальна робота', async () => {
+      tx.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Петро Іваненко' }]);
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:emp:toggle:e1', message: { chat: { id: 777 }, message_id: 7 } } });
+      expect(pairingPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'admin1' }, data: { telegramAdminPendingEmployeeIds: JSON.stringify(['e1']) } });
+      expect(telegram.editMessageText).toHaveBeenCalledWith('777', 7, expect.stringContaining('За кого'), expect.objectContaining({
+        inline_keyboard: expect.arrayContaining([[expect.objectContaining({ text: '✅ Петро Іваненко' })]]),
+      }));
+
+      pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser, telegramAdminPendingEmployeeIds: JSON.stringify(['e1']) });
+      tx.employee.findMany.mockResolvedValue([{ fullName: 'Петро Іваненко' }]);
+      await service.handleUpdate({ callback_query: { id: 'cb2', data: 'admin:emp:done', message: { chat: { id: 777 }, message_id: 7 } } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '777',
+        expect.stringContaining('Петро Іваненко'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'admin:menu:orders' }), expect.objectContaining({ callback_data: 'admin:menu:tasks' })]] }),
+      );
+    });
+
+    it('"✅ Готово" with nobody selected refuses and does not advance', async () => {
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:emp:done', message: { chat: { id: 777 }, message_id: 7 } } });
+      expect(telegram.answerCallbackQuery).toHaveBeenCalledWith('cb1', expect.stringContaining('Оберіть'));
+    });
+
+    describe('with 2 employees already selected', () => {
+      beforeEach(() => {
+        pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser, telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']) });
+      });
+
+      it('"📦 Виріб (замовлення)" lists IN_PROGRESS production orders with admin:order: buttons', async () => {
+        tx.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1', unitsPlanned: 10, status: 'IN_PROGRESS' }]);
+        tx.assembly.findMany.mockResolvedValue([{ id: 'a1', article: 'ART-1', name: 'Виріб 1' }]);
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:menu:orders', message: { chat: { id: 777 }, message_id: 7 } } });
+
+        expect(telegram.sendMessage).toHaveBeenCalledWith(
+          '777',
+          expect.stringContaining('ART-1'),
+          expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'admin:order:po1' })]] }),
+        );
+      });
+
+      it('picking a production order asks for a quantity', async () => {
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:order:po1', message: { chat: { id: 777 }, message_id: 7 } } });
+
+        expect(pairingPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'admin1' },
+          data: { telegramAdminPendingProductionOrderId: 'po1', telegramAdminPendingWorkTaskId: null, telegramAdminPendingQty: null },
+        });
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('кількість'));
+      });
+
+      it('typing a quantity after picking an order shows a review card naming both employees', async () => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']),
+          telegramAdminPendingProductionOrderId: 'po1',
+        });
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
+        tx.employee.findMany.mockResolvedValue([{ fullName: 'Петро Іваненко' }, { fullName: 'Олена Сидоренко' }]);
+
+        await service.handleUpdate({ message: { chat: { id: 777 }, text: '12' } });
+
+        expect(pairingPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'admin1' }, data: { telegramAdminPendingQty: '12' } });
+        expect(telegram.sendMessage).toHaveBeenCalledWith(
+          '777',
+          expect.stringMatching(/Петро Іваненко.*Олена Сидоренко/s),
+          expect.anything(),
+        );
+      });
+
+      it('submitting creates a MULTI_WORKER execution split 50/50 across both employees, flags submittedViaTelegram, and notifies each employee', async () => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']),
+          telegramAdminPendingProductionOrderId: 'po1',
+          telegramAdminPendingQty: '12',
+        });
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
+        productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+        tx.employee.findUnique.mockImplementation(({ where }: any) =>
+          Promise.resolve(where.id === 'e1' ? { id: 'e1', telegramChatId: '111' } : { id: 'e2', telegramChatId: '222' }),
+        );
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:submit:confirm', message: { chat: { id: 777 }, message_id: 7 } } });
+
+        expect(productionExecutionsService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: 'admin1', companyId: 'c1' }),
+          expect.objectContaining({
+            productionOrderId: 'po1',
+            qtyCompleted: 12,
+            method: 'MULTI_WORKER',
+            allocations: [{ employeeId: 'e1', percent: 50 }, { employeeId: 'e2', percent: 50 }],
+          }),
+        );
+        expect(tx.productionExecution.update).toHaveBeenCalledWith({ where: { id: 'exec1' }, data: { submittedViaTelegram: true } });
+        expect(pairingPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'admin1' }, data: { telegramAdminAwaitingPhotoForExecutionId: 'exec1' } });
+        expect(telegram.sendMessage).toHaveBeenCalledWith('111', expect.stringContaining('записав'));
+        expect(telegram.sendMessage).toHaveBeenCalledWith('222', expect.stringContaining('записав'));
+      });
+
+      it('submitting with a single employee selected uses method SOLO with 100%', async () => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1']),
+          telegramAdminPendingProductionOrderId: 'po1',
+          telegramAdminPendingQty: '12',
+        });
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
+        productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:submit:confirm', message: { chat: { id: 777 }, message_id: 7 } } });
+
+        expect(productionExecutionsService.create).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ method: 'SOLO', allocations: [{ employeeId: 'e1', percent: 100 }] }),
+        );
+      });
+    });
+
+    it('/cancel clears admin pending state', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser, telegramAdminPendingEmployeeIds: JSON.stringify(['e1']) });
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: '/cancel' } });
+      expect(pairingPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'admin1' },
+        data: {
+          telegramAdminPendingEmployeeIds: null,
+          telegramAdminPendingProductionOrderId: null,
+          telegramAdminPendingWorkTaskId: null,
+          telegramAdminPendingQty: null,
+        },
+      });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', '❌ Скасовано.', expect.objectContaining({ keyboard: expect.anything() }));
+    });
+
+    it('a chat with neither Employee nor sufficient-permission User pairing is told to get a code from HR', async () => {
+      pairingPrisma.user.findFirst.mockResolvedValue(null);
+      await service.handleUpdate({ message: { chat: { id: 777 }, text: 'hi' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('не прив\'язані'));
     });
   });
 

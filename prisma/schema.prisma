@@ -241,6 +241,25 @@ model User {
   telegramPairingCode          String?   @unique
   telegramPairingCodeExpiresAt DateTime?
 
+  // "Подати роботу за іншого працівника" (2026-10-05 user request): the
+  // SAME paired User/chat as the notification opt-in above, now also able
+  // to record a ProductionExecution ON BEHALF OF one or more Employees
+  // (e.g. workers who don't carry a phone / aren't paired themselves) —
+  // gated live on `production-executions:record`, same re-check-at-use-
+  // time rule as CONFIRM_PERMISSION_KEY elsewhere in this bot. Mirrors
+  // Employee's own telegramPending*/telegramAwaitingPhotoForExecutionId
+  // fields 1:1, kept on a SEPARATE set of columns (not reusing Employee's)
+  // because the acting identity here is a User, who may or may not also
+  // have an Employee row — conflating the two would let an admin's own
+  // in-progress self-submission (if they happen to also be an Employee
+  // paired on this exact same chat) collide with their in-progress
+  // submit-for-someone-else flow.
+  telegramAdminPendingEmployeeIds        String? // JSON array of Employee ids this submission is FOR
+  telegramAdminPendingProductionOrderId  String? @db.Uuid
+  telegramAdminPendingWorkTaskId         String? @db.Uuid
+  telegramAdminPendingQty                String?
+  telegramAdminAwaitingPhotoForExecutionId String? @db.Uuid
+
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)

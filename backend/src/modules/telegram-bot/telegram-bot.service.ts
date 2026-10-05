@@ -13,6 +13,8 @@ const MAX_ORDER_RESULTS = 10;
 const LIST_PAGE_SIZE = 5;
 const COLLEAGUE_PICKER_LIMIT = 30;
 const CONFIRM_PERMISSION_KEY = 'production-executions:confirm';
+/** "Подати роботу за іншого працівника" (2026-10-05) — gates the admin submit-for-employee flow, same permission the web app's confirmations queue "Записати виконання" action requires. */
+const RECORD_PERMISSION_KEY = 'production-executions:record';
 /** Only used to populate AsyncLocalStorage for a read-only cross-company sweep (the daily reminder) — never persisted anywhere, so any placeholder string is safe. */
 const REMINDER_SYSTEM_ACTOR = 'telegram-bot-reminder';
 
@@ -35,6 +37,27 @@ const HELP_TEXT =
   '📊 «Мої подання сьогодні» — побачити, що ви вже здали і на якому воно етапі.\n' +
   '📷 Після підтвердження можна додати фото як підтвердження роботи.\n' +
   '/unlink — відв\'язати цей Telegram-акаунт.\n' +
+  '/cancel — скасувати поточну дію в будь-який момент.';
+
+/**
+ * "Подати роботу за іншого працівника" (2026-10-05 user request): a paired
+ * User (/notifications page) who holds `production-executions:record` gets
+ * this menu instead of the Employee one above — distinct identity, distinct
+ * FSM state (User.telegramAdminPending*, never Employee's own fields), see
+ * PairedAdminUser and the User.telegramAdminPending* schema comment.
+ */
+const ADMIN_MENU: TelegramReplyKeyboard = {
+  keyboard: [[{ text: '👤 Подати роботу за працівника' }], [{ text: '❓ Допомога' }]],
+  resize_keyboard: true,
+};
+
+const ADMIN_HELP_TEXT =
+  '🤖 <b>Подання роботи за працівника</b>\n\n' +
+  '1️⃣ Натисніть «👤 Подати роботу за працівника».\n' +
+  '2️⃣ Оберіть одного чи кількох працівників (торкніться кожного, потім «✅ Готово»).\n' +
+  '3️⃣ Оберіть виріб (замовлення) чи загальну роботу, або напишіть частину артикулу/назви.\n' +
+  '4️⃣ Введіть кількість (або суму — для загальної роботи).\n' +
+  '5️⃣ Перевірте дані і підтвердіть — запис піде на підтвердження керівнику.\n\n' +
   '/cancel — скасувати поточну дію в будь-який момент.';
 
 interface TelegramPhotoSize {
@@ -128,8 +151,18 @@ export class TelegramBotService implements OnModuleInit {
 
     if (text === '/cancel' || text.toLowerCase() === 'скасувати') {
       const employee = await this.findByChatId(chatId);
-      if (employee) await this.clearPending(employee.id);
-      await this.telegram.sendMessage(chatId, '❌ Скасовано.', MAIN_MENU);
+      if (employee) {
+        await this.clearPending(employee.id);
+        await this.telegram.sendMessage(chatId, '❌ Скасовано.', MAIN_MENU);
+        return;
+      }
+      const admin = await this.findAdminByChatId(chatId);
+      if (admin) {
+        await this.clearAdminPending(admin.id);
+        await this.telegram.sendMessage(chatId, '❌ Скасовано.', ADMIN_MENU);
+        return;
+      }
+      await this.telegram.sendMessage(chatId, '❌ Скасовано.');
       return;
     }
 
@@ -143,11 +176,32 @@ export class TelegramBotService implements OnModuleInit {
     }
 
     const employee = await this.findByChatId(chatId);
-    if (!employee) {
-      await this.telegram.sendMessage(chatId, 'Ви ще не прив\'язані. Отримайте код у HR і надішліть: /start КОД');
+    if (employee) {
+      await this.handleEmployeeMessage(employee as PairedEmployee, text);
       return;
     }
-    const paired = employee as PairedEmployee;
+
+    const admin = await this.findAdminByChatId(chatId);
+    if (admin) {
+      await this.handleAdminMessage(admin, text);
+      return;
+    }
+
+    // Paired as a User for supervisor notifications only (no
+    // production-executions:record) — a clearer message than the
+    // Employee-oriented "get a code from HR" fallback below.
+    const plainUser = await this.pairingPrisma.user.findFirst({ where: { telegramChatId: chatId } });
+    if (plainUser) {
+      await this.telegram.sendMessage(chatId, 'Цей акаунт підписаний на сповіщення керівника. Команди подачі роботи тут недоступні.');
+      return;
+    }
+
+    await this.telegram.sendMessage(chatId, 'Ви ще не прив\'язані. Отримайте код у HR і надішліть: /start КОД');
+  }
+
+  private async handleEmployeeMessage(employee: PairedEmployee, text: string): Promise<void> {
+    const chatId = employee.telegramChatId;
+    const paired = employee;
 
     // State 4 — a review card is already on screen. A freshly typed
     // number updates it in place rather than demanding ✏️ first.
@@ -191,21 +245,58 @@ export class TelegramBotService implements OnModuleInit {
 
   private async handlePhotoMessage(chatId: string, photos: TelegramPhotoSize[]): Promise<void> {
     const employee = await this.findByChatId(chatId);
-    if (!employee?.telegramAwaitingPhotoForExecutionId) return; // not expecting a photo right now — silently ignore rather than error
-    const executionId = employee.telegramAwaitingPhotoForExecutionId;
-
-    const largest = photos.reduce((best, p) => ((p.file_size ?? 0) > (best.file_size ?? 0) ? p : best), photos[0]);
-    const downloaded = await this.telegram.downloadPhoto(largest.file_id);
-    await this.pairingPrisma.employee.update({ where: { id: employee.id }, data: { telegramAwaitingPhotoForExecutionId: null } });
-    if (!downloaded) {
-      await this.telegram.sendMessage(chatId, '⚠️ Не вдалося завантажити фото. Роботу вже записано, фото можна додати пізніше через ERP.', MAIN_MENU);
+    if (employee?.telegramAwaitingPhotoForExecutionId) {
+      await this.storeAwaitingPhoto(
+        chatId,
+        photos,
+        employee.companyId,
+        employee.telegramAwaitingPhotoForExecutionId,
+        employee.telegramLinkedByUserId ?? employee.id,
+        () => this.pairingPrisma.employee.update({ where: { id: employee.id }, data: { telegramAwaitingPhotoForExecutionId: null } }),
+        MAIN_MENU,
+      );
       return;
     }
 
-    await this.prisma.runInTenantTransaction({ companyId: employee.companyId, userId: employee.telegramLinkedByUserId ?? employee.id }, async () => {
+    const admin = await this.pairingPrisma.user.findFirst({ where: { telegramChatId: chatId } });
+    if (admin?.telegramAdminAwaitingPhotoForExecutionId) {
+      const membership = await this.pairingPrisma.companyMembership.findFirst({ where: { userId: admin.id } });
+      if (!membership) return;
+      await this.storeAwaitingPhoto(
+        chatId,
+        photos,
+        membership.companyId,
+        admin.telegramAdminAwaitingPhotoForExecutionId,
+        admin.id,
+        () => this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminAwaitingPhotoForExecutionId: null } }),
+        ADMIN_MENU,
+      );
+      return;
+    }
+    // not expecting a photo right now — silently ignore rather than error
+  }
+
+  private async storeAwaitingPhoto(
+    chatId: string,
+    photos: TelegramPhotoSize[],
+    companyId: string,
+    executionId: string,
+    actorUserId: string,
+    clearAwaiting: () => Promise<unknown>,
+    menu: TelegramReplyKeyboard,
+  ): Promise<void> {
+    const largest = photos.reduce((best, p) => ((p.file_size ?? 0) > (best.file_size ?? 0) ? p : best), photos[0]);
+    const downloaded = await this.telegram.downloadPhoto(largest.file_id);
+    await clearAwaiting();
+    if (!downloaded) {
+      await this.telegram.sendMessage(chatId, '⚠️ Не вдалося завантажити фото. Роботу вже записано, фото можна додати пізніше через ERP.', menu);
+      return;
+    }
+
+    await this.prisma.runInTenantTransaction({ companyId, userId: actorUserId }, async () => {
       await this.filesService.storeBotUploadedAsset({
-        companyId: employee.companyId,
-        actorUserId: employee.telegramLinkedByUserId ?? employee.id,
+        companyId,
+        actorUserId,
         domain: 'PRODUCTION_EXECUTION_PHOTO' as FileDomain,
         entityType: 'ProductionExecution',
         entityId: executionId,
@@ -214,7 +305,7 @@ export class TelegramBotService implements OnModuleInit {
         bytes: downloaded.bytes,
       });
     });
-    await this.telegram.sendMessage(chatId, '📷 Фото додано, дякуємо!', MAIN_MENU);
+    await this.telegram.sendMessage(chatId, '📷 Фото додано, дякуємо!', menu);
   }
 
   private async handleCallbackQuery(callback: { id: string; data?: string; message?: { chat: { id: number }; message_id: number } }): Promise<void> {
@@ -229,6 +320,14 @@ export class TelegramBotService implements OnModuleInit {
     // supervisor isn't necessarily an Employee at all.
     if (callback.data.startsWith('approve:') || callback.data.startsWith('reject:')) {
       await this.handleSupervisorDecision(callback.id, chatId, callback.data);
+      return;
+    }
+    // Admin "submit for employee" flow — a different identity (User, not
+    // Employee), same reason approve/reject is checked before the Employee
+    // lookup below. Namespaced `admin:` so it can never collide with the
+    // Employee flow's own callback_data.
+    if (callback.data.startsWith('admin:')) {
+      await this.handleAdminCallback(callback.id, chatId, callback.data, callback.message?.message_id);
       return;
     }
     if (callback.data === 'photo:skip') {
@@ -372,18 +471,40 @@ export class TelegramBotService implements OnModuleInit {
     if (employee) {
       await this.telegram.sendMessage(chatId, `👋 Вітаю, ${employee.fullName}!`, MAIN_MENU);
       await this.sendOrderListPage(employee as PairedEmployee, 0);
-    } else {
-      await this.telegram.sendMessage(chatId, 'Щоб почати, отримайте код прив\'язки у HR і надішліть: /start КОД');
+      return;
     }
+    const admin = await this.findAdminByChatId(chatId);
+    if (admin) {
+      await this.telegram.sendMessage(chatId, `👋 Вітаю, ${admin.fullName}! Ви можете подавати виконану роботу за інших працівників.`, ADMIN_MENU);
+      return;
+    }
+    const plainUser = await this.pairingPrisma.user.findFirst({ where: { telegramChatId: chatId } });
+    if (plainUser) {
+      await this.telegram.sendMessage(chatId, `👋 Вітаю, ${plainUser.fullName}! Цей акаунт підписаний на сповіщення керівника.`);
+      return;
+    }
+    await this.telegram.sendMessage(chatId, 'Щоб почати, отримайте код прив\'язки у HR і надішліть: /start КОД');
   }
 
   private async completePairing(chatId: string, rawCode: string): Promise<void> {
     const code = rawCode.toUpperCase();
     const employee = await this.pairingPrisma.employee.findFirst({ where: { telegramPairingCode: code } });
-    if (!employee) {
-      await this.telegram.sendMessage(chatId, '❌ Невірний код. Перевірте і спробуйте ще раз.');
+    if (employee) {
+      await this.completeEmployeePairing(chatId, employee);
       return;
     }
+    const user = await this.pairingPrisma.user.findFirst({ where: { telegramPairingCode: code } });
+    if (user) {
+      await this.completeUserPairing(chatId, user);
+      return;
+    }
+    await this.telegram.sendMessage(chatId, '❌ Невірний код. Перевірте і спробуйте ще раз.');
+  }
+
+  private async completeEmployeePairing(
+    chatId: string,
+    employee: { id: string; companyId: string; fullName: string; telegramLinkedByUserId: string | null; telegramPairingCodeExpiresAt: Date | null },
+  ): Promise<void> {
     if (!employee.telegramPairingCodeExpiresAt || employee.telegramPairingCodeExpiresAt.getTime() < Date.now()) {
       await this.telegram.sendMessage(chatId, '⌛ Код прострочено — попросіть HR згенерувати новий.');
       return;
@@ -414,6 +535,55 @@ export class TelegramBotService implements OnModuleInit {
       },
       0,
     );
+  }
+
+  /**
+   * "Сповіщення керівнику в Telegram" pairing (2026-10-01) was built with a
+   * code-generation side (UsersService#generateTelegramPairingCode,
+   * /notifications page) but this consumption side was never wired up —
+   * `/start CODE` only ever checked Employee.telegramPairingCode, so no
+   * User had ever actually completed pairing (2026-10-05 fix, found while
+   * building the admin submit-for-employee flow, which depends on this
+   * same pairing). Mirrors completeEmployeePairing's shape; additionally
+   * live-checks `production-executions:record` right after pairing so the
+   * welcome message can tell the user whether they also got the admin
+   * submit-for-employee menu, or just notifications.
+   */
+  private async completeUserPairing(
+    chatId: string,
+    user: { id: string; fullName: string; telegramPairingCodeExpiresAt: Date | null },
+  ): Promise<void> {
+    if (!user.telegramPairingCodeExpiresAt || user.telegramPairingCodeExpiresAt.getTime() < Date.now()) {
+      await this.telegram.sendMessage(chatId, '⌛ Код прострочено — згенеруйте новий у розділі «Сповіщення».');
+      return;
+    }
+    const existing = await this.pairingPrisma.user.findFirst({ where: { telegramChatId: chatId } });
+    if (existing && existing.id !== user.id) {
+      await this.telegram.sendMessage(chatId, '⚠️ Цей Telegram-акаунт уже прив\'язано до іншого користувача.');
+      return;
+    }
+
+    await this.pairingPrisma.user.update({
+      where: { id: user.id },
+      data: { telegramChatId: chatId, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
+    });
+
+    const membership = await this.pairingPrisma.companyMembership.findFirst({ where: { userId: user.id } });
+    const canRecord = membership
+      ? await this.prisma.runInTenantTransaction({ companyId: membership.companyId, userId: user.id }, (tx) =>
+          this.userHasPermission(tx, user.id, RECORD_PERMISSION_KEY),
+        )
+      : false;
+
+    if (canRecord) {
+      await this.telegram.sendMessage(
+        chatId,
+        `✅ Готово, ${user.fullName}! Тепер ви отримуватимете сповіщення про нові подання, і можете подавати роботу за інших працівників.`,
+        ADMIN_MENU,
+      );
+    } else {
+      await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}! Тепер ви отримуватимете сповіщення про нові подання, що очікують підтвердження.`);
+    }
   }
 
   /** Self-service (2026-10-01 "давай все") — no HR step required, mirrors EmployeesService#unlinkTelegram but triggerable from the bot itself. A confirmation step guards against an accidental /unlink. */
@@ -448,6 +618,479 @@ export class TelegramBotService implements OnModuleInit {
 
   private async findByChatId(chatId: string) {
     return this.pairingPrisma.employee.findFirst({ where: { telegramChatId: chatId } });
+  }
+
+  /**
+   * Resolves a chat id to the admin "submit work for an employee" identity
+   * — a paired User (not Employee) who currently holds
+   * `production-executions:record`. Re-checked live on every call (same
+   * "never cache a permission across time" rule as CONFIRM_PERMISSION_KEY
+   * elsewhere in this bot): a role change revokes bot access immediately,
+   * no re-pairing needed. Returns null for a User with no membership, or
+   * one who holds only `production-executions:confirm` (notifications-only
+   * — see the "plainUser" fallback in handleMessage/sendWelcome).
+   */
+  private async findAdminByChatId(chatId: string): Promise<PairedAdminUser | null> {
+    const user = await this.pairingPrisma.user.findFirst({ where: { telegramChatId: chatId } });
+    if (!user) return null;
+    const membership = await this.pairingPrisma.companyMembership.findFirst({ where: { userId: user.id } });
+    if (!membership) return null;
+    const allowed = await this.prisma.runInTenantTransaction({ companyId: membership.companyId, userId: user.id }, (tx) =>
+      this.userHasPermission(tx, user.id, RECORD_PERMISSION_KEY),
+    );
+    if (!allowed) return null;
+    return {
+      id: user.id,
+      companyId: membership.companyId,
+      fullName: user.fullName,
+      email: user.email,
+      telegramChatId: chatId,
+      telegramAdminPendingEmployeeIds: user.telegramAdminPendingEmployeeIds,
+      telegramAdminPendingProductionOrderId: user.telegramAdminPendingProductionOrderId,
+      telegramAdminPendingWorkTaskId: user.telegramAdminPendingWorkTaskId,
+      telegramAdminPendingQty: user.telegramAdminPendingQty,
+      telegramAdminAwaitingPhotoForExecutionId: user.telegramAdminAwaitingPhotoForExecutionId,
+    };
+  }
+
+  private async clearAdminPending(userId: string): Promise<void> {
+    await this.pairingPrisma.user.update({
+      where: { id: userId },
+      data: {
+        telegramAdminPendingEmployeeIds: null,
+        telegramAdminPendingProductionOrderId: null,
+        telegramAdminPendingWorkTaskId: null,
+        telegramAdminPendingQty: null,
+      },
+    });
+  }
+
+  // ============================================================
+  // Admin flow — "Подати роботу за іншого працівника" (2026-10-05)
+  //
+  // Structurally parallel to the Employee self-submit flow above, but
+  // deliberately NOT sharing its methods: the acting identity here is a
+  // User (PairedAdminUser, FSM state on User.telegramAdminPending*), and
+  // there is no "who performed it" step — the admin already picked WHO
+  // first, before WHAT. Some duplication with sendOrderListPage/
+  // handleSearch/sendWorkTaskListPage below is a disclosed, deliberate
+  // tradeoff: keeping the Employee flow's methods untouched (and its
+  // existing test coverage valid) mattered more than deduplicating ~80
+  // lines of near-identical list/search plumbing.
+  // ============================================================
+
+  private async handleAdminMessage(admin: PairedAdminUser, text: string): Promise<void> {
+    const chatId = admin.telegramChatId;
+
+    // State D — review card on screen; a freshly typed number updates it in place.
+    if (admin.telegramAdminPendingQty !== null) {
+      const parsed = parseNumber(text);
+      if (parsed !== null) {
+        await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminPendingQty: String(parsed) } });
+        await this.sendAdminConfirmationCard({ ...admin, telegramAdminPendingQty: String(parsed) });
+      } else {
+        await this.telegram.sendMessage(chatId, 'Скористайтесь кнопками вище ⬆️, або надішліть нове число чи /cancel.');
+      }
+      return;
+    }
+
+    // State C — a parent (order or work task) is picked, waiting for a number.
+    if (admin.telegramAdminPendingProductionOrderId || admin.telegramAdminPendingWorkTaskId) {
+      await this.handleAdminValueMessage(admin, text);
+      return;
+    }
+
+    // State B — employee(s) picked, waiting for a parent pick (inline
+    // buttons sent by sendAdminParentMenu) or free-text search.
+    const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+    if (employeeIds.length > 0) {
+      await this.handleAdminSearch(admin, text);
+      return;
+    }
+
+    // State A — idle.
+    if (text === '👤 Подати роботу за працівника' || text === '/for') {
+      await this.sendAdminEmployeePicker(admin);
+      return;
+    }
+    if (text === '❓ Допомога' || text === '/help' || text.toLowerCase() === 'допомога') {
+      await this.telegram.sendMessage(chatId, ADMIN_HELP_TEXT, ADMIN_MENU);
+      return;
+    }
+    await this.telegram.sendMessage(chatId, 'Натисніть «👤 Подати роботу за працівника», щоб почати.', ADMIN_MENU);
+  }
+
+  private async sendAdminEmployeePicker(admin: PairedAdminUser, messageId?: number): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const employees: Array<{ id: string; fullName: string }> = await tx.employee.findMany({
+        where: { status: 'ACTIVE' },
+        orderBy: { fullName: 'asc' },
+        take: COLLEAGUE_PICKER_LIMIT,
+        select: { id: true, fullName: true },
+      });
+      if (employees.length === 0) {
+        await this.telegram.sendMessage(admin.telegramChatId, 'Активних співробітників не знайдено.', ADMIN_MENU);
+        return;
+      }
+      const selected = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+      const text = '👤 За кого подати роботу? Оберіть одного чи кількох (торкніться), потім «✅ Готово»:';
+      const keyboard = buildToggleKeyboard(employees, selected, 'admin:emp:toggle:', 'admin:emp:done', 'admin:emp:cancel');
+      if (messageId) {
+        await this.telegram.editMessageText(admin.telegramChatId, messageId, text, keyboard);
+      } else {
+        await this.telegram.sendMessage(admin.telegramChatId, text, keyboard);
+      }
+    });
+  }
+
+  private async toggleAdminEmployee(admin: PairedAdminUser, employeeId: string, messageId: number): Promise<void> {
+    const selected = new Set(parseAllocations(admin.telegramAdminPendingEmployeeIds));
+    if (selected.has(employeeId)) selected.delete(employeeId);
+    else selected.add(employeeId);
+    const updated = await this.pairingPrisma.user.update({
+      where: { id: admin.id },
+      data: { telegramAdminPendingEmployeeIds: JSON.stringify([...selected]) },
+    });
+    await this.sendAdminEmployeePicker({ ...admin, telegramAdminPendingEmployeeIds: updated.telegramAdminPendingEmployeeIds }, messageId);
+  }
+
+  private async sendAdminParentMenu(admin: PairedAdminUser): Promise<void> {
+    const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const employees: Array<{ fullName: string }> = await tx.employee.findMany({ where: { id: { in: employeeIds } }, select: { fullName: true } });
+      const names = employees.map((e) => escapeHtml(e.fullName)).join(', ');
+      await this.telegram.sendMessage(admin.telegramChatId, `👥 Обрано: <b>${names}</b>.\n\nЩо вони виконали?`, {
+        inline_keyboard: [[{ text: '📦 Виріб (замовлення)', callback_data: 'admin:menu:orders' }, { text: '🛠 Загальна робота', callback_data: 'admin:menu:tasks' }]],
+      });
+    });
+  }
+
+  private async sendAdminOrderListPage(admin: PairedAdminUser, page: number): Promise<void> {
+    await this.telegram.sendChatAction(admin.telegramChatId);
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const orders = await tx.productionOrder.findMany({ where: { status: 'IN_PROGRESS' }, orderBy: { createdAt: 'desc' } });
+      if (orders.length === 0) {
+        await this.telegram.sendMessage(admin.telegramChatId, '😴 Немає активних замовлень у виробництві зараз.', ADMIN_MENU);
+        return;
+      }
+      const assemblyById = await this.loadAssembliesFor(tx, orders);
+
+      const totalPages = Math.ceil(orders.length / LIST_PAGE_SIZE);
+      const clampedPage = Math.min(Math.max(page, 0), totalPages - 1);
+      const shown = orders.slice(clampedPage * LIST_PAGE_SIZE, clampedPage * LIST_PAGE_SIZE + LIST_PAGE_SIZE);
+
+      await this.sendAdminOrderResults(admin, shown, assemblyById);
+
+      const navButtons = [];
+      if (clampedPage > 0) navButtons.push({ text: '⬅️ Попередня', callback_data: `admin:list:${clampedPage - 1}` });
+      if (clampedPage < totalPages - 1) navButtons.push({ text: 'Наступна ➡️', callback_data: `admin:list:${clampedPage + 1}` });
+      await this.telegram.sendMessage(
+        admin.telegramChatId,
+        `📄 Сторінка ${clampedPage + 1} з ${totalPages}. Або напишіть частину артикулу/назви для пошуку.`,
+        navButtons.length > 0 ? { inline_keyboard: [navButtons] } : undefined,
+      );
+    });
+  }
+
+  private async sendAdminOrderResults(
+    admin: PairedAdminUser,
+    orders: Array<{ id: string; assemblyId: string; unitsPlanned: unknown }>,
+    assemblyById: Map<string, { article: string | null; name: string }>,
+  ): Promise<void> {
+    if (orders.length === 0) return;
+    const syntheticUser: RequestUser = { userId: admin.id, companyId: admin.companyId, email: admin.email, roleId: '' };
+    const assemblyIds = Array.from(new Set(orders.map((o) => o.assemblyId)));
+    const photosByAssembly: Record<string, Array<{ downloadUrl: string }>> = await this.filesService.listForEntities(
+      syntheticUser,
+      'Assembly',
+      assemblyIds,
+      ['ASSEMBLY_PHOTO'] satisfies FileDomain[],
+    );
+
+    for (const o of orders) {
+      const a = assemblyById.get(o.assemblyId);
+      const caption = `📦 ${escapeHtml(describeAssembly(a))} (${Number(o.unitsPlanned)} шт)`;
+      const button = { inline_keyboard: [[{ text: '✅ Обрати', callback_data: `admin:order:${o.id}` }]] };
+      const photoUrl = photosByAssembly[o.assemblyId]?.[0]?.downloadUrl;
+      const sentPhoto = photoUrl ? await this.telegram.sendPhoto(admin.telegramChatId, photoUrl, caption, button) : false;
+      if (!sentPhoto) {
+        await this.telegram.sendMessage(admin.telegramChatId, caption, button);
+      }
+    }
+  }
+
+  private async handleAdminSearch(admin: PairedAdminUser, query: string): Promise<void> {
+    if (!query) {
+      await this.telegram.sendMessage(admin.telegramChatId, '🔍 Напишіть частину артикулу або назви виробу, або оберіть вище.');
+      return;
+    }
+    await this.telegram.sendChatAction(admin.telegramChatId);
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const orders = await tx.productionOrder.findMany({ where: { status: 'IN_PROGRESS' }, orderBy: { createdAt: 'desc' }, take: 200 });
+      const assemblyById = await this.loadAssembliesFor(tx, orders);
+
+      const q = query.toLowerCase();
+      const matches = orders.filter((o) => {
+        const a = assemblyById.get(o.assemblyId);
+        if (!a) return false;
+        return a.name.toLowerCase().includes(q) || (a.article?.toLowerCase().includes(q) ?? false);
+      });
+
+      if (matches.length === 0) {
+        await this.telegram.sendMessage(admin.telegramChatId, '🤷 Нічого не знайдено серед активних замовлень. Спробуйте інший текст.');
+        return;
+      }
+      const shown = matches.slice(0, MAX_ORDER_RESULTS);
+      const note = matches.length > shown.length ? ` (показано ${shown.length} з ${matches.length} — уточніть пошук, якщо не бачите потрібне)` : '';
+      await this.telegram.sendMessage(admin.telegramChatId, `🔍 Оберіть виріб${note}:`);
+      await this.sendAdminOrderResults(admin, shown, assemblyById);
+    });
+  }
+
+  private async sendAdminWorkTaskListPage(admin: PairedAdminUser, page: number): Promise<void> {
+    await this.telegram.sendChatAction(admin.telegramChatId);
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const tasks = await tx.workTask.findMany({ where: { status: 'OPEN' }, orderBy: { createdAt: 'desc' } });
+      if (tasks.length === 0) {
+        await this.telegram.sendMessage(admin.telegramChatId, '😴 Немає відкритих загальних робіт зараз.', ADMIN_MENU);
+        return;
+      }
+      const totalPages = Math.ceil(tasks.length / LIST_PAGE_SIZE);
+      const clampedPage = Math.min(Math.max(page, 0), totalPages - 1);
+      const shown = tasks.slice(clampedPage * LIST_PAGE_SIZE, clampedPage * LIST_PAGE_SIZE + LIST_PAGE_SIZE);
+
+      for (const t of shown) {
+        await this.telegram.sendMessage(admin.telegramChatId, `🛠 ${escapeHtml(t.title)}`, {
+          inline_keyboard: [[{ text: '✅ Обрати', callback_data: `admin:worktask:${t.id}` }]],
+        });
+      }
+
+      const navButtons = [];
+      if (clampedPage > 0) navButtons.push({ text: '⬅️ Попередня', callback_data: `admin:wtlist:${clampedPage - 1}` });
+      if (clampedPage < totalPages - 1) navButtons.push({ text: 'Наступна ➡️', callback_data: `admin:wtlist:${clampedPage + 1}` });
+      await this.telegram.sendMessage(
+        admin.telegramChatId,
+        `📄 Сторінка ${clampedPage + 1} з ${totalPages}.`,
+        navButtons.length > 0 ? { inline_keyboard: [navButtons] } : undefined,
+      );
+    });
+  }
+
+  private async handleAdminValueMessage(admin: PairedAdminUser, text: string): Promise<void> {
+    const value = parseNumber(text);
+    if (value === null) {
+      const label = admin.telegramAdminPendingWorkTaskId ? 'суму' : 'кількість';
+      await this.telegram.sendMessage(admin.telegramChatId, `🔢 Введіть додатне число (${label}), або /cancel для скасування.`);
+      return;
+    }
+    await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminPendingQty: String(value) } });
+    await this.sendAdminConfirmationCard({ ...admin, telegramAdminPendingQty: String(value) });
+  }
+
+  private async sendAdminConfirmationCard(admin: PairedAdminUser & { telegramAdminPendingQty: string }): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const description = await this.describeAdminPendingParent(tx, admin);
+      const valueLabel = admin.telegramAdminPendingWorkTaskId ? 'Сума' : 'Кількість';
+      const valueSuffix = admin.telegramAdminPendingWorkTaskId ? ' €' : '';
+
+      const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+      const employees: Array<{ fullName: string }> = await tx.employee.findMany({ where: { id: { in: employeeIds } }, select: { fullName: true } });
+      const namesLine = `\n👥 За: ${employees.map((e) => escapeHtml(e.fullName)).join(', ')}`;
+
+      const buttons: TelegramInlineKeyboard = {
+        inline_keyboard: [
+          [{ text: '✅ Підтвердити', callback_data: 'admin:submit:confirm' }],
+          [{ text: '✏️ Змінити', callback_data: 'admin:submit:editqty' }, { text: '❌ Скасувати', callback_data: 'admin:submit:cancel' }],
+        ],
+      };
+      await this.telegram.sendMessage(
+        admin.telegramChatId,
+        `👀 <b>Перевірте перед підтвердженням</b>\n\n${description}${namesLine}\n${valueLabel}: <b>${admin.telegramAdminPendingQty}${valueSuffix}</b>\n\nВсе вірно?`,
+        buttons,
+      );
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is PrismaService's extended, request-scoped transactional client; see loadAssembliesFor's own identical comment.
+  private async describeAdminPendingParent(tx: any, admin: PairedAdminUser): Promise<string> {
+    if (admin.telegramAdminPendingProductionOrderId) {
+      const order = await tx.productionOrder.findUnique({ where: { id: admin.telegramAdminPendingProductionOrderId } });
+      const assembly = order ? await tx.assembly.findUnique({ where: { id: order.assemblyId } }) : null;
+      return `📦 ${escapeHtml(describeAssembly(assembly))}`;
+    }
+    const workTask = await tx.workTask.findUnique({ where: { id: admin.telegramAdminPendingWorkTaskId! } });
+    return `🛠 ${escapeHtml(workTask?.title ?? 'Загальна робота')}`;
+  }
+
+  private async submitPendingAdminExecution(admin: PairedAdminUser): Promise<void> {
+    const value = admin.telegramAdminPendingQty !== null ? Number(admin.telegramAdminPendingQty) : null;
+    const productionOrderId = admin.telegramAdminPendingProductionOrderId;
+    const workTaskId = admin.telegramAdminPendingWorkTaskId;
+    const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+    if (value === null || (!productionOrderId && !workTaskId) || employeeIds.length === 0) {
+      await this.telegram.sendMessage(admin.telegramChatId, 'Нічого очікує підтвердження — оберіть ще раз.', ADMIN_MENU);
+      return;
+    }
+    const percent = round2(100 / employeeIds.length);
+
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const description = await this.describeAdminPendingParent(tx, admin);
+      const syntheticUser: RequestUser = { userId: admin.id, companyId: admin.companyId, email: admin.email, roleId: '' };
+      const dto: CreateProductionExecutionDto = {
+        productionOrderId: productionOrderId ?? undefined,
+        workTaskId: workTaskId ?? undefined,
+        performedAt: new Date(),
+        qtyCompleted: productionOrderId ? value : undefined,
+        totalAmount: workTaskId ? value : undefined,
+        method: employeeIds.length > 1 ? 'MULTI_WORKER' : 'SOLO',
+        allocationMode: 'PERCENT',
+        allocations: employeeIds.map((employeeId) => ({ employeeId, percent })),
+        note: `Подано через Telegram (адміністратором ${admin.fullName})`,
+      };
+
+      try {
+        const execution = await this.productionExecutionsService.create(syntheticUser, dto);
+        await tx.productionExecution.update({ where: { id: execution.id }, data: { submittedViaTelegram: true } });
+        await this.clearAdminPending(admin.id);
+        await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminAwaitingPhotoForExecutionId: execution.id } });
+
+        await this.telegram.sendMessage(
+          admin.telegramChatId,
+          `✅ Подано на підтвердження!\n${description}\n\nЗаписано за: ${employeeIds.length} працівник(ів).`,
+          ADMIN_MENU,
+        );
+        await this.telegram.sendMessage(admin.telegramChatId, '📷 Бажаєте додати фото підтвердження?', {
+          inline_keyboard: [[{ text: 'Пропустити', callback_data: 'admin:photo:skip' }]],
+        });
+
+        await this.notifySupervisors(tx, admin, execution.id, description, value, productionOrderId ? 'шт' : '€');
+        for (const employeeId of employeeIds) {
+          const employeeRow = await tx.employee.findUnique({ where: { id: employeeId } });
+          if (employeeRow?.telegramChatId) {
+            await this.telegram.sendMessage(
+              employeeRow.telegramChatId,
+              `ℹ️ ${escapeHtml(admin.fullName)} записав(-ла) за вас виконану роботу:\n${description}`,
+            );
+          }
+        }
+      } catch (err) {
+        await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminPendingQty: null } });
+        await this.telegram.sendMessage(admin.telegramChatId, `⚠️ ${escapeHtml(extractErrorMessage(err))}\n🔢 Введіть інше число або /cancel.`);
+      }
+    });
+  }
+
+  private async handleAdminCallback(callbackId: string, chatId: string, data: string, messageId: number | undefined): Promise<void> {
+    const admin = await this.findAdminByChatId(chatId);
+    if (!admin) {
+      await this.telegram.answerCallbackQuery(callbackId, "Недостатньо прав, або ви не прив'язані.");
+      return;
+    }
+
+    if (data.startsWith('admin:emp:toggle:') && messageId) {
+      const employeeId = data.slice('admin:emp:toggle:'.length);
+      await this.toggleAdminEmployee(admin, employeeId, messageId);
+      await this.telegram.answerCallbackQuery(callbackId);
+      return;
+    }
+    if (data === 'admin:emp:done') {
+      const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+      if (employeeIds.length === 0) {
+        await this.telegram.answerCallbackQuery(callbackId, 'Оберіть хоча б одного працівника.');
+        return;
+      }
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.sendAdminParentMenu(admin);
+      return;
+    }
+    if (data === 'admin:emp:cancel') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.clearAdminPending(admin.id);
+      await this.telegram.sendMessage(chatId, '❌ Скасовано.', ADMIN_MENU);
+      return;
+    }
+    if (data === 'admin:menu:orders') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.sendAdminOrderListPage(admin, 0);
+      return;
+    }
+    if (data === 'admin:menu:tasks') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.sendAdminWorkTaskListPage(admin, 0);
+      return;
+    }
+    if (data.startsWith('admin:list:')) {
+      await this.telegram.answerCallbackQuery(callbackId);
+      const page = Number(data.slice('admin:list:'.length));
+      await this.sendAdminOrderListPage(admin, Number.isFinite(page) && page >= 0 ? page : 0);
+      return;
+    }
+    if (data.startsWith('admin:wtlist:')) {
+      await this.telegram.answerCallbackQuery(callbackId);
+      const page = Number(data.slice('admin:wtlist:'.length));
+      await this.sendAdminWorkTaskListPage(admin, Number.isFinite(page) && page >= 0 ? page : 0);
+      return;
+    }
+    if (data.startsWith('admin:order:')) {
+      const productionOrderId = data.slice('admin:order:'.length);
+      await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+        const order = await tx.productionOrder.findUnique({ where: { id: productionOrderId } });
+        if (!order || order.status !== 'IN_PROGRESS') {
+          await this.telegram.answerCallbackQuery(callbackId, 'Це замовлення більше не доступне.');
+          return;
+        }
+        const assembly = await tx.assembly.findUnique({ where: { id: order.assemblyId } });
+        await this.pairingPrisma.user.update({
+          where: { id: admin.id },
+          data: { telegramAdminPendingProductionOrderId: order.id, telegramAdminPendingWorkTaskId: null, telegramAdminPendingQty: null },
+        });
+        await this.telegram.answerCallbackQuery(callbackId);
+        await this.telegram.sendMessage(chatId, `📦 Обрано: <b>${escapeHtml(describeAssembly(assembly))}</b>\n🔢 Введіть кількість (число).`);
+      });
+      return;
+    }
+    if (data.startsWith('admin:worktask:')) {
+      const workTaskId = data.slice('admin:worktask:'.length);
+      await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+        const workTask = await tx.workTask.findUnique({ where: { id: workTaskId } });
+        if (!workTask || workTask.status !== 'OPEN') {
+          await this.telegram.answerCallbackQuery(callbackId, 'Ця робота більше не доступна.');
+          return;
+        }
+        await this.pairingPrisma.user.update({
+          where: { id: admin.id },
+          data: { telegramAdminPendingWorkTaskId: workTask.id, telegramAdminPendingProductionOrderId: null, telegramAdminPendingQty: null },
+        });
+        await this.telegram.answerCallbackQuery(callbackId);
+        await this.telegram.sendMessage(chatId, `🛠 Обрано: <b>${escapeHtml(workTask.title)}</b>\n💶 Введіть суму, € (число).`);
+      });
+      return;
+    }
+    if (data === 'admin:submit:confirm') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.submitPendingAdminExecution(admin);
+      return;
+    }
+    if (data === 'admin:submit:editqty') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminPendingQty: null } });
+      await this.telegram.sendMessage(chatId, admin.telegramAdminPendingWorkTaskId ? '💶 Введіть суму ще раз.' : '🔢 Введіть кількість ще раз.');
+      return;
+    }
+    if (data === 'admin:submit:cancel') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.clearAdminPending(admin.id);
+      await this.telegram.sendMessage(chatId, '❌ Скасовано.', ADMIN_MENU);
+      return;
+    }
+    if (data === 'admin:photo:skip') {
+      await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminAwaitingPhotoForExecutionId: null } });
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.telegram.sendMessage(chatId, '👍 Гаразд.', ADMIN_MENU);
+      return;
+    }
+
+    await this.telegram.answerCallbackQuery(callbackId);
   }
 
   // ============================================================
@@ -798,9 +1441,25 @@ export class TelegramBotService implements OnModuleInit {
   // Supervisor notification + approve/reject
   // ============================================================
 
-  /** "Сповіщення керівнику в Telegram" (2026-10-01) — every company User holding `production-executions:confirm` who has separately opted in (User.telegramChatId, self-service via /notifications — see UsersService) gets pushed this bot-submitted DRAFT with inline ✅/❌. */
+  /**
+   * "Сповіщення керівнику в Telegram" (2026-10-01) — every company User
+   * holding `production-executions:confirm` who has separately opted in
+   * (User.telegramChatId, self-service via /notifications — see
+   * UsersService) gets pushed this bot-submitted DRAFT with inline ✅/❌.
+   * `submitter` only needs `companyId`/`fullName` — PairedEmployee's own
+   * self-submit flow and PairedAdminUser's submit-for-employee flow (2026-
+   * 10-05) both satisfy this narrower shape, so the same notification path
+   * serves both without a cast.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async notifySupervisors(tx: any, submitter: PairedEmployee, executionId: string, description: string, value: number, unit: string): Promise<void> {
+  private async notifySupervisors(
+    tx: any,
+    submitter: { companyId: string; fullName: string },
+    executionId: string,
+    description: string,
+    value: number,
+    unit: string,
+  ): Promise<void> {
     const memberships: Array<{ userId: string; roleId: string }> = await tx.companyMembership.findMany({ where: {} });
     if (memberships.length === 0) return;
     const roleIds = [...new Set(memberships.map((m) => m.roleId))];
@@ -948,6 +1607,20 @@ interface PairedEmployee {
   telegramAwaitingPhotoForExecutionId: string | null;
 }
 
+/** The admin "submit work for an employee" identity — see findAdminByChatId and the "Admin flow" section header above. */
+interface PairedAdminUser {
+  id: string;
+  companyId: string;
+  fullName: string;
+  email: string;
+  telegramChatId: string;
+  telegramAdminPendingEmployeeIds: string | null;
+  telegramAdminPendingProductionOrderId: string | null;
+  telegramAdminPendingWorkTaskId: string | null;
+  telegramAdminPendingQty: string | null;
+  telegramAdminAwaitingPhotoForExecutionId: string | null;
+}
+
 function parseNumber(text: string): number | null {
   const parsed = Number(text.replace(',', '.'));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -964,14 +1637,25 @@ function parseAllocations(raw: string | null): string[] {
 }
 
 function buildColleagueKeyboard(colleagues: Array<{ id: string; fullName: string }>, selected: string[]): TelegramInlineKeyboard {
+  return buildToggleKeyboard(colleagues, selected, 'team:toggle:', 'team:done', 'team:cancel');
+}
+
+/** Generic multi-select picker keyboard (2 names per row + a Done/Cancel row) — backs both the Employee colleague picker (`team:*`) and the admin employee picker (`admin:emp:*`), parametrized only by callback_data prefixes so each flow's own namespace never collides with the other's. */
+function buildToggleKeyboard(
+  items: Array<{ id: string; fullName: string }>,
+  selected: string[],
+  togglePrefix: string,
+  doneData: string,
+  cancelData: string,
+): TelegramInlineKeyboard {
   const selectedSet = new Set(selected);
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (let i = 0; i < colleagues.length; i += 2) {
+  for (let i = 0; i < items.length; i += 2) {
     rows.push(
-      colleagues.slice(i, i + 2).map((c) => ({ text: `${selectedSet.has(c.id) ? '✅ ' : ''}${c.fullName}`, callback_data: `team:toggle:${c.id}` })),
+      items.slice(i, i + 2).map((c) => ({ text: `${selectedSet.has(c.id) ? '✅ ' : ''}${c.fullName}`, callback_data: `${togglePrefix}${c.id}` })),
     );
   }
-  rows.push([{ text: `✅ Готово (${selected.length})`, callback_data: 'team:done' }, { text: '❌ Скасувати', callback_data: 'team:cancel' }]);
+  rows.push([{ text: `✅ Готово (${selected.length})`, callback_data: doneData }, { text: '❌ Скасувати', callback_data: cancelData }]);
   return { inline_keyboard: rows };
 }
 
