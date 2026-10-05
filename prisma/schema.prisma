@@ -259,6 +259,15 @@ model User {
   telegramAdminPendingWorkTaskId         String? @db.Uuid
   telegramAdminPendingQty                String?
   telegramAdminAwaitingPhotoForExecutionId String? @db.Uuid
+  // "📈 Підсумок по працівнику" (2026-10-06 user request): true for exactly
+  // one bot turn — set when the admin taps the button, cleared the moment
+  // their next free-text message is consumed as the employee-name query
+  // (TelegramBotService#handleAdminSummaryQuery). A transient flag rather
+  // than a 5th pending-state column, since this mini-flow (name search ->
+  // pick employee -> pick period -> show report) never needs to persist
+  // past that one text message — the employee id and period live only in
+  // callback_data from there on, never written back to this row.
+  telegramAdminAwaitingSummaryQuery      Boolean @default(false)
 
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
