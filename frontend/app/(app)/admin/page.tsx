@@ -7,6 +7,7 @@ import { useRoles } from '@/lib/hooks/use-roles';
 import { roleDisplayName } from '@/lib/role-labels';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { InviteUserDialog } from '@/components/domain/admin/invite-user-dialog';
+import { TelegramPairingCell } from '@/components/domain/admin/telegram-pairing-cell';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,7 @@ export default function AdminUsersPage() {
               <TableHead>{t('fullName')}</TableHead>
               <TableHead>{t('email')}</TableHead>
               <TableHead>{t('role')}</TableHead>
+              <TableHead>Telegram</TableHead>
               <TableHead>{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -95,6 +97,9 @@ export default function AdminUsersPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </TableCell>
+                  <TableCell>
+                    <TelegramPairingCell userId={u.userId} fullName={u.fullName} telegramPaired={u.telegramPaired} />
                   </TableCell>
                   <TableCell>
                     {isSelf ? (

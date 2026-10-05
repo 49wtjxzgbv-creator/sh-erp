@@ -31,6 +31,8 @@ export interface CompanyMember {
   roleId: string;
   roleName: string | null;
   memberSince: string;
+  /** 2026-10-06 — lets the admin users page offer "generate code" vs "unlink" per member. */
+  telegramPaired: boolean;
 }
 
 export function listUsers(): Promise<CompanyMember[]> {
@@ -96,4 +98,13 @@ export function generateMyTelegramPairingCode(): Promise<TelegramPairingCode> {
 
 export function unlinkMyTelegram(): Promise<{ unlinked: true }> {
   return apiClient.post<{ unlinked: true }>('users/me/telegram-unlink');
+}
+
+/** Admin-initiated pairing (2026-10-06 — "підписати в бот ще одного адміністратора"): requires users:manage, scoped to a member of the admin's own company — see users.service.ts#generateTelegramPairingCodeForUser. */
+export function generateTelegramPairingCodeForUser(userId: string): Promise<TelegramPairingCode> {
+  return apiClient.post<TelegramPairingCode>(`users/${userId}/telegram-pairing-code`);
+}
+
+export function unlinkTelegramForUser(userId: string): Promise<{ unlinked: true }> {
+  return apiClient.post<{ unlinked: true }>(`users/${userId}/telegram-unlink`);
 }

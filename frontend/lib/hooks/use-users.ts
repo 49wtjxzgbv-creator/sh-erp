@@ -10,6 +10,8 @@ import {
   getMyProfile,
   generateMyTelegramPairingCode,
   unlinkMyTelegram,
+  generateTelegramPairingCodeForUser,
+  unlinkTelegramForUser,
   type InviteUserInput,
   type ChangePasswordInput,
 } from '@/lib/api-client/users';
@@ -76,5 +78,22 @@ export function useUnlinkMyTelegram() {
   return useMutation({
     mutationFn: () => unlinkMyTelegram(),
     onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
+  });
+}
+
+/** Admin-initiated pairing (2026-10-06 — "підписати в бот ще одного адміністратора"), /admin users page — invalidates useUsers so that member's paired badge refreshes right away. */
+export function useGenerateTelegramPairingCodeForUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => generateTelegramPairingCodeForUser(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
+  });
+}
+
+export function useUnlinkTelegramForUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => unlinkTelegramForUser(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
   });
 }

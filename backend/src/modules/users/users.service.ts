@@ -91,6 +91,11 @@ export class UsersService {
         roleId: m.roleId,
         roleName: r?.name ?? null,
         memberSince: m.createdAt,
+        // "Підписати в бот ще одного адміністратора" (2026-10-06) — lets
+        // the /admin users list show, per member, whether they're already
+        // paired (so an admin knows whether to offer "generate code" or
+        // "unlink"), same boolean-presence shape as me()'s own telegramPaired.
+        telegramPaired: Boolean(u?.telegramChatId),
       };
     });
   }
@@ -254,6 +259,52 @@ export class UsersService {
    * EmployeesService#generateTelegramPairingCode already uses.
    */
   async generateTelegramPairingCode(user: RequestUser) {
+    return this.generatePairingCodeFor(user.userId);
+  }
+
+  /**
+   * "Підписати в бот ще одного адміністратора" (2026-10-06 user request):
+   * an admin (users:manage) generates a pairing code for SOMEONE ELSE,
+   * instead of that person having to log into ERP themselves and visit
+   * /notifications — useful for a colleague who's a company member but
+   * doesn't otherwise use the ERP web UI. `getMembershipOrThrow` keeps
+   * this scoped to the admin's own company, same guard updateRole/
+   * deactivate already use — an admin from company A can't generate a
+   * code for a User who only belongs to company B.
+   */
+  async generateTelegramPairingCodeForUser(user: RequestUser, targetUserId: string) {
+    await this.getMembershipOrThrow(user.companyId, targetUserId);
+    const result = await this.generatePairingCodeFor(targetUserId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'user.telegram_pairing_code_generated_by_admin',
+      entityType: 'User',
+      entityId: targetUserId,
+      after: { expiresAt: result.expiresAt },
+    });
+    return result;
+  }
+
+  async unlinkTelegram(user: RequestUser) {
+    return this.unlinkTelegramFor(user.userId);
+  }
+
+  /** Admin counterpart to unlinkTelegram — same company-membership guard as generateTelegramPairingCodeForUser. */
+  async unlinkTelegramForUser(user: RequestUser, targetUserId: string) {
+    await this.getMembershipOrThrow(user.companyId, targetUserId);
+    const result = await this.unlinkTelegramFor(targetUserId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'user.telegram_unlinked_by_admin',
+      entityType: 'User',
+      entityId: targetUserId,
+    });
+    return result;
+  }
+
+  private async generatePairingCodeFor(targetUserId: string) {
     const expiresAt = new Date(Date.now() + TELEGRAM_PAIRING_CODE_TTL_MINUTES * 60_000);
     let updated;
     let code = '';
@@ -261,7 +312,7 @@ export class UsersService {
       code = randomPairingCode();
       try {
         updated = await this.prisma.tenant.user.update({
-          where: { id: user.userId },
+          where: { id: targetUserId },
           data: { telegramPairingCode: code, telegramPairingCodeExpiresAt: expiresAt },
         });
         break;
@@ -276,9 +327,9 @@ export class UsersService {
     return { pairingCode: code, expiresAt: updated.telegramPairingCodeExpiresAt };
   }
 
-  async unlinkTelegram(user: RequestUser) {
+  private async unlinkTelegramFor(targetUserId: string) {
     await this.prisma.tenant.user.update({
-      where: { id: user.userId },
+      where: { id: targetUserId },
       data: { telegramChatId: null, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
     });
     return { unlinked: true };

@@ -66,4 +66,18 @@ export class UsersController {
   async unlinkTelegram(@CurrentUser() user: RequestUser) {
     return this.usersService.unlinkTelegram(user);
   }
+
+  @Post(':userId/telegram-pairing-code')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: "Generate a Telegram pairing code for ANOTHER member of this company (so an admin can link a colleague's bot access without that colleague logging into the ERP themselves)." })
+  async generateTelegramPairingCodeForUser(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
+    return this.usersService.generateTelegramPairingCodeForUser(user, userId);
+  }
+
+  @Post(':userId/telegram-unlink')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: "Unlink ANOTHER member's Telegram account." })
+  async unlinkTelegramForUser(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
+    return this.usersService.unlinkTelegramForUser(user, userId);
+  }
 }
