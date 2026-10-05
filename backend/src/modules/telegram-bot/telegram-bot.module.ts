@@ -8,12 +8,13 @@ import { TelegramBotService } from './telegram-bot.service';
 
 @Module({
   // ProductionExecutionsService — creates the DRAFT submission. Assembly/
-  // ProductionOrder reads go straight through prisma.tenant inside
-  // TelegramBotService itself, no AssembliesService/ProductionOrdersService
-  // dependency needed for this V1 (PRODUCT-only — no WorkTask/GENERAL
-  // submission path yet). FilesModule — ASSEMBLY_PHOTO thumbnails on the
-  // search-results list (2026-10-01 user request — "щоб при виборі виробу
-  // було також фото").
+  // ProductionOrder reads mostly go straight through prisma.tenant inside
+  // TelegramBotService itself (PRODUCT-only — no WorkTask/GENERAL
+  // submission path yet). ProductionOrdersService — ONLY for its
+  // checkReadiness() (2026-10-06, "🔍 Перевірити готовність замовлення")
+  // read-only shortage check; nothing else in this bot calls it. FilesModule
+  // — ASSEMBLY_PHOTO thumbnails on the search-results list (2026-10-01 user
+  // request — "щоб при виборі виробу було також фото").
   imports: [ProductionModule, FilesModule],
   controllers: [TelegramBotController],
   // TelegramBotPrismaService is deliberately NOT exported — same usage

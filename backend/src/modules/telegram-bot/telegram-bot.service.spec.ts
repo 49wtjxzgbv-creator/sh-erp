@@ -6,6 +6,7 @@ describe('TelegramBotService (2026-10-01)', () => {
   let pairingPrisma: any;
   let prisma: any;
   let productionExecutionsService: any;
+  let productionOrdersService: any;
   let filesService: any;
   let telegram: any;
   let tx: any;
@@ -52,6 +53,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       role: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
       user: { findMany: jest.fn().mockResolvedValue([]) },
       payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
     };
     pairingPrisma = {
       employee: {
@@ -71,6 +73,7 @@ describe('TelegramBotService (2026-10-01)', () => {
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     productionExecutionsService = { create: jest.fn(), confirm: jest.fn(), remove: jest.fn() };
+    productionOrdersService = { checkReadiness: jest.fn() };
     filesService = { listForEntities: jest.fn().mockResolvedValue({}), storeBotUploadedAsset: jest.fn() };
     telegram = {
       sendMessage: jest.fn(),
@@ -81,7 +84,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       editMessageText: jest.fn(),
       downloadPhoto: jest.fn(),
     };
-    service = new TelegramBotService(pairingPrisma, prisma, productionExecutionsService, filesService, telegram);
+    service = new TelegramBotService(pairingPrisma, prisma, productionExecutionsService, productionOrdersService, filesService, telegram);
   });
 
   describe('/start', () => {
@@ -1143,6 +1146,79 @@ describe('TelegramBotService (2026-10-01)', () => {
         tx.payrollEntry.findMany.mockResolvedValue([]);
         await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:summary:period:e1:today', message: { chat: { id: 777 }, message_id: 1 } } });
         expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('немає підтверджених записів'), expect.anything());
+      });
+    });
+
+    describe('🔍 Перевірити готовність (2026-10-06 — the exact question asked in chat about order #440172/409219.L)', () => {
+      beforeEach(() => {
+        tx.companyMembership.findFirst.mockResolvedValue({ userId: 'admin1', roleId: 'role-record-only' });
+        tx.role.findUnique.mockResolvedValue({ id: 'role-record-only', permissions: [{ permission: { key: 'production-executions:record' } }] });
+      });
+
+      it('lists PLANNED batches with a "🔍 Перевірити" button each', async () => {
+        tx.productionOrder.findMany.mockResolvedValue([{ id: 'po1', assemblyId: 'a1', unitsPlanned: 4, status: 'PLANNED' }]);
+        tx.assembly.findMany.mockResolvedValue([{ id: 'a1', article: '409219.L', name: 'Förderband' }]);
+
+        await service.handleUpdate({ message: { chat: { id: 777 }, text: '🔍 Перевірити готовність' } });
+
+        expect(tx.productionOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'PLANNED' } }));
+        expect(telegram.sendMessage).toHaveBeenCalledWith(
+          '777',
+          expect.stringContaining('409219.L'),
+          expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'admin:check:po1' })]] }),
+        );
+      });
+
+      it('with nothing PLANNED, says so', async () => {
+        tx.productionOrder.findMany.mockResolvedValue([]);
+        await service.handleUpdate({ message: { chat: { id: 777 }, text: '🔍 Перевірити готовність' } });
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('Немає запланованих партій'), expect.anything());
+      });
+
+      it('picking a ready batch calls ProductionOrdersService#checkReadiness and reports it is ready', async () => {
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+        productionOrdersService.checkReadiness.mockResolvedValue({ unitsPlanned: 4, ready: true, shortages: [] });
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:check:po1', message: { chat: { id: 777 }, message_id: 1 } } });
+
+        expect(productionOrdersService.checkReadiness).toHaveBeenCalledWith(expect.objectContaining({ userId: 'admin1', companyId: 'c1' }), 'po1');
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('Готове до запуску'), expect.anything());
+      });
+
+      it('picking a NOT-ready batch names every missing PRODUCT and ASSEMBLY line by article/name', async () => {
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1' });
+        tx.assembly.findUnique.mockImplementation(({ where }: any) =>
+          Promise.resolve(where.id === 'a1' ? { id: 'a1', article: '409219.L', name: 'Förderband' } : { id: 'sub1', article: '279785.2', name: 'Umlenkrad' }),
+        );
+        productionOrdersService.checkReadiness.mockResolvedValue({
+          unitsPlanned: 4,
+          ready: false,
+          shortages: [
+            { kind: 'PRODUCT', productId: 'p1', needed: 4, available: 0 },
+            { kind: 'ASSEMBLY', subAssemblyId: 'sub1', needed: 4, available: 0 },
+          ],
+        });
+        tx.product.findMany.mockResolvedValue([{ id: 'p1', article: '006121', name: 'M5 ISO 10511' }]);
+        tx.assembly.findMany.mockResolvedValue([{ id: 'sub1', article: '279785.2', name: 'Umlenkrad' }]);
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:check:po1', message: { chat: { id: 777 }, message_id: 1 } } });
+
+        expect(telegram.sendMessage).toHaveBeenCalledWith(
+          '777',
+          expect.stringMatching(/НЕ готове[\s\S]*006121[\s\S]*279785\.2/),
+          expect.anything(),
+        );
+      });
+
+      it('surfaces checkReadiness errors (e.g. no locked BOM version) as a readable message instead of crashing', async () => {
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+        productionOrdersService.checkReadiness.mockRejectedValue(new CodedConflictException('PRODUCTION_NO_LOCKED_BOM_VERSION', 'This order has no locked BOM version.'));
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:check:po1', message: { chat: { id: 777 }, message_id: 1 } } });
+
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('locked BOM version'), expect.anything());
       });
     });
   });

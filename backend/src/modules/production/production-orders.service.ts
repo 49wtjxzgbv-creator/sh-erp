@@ -355,6 +355,96 @@ export class ProductionOrdersService {
   // Start — the core lifecycle transition
   // ============================================================
 
+  /**
+   * Read-only counterpart to start()'s own "Pass 1" availability check
+   * (2026-10-06 — Telegram bot "🔍 Перевірити готовність замовлення", same
+   * real-world question a user asked in chat about order #440172/409219.L)
+   * — resolves the order's own locked version/qty/warehouse/customerOrderId
+   * and runs the exact same computeShortages the real start() transition
+   * uses, without consuming anything or requiring PLANNED status. Exists
+   * so "is this ready to start, and if not, what's missing" can be
+   * answered on demand (bot command, or a future "Перевірити" button on
+   * the order detail page) without duplicating the shortage math, which is
+   * genuinely non-trivial (physical stock minus OTHER orders' reservations,
+   * sub-assembly FIFO availability).
+   */
+  async checkReadiness(user: RequestUser, id: string): Promise<{ unitsPlanned: number; ready: boolean; shortages: ShortageLine[] }> {
+    const order = await this.findOne(user, id);
+    if (!order.assemblyVersionId) {
+      throw new CodedConflictException(
+        'PRODUCTION_NO_LOCKED_BOM_VERSION',
+        'This order has no locked BOM version — cannot check readiness (pre-versioning legacy data, Phase 1 §6.4).',
+      );
+    }
+    const version = await this.prisma.tenant.assemblyVersion.findUnique({
+      where: { id: order.assemblyVersionId },
+      include: { components: true },
+    });
+    if (!version) throw new CodedNotFoundException('PRODUCTION_LOCKED_VERSION_NOT_FOUND', 'Locked assembly version not found.');
+
+    const unitsPlanned = Number(order.unitsPlanned);
+    const warehouseId = await this.resolveDefaultWarehouseId();
+    const customerOrderId = await this.resolveCustomerOrderId(order);
+    const { shortages } = await this.computeShortages(user, unitsPlanned, warehouseId, customerOrderId, version.components);
+    return { unitsPlanned, ready: shortages.length === 0, shortages };
+  }
+
+  /** Pass 1 of start() — see that method's own "Stock-reservation spec §4/§16" comments for the "available = physical minus OTHER orders' reservations" rule this implements per line. Pulled out so checkReadiness() above can run the identical check without consuming anything. */
+  private async computeShortages(
+    user: RequestUser,
+    unitsPlanned: number,
+    warehouseId: string,
+    customerOrderId: string | null,
+    components: Array<{ componentType: string; productId: string | null; subAssemblyId: string | null; qtyPerUnit: Prisma.Decimal | number }>,
+  ): Promise<{
+    shortages: ShortageLine[];
+    productLines: Array<{ productId: string; needed: number }>;
+    assemblyLines: Array<{ subAssemblyId: string; needed: number }>;
+    myReservedByProduct: Map<string, { fromStock: number; fromPurchase: number }>;
+  }> {
+    const shortages: ShortageLine[] = [];
+    const productLines: Array<{ productId: string; needed: number }> = [];
+    const assemblyLines: Array<{ subAssemblyId: string; needed: number }> = [];
+    const myReservedByProduct = new Map<string, { fromStock: number; fromPurchase: number }>();
+
+    for (const line of components) {
+      const qtyPerUnit = Number(line.qtyPerUnit);
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        const needed = unitsPlanned * qtyPerUnit;
+        productLines.push({ productId: line.productId, needed });
+        const stock = await this.prisma.tenant.warehouseStock.findUnique({
+          where: { companyId_productId_warehouseId: { companyId: user.companyId, productId: line.productId, warehouseId } },
+        });
+        const physical = Number(stock?.qty ?? 0);
+        const totalReserved = Number(stock?.reservedQty ?? 0);
+        const mine = customerOrderId
+          ? await this.stockReservationService.getReservedForOrder(user, customerOrderId, line.productId, warehouseId)
+          : { fromStock: 0, fromPurchase: 0 };
+        myReservedByProduct.set(line.productId, mine);
+        const otherReserved = Math.max(totalReserved - (mine.fromStock + mine.fromPurchase), 0);
+        const available = physical - otherReserved;
+        if (available < needed) {
+          shortages.push({ kind: 'PRODUCT', productId: line.productId, needed, available });
+        }
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const needed = unitsPlanned * qtyPerUnit;
+        assemblyLines.push({ subAssemblyId: line.subAssemblyId, needed });
+        const physical = await this.prisma.tenant.finishedGood.count({
+          where: { assemblyId: line.subAssemblyId, status: 'IN_STOCK' },
+        });
+        const otherReserved = customerOrderId
+          ? await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId, customerOrderId)
+          : await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId);
+        const available = Math.max(physical - otherReserved, 0);
+        if (available < Math.ceil(needed)) {
+          shortages.push({ kind: 'ASSEMBLY', subAssemblyId: line.subAssemblyId, needed, available });
+        }
+      }
+    }
+
+    return { shortages, productLines, assemblyLines, myReservedByProduct };
+  }
+
   async start(user: RequestUser, id: string, dto: StartProductionOrderDto) {
     const order = await this.findOne(user, id);
     if (order.status !== 'PLANNED') {
@@ -387,57 +477,13 @@ export class ProductionOrdersService {
     const customerOrderId = await this.resolveCustomerOrderId(order);
 
     // ---- Pass 1: check availability for every line before consuming anything ----
-    const shortages: ShortageLine[] = [];
-    const productLines: Array<{ productId: string; needed: number }> = [];
-    const assemblyLines: Array<{ subAssemblyId: string; needed: number }> = [];
-    // §4/§16: "available" for THIS batch's own consumption is physical
-    // minus what OTHER orders have reserved — this batch's own order's
-    // reservation (only present if it's linked to a customer order) counts
-    // as available to itself, never double-subtracted. An ad-hoc/internal
-    // batch (no customer order) has no reservation of its own, so it must
-    // still respect every OTHER order's reservation in full — it was never
-    // entitled to eat into material held for a real customer order.
-    const myReservedByProduct = new Map<string, { fromStock: number; fromPurchase: number }>();
-
-    for (const line of version.components) {
-      const qtyPerUnit = Number(line.qtyPerUnit);
-      if (line.componentType === 'PRODUCT' && line.productId) {
-        const needed = unitsPlanned * qtyPerUnit;
-        productLines.push({ productId: line.productId, needed });
-        const stock = await this.prisma.tenant.warehouseStock.findUnique({
-          where: { companyId_productId_warehouseId: { companyId: user.companyId, productId: line.productId, warehouseId } },
-        });
-        const physical = Number(stock?.qty ?? 0);
-        const totalReserved = Number(stock?.reservedQty ?? 0);
-        const mine = customerOrderId
-          ? await this.stockReservationService.getReservedForOrder(user, customerOrderId, line.productId, warehouseId)
-          : { fromStock: 0, fromPurchase: 0 };
-        myReservedByProduct.set(line.productId, mine);
-        const otherReserved = Math.max(totalReserved - (mine.fromStock + mine.fromPurchase), 0);
-        const available = physical - otherReserved;
-        if (available < needed) {
-          shortages.push({ kind: 'PRODUCT', productId: line.productId, needed, available });
-        }
-      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
-        const needed = unitsPlanned * qtyPerUnit;
-        assemblyLines.push({ subAssemblyId: line.subAssemblyId, needed });
-        const physical = await this.prisma.tenant.finishedGood.count({
-          where: { assemblyId: line.subAssemblyId, status: 'IN_STOCK' },
-        });
-        // §2026-08-27: "Зі складу" claims from OTHER orders' own
-        // "Підвироби" dialog must not be eaten by this batch — same
-        // otherReserved subtraction the PRODUCT branch above does. This
-        // order's OWN claim (if any) counts as available to itself, so it
-        // is deliberately excluded here.
-        const otherReserved = customerOrderId
-          ? await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId, customerOrderId)
-          : await this.subAssemblyReservationService.getReservedByOthers(user, line.subAssemblyId);
-        const available = Math.max(physical - otherReserved, 0);
-        if (available < Math.ceil(needed)) {
-          shortages.push({ kind: 'ASSEMBLY', subAssemblyId: line.subAssemblyId, needed, available });
-        }
-      }
-    }
+    const { shortages, myReservedByProduct, productLines, assemblyLines } = await this.computeShortages(
+      user,
+      unitsPlanned,
+      warehouseId,
+      customerOrderId,
+      version.components,
+    );
 
     if (shortages.length > 0) {
       throw new CodedBadRequestException(

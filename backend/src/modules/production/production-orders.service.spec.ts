@@ -307,6 +307,59 @@ describe('ProductionOrdersService', () => {
     });
   });
 
+  describe('checkReadiness — read-only counterpart of the same availability check (2026-10-06, Telegram bot "Перевірити готовність")', () => {
+    beforeEach(() => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1', laborCostPerUnit: 0, packagingCostPerUnit: 0, deliveryCostPerUnit: 0, otherCostPerUnit: 0,
+      });
+    });
+
+    it('reports ready=true and no shortages when everything is sufficient, without consuming anything', async () => {
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+        id: 'v1',
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
+      });
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 100, reservedQty: 0 });
+
+      const result = await service.checkReadiness(user, 'po1');
+
+      expect(result).toEqual({ unitsPlanned: 2, ready: true, shortages: [] });
+      expect(stock.applyMovement).not.toHaveBeenCalled();
+      expect(prisma.tenant.finishedGood.createMany).not.toHaveBeenCalled();
+    });
+
+    it('reports every PRODUCT and ASSEMBLY shortage line, same shape start() throws, without the throw', async () => {
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+        id: 'v1',
+        components: [
+          { componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 },
+          { componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 },
+        ],
+      });
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 0 });
+      prisma.tenant.finishedGood.count.mockResolvedValue(1); // need 2, only 1
+
+      const result = await service.checkReadiness(user, 'po1');
+
+      expect(result.ready).toBe(false);
+      expect(result.shortages).toEqual([
+        { kind: 'PRODUCT', productId: 'p1', needed: 20, available: 5 },
+        { kind: 'ASSEMBLY', subAssemblyId: 'sub1', needed: 2, available: 1 },
+      ]);
+    });
+
+    it('works for an order NOT in PLANNED status too — readiness is about the BOM/stock, not the lifecycle stage', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'IN_PROGRESS' });
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({ id: 'v1', components: [] });
+      await expect(service.checkReadiness(user, 'po1')).resolves.toEqual({ unitsPlanned: 2, ready: true, shortages: [] });
+    });
+
+    it('rejects pre-versioning legacy data with no locked BOM version', async () => {
+      prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, assemblyVersionId: null });
+      await expect(service.checkReadiness(user, 'po1')).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('start — consumption, cost freezing, FinishedGoods, payroll, stage entry', () => {
     beforeEach(() => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({

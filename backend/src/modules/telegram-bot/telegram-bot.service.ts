@@ -7,6 +7,7 @@ import { FilesService } from '../files/files.service';
 import type { FileDomain } from '@prisma/client';
 import { CreateProductionExecutionDto } from '../production/dto/production-execution.dto';
 import { ProductionExecutionsService } from '../production/production-executions.service';
+import { ProductionOrdersService } from '../production/production-orders.service';
 import { TelegramApiClient, type TelegramInlineKeyboard, type TelegramReplyKeyboard } from './telegram-api.client';
 
 const MAX_ORDER_RESULTS = 10;
@@ -57,7 +58,9 @@ function buildAdminMenu(admin: { canRecord: boolean; canConfirm: boolean }): Tel
   if (admin.canRecord) secondRow.push({ text: '📊 Сьогодні записано мною' });
   secondRow.push({ text: '📈 Підсумок по працівнику' });
 
-  const keyboard = [topRow, secondRow, [{ text: '❓ Допомога' }]].filter((row) => row.length > 0);
+  const thirdRow: Array<{ text: string }> = [{ text: '🔍 Перевірити готовність' }];
+
+  const keyboard = [topRow, secondRow, thirdRow, [{ text: '❓ Допомога' }]].filter((row) => row.length > 0);
   return { keyboard, resize_keyboard: true };
 }
 
@@ -79,6 +82,7 @@ function buildAdminHelpText(admin: { canRecord: boolean; canConfirm: boolean }):
     sections.push('📊 <b>Сьогодні записано мною</b> — що саме ви наподавали за інших працівників сьогодні.');
   }
   sections.push('📈 <b>Підсумок по працівнику</b> — скільки хтось наробив/заробив за обраний період, без заходу в ERP.');
+  sections.push('🔍 <b>Перевірити готовність</b> — чи вистачає компонентів і підвиробів, щоб запустити заплановану партію, і чого саме не хватає, якщо ні.');
   sections.push('/cancel — скасувати поточну дію в будь-який момент.');
   return sections.join('\n\n');
 }
@@ -126,6 +130,7 @@ export class TelegramBotService implements OnModuleInit {
     private readonly pairingPrisma: TelegramBotPrismaService,
     private readonly prisma: PrismaService,
     private readonly productionExecutionsService: ProductionExecutionsService,
+    private readonly productionOrdersService: ProductionOrdersService,
     private readonly filesService: FilesService,
     private readonly telegram: TelegramApiClient,
   ) {}
@@ -757,6 +762,10 @@ export class TelegramBotService implements OnModuleInit {
       await this.telegram.sendMessage(chatId, '👤 Напишіть ім\'я працівника (або частину).');
       return;
     }
+    if (text === '🔍 Перевірити готовність' || text === '/check') {
+      await this.sendAdminReadinessOrderListPage(admin, 0);
+      return;
+    }
     if (text === '❓ Допомога' || text === '/help' || text.toLowerCase() === 'допомога') {
       await this.telegram.sendMessage(chatId, buildAdminHelpText(admin), buildAdminMenu(admin));
       return;
@@ -1018,6 +1027,95 @@ export class TelegramBotService implements OnModuleInit {
       await this.telegram.sendMessage(admin.telegramChatId, `👥 Обрано: <b>${names}</b>.\n\nЩо вони виконали?`, {
         inline_keyboard: [[{ text: '📦 Виріб (замовлення)', callback_data: 'admin:menu:orders' }, { text: '🛠 Загальна робота', callback_data: 'admin:menu:tasks' }]],
       });
+    });
+  }
+
+  // ============================================================
+  // "🔍 Перевірити готовність" (2026-10-06 user request, the exact
+  // question asked in chat about order #440172/409219.L): lists PLANNED
+  // batches (readiness is only meaningful before a batch starts — an
+  // IN_PROGRESS one already passed this check) and runs
+  // ProductionOrdersService#checkReadiness — the SAME shortage math
+  // start() itself uses, factored out read-only so nothing here duplicates
+  // the physical-stock-minus-other-orders'-reservations logic.
+  // ============================================================
+
+  private async sendAdminReadinessOrderListPage(admin: PairedAdminUser, page: number): Promise<void> {
+    await this.telegram.sendChatAction(admin.telegramChatId);
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const orders = await tx.productionOrder.findMany({ where: { status: 'PLANNED' }, orderBy: { createdAt: 'desc' } });
+      if (orders.length === 0) {
+        await this.telegram.sendMessage(admin.telegramChatId, '✅ Немає запланованих партій, що очікують запуску.', buildAdminMenu(admin));
+        return;
+      }
+      const assemblyById = await this.loadAssembliesFor(tx, orders);
+
+      const totalPages = Math.ceil(orders.length / LIST_PAGE_SIZE);
+      const clampedPage = Math.min(Math.max(page, 0), totalPages - 1);
+      const shown = orders.slice(clampedPage * LIST_PAGE_SIZE, clampedPage * LIST_PAGE_SIZE + LIST_PAGE_SIZE);
+
+      for (const o of shown) {
+        const a = assemblyById.get(o.assemblyId);
+        await this.telegram.sendMessage(admin.telegramChatId, `📦 ${escapeHtml(describeAssembly(a))} (${Number(o.unitsPlanned)} шт)`, {
+          inline_keyboard: [[{ text: '🔍 Перевірити', callback_data: `admin:check:${o.id}` }]],
+        });
+      }
+
+      const navButtons = [];
+      if (clampedPage > 0) navButtons.push({ text: '⬅️ Попередня', callback_data: `admin:checkpage:${clampedPage - 1}` });
+      if (clampedPage < totalPages - 1) navButtons.push({ text: 'Наступна ➡️', callback_data: `admin:checkpage:${clampedPage + 1}` });
+      await this.telegram.sendMessage(
+        admin.telegramChatId,
+        `📄 Сторінка ${clampedPage + 1} з ${totalPages}.`,
+        navButtons.length > 0 ? { inline_keyboard: [navButtons] } : undefined,
+      );
+    });
+  }
+
+  private async sendAdminReadinessResult(admin: PairedAdminUser, productionOrderId: string): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const syntheticUser: RequestUser = { userId: admin.id, companyId: admin.companyId, email: admin.email, roleId: '' };
+      const order = await tx.productionOrder.findUnique({ where: { id: productionOrderId } });
+      const assembly = order ? await tx.assembly.findUnique({ where: { id: order.assemblyId } }) : null;
+      const description = `📦 ${escapeHtml(describeAssembly(assembly))}`;
+
+      try {
+        const result = await this.productionOrdersService.checkReadiness(syntheticUser, productionOrderId);
+        if (result.ready) {
+          await this.telegram.sendMessage(admin.telegramChatId, `✅ ${description}\n\nГотове до запуску — всіх компонентів і підвиробів вистачає.`, buildAdminMenu(admin));
+          return;
+        }
+        const lines = await this.describeShortageLines(tx, result.shortages);
+        await this.telegram.sendMessage(admin.telegramChatId, `⚠️ ${description}\n\nНЕ готове до запуску. Не вистачає:\n${lines.join('\n')}`, buildAdminMenu(admin));
+      } catch (err) {
+        await this.telegram.sendMessage(admin.telegramChatId, `⚠️ ${escapeHtml(extractErrorMessage(err))}`, buildAdminMenu(admin));
+      }
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is PrismaService's extended, request-scoped transactional client; see loadAssembliesFor's own identical comment.
+  private async describeShortageLines(
+    tx: any,
+    shortages: Array<{ kind: 'PRODUCT' | 'ASSEMBLY'; productId?: string; subAssemblyId?: string; needed: number; available: number }>,
+  ): Promise<string[]> {
+    const productIds = shortages.filter((s) => s.kind === 'PRODUCT').map((s) => s.productId!);
+    const subAssemblyIds = shortages.filter((s) => s.kind === 'ASSEMBLY').map((s) => s.subAssemblyId!);
+    const products: Array<{ id: string; article: string; name: string }> = productIds.length ? await tx.product.findMany({ where: { id: { in: productIds } } }) : [];
+    const productById = new Map(products.map((p) => [p.id, p]));
+    const subAssemblies: Array<{ id: string; article: string | null; name: string }> = subAssemblyIds.length
+      ? await tx.assembly.findMany({ where: { id: { in: subAssemblyIds } } })
+      : [];
+    const subAssemblyById = new Map(subAssemblies.map((a) => [a.id, a]));
+
+    return shortages.map((s) => {
+      if (s.kind === 'PRODUCT') {
+        const p = productById.get(s.productId!);
+        const label = p ? `${p.article} — ${p.name}` : s.productId!;
+        return `  • ${escapeHtml(label)}: потрібно ${s.needed}, є ${s.available} (не вистачає ${s.needed - s.available})`;
+      }
+      const label = describeAssembly(subAssemblyById.get(s.subAssemblyId!));
+      const needed = Math.ceil(s.needed);
+      return `  • ${escapeHtml(label)}: потрібно ${needed}, є ${s.available} (не вистачає ${needed - s.available})`;
     });
   }
 
@@ -1306,6 +1404,18 @@ export class TelegramBotService implements OnModuleInit {
       const period = rest.slice(lastColon + 1) as SummaryPeriod;
       await this.telegram.answerCallbackQuery(callbackId);
       await this.sendAdminEmployeeSummary(admin, employeeId, period);
+      return;
+    }
+    if (data.startsWith('admin:checkpage:')) {
+      await this.telegram.answerCallbackQuery(callbackId);
+      const page = Number(data.slice('admin:checkpage:'.length));
+      await this.sendAdminReadinessOrderListPage(admin, Number.isFinite(page) && page >= 0 ? page : 0);
+      return;
+    }
+    if (data.startsWith('admin:check:')) {
+      const productionOrderId = data.slice('admin:check:'.length);
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.sendAdminReadinessResult(admin, productionOrderId);
       return;
     }
     if (data.startsWith('admin:order:')) {
