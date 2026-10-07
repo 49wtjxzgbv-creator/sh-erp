@@ -215,7 +215,7 @@ function ModelTreeRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const isSelected = node.id === selectedId;
   const hasChildren = node.children.length > 0;
-  const matched = bomSet && node.isLeaf && node.name ? bomSet.has(node.name.trim().toUpperCase()) : null;
+  const matched = bomSet && node.isLeaf && node.name ? articleMatches(node.name, bomSet) : null;
 
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
@@ -263,6 +263,27 @@ function ModelTreeRow({
 
 function treeHasNames(nodes: ModelTreeNode[]): boolean {
   return nodes.some((n) => Boolean(n.name.trim()) || treeHasNames(n.children));
+}
+
+/**
+ * A glTF node's name is rarely JUST the article — a real-world example
+ * (2026-10-08 user report) is `"278807-Flachstahl_EST;_120_x_..."`:
+ * article, then a bare `-` (no surrounding spaces), then the part's own
+ * name. Tries the full trimmed name first (covers a node that genuinely
+ * IS only the article), then falls back to everything before the FIRST
+ * `-` — every real article seen in this app so far uses `_`/`.` instead
+ * of `-` internally (e.g. "288171_172_173", "264084.02"), so splitting on
+ * the first `-` is a safe, if heuristic, way to isolate it.
+ */
+function articleMatches(name: string, bomSet: Set<string>): boolean {
+  const trimmed = name.trim();
+  if (bomSet.has(trimmed.toUpperCase())) return true;
+  const dashIndex = trimmed.indexOf('-');
+  if (dashIndex > 0) {
+    const prefix = trimmed.slice(0, dashIndex).trim();
+    if (bomSet.has(prefix.toUpperCase())) return true;
+  }
+  return false;
 }
 
 /**
