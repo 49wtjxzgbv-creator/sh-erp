@@ -14,18 +14,30 @@ export interface CreateProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialValues?: Partial<ProductFormValues>;
+  /**
+   * Seeds the "Фото" field with an already-picked File — e.g. the 3D-model
+   * viewer's own isolated snapshot of the part this product is being
+   * created for (see Step3DViewer's `onCreateProduct`). Only read into
+   * state on mount: the caller must remount this component (a `key` tied
+   * to whatever identifies the request — e.g. the article) for a new
+   * photo to actually take effect on a dialog instance that stays mounted
+   * across multiple opens, same as `initialValues` on `ProductForm` itself.
+   * Still a normal, user-editable `PendingPhotoField` after that — the
+   * user can remove or replace it before saving.
+   */
+  initialPhoto?: File | null;
   onCreated: (product: Product) => void;
 }
 
 /** Quick "new product in a dialog" flow, reusing the full ProductForm (same validation as /catalog/new) — used from Invoice recognition to create an unmatched line as a real Product without leaving the page. */
-export function CreateProductDialog({ open, onOpenChange, initialValues, onCreated }: CreateProductDialogProps) {
+export function CreateProductDialog({ open, onOpenChange, initialValues, initialPhoto, onCreated }: CreateProductDialogProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const createProduct = useCreateProduct();
   const recordMovement = useRecordStockMovement();
   const [error, setError] = useState<string | null>(null);
-  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(initialPhoto ?? null);
 
   async function handleSubmit(values: CreateProductInput, initialStock?: InitialStockInput) {
     setError(null);

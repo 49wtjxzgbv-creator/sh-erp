@@ -23,6 +23,17 @@ import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-fi
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 
+/** Converts Step3DViewer's captured `data:image/png;base64,...` snapshot into a real File for PendingPhotoField/uploadFile — synchronous, no `fetch(dataUrl)` round trip needed for a same-process base64 string. */
+function dataUrlToFile(dataUrl: string, filename: string): File | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) return null;
+  const [, mimeType, base64] = match;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mimeType });
+}
+
 const assemblySchema = z.object({
   name: z.string().min(1),
   article: z.string().optional(),
@@ -144,16 +155,22 @@ export function AssemblyForm({
     return { notFound };
   }
 
-  // "а те чого немає в каталозі запропонувати створити новий товар"
-  // (2026-10-08): the 3D viewer bubbles up "create article X, named
-  // roughly Y, qty Z" rather than owning the create-product UI itself (see
-  // Step3DViewer's `onCreateProduct` header comment) — this owns the
-  // actual dialog and, once the product is created, appends it straight
-  // away by id with that same qty (no need to re-search the catalog for
-  // the article we just created it with).
-  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string; qty: number } | null>(null);
-  function handleCreateProduct(article: string, suggestedName: string, qty: number) {
-    setPendingNewProduct({ article, name: suggestedName, qty });
+  // "а те чого немає в каталозі запропонувати створити новий товар" +
+  // "потрібно щоб воно робило фото саме цієї деталі і додавало" (2026-10-08):
+  // the 3D viewer bubbles up "create article X, named roughly Y, qty Z,
+  // here's a photo of just that part" rather than owning the
+  // create-product UI itself (see Step3DViewer's `onCreateProduct` header
+  // comment) — this owns the actual dialog, seeds its photo field with the
+  // snapshot (still user-editable — see CreateProductDialog's own
+  // `initialPhoto` comment), and once the product is created, appends it
+  // straight away by id with that same qty (no need to re-search the
+  // catalog for the article we just created it with).
+  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string; qty: number; photo: File | null } | null>(
+    null,
+  );
+  function handleCreateProduct(article: string, suggestedName: string, qty: number, photoDataUrl: string | null) {
+    const photo = photoDataUrl ? dataUrlToFile(photoDataUrl, `${article}.png`) : null;
+    setPendingNewProduct({ article, name: suggestedName, qty, photo });
   }
   async function handleProductCreated(product: Product) {
     const qty = pendingNewProduct?.qty ?? 1;
@@ -317,9 +334,11 @@ export function AssemblyForm({
         </Button>
       )}
       <CreateProductDialog
+        key={pendingNewProduct?.article ?? 'none'}
         open={pendingNewProduct !== null}
         onOpenChange={(open) => !open && setPendingNewProduct(null)}
         initialValues={pendingNewProduct ? { article: pendingNewProduct.article, name: pendingNewProduct.name } : undefined}
+        initialPhoto={pendingNewProduct?.photo ?? null}
         onCreated={handleProductCreated}
       />
     </form>

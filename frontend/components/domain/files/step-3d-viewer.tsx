@@ -95,16 +95,21 @@ export interface Step3DViewerProps {
    */
   onAddToBom?: (items: { article: string; qty: number }[]) => Promise<{ notFound: string[] }>;
   /**
-   * "а те чого немає в каталозі запропонувати створити новий товар"
+   * "а те чого немає в каталозі запропонувати створити новий товар" +
+   * "потрібно щоб воно робило фото саме цієї деталі і додавало"
    * (2026-10-08): offered on a row whose article came back in `notFound`
    * above. The CALLER owns the actual product-creation UI (a dialog) since
    * embedding it here would pull the whole catalog `ProductForm` into this
    * already-lazy-loaded 3D viewer chunk for no benefit — this just bubbles
    * up "the user wants to create article X, named roughly Y, qty Z" (same
    * node-count-based qty as `onAddToBom`, so the line it gets appended to
-   * once created has the right quantity too).
+   * once created has the right quantity too), plus a PNG data URL snapshot
+   * of just that one part — isolated (every other mesh hidden) and framed
+   * tight on its own bounding box, captured from the live scene right
+   * before the callback fires (see `mountScene`'s own `captureSnapshot`) —
+   * `null` only if the node turned out to have no mesh geometry under it.
    */
-  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number, photoDataUrl: string | null) => void;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -119,6 +124,7 @@ interface ModelTreeNode {
 interface SceneApi {
   dispose: () => void;
   setSelected: (id: string | null) => void;
+  captureSnapshot: (id: string) => string | null;
 }
 
 /**
@@ -254,6 +260,17 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     }
   }
 
+  // "потрібно щоб воно робило фото саме цієї деталі і додавало" (2026-10-08):
+  // grabs the node's own isolated snapshot from the live scene (see
+  // `mountScene`'s `captureSnapshot`) right before bubbling the
+  // create-product request up — the tree row itself only knows the node id,
+  // not how to reach into the 3D scene, so this wrapper is what's actually
+  // threaded down as the `onCreateProduct` prop.
+  function handleCreateProductRequest(nodeId: string, article: string, suggestedName: string, qty: number) {
+    const photoDataUrl = sceneApiRef.current?.captureSnapshot(nodeId) ?? null;
+    onCreateProduct?.(article, suggestedName, qty, photoDataUrl);
+  }
+
   return (
     // Stacked (model on top, tree below, both scrollable in their own
     // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
@@ -293,7 +310,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
             articleCounts={unmatchedArticleCounts}
             pendingArticles={pendingArticles}
             notFoundArticles={notFoundArticles}
-            onCreateProduct={onCreateProduct}
+            onCreateProduct={onCreateProduct ? handleCreateProductRequest : undefined}
           />
         </div>
       )}
@@ -320,7 +337,7 @@ function ModelTreeList({
   articleCounts: Map<string, number>;
   pendingArticles: Set<string>;
   notFoundArticles: Set<string>;
-  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
+  onCreateProduct?: (nodeId: string, article: string, suggestedName: string, qty: number) => void;
 }) {
   return (
     <ul className="space-y-0.5">
@@ -361,7 +378,7 @@ function ModelTreeRow({
   articleCounts: Map<string, number>;
   pendingArticles: Set<string>;
   notFoundArticles: Set<string>;
-  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
+  onCreateProduct?: (nodeId: string, article: string, suggestedName: string, qty: number) => void;
 }) {
   const t = useTranslations('files');
   const [open, setOpen] = useState(true);
@@ -397,7 +414,7 @@ function ModelTreeRow({
 
   function handleCreateProduct(e: React.MouseEvent) {
     e.stopPropagation();
-    onCreateProduct?.(article, suggestProductName(node.name), qty);
+    onCreateProduct?.(node.id, article, suggestProductName(node.name), qty);
   }
 
   return (
@@ -680,8 +697,75 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   }
   renderer.domElement.addEventListener('click', onClick);
 
+  // "потрібно щоб воно робило фото саме цієї деталі" (2026-10-08): a
+  // "create product" prefill photo — isolates `id`'s own mesh(es) (every
+  // other mesh in the model hidden), frames the camera tight on just its
+  // bounding box, renders ONE frame into the existing (already-mounted,
+  // already-sized) renderer, and reads it back as a PNG data URL. Runs
+  // fully synchronously — visibility/camera mutation, render, `toDataURL`
+  // readback, and restore all happen in one JS turn with no `await`
+  // between them — so the browser never gets a chance to paint the
+  // isolated/zoomed intermediate frame; the visible canvas only ever shows
+  // the normal view before and after. `toDataURL` reads the backbuffer
+  // immediately after `render()`, before the NEXT `render()` (the restore
+  // call) touches it — the standard three.js screenshot pattern, and why
+  // this doesn't need `preserveDrawingBuffer: true` on the renderer (which
+  // would cost the main animation loop a copy every frame for a feature
+  // used maybe once per session).
+  function captureSnapshot(id: string): string | null {
+    const target = findByTreeId(group, id);
+    if (!target) return null;
+    const targetMeshes = meshesUnder(target);
+    if (targetMeshes.length === 0) return null;
+    const targetSet = new Set(targetMeshes);
+
+    const savedVisibility: [THREE.Mesh, boolean][] = [];
+    const savedEmissive: [THREE.MeshStandardMaterial, THREE.Color][] = [];
+    group.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      savedVisibility.push([o, o.visible]);
+      o.visible = targetSet.has(o);
+      const materials = Array.isArray(o.material) ? o.material : [o.material];
+      for (const mat of materials) {
+        if ('emissive' in mat) {
+          const m = mat as THREE.MeshStandardMaterial;
+          savedEmissive.push([m, m.emissive.clone()]);
+          m.emissive.set(0x000000);
+        }
+      }
+    });
+
+    const savedCameraPosition = camera.position.clone();
+    const savedTarget = controls.target.clone();
+
+    const targetBox = new THREE.Box3().setFromObject(target);
+    const targetSize = targetBox.getSize(new THREE.Vector3());
+    const targetCenter = targetBox.getCenter(new THREE.Vector3());
+    const targetMaxDim = Math.max(targetSize.x, targetSize.y, targetSize.z) || 1;
+    camera.position.set(
+      targetCenter.x + targetMaxDim * 1.5,
+      targetCenter.y + targetMaxDim * 1.2,
+      targetCenter.z + targetMaxDim * 1.5,
+    );
+    camera.lookAt(targetCenter);
+    camera.updateProjectionMatrix();
+
+    renderer.render(scene, camera);
+    const dataUrl = renderer.domElement.toDataURL('image/png');
+
+    savedVisibility.forEach(([mesh, visible]) => { mesh.visible = visible; });
+    savedEmissive.forEach(([mat, emissive]) => { mat.emissive.copy(emissive); });
+    camera.position.copy(savedCameraPosition);
+    controls.target.copy(savedTarget);
+    camera.lookAt(controls.target);
+    renderer.render(scene, camera);
+
+    return dataUrl;
+  }
+
   return {
     setSelected,
+    captureSnapshot,
     dispose: () => {
       renderer.domElement.removeEventListener('click', onClick);
       if (animationFrame) cancelAnimationFrame(animationFrame);
