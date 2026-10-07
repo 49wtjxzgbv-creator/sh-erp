@@ -11,6 +11,7 @@ import { toNumber } from '@/lib/api-client/decimal';
 import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { queryProducts } from '@/lib/api-client/catalog';
+import { uploadFile } from '@/lib/api-client/files';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -156,26 +157,50 @@ export function AssemblyForm({
   }
 
   // "а те чого немає в каталозі запропонувати створити новий товар" +
-  // "потрібно щоб воно робило фото саме цієї деталі і додавало" (2026-10-08):
-  // the 3D viewer bubbles up "create article X, named roughly Y, qty Z,
-  // here's a photo of just that part" rather than owning the
-  // create-product UI itself (see Step3DViewer's `onCreateProduct` header
-  // comment) — this owns the actual dialog, seeds its photo field with the
-  // snapshot (still user-editable — see CreateProductDialog's own
-  // `initialPhoto` comment), and once the product is created, appends it
-  // straight away by id with that same qty (no need to re-search the
-  // catalog for the article we just created it with).
-  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string; qty: number; photo: File | null } | null>(
-    null,
-  );
-  function handleCreateProduct(article: string, suggestedName: string, qty: number, photoDataUrl: string | null) {
+  // "потрібно щоб воно робило фото саме цієї деталі і додавало" +
+  // "щоб до товару додавало gbl файл саме цієї позиції якої робить фото"
+  // (2026-10-08): the 3D viewer bubbles up "create article X, named
+  // roughly Y, qty Z, here's a photo AND the standalone .glb of just that
+  // part" rather than owning the create-product UI itself (see
+  // Step3DViewer's `onCreateProduct` header comment) — this owns the
+  // actual dialog, seeds its photo field with the snapshot (still
+  // user-editable — see CreateProductDialog's own `initialPhoto`
+  // comment), and once the product is created: appends it straight away
+  // by id with that same qty (no need to re-search the catalog for the
+  // article we just created it with), and uploads the .glb as that new
+  // product's own document (`PRODUCT_DOCUMENT`, same domain/field
+  // `ProductForm` already renders for every product) — non-fatal on
+  // failure, same as the photo upload inside CreateProductDialog itself:
+  // the product and its BOM line are already saved by that point, so a
+  // failed document upload shouldn't strand the user, they can re-attach
+  // it from the product's own page.
+  const [pendingNewProduct, setPendingNewProduct] = useState<{
+    article: string;
+    name: string;
+    qty: number;
+    photo: File | null;
+    glb: ArrayBuffer | null;
+  } | null>(null);
+  function handleCreateProduct(
+    article: string,
+    suggestedName: string,
+    qty: number,
+    photoDataUrl: string | null,
+    glb: ArrayBuffer | null,
+  ) {
     const photo = photoDataUrl ? dataUrlToFile(photoDataUrl, `${article}.png`) : null;
-    setPendingNewProduct({ article, name: suggestedName, qty, photo });
+    setPendingNewProduct({ article, name: suggestedName, qty, photo, glb });
   }
   async function handleProductCreated(product: Product) {
     const qty = pendingNewProduct?.qty ?? 1;
+    const article = pendingNewProduct?.article ?? product.article;
+    const glb = pendingNewProduct?.glb ?? null;
     setPendingNewProduct(null);
     await appendProductLines([{ productId: product.id, qty }]);
+    if (glb) {
+      const glbFile = new File([glb], `${article}.glb`, { type: 'model/gltf-binary' });
+      await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: product.id }).catch(() => undefined);
+    }
   }
 
   const {

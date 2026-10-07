@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ChevronDown, ChevronRight, Check, AlertTriangle, Plus, Loader2 } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
@@ -96,20 +97,34 @@ export interface Step3DViewerProps {
   onAddToBom?: (items: { article: string; qty: number }[]) => Promise<{ notFound: string[] }>;
   /**
    * "а те чого немає в каталозі запропонувати створити новий товар" +
-   * "потрібно щоб воно робило фото саме цієї деталі і додавало"
-   * (2026-10-08): offered on a row whose article came back in `notFound`
-   * above. The CALLER owns the actual product-creation UI (a dialog) since
-   * embedding it here would pull the whole catalog `ProductForm` into this
-   * already-lazy-loaded 3D viewer chunk for no benefit — this just bubbles
-   * up "the user wants to create article X, named roughly Y, qty Z" (same
-   * node-count-based qty as `onAddToBom`, so the line it gets appended to
-   * once created has the right quantity too), plus a PNG data URL snapshot
-   * of just that one part — isolated (every other mesh hidden) and framed
-   * tight on its own bounding box, captured from the live scene right
-   * before the callback fires (see `mountScene`'s own `captureSnapshot`) —
-   * `null` only if the node turned out to have no mesh geometry under it.
+   * "потрібно щоб воно робило фото саме цієї деталі і додавало" +
+   * "потрібно також... щоб до товару додавало gbl файл саме цієї позиції
+   * якої робить фото" (2026-10-08): offered on a row whose article came
+   * back in `notFound` above. The CALLER owns the actual product-creation
+   * UI (a dialog) since embedding it here would pull the whole catalog
+   * `ProductForm` into this already-lazy-loaded 3D viewer chunk for no
+   * benefit — this just bubbles up "the user wants to create article X,
+   * named roughly Y, qty Z" (same node-count-based qty as `onAddToBom`, so
+   * the line it gets appended to once created has the right quantity
+   * too), plus:
+   * - a PNG data URL snapshot of just that one part — isolated (every
+   *   other mesh hidden) and framed tight on its own bounding box,
+   *   captured from the live scene right before the callback fires (see
+   *   `mountScene`'s own `captureSnapshot`) — `null` only if the node
+   *   turned out to have no mesh geometry under it.
+   * - that same part's own geometry, re-exported as a standalone binary
+   *   .glb (see `mountScene`'s own `exportPartGlb`) — so the new product
+   *   ends up with both a quick photo AND a real, independently-viewable
+   *   3D model of just that part, not the whole assembly it came from.
+   *   Also `null` only when there's no geometry to export.
    */
-  onCreateProduct?: (article: string, suggestedName: string, qty: number, photoDataUrl: string | null) => void;
+  onCreateProduct?: (
+    article: string,
+    suggestedName: string,
+    qty: number,
+    photoDataUrl: string | null,
+    glb: ArrayBuffer | null,
+  ) => void;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -125,6 +140,7 @@ interface SceneApi {
   dispose: () => void;
   setSelected: (id: string | null) => void;
   captureSnapshot: (id: string) => string | null;
+  exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
 }
 
 /**
@@ -260,15 +276,20 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     }
   }
 
-  // "потрібно щоб воно робило фото саме цієї деталі і додавало" (2026-10-08):
-  // grabs the node's own isolated snapshot from the live scene (see
-  // `mountScene`'s `captureSnapshot`) right before bubbling the
-  // create-product request up — the tree row itself only knows the node id,
-  // not how to reach into the 3D scene, so this wrapper is what's actually
-  // threaded down as the `onCreateProduct` prop.
-  function handleCreateProductRequest(nodeId: string, article: string, suggestedName: string, qty: number) {
+  // "потрібно щоб воно робило фото саме цієї деталі і додавало" +
+  // "щоб до товару додавало gbl файл саме цієї позиції" (2026-10-08):
+  // grabs the node's own isolated snapshot AND its standalone .glb export
+  // from the live scene (see `mountScene`'s `captureSnapshot` /
+  // `exportPartGlb`) right before bubbling the create-product request up —
+  // the tree row itself only knows the node id, not how to reach into the
+  // 3D scene, so this wrapper is what's actually threaded down as the
+  // `onCreateProduct` prop. The snapshot is synchronous (so it reads the
+  // scene before the export's own async work could let anything else
+  // touch it); the export is the only `await` here.
+  async function handleCreateProductRequest(nodeId: string, article: string, suggestedName: string, qty: number) {
     const photoDataUrl = sceneApiRef.current?.captureSnapshot(nodeId) ?? null;
-    onCreateProduct?.(article, suggestedName, qty, photoDataUrl);
+    const glb = (await sceneApiRef.current?.exportPartGlb(nodeId)) ?? null;
+    onCreateProduct?.(article, suggestedName, qty, photoDataUrl, glb);
   }
 
   return (
@@ -780,9 +801,30 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     return dataUrl;
   }
 
+  // "до товару додавало glb файл саме цієї позиції якої робить фото"
+  // (2026-10-08): companion to `captureSnapshot` — exports just the
+  // target node's own subtree (its meshes, with the same per-node-cloned
+  // materials `buildTree` already set up) as a standalone, binary .glb,
+  // via three.js's own `GLTFExporter`. Unlike `captureSnapshot`, this
+  // never touches the live scene's visibility/camera at all — passing
+  // `target` alone (not `group`) to `parseAsync` already scopes the
+  // export to just that subtree, regardless of what else in the model is
+  // currently visible. The part's own LOCAL transform (relative to its
+  // parent in the full assembly) carries over as-is into the exported
+  // file's root — irrelevant once it's loaded standalone, since
+  // Step3DViewer's own `mountScene` re-centers whatever it loads on its
+  // own bounding box anyway.
+  async function exportPartGlb(id: string): Promise<ArrayBuffer | null> {
+    const target = findByTreeId(group, id);
+    if (!target || meshesUnder(target).length === 0) return null;
+    const result = await new GLTFExporter().parseAsync(target, { binary: true });
+    return result instanceof ArrayBuffer ? result : null;
+  }
+
   return {
     setSelected,
     captureSnapshot,
+    exportPartGlb,
     dispose: () => {
       renderer.domElement.removeEventListener('click', onClick);
       if (animationFrame) cancelAnimationFrame(animationFrame);

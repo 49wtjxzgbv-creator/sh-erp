@@ -85,7 +85,7 @@ export interface EntityDocumentsFieldProps {
   /** Forwarded to Step3DViewer's own `onAddToBom` prop — see its header comment. Omit when the caller has no write access (read-only gate) or isn't an Assembly. */
   onAddToBom?: (items: { article: string; qty: number }[]) => Promise<{ notFound: string[] }>;
   /** Forwarded to Step3DViewer's own `onCreateProduct` prop — see its header comment. */
-  onCreateProduct?: (article: string, suggestedName: string, qty: number, photoDataUrl: string | null) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number, photoDataUrl: string | null, glb: ArrayBuffer | null) => void;
 }
 
 /**
