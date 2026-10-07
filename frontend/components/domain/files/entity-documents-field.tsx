@@ -83,7 +83,9 @@ export interface EntityDocumentsFieldProps {
   /** Forwarded to Step3DViewer's own `bomArticles` prop (see its header comment) — only the Assembly caller passes this, for the ✅/⚠️ cross-reference against the assembly's own current BOM. Omit entirely for Product or any other non-assembly caller. */
   bomArticles?: string[];
   /** Forwarded to Step3DViewer's own `onAddToBom` prop — see its header comment. Omit when the caller has no write access (read-only gate) or isn't an Assembly. */
-  onAddToBom?: (article: string) => Promise<void>;
+  onAddToBom?: (articles: string[]) => Promise<{ notFound: string[] }>;
+  /** Forwarded to Step3DViewer's own `onCreateProduct` prop — see its header comment. */
+  onCreateProduct?: (article: string, suggestedName: string) => void;
 }
 
 /**
@@ -93,7 +95,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -246,6 +248,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 glbUrl={isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl}
                 bomArticles={bomArticles}
                 onAddToBom={onAddToBom}
+                onCreateProduct={onCreateProduct}
               />
             )}
           </div>

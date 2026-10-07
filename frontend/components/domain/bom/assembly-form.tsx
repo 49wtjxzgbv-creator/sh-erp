@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import type { Assembly, AssemblyComponentLineInput, CreateAssemblyInput } from '@/lib/api-client/bom';
+import type { Product } from '@/lib/api-client/catalog';
 import { toNumber } from '@/lib/api-client/decimal';
 import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
@@ -20,6 +21,7 @@ import { PendingPhotoField } from '@/components/domain/files/pending-photo-field
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
 import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
+import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -91,30 +93,68 @@ export function AssemblyForm({
   );
 
   // "Якщо деталей якихось не має, то має бути кнопка додати до BOM
-  // специфікації" (2026-10-08): looks the article up in this company's
-  // own catalog (exact match, case-insensitive — `queryProducts`'s own
-  // `search` is a loose `contains`, so this re-filters down to a real
-  // match) and appends it as a new PRODUCT line with qtyPerUnit 1 — the
-  // user adjusts the real quantity afterward in «Склад (BOM)» same as any
-  // other line. `setComponents`'s own `onSuccess` already invalidates this
-  // assembly's components query, which is what `bomArticles` above is
-  // derived from — no separate refetch wiring needed, the ✅ just appears
-  // once the chain above re-renders with the new data.
+  // специфікації" + "потрібна кнопка додати все" (2026-10-08): resolves
+  // every requested article against this company's own catalog (exact
+  // match, case-insensitive — `queryProducts`'s own `search` is a loose
+  // `contains`, so this re-filters down to a real match) and appends
+  // whichever ones matched as new PRODUCT lines in ONE `setComponents`
+  // write — qtyPerUnit defaults to 1, the user adjusts the real quantity
+  // afterward in «Склад (BOM)» same as any other line. Doing every article
+  // in a single write (rather than one call per article) is required, not
+  // just an optimization: `setAssemblyComponents` REPLACES the whole line
+  // list from a snapshot of `components`, so calling it repeatedly
+  // back-to-back before the snapshot refreshes would silently drop
+  // everything but the last addition. `setComponents`'s own `onSuccess`
+  // already invalidates this assembly's components query, which is what
+  // `bomArticles` above is derived from — no separate refetch wiring
+  // needed, the ✅ just appears once the chain above re-renders with the
+  // new data.
   const setComponents = useSetAssemblyComponents(assembly?.id ?? '');
-  async function handleAddToBom(article: string): Promise<void> {
-    const matches = await queryProducts({ search: article, limit: 20 });
-    const product = matches.items.find((p) => p.article.trim().toUpperCase() === article.trim().toUpperCase());
-    if (!product) {
-      throw new Error(t('model3dProductNotFound', { article }));
-    }
-    const existingLines: AssemblyComponentLineInput[] = (components ?? []).map((c) => ({
+  function existingComponentLines(): AssemblyComponentLineInput[] {
+    return (components ?? []).map((c) => ({
       componentType: c.componentType,
       productId: c.productId ?? undefined,
       subAssemblyId: c.subAssemblyId ?? undefined,
       warehouseId: c.warehouseId ?? undefined,
       qtyPerUnit: toNumber(c.qtyPerUnit) ?? 0,
     }));
-    await setComponents.mutateAsync([...existingLines, { componentType: 'PRODUCT', productId: product.id, qtyPerUnit: 1 }]);
+  }
+  async function appendProductLines(productIds: string[]): Promise<void> {
+    if (productIds.length === 0) return;
+    const newLines: AssemblyComponentLineInput[] = productIds.map((productId) => ({
+      componentType: 'PRODUCT',
+      productId,
+      qtyPerUnit: 1,
+    }));
+    await setComponents.mutateAsync([...existingComponentLines(), ...newLines]);
+  }
+  async function handleAddToBom(articles: string[]): Promise<{ notFound: string[] }> {
+    const notFound: string[] = [];
+    const productIds: string[] = [];
+    for (const article of articles) {
+      const matches = await queryProducts({ search: article, limit: 20 });
+      const product = matches.items.find((p) => p.article.trim().toUpperCase() === article.trim().toUpperCase());
+      if (product) productIds.push(product.id);
+      else notFound.push(article);
+    }
+    await appendProductLines(productIds);
+    return { notFound };
+  }
+
+  // "а те чого немає в каталозі запропонувати створити новий товар"
+  // (2026-10-08): the 3D viewer bubbles up "create article X, named
+  // roughly Y" rather than owning the create-product UI itself (see
+  // Step3DViewer's `onCreateProduct` header comment) — this owns the
+  // actual dialog and, once the product is created, appends it straight
+  // away by id (no need to re-search the catalog for the article we just
+  // created it with).
+  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string } | null>(null);
+  function handleCreateProduct(article: string, suggestedName: string) {
+    setPendingNewProduct({ article, name: suggestedName });
+  }
+  async function handleProductCreated(product: Product) {
+    setPendingNewProduct(null);
+    await appendProductLines([product.id]);
   }
 
   const {
@@ -182,6 +222,7 @@ export function AssemblyForm({
               entityId={assembly.id}
               bomArticles={bomArticles}
               onAddToBom={readOnly ? undefined : handleAddToBom}
+              onCreateProduct={readOnly ? undefined : handleCreateProduct}
             />
           </CardContent>
         </Card>
@@ -271,6 +312,12 @@ export function AssemblyForm({
           {tc('save')}
         </Button>
       )}
+      <CreateProductDialog
+        open={pendingNewProduct !== null}
+        onOpenChange={(open) => !open && setPendingNewProduct(null)}
+        initialValues={pendingNewProduct ? { article: pendingNewProduct.article, name: pendingNewProduct.name } : undefined}
+        onCreated={handleProductCreated}
+      />
     </form>
   );
 }

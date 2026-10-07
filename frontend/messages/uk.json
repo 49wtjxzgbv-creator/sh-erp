@@ -296,7 +296,6 @@
     "newAssembly": "Нова специфікація",
     "editAssembly": "Редагувати специфікацію",
     "duplicateAssembly": "Дублювати специфікацію",
-    "model3dProductNotFound": "Товар з артикулом «{article}» не знайдено в каталозі.",
     "photo": "Фото",
     "assemblyHeader": "Основні дані",
     "name": "Назва",
@@ -1477,7 +1476,9 @@
     "measureHint": "Клацніть дві точки на кресленні",
     "model3d": "3D-модель збірки",
     "model3dHint": "Самодостатній HTML-файл з інтерактивним переглядачем (наприклад, «Publish eDrawings HTML» з SolidWorks) — усі дані мають бути в одному файлі, без окремих сусідніх файлів.",
-    "view3dModel": "Переглянути 3D-модель"
+    "view3dModel": "Переглянути 3D-модель",
+    "addAllToBom": "Додати все в BOM ({count})",
+    "createProduct": "Створити товар"
   },
   "supplierPortal": {
     "loginTitle": "Портал постачальника",

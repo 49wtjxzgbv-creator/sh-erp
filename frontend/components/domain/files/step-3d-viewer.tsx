@@ -72,16 +72,32 @@ export interface Step3DViewerProps {
   bomArticles?: string[];
   /**
    * "Якщо деталей якихось не має, то має бути кнопка додати до BOM
-   * специфікації" (2026-10-08 user request): when supplied, every ⚠️
-   * (unmatched) node gets an inline "➕" next to it — tapping it calls this
-   * with the node's extracted article, and the CALLER (assembly-form.tsx)
-   * looks that article up in the company catalog and appends it as a new
-   * PRODUCT line to the assembly's BOM. Reject with a (pre-localized)
-   * Error — e.g. "no product with that article" — to show inline. Omit
-   * entirely to read-only-gate this (no caller-side `assemblies:write`, or
-   * a non-assembly file) — same convention as `bomArticles` itself.
+   * специфікації" + "потрібна кнопка додати все" (2026-10-08 user
+   * requests): when supplied, every ⚠️ (unmatched) node gets an inline "➕"
+   * next to it, and the panel header gets a bulk "add all" button — both
+   * call this with the full list of article candidates to add (a single
+   * article for the per-row button, every currently-unmatched candidate
+   * for "add all"). Takes an ARRAY (not one article at a time) precisely so
+   * the caller can resolve + append them in ONE BOM write: the caller's own
+   * "existing lines" snapshot would otherwise go stale between calls if
+   * this were invoked once per article back-to-back (each call would
+   * overwrite the previous one's addition, since `setAssemblyComponents`
+   * replaces the whole line list). Returns which of the requested articles
+   * had no catalog match — those rows then offer "create product" instead
+   * of silently failing. Omit entirely to read-only-gate this (no
+   * caller-side `assemblies:write`, or a non-assembly file) — same
+   * convention as `bomArticles` itself.
    */
-  onAddToBom?: (article: string) => Promise<void>;
+  onAddToBom?: (articles: string[]) => Promise<{ notFound: string[] }>;
+  /**
+   * "а те чого немає в каталозі запропонувати створити новий товар"
+   * (2026-10-08): offered on a row whose article came back in `notFound`
+   * above. The CALLER owns the actual product-creation UI (a dialog) since
+   * embedding it here would pull the whole catalog `ProductForm` into this
+   * already-lazy-loaded 3D viewer chunk for no benefit — this just bubbles
+   * up "the user wants to create article X, named roughly Y".
+   */
+  onCreateProduct?: (article: string, suggestedName: string) => void;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -113,13 +129,16 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
   const [state, setState] = useState<ViewerState>('loading');
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
+  const [notFoundArticles, setNotFoundArticles] = useState<Set<string>>(new Set());
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +189,42 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom }: Step3DVie
   );
   const showTree = state === 'ready' && treeHasNames(tree);
 
+  // Every currently-⚠️ node's best-guess article, deduped — the candidate
+  // set "Додати все" (add all) sends in one shot. Recomputes whenever the
+  // tree or the BOM cross-reference changes, so it stays accurate after a
+  // partial add (some rows flip to ✅ and drop out automatically).
+  const unmatchedArticles = useMemo(() => {
+    if (!bomSet) return [];
+    const set = bomSet;
+    const seen = new Set<string>();
+    function walk(nodes: ModelTreeNode[]) {
+      for (const node of nodes) {
+        if (node.name && !articleMatches(node.name, set)) seen.add(extractArticleCandidate(node.name));
+        walk(node.children);
+      }
+    }
+    walk(tree);
+    return Array.from(seen);
+  }, [tree, bomSet]);
+
+  async function addArticles(articles: string[]) {
+    if (!onAddToBom || articles.length === 0) return;
+    setBulkError(null);
+    setPendingArticles((prev) => new Set([...prev, ...articles]));
+    try {
+      const { notFound } = await onAddToBom(articles);
+      setNotFoundArticles((prev) => new Set([...prev, ...notFound]));
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPendingArticles((prev) => {
+        const next = new Set(prev);
+        for (const a of articles) next.delete(a);
+        return next;
+      });
+    }
+  }
+
   return (
     // Stacked (model on top, tree below, both scrollable in their own
     // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
@@ -187,8 +242,29 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom }: Step3DVie
         )}
       </div>
       {showTree && (
-        <div className="h-40 w-full shrink-0 overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-t-0 sm:border-l">
-          <ModelTreeList nodes={tree} selectedId={selectedId} onSelect={setSelectedId} bomSet={bomSet} onAddToBom={onAddToBom} />
+        <div className="flex h-40 w-full shrink-0 flex-col overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-t-0 sm:border-l">
+          {onAddToBom && unmatchedArticles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => addArticles(unmatchedArticles)}
+              disabled={pendingArticles.size > 0}
+              className="mb-2 flex shrink-0 items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50"
+            >
+              {pendingArticles.size > 0 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              {t('addAllToBom', { count: unmatchedArticles.length })}
+            </button>
+          )}
+          {bulkError && <p className="mb-2 shrink-0 text-xs text-destructive">{bulkError}</p>}
+          <ModelTreeList
+            nodes={tree}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            bomSet={bomSet}
+            onAddToBom={onAddToBom ? addArticles : undefined}
+            pendingArticles={pendingArticles}
+            notFoundArticles={notFoundArticles}
+            onCreateProduct={onCreateProduct}
+          />
         </div>
       )}
     </div>
@@ -201,17 +277,33 @@ function ModelTreeList({
   onSelect,
   bomSet,
   onAddToBom,
+  pendingArticles,
+  notFoundArticles,
+  onCreateProduct,
 }: {
   nodes: ModelTreeNode[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
-  onAddToBom?: (article: string) => Promise<void>;
+  onAddToBom?: (articles: string[]) => void;
+  pendingArticles: Set<string>;
+  notFoundArticles: Set<string>;
+  onCreateProduct?: (article: string, suggestedName: string) => void;
 }) {
   return (
     <ul className="space-y-0.5">
       {nodes.map((node) => (
-        <ModelTreeRow key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} onAddToBom={onAddToBom} />
+        <ModelTreeRow
+          key={node.id}
+          node={node}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          bomSet={bomSet}
+          onAddToBom={onAddToBom}
+          pendingArticles={pendingArticles}
+          notFoundArticles={notFoundArticles}
+          onCreateProduct={onCreateProduct}
+        />
       ))}
     </ul>
   );
@@ -223,16 +315,21 @@ function ModelTreeRow({
   onSelect,
   bomSet,
   onAddToBom,
+  pendingArticles,
+  notFoundArticles,
+  onCreateProduct,
 }: {
   node: ModelTreeNode;
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
-  onAddToBom?: (article: string) => Promise<void>;
+  onAddToBom?: (articles: string[]) => void;
+  pendingArticles: Set<string>;
+  notFoundArticles: Set<string>;
+  onCreateProduct?: (article: string, suggestedName: string) => void;
 }) {
+  const t = useTranslations('files');
   const [open, setOpen] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const isSelected = node.id === selectedId;
   const hasChildren = node.children.length > 0;
@@ -243,28 +340,22 @@ function ModelTreeRow({
   // a real file where isLeaf-only matching silently never checked the one
   // node that actually had the article.
   const matched = bomSet && node.name ? articleMatches(node.name, bomSet) : null;
+  const article = node.name ? extractArticleCandidate(node.name) : '';
+  const adding = pendingArticles.has(article);
+  const notInCatalog = notFoundArticles.has(article);
 
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
   }, [isSelected]);
 
-  async function handleAdd(e: React.MouseEvent) {
+  function handleAdd(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!onAddToBom || adding) return;
-    setAdding(true);
-    setAddError(null);
-    try {
-      await onAddToBom(extractArticleCandidate(node.name));
-      // No local "added" flag needed: onAddToBom's own success path
-      // invalidates the assembly's BOM query, which flows a fresh
-      // `bomArticles` back down as a prop — `matched` above recomputes
-      // from that on the next render, same single-source-of-truth as
-      // everything else in this tree.
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAdding(false);
-    }
+    onAddToBom?.([article]);
+  }
+
+  function handleCreateProduct(e: React.MouseEvent) {
+    e.stopPropagation();
+    onCreateProduct?.(article, suggestProductName(node.name));
   }
 
   return (
@@ -298,27 +389,45 @@ function ModelTreeRow({
         {matched === true && <Check className="h-3 w-3 shrink-0 text-success" />}
         {matched === false && (
           <>
-            <span title={addError ?? undefined}>
+            <span title={notInCatalog ? undefined : article}>
               <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
             </span>
-            {onAddToBom && (
+            {notInCatalog && onCreateProduct ? (
               <button
                 type="button"
-                onClick={handleAdd}
-                disabled={adding}
-                className="shrink-0 rounded text-muted-foreground hover:text-primary disabled:opacity-50"
-                title={addError ?? undefined}
-                aria-label="+"
+                onClick={handleCreateProduct}
+                className="shrink-0 whitespace-nowrap rounded text-[11px] text-primary hover:underline"
               >
-                {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                {t('createProduct')}
               </button>
+            ) : (
+              onAddToBom && (
+                <button
+                  type="button"
+                  onClick={handleAdd}
+                  disabled={adding}
+                  className="shrink-0 rounded text-muted-foreground hover:text-primary disabled:opacity-50"
+                  aria-label="+"
+                >
+                  {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                </button>
+              )
             )}
           </>
         )}
       </div>
       {open && hasChildren && (
         <div className="ml-3 border-l border-border/50 pl-1.5">
-          <ModelTreeList nodes={node.children} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} onAddToBom={onAddToBom} />
+          <ModelTreeList
+            nodes={node.children}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            bomSet={bomSet}
+            onAddToBom={onAddToBom}
+            pendingArticles={pendingArticles}
+            notFoundArticles={notFoundArticles}
+            onCreateProduct={onCreateProduct}
+          />
         </div>
       )}
     </li>
@@ -330,6 +439,14 @@ function extractArticleCandidate(name: string): string {
   const trimmed = name.trim();
   const dashIndex = trimmed.indexOf('-');
   return dashIndex > 0 ? trimmed.slice(0, dashIndex).trim() : trimmed;
+}
+
+/** Rough product-name guess for the "create product" prefill: everything after the article's dash, with CAD-export underscores turned back into spaces — just a starting point the user edits in the create form, not meant to be exact. */
+function suggestProductName(name: string): string {
+  const trimmed = name.trim();
+  const dashIndex = trimmed.indexOf('-');
+  const rest = dashIndex > 0 ? trimmed.slice(dashIndex + 1) : trimmed;
+  return rest.trim().replace(/_/g, ' ');
 }
 
 function treeHasNames(nodes: ModelTreeNode[]): boolean {
