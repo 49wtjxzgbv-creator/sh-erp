@@ -156,8 +156,13 @@ export function Step3DViewer({ url, glbUrl, bomArticles }: Step3DViewerProps) {
   const showTree = state === 'ready' && treeHasNames(tree);
 
   return (
-    <div className="flex h-full w-full">
-      <div className="relative min-w-0 flex-1">
+    // Stacked (model on top, tree below, both scrollable in their own
+    // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
+    // phone-width dialog left almost no room for the model itself (real
+    // user report, 2026-10-08: "вікно з артикулами перекриває саму
+    // модель"). Side-by-side returns once there's actually room for it.
+    <div className="flex h-full w-full flex-col sm:flex-row">
+      <div className="relative min-h-0 min-w-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
         {state === 'loading' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
@@ -167,7 +172,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles }: Step3DViewerProps) {
         )}
       </div>
       {showTree && (
-        <div className="w-64 shrink-0 overflow-y-auto border-l border-border p-2">
+        <div className="h-40 w-full shrink-0 overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-l sm:border-t-0">
           <ModelTreeList nodes={tree} selectedId={selectedId} onSelect={setSelectedId} bomSet={bomSet} />
         </div>
       )}
