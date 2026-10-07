@@ -295,6 +295,7 @@
     "title": "Специфікації (BOM)",
     "newAssembly": "Нова специфікація",
     "editAssembly": "Редагувати специфікацію",
+    "duplicateAssembly": "Дублювати специфікацію",
     "photo": "Фото",
     "assemblyHeader": "Основні дані",
     "name": "Назва",

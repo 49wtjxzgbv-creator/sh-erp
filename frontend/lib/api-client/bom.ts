@@ -102,6 +102,10 @@ export function updateAssembly(id: string, dto: UpdateAssemblyInput): Promise<As
 export function deleteAssembly(id: string): Promise<Assembly> {
   return apiClient.delete<Assembly>(`assemblies/${id}`);
 }
+/** "Дублювати специфікацію" (2026-10-07) — copies header fields + current BOM lines into a new assembly (not photo/documents/suppliers), snapshotting the copy as version 1. */
+export function duplicateAssembly(id: string): Promise<Assembly> {
+  return apiClient.post<Assembly>(`assemblies/${id}/duplicate`);
+}
 
 export interface AssemblyComponentLineInput {
   componentType: ComponentType;

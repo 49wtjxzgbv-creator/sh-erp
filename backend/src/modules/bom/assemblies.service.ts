@@ -248,6 +248,83 @@ export class AssembliesService {
     return assembly;
   }
 
+  /**
+   * "Дублювати специфікацію" (2026-10-07 user request — схожі вироби,
+   * щоб не набирати по новому, а скопіювати й трохи відредагувати):
+   * copies every header field plus the current BOM line list into a
+   * brand-new Assembly, and immediately snapshots that copied BOM as
+   * version 1 — mirrors setComponents' own version-creation, since
+   * ProductionOrdersService#create refuses an assembly with zero saved
+   * versions ("This assembly has no saved BOM yet"), so a copy with no
+   * version would be unusable in production until someone re-saved its
+   * BOM anyway. If the source itself has no components (never saved a
+   * BOM), the copy correctly starts in that same state — no version is
+   * created, matching the source's own "not yet usable" status.
+   *
+   * Deliberately does NOT copy photo/documents/suppliers: those describe
+   * the ORIGINAL physical item, not the new one (a photo of the "left"
+   * variant would be actively wrong shown under a "right" copy) — the
+   * user adds those fresh for the duplicate, same as they'd set a new
+   * article/name.
+   */
+  async duplicate(user: RequestUser, sourceId: string) {
+    const source = await this.findOne(user, sourceId);
+
+    const copy = await this.prisma.tenant.assembly.create({
+      data: {
+        name: `${source.name} (копія)`,
+        article: source.article,
+        note: source.note,
+        laborCostPerUnit: source.laborCostPerUnit,
+        packagingCostPerUnit: source.packagingCostPerUnit,
+        deliveryCostPerUnit: source.deliveryCostPerUnit,
+        otherCostPerUnit: source.otherCostPerUnit,
+        baseSalePriceEur: source.baseSalePriceEur,
+        germanPriceEur: source.germanPriceEur,
+        soloAllowed: source.soloAllowed,
+        defaultSupplierId: source.defaultSupplierId,
+      } as any,
+    });
+
+    if (source.components.length > 0) {
+      await this.prisma.tenant.assemblyComponent.createMany({
+        data: source.components.map((c) => ({
+          assemblyId: copy.id,
+          componentType: c.componentType,
+          productId: c.productId,
+          subAssemblyId: c.subAssemblyId,
+          warehouseId: c.warehouseId,
+          qtyPerUnit: c.qtyPerUnit,
+        })) as any,
+      });
+
+      const version = await this.prisma.tenant.assemblyVersion.create({
+        data: { assemblyId: copy.id, versionNumber: 1, createdById: user.userId } as any,
+      });
+      await this.prisma.tenant.assemblyVersionComponent.createMany({
+        data: source.components.map((c) => ({
+          assemblyVersionId: version.id,
+          componentType: c.componentType,
+          productId: c.productId,
+          subAssemblyId: c.subAssemblyId,
+          warehouseId: c.warehouseId,
+          qtyPerUnit: c.qtyPerUnit,
+        })) as any,
+      });
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'assembly.duplicated',
+      entityType: 'Assembly',
+      entityId: copy.id,
+      after: { sourceAssemblyId: sourceId, componentCount: source.components.length },
+    });
+
+    return this.findOne(user, copy.id);
+  }
+
   // ============================================================
   // Suppliers (multi-supplier link, each with its own optional price)
   // ============================================================

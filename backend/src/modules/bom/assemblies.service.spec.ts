@@ -117,6 +117,89 @@ describe('AssembliesService', () => {
     });
   });
 
+  describe('duplicate — "Дублювати специфікацію" (2026-10-07 user request)', () => {
+    const source = {
+      id: 'a1',
+      name: 'Förderband 60x3006',
+      article: '409219.L',
+      note: 'orig note',
+      laborCostPerUnit: 10,
+      packagingCostPerUnit: 2,
+      deliveryCostPerUnit: 1,
+      otherCostPerUnit: 0,
+      baseSalePriceEur: 500,
+      germanPriceEur: 600,
+      soloAllowed: false,
+      defaultSupplierId: 'sup1',
+      components: [
+        { componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, warehouseId: 'w1', qtyPerUnit: 4 },
+        { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'sub1', warehouseId: null, qtyPerUnit: 1 },
+      ],
+    };
+
+    beforeEach(() => {
+      prisma.tenant.assembly.findUnique.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'a1' ? { ...source } : { ...source, id: 'a2', name: `${source.name} (копія)` }),
+      );
+      prisma.tenant.assembly.create.mockResolvedValue({ id: 'a2' });
+      prisma.tenant.assemblyVersion.create.mockResolvedValue({ id: 'v1', versionNumber: 1 });
+    });
+
+    it('copies every header field (name suffixed with "(копія)") into a brand-new Assembly', async () => {
+      await service.duplicate(user, 'a1');
+
+      expect(prisma.tenant.assembly.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Förderband 60x3006 (копія)',
+          article: '409219.L',
+          note: 'orig note',
+          laborCostPerUnit: 10,
+          packagingCostPerUnit: 2,
+          deliveryCostPerUnit: 1,
+          otherCostPerUnit: 0,
+          baseSalePriceEur: 500,
+          germanPriceEur: 600,
+          soloAllowed: false,
+          defaultSupplierId: 'sup1',
+        },
+      });
+    });
+
+    it('copies the current BOM lines onto the new assembly, and snapshots them as version 1', async () => {
+      await service.duplicate(user, 'a1');
+
+      expect(prisma.tenant.assemblyComponent.createMany).toHaveBeenCalledWith({
+        data: [
+          { assemblyId: 'a2', componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, warehouseId: 'w1', qtyPerUnit: 4 },
+          { assemblyId: 'a2', componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'sub1', warehouseId: null, qtyPerUnit: 1 },
+        ],
+      });
+      expect(prisma.tenant.assemblyVersion.create).toHaveBeenCalledWith({ data: { assemblyId: 'a2', versionNumber: 1, createdById: 'u1' } });
+      expect(prisma.tenant.assemblyVersionComponent.createMany).toHaveBeenCalledWith({
+        data: [
+          { assemblyVersionId: 'v1', componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, warehouseId: 'w1', qtyPerUnit: 4 },
+          { assemblyVersionId: 'v1', componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'sub1', warehouseId: null, qtyPerUnit: 1 },
+        ],
+      });
+    });
+
+    it('a source with no saved BOM yet produces a copy with no version either (matching, not inventing, state)', async () => {
+      prisma.tenant.assembly.findUnique.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'a1' ? { ...source, components: [] } : { ...source, id: 'a2', components: [] }),
+      );
+
+      await service.duplicate(user, 'a1');
+
+      expect(prisma.tenant.assemblyComponent.createMany).not.toHaveBeenCalled();
+      expect(prisma.tenant.assemblyVersion.create).not.toHaveBeenCalled();
+    });
+
+    it('records an audit entry pointing back at the source assembly', async () => {
+      await service.duplicate(user, 'a1');
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'assembly.duplicated', entityId: 'a2', after: expect.objectContaining({ sourceAssemblyId: 'a1' }) }));
+    });
+  });
+
   describe('calculateCost — recursive calcAssemblyCost_ port', () => {
     it('sums own per-unit costs + PRODUCT component costs from sellPriceEur', async () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({

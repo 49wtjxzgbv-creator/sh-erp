@@ -8,6 +8,7 @@ import {
   createAssembly,
   updateAssembly,
   deleteAssembly,
+  duplicateAssembly,
   getAssemblyComponents,
   setAssemblyComponents,
   getAssemblySuppliers,
@@ -82,6 +83,14 @@ export function useDeleteAssembly() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteAssembly(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assemblies'] }),
+  });
+}
+
+export function useDuplicateAssembly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => duplicateAssembly(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assemblies'] }),
   });
 }

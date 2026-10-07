@@ -294,6 +294,7 @@
     "title": "Bill of Materials",
     "newAssembly": "New assembly",
     "editAssembly": "Edit assembly",
+    "duplicateAssembly": "Duplicate assembly",
     "photo": "Photo",
     "assemblyHeader": "Basic info",
     "name": "Name",

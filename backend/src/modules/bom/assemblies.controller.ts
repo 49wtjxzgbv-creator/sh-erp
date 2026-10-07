@@ -61,6 +61,13 @@ export class AssembliesController {
     return this.assembliesService.remove(user, id);
   }
 
+  @Post(':id/duplicate')
+  @RequirePermissions('assemblies:write')
+  @ApiOperation({ summary: 'Copy this assembly\'s header fields and current BOM line list into a brand-new assembly (not photo/documents/suppliers), snapshotting the copy as version 1.' })
+  async duplicate(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.assembliesService.duplicate(user, id);
+  }
+
   @Get(':id/components')
   @RequirePermissions('assemblies:read')
   @ApiOperation({ summary: 'Get the current BOM line list.' })
