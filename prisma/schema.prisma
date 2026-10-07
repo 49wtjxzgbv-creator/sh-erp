@@ -666,6 +666,19 @@ enum FileDomain {
   // from Telegram's own CDN and re-uploaded to R2 — never a browser
   // presigned-upload like every other PHOTO domain above.
   PRODUCTION_EXECUTION_PHOTO
+  // "3D-модель збірки" (2026-10-08 user request) — entityType "Assembly",
+  // entityId = Assembly.id. A self-contained interactive HTML export of
+  // the assembly's 3D model (e.g. SolidWorks eDrawings "Publish eDrawings
+  // HTML" — all geometry/JS inlined in one file, no sibling resource
+  // files) — NOT the STEP/STP pipeline (StepConversionService's own
+  // GLB conversion), which is a different, geometry-only format. Rendered
+  // via a sandboxed `<iframe>` (allow-scripts, deliberately WITHOUT
+  // allow-same-origin so the embedded document gets a null origin — it
+  // needs its own JS to run the viewer, but must never reach this app's
+  // origin/cookies). Deliberately a NEW value, not the already-unused
+  // ASSEMBLY_DRAWING — "drawing" reads as a 2D technical drawing, which
+  // this is not.
+  ASSEMBLY_3D_MODEL
 }
 
 enum FileConversionStatus {

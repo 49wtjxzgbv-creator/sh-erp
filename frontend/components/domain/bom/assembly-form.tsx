@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 
 const assemblySchema = z.object({
@@ -130,6 +131,18 @@ export function AssemblyForm({
           </CardHeader>
           <CardContent>
             <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} />
+          </CardContent>
+        </Card>
+      )}
+
+      {assembly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{tf('model3d')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Entity3DModelField domain="ASSEMBLY_3D_MODEL" entityType="Assembly" entityId={assembly.id} />
+            <p className="mt-2 text-xs text-muted-foreground">{tf('model3dHint')}</p>
           </CardContent>
         </Card>
       )}

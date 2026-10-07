@@ -1346,7 +1346,10 @@
     "loadingDrawing": "Loading drawing…",
     "drawingLoadError": "Failed to load drawing",
     "measure": "Ruler (measure distance)",
-    "measureHint": "Click two points on the drawing"
+    "measureHint": "Click two points on the drawing",
+    "model3d": "3D assembly model",
+    "model3dHint": "A self-contained HTML file with an interactive viewer (e.g. SolidWorks \"Publish eDrawings HTML\") — everything must be in one file, no separate sibling files.",
+    "view3dModel": "View 3D model"
   },
   "supplierPortal": {
     "loginTitle": "Supplier Portal",

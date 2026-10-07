@@ -15,6 +15,7 @@ const FILE_DOMAINS: FileDomain[] = [
   'SHIPMENT_PHOTO',
   'BRANDING',
   'FINANCE_DOCUMENT',
+  'ASSEMBLY_3D_MODEL',
 ];
 
 export class CreatePresignedUploadDto {

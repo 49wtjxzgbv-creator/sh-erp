@@ -21,7 +21,8 @@ export type FileDomain =
   | 'SHIPMENT_PHOTO'
   | 'BRANDING'
   | 'FINANCE_DOCUMENT'
-  | 'PRODUCTION_EXECUTION_PHOTO';
+  | 'PRODUCTION_EXECUTION_PHOTO'
+  | 'ASSEMBLY_3D_MODEL';
 
 export type FileConversionStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
 
