@@ -32,6 +32,13 @@ function DrawingViewerLoading() {
 function isStepFile(name: string): boolean {
   return /\.(step|stp)$/i.test(name);
 }
+/** A pre-converted .glb needs no server-side conversion at all (StepConversionService exists only because most CAD exports are .step, not .glb) — Step3DViewer already accepts a `glbUrl` directly, so this is purely a "recognize the extension, skip straight to that path" addition. */
+function isGlbFile(name: string): boolean {
+  return /\.glb$/i.test(name);
+}
+function is3DModelFile(name: string): boolean {
+  return isStepFile(name) || isGlbFile(name);
+}
 function isDxfFile(name: string): boolean {
   return /\.dxf$/i.test(name);
 }
@@ -53,7 +60,7 @@ function isImageFile(mimeType: string, name: string): boolean {
 }
 
 function fileIcon(file: FileAssetWithUrl) {
-  if (isStepFile(file.originalName)) return Box;
+  if (is3DModelFile(file.originalName)) return Box;
   if (isDxfFile(file.originalName)) return Ruler;
   if (isImageFile(file.mimeType, file.originalName)) return ImageIcon;
   if (isPdfFile(file.mimeType, file.originalName)) return FileText;
@@ -82,7 +89,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.dxf,image/*' }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*' }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -90,7 +97,10 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const [stepDoc, setStepDoc] = useState<FileAssetWithUrl | null>(null);
+  // Either a .step/.stp (parsed client-side, or server-converted to .glb —
+  // see StepConversionService) or a directly-uploaded .glb (no conversion
+  // needed at all) — Step3DViewer's own `glbUrl` prop already handles both.
+  const [modelDoc, setModelDoc] = useState<FileAssetWithUrl | null>(null);
   const [dxfDoc, setDxfDoc] = useState<FileAssetWithUrl | null>(null);
   const [pdfDoc, setPdfDoc] = useState<FileAssetWithUrl | null>(null);
   const [textDoc, setTextDoc] = useState<{ file: FileAssetWithUrl; content: string | null; error: string | null } | null>(null);
@@ -136,8 +146,8 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   }
 
   function handleView(file: FileAssetWithUrl) {
-    if (isStepFile(file.originalName)) {
-      setStepDoc(file);
+    if (is3DModelFile(file.originalName)) {
+      setModelDoc(file);
     } else if (isDxfFile(file.originalName)) {
       setDxfDoc(file);
     } else if (isImageFile(file.mimeType, file.originalName)) {
@@ -152,7 +162,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
   function isViewable(file: FileAssetWithUrl): boolean {
     return (
       isImageFile(file.mimeType, file.originalName) ||
-      isStepFile(file.originalName) ||
+      is3DModelFile(file.originalName) ||
       isDxfFile(file.originalName) ||
       isPdfFile(file.mimeType, file.originalName) ||
       isTextFile(file.mimeType, file.originalName)
@@ -220,13 +230,18 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
 
       {lightboxSrc && <PhotoLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
-      <Dialog open={Boolean(stepDoc)} onOpenChange={(open) => !open && setStepDoc(null)}>
+      <Dialog open={Boolean(modelDoc)} onOpenChange={(open) => !open && setModelDoc(null)}>
         <DialogContent className="flex h-[85vh] w-[95vw] max-w-4xl flex-col">
           <DialogHeader>
-            <DialogTitle className="truncate">{stepDoc?.originalName}</DialogTitle>
+            <DialogTitle className="truncate">{modelDoc?.originalName}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1">
-            {stepDoc && <Step3DViewer url={stepDoc.downloadUrl} glbUrl={stepDoc.convertedDownloadUrl} />}
+            {modelDoc && (
+              <Step3DViewer
+                url={modelDoc.downloadUrl}
+                glbUrl={isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>
