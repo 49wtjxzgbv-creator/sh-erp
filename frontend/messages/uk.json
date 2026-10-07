@@ -296,6 +296,7 @@
     "newAssembly": "Нова специфікація",
     "editAssembly": "Редагувати специфікацію",
     "duplicateAssembly": "Дублювати специфікацію",
+    "model3dProductNotFound": "Товар з артикулом «{article}» не знайдено в каталозі.",
     "photo": "Фото",
     "assemblyHeader": "Основні дані",
     "name": "Назва",

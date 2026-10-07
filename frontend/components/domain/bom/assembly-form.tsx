@@ -5,10 +5,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
-import type { Assembly, CreateAssemblyInput } from '@/lib/api-client/bom';
+import type { Assembly, AssemblyComponentLineInput, CreateAssemblyInput } from '@/lib/api-client/bom';
 import { toNumber } from '@/lib/api-client/decimal';
-import { useAssemblyComponents } from '@/lib/hooks/use-bom';
+import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { queryProducts } from '@/lib/api-client/catalog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -89,6 +90,33 @@ export function AssemblyForm({
     [productsById],
   );
 
+  // "Якщо деталей якихось не має, то має бути кнопка додати до BOM
+  // специфікації" (2026-10-08): looks the article up in this company's
+  // own catalog (exact match, case-insensitive — `queryProducts`'s own
+  // `search` is a loose `contains`, so this re-filters down to a real
+  // match) and appends it as a new PRODUCT line with qtyPerUnit 1 — the
+  // user adjusts the real quantity afterward in «Склад (BOM)» same as any
+  // other line. `setComponents`'s own `onSuccess` already invalidates this
+  // assembly's components query, which is what `bomArticles` above is
+  // derived from — no separate refetch wiring needed, the ✅ just appears
+  // once the chain above re-renders with the new data.
+  const setComponents = useSetAssemblyComponents(assembly?.id ?? '');
+  async function handleAddToBom(article: string): Promise<void> {
+    const matches = await queryProducts({ search: article, limit: 20 });
+    const product = matches.items.find((p) => p.article.trim().toUpperCase() === article.trim().toUpperCase());
+    if (!product) {
+      throw new Error(t('model3dProductNotFound', { article }));
+    }
+    const existingLines: AssemblyComponentLineInput[] = (components ?? []).map((c) => ({
+      componentType: c.componentType,
+      productId: c.productId ?? undefined,
+      subAssemblyId: c.subAssemblyId ?? undefined,
+      warehouseId: c.warehouseId ?? undefined,
+      qtyPerUnit: toNumber(c.qtyPerUnit) ?? 0,
+    }));
+    await setComponents.mutateAsync([...existingLines, { componentType: 'PRODUCT', productId: product.id, qtyPerUnit: 1 }]);
+  }
+
   const {
     register,
     handleSubmit,
@@ -148,7 +176,13 @@ export function AssemblyForm({
             <CardTitle className="text-base">{tf('documents')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} bomArticles={bomArticles} />
+            <EntityDocumentsField
+              domain="ASSEMBLY_DOCUMENT"
+              entityType="Assembly"
+              entityId={assembly.id}
+              bomArticles={bomArticles}
+              onAddToBom={readOnly ? undefined : handleAddToBom}
+            />
           </CardContent>
         </Card>
       )}

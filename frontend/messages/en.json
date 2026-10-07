@@ -295,6 +295,7 @@
     "newAssembly": "New assembly",
     "editAssembly": "Edit assembly",
     "duplicateAssembly": "Duplicate assembly",
+    "model3dProductNotFound": "No product with article \"{article}\" found in the catalog.",
     "photo": "Photo",
     "assemblyHeader": "Basic info",
     "name": "Name",

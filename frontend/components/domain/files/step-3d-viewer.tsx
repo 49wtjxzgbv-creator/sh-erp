@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, AlertTriangle, Plus, Loader2 } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -70,6 +70,18 @@ export interface Step3DViewerProps {
   glbUrl?: string;
   /** The hosting assembly's current BOM product articles, for the optional ✅/⚠️ cross-reference — omit entirely for a non-assembly (e.g. Product) file. */
   bomArticles?: string[];
+  /**
+   * "Якщо деталей якихось не має, то має бути кнопка додати до BOM
+   * специфікації" (2026-10-08 user request): when supplied, every ⚠️
+   * (unmatched) node gets an inline "➕" next to it — tapping it calls this
+   * with the node's extracted article, and the CALLER (assembly-form.tsx)
+   * looks that article up in the company catalog and appends it as a new
+   * PRODUCT line to the assembly's BOM. Reject with a (pre-localized)
+   * Error — e.g. "no product with that article" — to show inline. Omit
+   * entirely to read-only-gate this (no caller-side `assemblies:write`, or
+   * a non-assembly file) — same convention as `bomArticles` itself.
+   */
+  onAddToBom?: (article: string) => Promise<void>;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -101,7 +113,7 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, bomArticles }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -175,8 +187,8 @@ export function Step3DViewer({ url, glbUrl, bomArticles }: Step3DViewerProps) {
         )}
       </div>
       {showTree && (
-        <div className="h-40 w-full shrink-0 overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-l sm:border-t-0">
-          <ModelTreeList nodes={tree} selectedId={selectedId} onSelect={setSelectedId} bomSet={bomSet} />
+        <div className="h-40 w-full shrink-0 overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-t-0 sm:border-l">
+          <ModelTreeList nodes={tree} selectedId={selectedId} onSelect={setSelectedId} bomSet={bomSet} onAddToBom={onAddToBom} />
         </div>
       )}
     </div>
@@ -188,16 +200,18 @@ function ModelTreeList({
   selectedId,
   onSelect,
   bomSet,
+  onAddToBom,
 }: {
   nodes: ModelTreeNode[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
+  onAddToBom?: (article: string) => Promise<void>;
 }) {
   return (
     <ul className="space-y-0.5">
       {nodes.map((node) => (
-        <ModelTreeRow key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} />
+        <ModelTreeRow key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} onAddToBom={onAddToBom} />
       ))}
     </ul>
   );
@@ -208,13 +222,17 @@ function ModelTreeRow({
   selectedId,
   onSelect,
   bomSet,
+  onAddToBom,
 }: {
   node: ModelTreeNode;
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
+  onAddToBom?: (article: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const isSelected = node.id === selectedId;
   const hasChildren = node.children.length > 0;
@@ -229,6 +247,25 @@ function ModelTreeRow({
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
   }, [isSelected]);
+
+  async function handleAdd(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onAddToBom || adding) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      await onAddToBom(extractArticleCandidate(node.name));
+      // No local "added" flag needed: onAddToBom's own success path
+      // invalidates the assembly's BOM query, which flows a fresh
+      // `bomArticles` back down as a prop — `matched` above recomputes
+      // from that on the next render, same single-source-of-truth as
+      // everything else in this tree.
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAdding(false);
+    }
+  }
 
   return (
     <li>
@@ -259,15 +296,40 @@ function ModelTreeRow({
           {node.name || '—'}
         </span>
         {matched === true && <Check className="h-3 w-3 shrink-0 text-success" />}
-        {matched === false && <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />}
+        {matched === false && (
+          <>
+            <span title={addError ?? undefined}>
+              <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
+            </span>
+            {onAddToBom && (
+              <button
+                type="button"
+                onClick={handleAdd}
+                disabled={adding}
+                className="shrink-0 rounded text-muted-foreground hover:text-primary disabled:opacity-50"
+                title={addError ?? undefined}
+                aria-label="+"
+              >
+                {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              </button>
+            )}
+          </>
+        )}
       </div>
       {open && hasChildren && (
         <div className="ml-3 border-l border-border/50 pl-1.5">
-          <ModelTreeList nodes={node.children} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} />
+          <ModelTreeList nodes={node.children} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} onAddToBom={onAddToBom} />
         </div>
       )}
     </li>
   );
+}
+
+/** Best-guess article for the "➕ add to BOM" action — mirrors `articleMatches`' own fallback: prefer the dash-prefix when present (the far more common "ARTICLE-description" shape), else the full trimmed name. */
+function extractArticleCandidate(name: string): string {
+  const trimmed = name.trim();
+  const dashIndex = trimmed.indexOf('-');
+  return dashIndex > 0 ? trimmed.slice(0, dashIndex).trim() : trimmed;
 }
 
 function treeHasNames(nodes: ModelTreeNode[]): boolean {
