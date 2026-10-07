@@ -193,13 +193,28 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   // set "Додати все" (add all) sends in one shot. Recomputes whenever the
   // tree or the BOM cross-reference changes, so it stays accurate after a
   // partial add (some rows flip to ✅ and drop out automatically).
+  //
+  // Restricted to nodes shaped like "ARTICLE-description" (has a dash) —
+  // deliberately NOT every ⚠️ node, unlike the per-row "+" button. A real
+  // assembly's generic, auto-generated solid-body names (e.g.
+  // "Твердое_тело1_4429") and internal CAD instance ids (e.g. "440166_1")
+  // also show up as ⚠️ (the display cross-reference checks every named
+  // node, on purpose — see the file header comment), and there can be
+  // thousands of them in one file (a real 440158.glb here had ~18k such
+  // names). Bulk-querying the catalog once per name for that many bogus
+  // candidates would be slow and pointless — none of them are real
+  // articles. A human clicking one specific row's own "+" still works on
+  // any name, dash or not; this bulk action only fires on names that
+  // actually look like the CAD export's own article convention.
   const unmatchedArticles = useMemo(() => {
     if (!bomSet) return [];
     const set = bomSet;
     const seen = new Set<string>();
     function walk(nodes: ModelTreeNode[]) {
       for (const node of nodes) {
-        if (node.name && !articleMatches(node.name, set)) seen.add(extractArticleCandidate(node.name));
+        if (node.name && node.name.trim().indexOf('-') > 0 && !articleMatches(node.name, set)) {
+          seen.add(extractArticleCandidate(node.name));
+        }
         walk(node.children);
       }
     }
