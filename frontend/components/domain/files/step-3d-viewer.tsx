@@ -1,44 +1,60 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
+import { cn } from '@/lib/utils';
 
 /**
- * Renders a STEP (.step/.stp) CAD file in-browser.
+ * Renders a STEP (.step/.stp) or glTF (.glb) CAD file in-browser.
  *
  * Two paths, chosen by whether `glbUrl` is passed:
  *
- * - **Fast path (`glbUrl` present)**: the backend's `StepConversionService`
- *   already converted this document to a small pre-tessellated `.glb` once,
- *   server-side, at upload time. Loaded here with three.js's own
- *   `GLTFLoader` — no WASM, no CAD parsing, effectively instant regardless
- *   of the original STEP file's size or complexity. This is the path every
- *   document takes once conversion finishes.
- * - **Fallback path (`glbUrl` absent)**: conversion hasn't finished yet (or
- *   failed) — parses the raw STEP client-side via `occt-import-js` (a WASM
- *   build of OpenCascade, the same parser the open-source Online3DViewer
- *   project uses), converting it into plain triangle meshes. The actual
- *   parse runs in `step-parser.worker.ts`, not on the main thread — for a
- *   real multi-part assembly that's synchronous WASM work that can take
- *   minutes, and running it inline froze the whole tab for that entire
- *   duration (looked exactly like "hung forever" to a real user testing a
- *   real file, even though it would have finished eventually). A hard
- *   `PARSE_TIMEOUT_MS` below turns a truly pathological file into a clear
- *   error instead of an unbounded wait either way.
+ * - **Fast path (`glbUrl` present)**: either the backend's
+ *   `StepConversionService` already converted this document to a small
+ *   pre-tessellated `.glb` once, server-side, at upload time, OR the user
+ *   uploaded a `.glb` directly (no conversion needed at all). Loaded here
+ *   with three.js's own `GLTFLoader` — no WASM, no CAD parsing, effectively
+ *   instant.
+ * - **Fallback path (`glbUrl` absent)**: a raw STEP whose conversion hasn't
+ *   finished yet (or failed) — parsed client-side via `occt-import-js` (a
+ *   WASM build of OpenCascade). Runs in `step-parser.worker.ts`, not on the
+ *   main thread. A hard `PARSE_TIMEOUT_MS` turns a truly pathological file
+ *   into a clear error instead of an unbounded wait.
  *
- * Both paths share the same scene/camera/lighting/controls setup
- * (`mountScene` below) — only how the initial `THREE.Object3D` is obtained
- * differs.
+ * **Component tree + BOM cross-reference** (2026-10-08 user request —
+ * "наші користувачі будуть завантажувати файли .glb, які містять
+ * інженерну ієрархію компонентів та артикули деталей"): glTF nodes carry
+ * names (OCCT's own STEP product names survive the conversion unchanged —
+ * see step-convert-child.js — and a hand-authored CAD export typically
+ * names each node by its own part number/article). `buildTree` mirrors
+ * that node hierarchy into a side panel; clicking an entry highlights the
+ * matching mesh(es) in the 3D view, and clicking a mesh in the 3D view
+ * highlights its entry in the tree (via `userData.__treeNodeId`, set on
+ * every node while building the tree). The panel only renders at all when
+ * at least one node actually has a name — a flat, unnamed mesh soup (e.g.
+ * the client-side WASM fallback path, which never names anything) shows
+ * the plain viewer exactly as before.
+ *
+ * When `bomArticles` is supplied (the assembly's own current BOM product
+ * articles — only the ASSEMBLY caller passes this, never the generic
+ * Product one), each LEAF node's name is matched against it
+ * (case-insensitive, trimmed) and flagged ✅/⚠️ — a quick visual check for
+ * "does this 3D model's parts list line up with what's actually in the
+ * specification". This is a convenience cross-reference, not a data
+ * source: it never writes back to the BOM, and a mismatch only means the
+ * NAME didn't match, not necessarily that the part is actually missing —
+ * reliable only as far as the CAD export's own naming convention lines up
+ * with real article numbers.
  *
  * Loaded lazily via `next/dynamic` from `entity-documents-field.tsx`
  * (`ssr: false`) so three.js and (on the fallback path) the ~7MB WASM
- * module never enter any page's main bundle — only fetched the moment
- * someone actually opens a .step file.
+ * module never enter any page's main bundle.
  *
  * `OrbitControls` handles mouse AND touch out of the box (one-finger
  * rotate, two-finger pinch-zoom/pan on mobile) — no separate mobile code
@@ -47,11 +63,25 @@ import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 export interface Step3DViewerProps {
   /** Presigned download URL for the raw .step/.stp file — used only when `glbUrl` is absent. */
   url: string;
-  /** Presigned download URL for the pre-converted .glb, when available. */
+  /** Presigned download URL for a .glb — either pre-converted server-side, or the file itself when it's already a .glb. */
   glbUrl?: string;
+  /** The hosting assembly's current BOM product articles, for the optional ✅/⚠️ cross-reference — omit entirely for a non-assembly (e.g. Product) file. */
+  bomArticles?: string[];
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
+
+interface ModelTreeNode {
+  id: string;
+  name: string;
+  isLeaf: boolean;
+  children: ModelTreeNode[];
+}
+
+interface SceneApi {
+  dispose: () => void;
+  setSelected: (id: string | null) => void;
+}
 
 /**
  * A real multi-part mechanical assembly (tens of MB) can legitimately take
@@ -66,10 +96,15 @@ type ViewerState = 'loading' | 'ready' | 'error';
  */
 const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
-export function Step3DViewer({ url, glbUrl }: Step3DViewerProps) {
+const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
+
+export function Step3DViewer({ url, glbUrl, bomArticles }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
+  const sceneApiRef = useRef<SceneApi | null>(null);
   const [state, setState] = useState<ViewerState>('loading');
+  const [tree, setTree] = useState<ModelTreeNode[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,11 +116,18 @@ export function Step3DViewer({ url, glbUrl }: Step3DViewerProps) {
       if (!container) return;
 
       setState('loading');
+      setTree([]);
+      setSelectedId(null);
       try {
         const group = glbUrl ? await loadGlb(glbUrl) : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
 
-        disposeScene = mountScene(container, group);
+        const builtTree = buildTree(group);
+        setTree(builtTree);
+
+        const api = mountScene(container, group, (id) => setSelectedId(id));
+        sceneApiRef.current = api;
+        disposeScene = api.dispose;
         setState('ready');
       } catch (err) {
         console.error('[Step3DViewer] failed to load/render model:', err);
@@ -99,20 +141,149 @@ export function Step3DViewer({ url, glbUrl }: Step3DViewerProps) {
       cancelled = true;
       worker?.terminate();
       disposeScene?.();
+      sceneApiRef.current = null;
     };
   }, [url, glbUrl]);
 
+  useEffect(() => {
+    sceneApiRef.current?.setSelected(selectedId);
+  }, [selectedId]);
+
+  const bomSet = useMemo(
+    () => (bomArticles ? new Set(bomArticles.map((a) => a.trim().toUpperCase()).filter(Boolean)) : null),
+    [bomArticles],
+  );
+  const showTree = state === 'ready' && treeHasNames(tree);
+
   return (
-    <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
-      {state === 'loading' && (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
-      )}
-      {state === 'error' && (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('modelLoadError')}</p>
+    <div className="flex h-full w-full">
+      <div className="relative min-w-0 flex-1">
+        <div ref={containerRef} className="h-full w-full" />
+        {state === 'loading' && (
+          <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
+        )}
+        {state === 'error' && (
+          <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('modelLoadError')}</p>
+        )}
+      </div>
+      {showTree && (
+        <div className="w-64 shrink-0 overflow-y-auto border-l border-border p-2">
+          <ModelTreeList nodes={tree} selectedId={selectedId} onSelect={setSelectedId} bomSet={bomSet} />
+        </div>
       )}
     </div>
   );
+}
+
+function ModelTreeList({
+  nodes,
+  selectedId,
+  onSelect,
+  bomSet,
+}: {
+  nodes: ModelTreeNode[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  bomSet: Set<string> | null;
+}) {
+  return (
+    <ul className="space-y-0.5">
+      {nodes.map((node) => (
+        <ModelTreeRow key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} />
+      ))}
+    </ul>
+  );
+}
+
+function ModelTreeRow({
+  node,
+  selectedId,
+  onSelect,
+  bomSet,
+}: {
+  node: ModelTreeNode;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  bomSet: Set<string> | null;
+}) {
+  const [open, setOpen] = useState(true);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const isSelected = node.id === selectedId;
+  const hasChildren = node.children.length > 0;
+  const matched = bomSet && node.isLeaf && node.name ? bomSet.has(node.name.trim().toUpperCase()) : null;
+
+  useEffect(() => {
+    if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isSelected]);
+
+  return (
+    <li>
+      <div
+        ref={rowRef}
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(node.id)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(node.id); }}
+        className={cn(
+          'flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-xs hover:bg-secondary/50',
+          isSelected && 'bg-primary/10 font-medium text-primary',
+        )}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+            className="shrink-0 text-muted-foreground"
+            aria-label={open ? '-' : '+'}
+          >
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </button>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 truncate" title={node.name}>
+          {node.name || '—'}
+        </span>
+        {matched === true && <Check className="h-3 w-3 shrink-0 text-success" />}
+        {matched === false && <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />}
+      </div>
+      {open && hasChildren && (
+        <div className="ml-3 border-l border-border/50 pl-1.5">
+          <ModelTreeList nodes={node.children} selectedId={selectedId} onSelect={onSelect} bomSet={bomSet} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function treeHasNames(nodes: ModelTreeNode[]): boolean {
+  return nodes.some((n) => Boolean(n.name.trim()) || treeHasNames(n.children));
+}
+
+/**
+ * Mirrors `group`'s own child hierarchy into a plain tree, assigning each
+ * `Object3D` a stable id (stashed on `userData.__treeNodeId` so a raycast
+ * hit can be mapped straight back to a tree entry). Every mesh's material
+ * is cloned once here too (never mutated in place) — glTF commonly shares
+ * one material across many meshes to save memory, and highlighting a
+ * shared material would wrongly light up every part using it.
+ */
+let treeNodeIdCounter = 0;
+function buildTree(group: THREE.Object3D): ModelTreeNode[] {
+  function walk(object: THREE.Object3D): ModelTreeNode {
+    const id = `tree-${treeNodeIdCounter++}`;
+    object.userData.__treeNodeId = id;
+    if (object instanceof THREE.Mesh) {
+      object.material = Array.isArray(object.material) ? object.material.map((m) => m.clone()) : object.material.clone();
+    }
+    return {
+      id,
+      name: object.name ?? '',
+      isLeaf: object.children.length === 0,
+      children: object.children.map(walk),
+    };
+  }
+  return group.children.map(walk);
 }
 
 async function loadGlb(glbUrl: string): Promise<THREE.Object3D> {
@@ -144,17 +315,24 @@ async function loadStepViaWorker(url: string, onWorker: (worker: Worker) => void
 
     const color = mesh.color ? new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2]) : new THREE.Color(0x9ca3af);
     const material = new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide });
-    group.add(new THREE.Mesh(geometry, material));
+    const meshObj = new THREE.Mesh(geometry, material);
+    if (mesh.name) meshObj.name = mesh.name;
+    group.add(meshObj);
   }
   return group;
 }
 
 /**
- * Frames, lights, and renders `group` into `container` — shared by both the
- * fast (`.glb`) and fallback (raw STEP) load paths, which differ only in
- * how they produce this `THREE.Object3D`. Returns a cleanup function.
+ * Frames, lights, and renders `group` into `container` — shared by both
+ * load paths. Also wires up click-to-select: a raycast hit is mapped back
+ * to a tree node id via `userData.__treeNodeId` (set by `buildTree` on
+ * every object, so even a nested child mesh resolves immediately — no
+ * need to walk up parents) and reported through `onPick`. Returns both a
+ * cleanup function and `setSelected`, so the caller's React state can
+ * drive the 3D highlight in either direction (tree click -> 3D highlight,
+ * or 3D click -> tree selection, both end up calling the same `setSelected`).
  */
-function mountScene(container: HTMLDivElement, group: THREE.Object3D): () => void {
+function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (id: string | null) => void): SceneApi {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf3f4f6);
   scene.add(group);
@@ -202,13 +380,68 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D): () => voi
   });
   resizeObserver.observe(container);
 
-  return () => {
-    if (animationFrame) cancelAnimationFrame(animationFrame);
-    resizeObserver.disconnect();
-    controls.dispose();
-    renderer.dispose();
-    renderer.domElement.remove();
+  // ---- click-to-select / highlight ----
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let highlighted: THREE.Mesh[] = [];
+
+  function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
+    const found: THREE.Mesh[] = [];
+    object.traverse((o) => { if (o instanceof THREE.Mesh) found.push(o); });
+    return found;
+  }
+  function applyHighlight(mesh: THREE.Mesh) {
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      if ('emissive' in mat) (mat as THREE.MeshStandardMaterial).emissive.copy(HIGHLIGHT_EMISSIVE);
+    }
+  }
+  function clearHighlight(mesh: THREE.Mesh) {
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      if ('emissive' in mat) (mat as THREE.MeshStandardMaterial).emissive.set(0x000000);
+    }
+  }
+  function setSelected(id: string | null) {
+    highlighted.forEach(clearHighlight);
+    highlighted = [];
+    if (!id) return;
+    const target = findByTreeId(group, id);
+    if (!target) return;
+    highlighted = meshesUnder(target);
+    highlighted.forEach(applyHighlight);
+  }
+
+  function onClick(e: MouseEvent) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObject(group, true);
+    onPick(hits.length > 0 ? (hits[0].object.userData.__treeNodeId as string | undefined) ?? null : null);
+  }
+  renderer.domElement.addEventListener('click', onClick);
+
+  return {
+    setSelected,
+    dispose: () => {
+      renderer.domElement.removeEventListener('click', onClick);
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      controls.dispose();
+      renderer.dispose();
+      renderer.domElement.remove();
+    },
   };
+}
+
+function findByTreeId(root: THREE.Object3D, id: string): THREE.Object3D | null {
+  if (root.userData.__treeNodeId === id) return root;
+  for (const child of root.children) {
+    const found = findByTreeId(child, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 /**

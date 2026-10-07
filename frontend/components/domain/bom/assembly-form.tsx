@@ -1,11 +1,14 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import type { Assembly, CreateAssemblyInput } from '@/lib/api-client/bom';
 import { toNumber } from '@/lib/api-client/decimal';
+import { useAssemblyComponents } from '@/lib/hooks/use-bom';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -71,6 +74,21 @@ export function AssemblyForm({
   const tf = useTranslations('files');
   const tp = useTranslations('procurement');
 
+  // "3D-модель — звірка з BOM" (2026-10-08): the assembly's own current
+  // PRODUCT-type BOM lines, resolved to real articles — passed down to
+  // Step3DViewer (via EntityDocumentsField) so it can flag which 3D-model
+  // parts do/don't line up with what's actually in the specification.
+  const { data: components } = useAssemblyComponents(assembly?.id);
+  const productIds = useMemo(
+    () => Array.from(new Set((components ?? []).filter((c) => c.componentType === 'PRODUCT' && c.productId).map((c) => c.productId as string))),
+    [components],
+  );
+  const { data: productsById } = useProductsByIds(productIds);
+  const bomArticles = useMemo(
+    () => Array.from(productsById?.values() ?? []).map((p) => p.article).filter(Boolean),
+    [productsById],
+  );
+
   const {
     register,
     handleSubmit,
@@ -130,7 +148,7 @@ export function AssemblyForm({
             <CardTitle className="text-base">{tf('documents')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} />
+            <EntityDocumentsField domain="ASSEMBLY_DOCUMENT" entityType="Assembly" entityId={assembly.id} bomArticles={bomArticles} />
           </CardContent>
         </Card>
       )}

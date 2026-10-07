@@ -80,6 +80,8 @@ export interface EntityDocumentsFieldProps {
   entityId: string;
   /** Defaults to a broad, non-photo-specific set — this widget is for supplementary documents (drawings, datasheets, CAD models), not the entity's single "hero" photo (that's `EntityPhotoField`). */
   accept?: string;
+  /** Forwarded to Step3DViewer's own `bomArticles` prop (see its header comment) — only the Assembly caller passes this, for the ✅/⚠️ cross-reference against the assembly's own current BOM. Omit entirely for Product or any other non-assembly caller. */
+  bomArticles?: string[];
 }
 
 /**
@@ -89,7 +91,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*' }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -240,6 +242,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
               <Step3DViewer
                 url={modelDoc.downloadUrl}
                 glbUrl={isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl}
+                bomArticles={bomArticles}
               />
             )}
           </div>

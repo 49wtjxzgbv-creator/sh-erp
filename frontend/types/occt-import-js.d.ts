@@ -5,6 +5,8 @@
  */
 declare module 'occt-import-js' {
   export interface OcctMesh {
+    /** The STEP product/instance name OCCT carried over, if any — same field backend/src/modules/files/step-convert-child.js already reads at runtime (plain untyped JS there, so this gap only ever showed up here). */
+    name?: string;
     color?: [number, number, number];
     attributes: { position: { array: number[] }; normal?: { array: number[] } };
     index: { array: number[] };
