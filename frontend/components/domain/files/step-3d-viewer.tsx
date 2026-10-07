@@ -738,15 +738,32 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     const savedCameraPosition = camera.position.clone();
     const savedTarget = controls.target.clone();
 
+    // "можна якось її більше зробити бо залишилось багато вільного місця"
+    // (2026-10-08): the old framing used fixed 1.5x/1.2x offsets off the
+    // part's largest single-axis extent, with no relation to the camera's
+    // actual field of view — for a roughly cubic part that left a sizeable
+    // margin, and for a long thin part (a rod, a flat bar) viewed from a
+    // fixed isometric-ish corner it left MOST of the frame empty, since
+    // the part's own bounding SPHERE (its true footprint from any angle,
+    // dominated by its longest dimension) was never what the distance was
+    // derived from. Fit the camera distance to the part's bounding sphere
+    // against the camera's real FOV instead — both the vertical fov and
+    // the derived horizontal one (so a wide-but-short part doesn't clip
+    // sideways on a portrait-ish aspect container), taking whichever axis
+    // needs more distance, with just a small 10% margin so the part isn't
+    // touching the frame edges.
     const targetBox = new THREE.Box3().setFromObject(target);
-    const targetSize = targetBox.getSize(new THREE.Vector3());
-    const targetCenter = targetBox.getCenter(new THREE.Vector3());
-    const targetMaxDim = Math.max(targetSize.x, targetSize.y, targetSize.z) || 1;
-    camera.position.set(
-      targetCenter.x + targetMaxDim * 1.5,
-      targetCenter.y + targetMaxDim * 1.2,
-      targetCenter.z + targetMaxDim * 1.5,
+    const targetSphere = targetBox.getBoundingSphere(new THREE.Sphere());
+    const targetCenter = targetSphere.center;
+    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+    const margin = 1.1;
+    const distance = Math.max(
+      (targetSphere.radius * margin) / Math.sin(vFov / 2),
+      (targetSphere.radius * margin) / Math.sin(hFov / 2),
+      camera.near * 2, // guards a tiny part in a huge assembly from landing inside the near plane
     );
+    camera.position.copy(targetCenter).add(new THREE.Vector3(0.6, 0.5, 0.6).normalize().multiplyScalar(distance));
     camera.lookAt(targetCenter);
     camera.updateProjectionMatrix();
 
