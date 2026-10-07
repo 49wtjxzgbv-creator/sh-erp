@@ -83,9 +83,9 @@ export interface EntityDocumentsFieldProps {
   /** Forwarded to Step3DViewer's own `bomArticles` prop (see its header comment) — only the Assembly caller passes this, for the ✅/⚠️ cross-reference against the assembly's own current BOM. Omit entirely for Product or any other non-assembly caller. */
   bomArticles?: string[];
   /** Forwarded to Step3DViewer's own `onAddToBom` prop — see its header comment. Omit when the caller has no write access (read-only gate) or isn't an Assembly. */
-  onAddToBom?: (articles: string[]) => Promise<{ notFound: string[] }>;
+  onAddToBom?: (items: { article: string; qty: number }[]) => Promise<{ notFound: string[] }>;
   /** Forwarded to Step3DViewer's own `onCreateProduct` prop — see its header comment. */
-  onCreateProduct?: (article: string, suggestedName: string) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
 }
 
 /**

@@ -93,22 +93,25 @@ export function AssemblyForm({
   );
 
   // "Якщо деталей якихось не має, то має бути кнопка додати до BOM
-  // специфікації" + "потрібна кнопка додати все" (2026-10-08): resolves
+  // специфікації" + "потрібна кнопка додати все" + "однієї позиції там
+  // може бути декілька штук а воно додає по одній" (2026-10-08): resolves
   // every requested article against this company's own catalog (exact
   // match, case-insensitive — `queryProducts`'s own `search` is a loose
   // `contains`, so this re-filters down to a real match) and appends
   // whichever ones matched as new PRODUCT lines in ONE `setComponents`
-  // write — qtyPerUnit defaults to 1, the user adjusts the real quantity
-  // afterward in «Склад (BOM)» same as any other line. Doing every article
-  // in a single write (rather than one call per article) is required, not
-  // just an optimization: `setAssemblyComponents` REPLACES the whole line
-  // list from a snapshot of `components`, so calling it repeatedly
-  // back-to-back before the snapshot refreshes would silently drop
-  // everything but the last addition. `setComponents`'s own `onSuccess`
-  // already invalidates this assembly's components query, which is what
-  // `bomArticles` above is derived from — no separate refetch wiring
-  // needed, the ✅ just appears once the chain above re-renders with the
-  // new data.
+  // write, each with qtyPerUnit set to how many times that article's node
+  // actually appears in the 3D model (Step3DViewer's own `qty`, counted
+  // from the tree — see its `unmatchedArticleCounts` header comment), not
+  // a flat 1 — the user still adjusts it afterward in «Склад (BOM)» if
+  // needed, same as any other line. Doing every article in a single write
+  // (rather than one call per article) is required, not just an
+  // optimization: `setAssemblyComponents` REPLACES the whole line list
+  // from a snapshot of `components`, so calling it repeatedly back-to-back
+  // before the snapshot refreshes would silently drop everything but the
+  // last addition. `setComponents`'s own `onSuccess` already invalidates
+  // this assembly's components query, which is what `bomArticles` above is
+  // derived from — no separate refetch wiring needed, the ✅ just appears
+  // once the chain above re-renders with the new data.
   const setComponents = useSetAssemblyComponents(assembly?.id ?? '');
   function existingComponentLines(): AssemblyComponentLineInput[] {
     return (components ?? []).map((c) => ({
@@ -119,42 +122,43 @@ export function AssemblyForm({
       qtyPerUnit: toNumber(c.qtyPerUnit) ?? 0,
     }));
   }
-  async function appendProductLines(productIds: string[]): Promise<void> {
-    if (productIds.length === 0) return;
-    const newLines: AssemblyComponentLineInput[] = productIds.map((productId) => ({
+  async function appendProductLines(items: { productId: string; qty: number }[]): Promise<void> {
+    if (items.length === 0) return;
+    const newLines: AssemblyComponentLineInput[] = items.map(({ productId, qty }) => ({
       componentType: 'PRODUCT',
       productId,
-      qtyPerUnit: 1,
+      qtyPerUnit: qty,
     }));
     await setComponents.mutateAsync([...existingComponentLines(), ...newLines]);
   }
-  async function handleAddToBom(articles: string[]): Promise<{ notFound: string[] }> {
+  async function handleAddToBom(items: { article: string; qty: number }[]): Promise<{ notFound: string[] }> {
     const notFound: string[] = [];
-    const productIds: string[] = [];
-    for (const article of articles) {
+    const productLines: { productId: string; qty: number }[] = [];
+    for (const { article, qty } of items) {
       const matches = await queryProducts({ search: article, limit: 20 });
       const product = matches.items.find((p) => p.article.trim().toUpperCase() === article.trim().toUpperCase());
-      if (product) productIds.push(product.id);
+      if (product) productLines.push({ productId: product.id, qty });
       else notFound.push(article);
     }
-    await appendProductLines(productIds);
+    await appendProductLines(productLines);
     return { notFound };
   }
 
   // "а те чого немає в каталозі запропонувати створити новий товар"
   // (2026-10-08): the 3D viewer bubbles up "create article X, named
-  // roughly Y" rather than owning the create-product UI itself (see
+  // roughly Y, qty Z" rather than owning the create-product UI itself (see
   // Step3DViewer's `onCreateProduct` header comment) — this owns the
   // actual dialog and, once the product is created, appends it straight
-  // away by id (no need to re-search the catalog for the article we just
-  // created it with).
-  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string } | null>(null);
-  function handleCreateProduct(article: string, suggestedName: string) {
-    setPendingNewProduct({ article, name: suggestedName });
+  // away by id with that same qty (no need to re-search the catalog for
+  // the article we just created it with).
+  const [pendingNewProduct, setPendingNewProduct] = useState<{ article: string; name: string; qty: number } | null>(null);
+  function handleCreateProduct(article: string, suggestedName: string, qty: number) {
+    setPendingNewProduct({ article, name: suggestedName, qty });
   }
   async function handleProductCreated(product: Product) {
+    const qty = pendingNewProduct?.qty ?? 1;
     setPendingNewProduct(null);
-    await appendProductLines([product.id]);
+    await appendProductLines([{ productId: product.id, qty }]);
   }
 
   const {

@@ -82,22 +82,29 @@ export interface Step3DViewerProps {
    * "existing lines" snapshot would otherwise go stale between calls if
    * this were invoked once per article back-to-back (each call would
    * overwrite the previous one's addition, since `setAssemblyComponents`
-   * replaces the whole line list). Returns which of the requested articles
-   * had no catalog match — those rows then offer "create product" instead
-   * of silently failing. Omit entirely to read-only-gate this (no
-   * caller-side `assemblies:write`, or a non-assembly file) — same
-   * convention as `bomArticles` itself.
+   * replaces the whole line list). Each item's `qty` is how many TIMES that
+   * article's node appears in the model tree — "однієї позиції там може
+   * бути декілька штук" (2026-10-08 user report: the model tree often has
+   * the same article on several separate instance nodes, e.g. 4 identical
+   * bolts, and the BOM line needs qtyPerUnit 4, not 1) — see
+   * `unmatchedArticleCounts` for how this is computed. Returns which of the
+   * requested articles had no catalog match — those rows then offer
+   * "create product" instead of silently failing. Omit entirely to
+   * read-only-gate this (no caller-side `assemblies:write`, or a
+   * non-assembly file) — same convention as `bomArticles` itself.
    */
-  onAddToBom?: (articles: string[]) => Promise<{ notFound: string[] }>;
+  onAddToBom?: (items: { article: string; qty: number }[]) => Promise<{ notFound: string[] }>;
   /**
    * "а те чого немає в каталозі запропонувати створити новий товар"
    * (2026-10-08): offered on a row whose article came back in `notFound`
    * above. The CALLER owns the actual product-creation UI (a dialog) since
    * embedding it here would pull the whole catalog `ProductForm` into this
    * already-lazy-loaded 3D viewer chunk for no benefit — this just bubbles
-   * up "the user wants to create article X, named roughly Y".
+   * up "the user wants to create article X, named roughly Y, qty Z" (same
+   * node-count-based qty as `onAddToBom`, so the line it gets appended to
+   * once created has the right quantity too).
    */
-  onCreateProduct?: (article: string, suggestedName: string) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -189,10 +196,16 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   );
   const showTree = state === 'ready' && treeHasNames(tree);
 
-  // Every currently-⚠️ node's best-guess article, deduped — the candidate
-  // set "Додати все" (add all) sends in one shot. Recomputes whenever the
-  // tree or the BOM cross-reference changes, so it stays accurate after a
-  // partial add (some rows flip to ✅ and drop out automatically).
+  // Every currently-⚠️ node's best-guess article, counted — "однієї
+  // позиції там може бути декілька штук" (2026-10-08 user report): the
+  // same article often sits on several separate instance nodes (e.g. 4
+  // identical bolts used across the assembly), and the BOM line added for
+  // it needs qtyPerUnit equal to that count, not a flat 1. This is the
+  // candidate set "Додати все" (add all) sends in one shot, and also what
+  // a single row's own qty comes from (every row sharing an article shares
+  // its count). Recomputes whenever the tree or the BOM cross-reference
+  // changes, so it stays accurate after a partial add (some rows flip to
+  // ✅ and drop out automatically).
   //
   // Restricted to nodes shaped like "ARTICLE-description" (has a dash) —
   // deliberately NOT every ⚠️ node, unlike the per-row "+" button. A real
@@ -206,35 +219,36 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   // articles. A human clicking one specific row's own "+" still works on
   // any name, dash or not; this bulk action only fires on names that
   // actually look like the CAD export's own article convention.
-  const unmatchedArticles = useMemo(() => {
-    if (!bomSet) return [];
+  const unmatchedArticleCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!bomSet) return counts;
     const set = bomSet;
-    const seen = new Set<string>();
     function walk(nodes: ModelTreeNode[]) {
       for (const node of nodes) {
         if (node.name && node.name.trim().indexOf('-') > 0 && !articleMatches(node.name, set)) {
-          seen.add(extractArticleCandidate(node.name));
+          const article = extractArticleCandidate(node.name);
+          counts.set(article, (counts.get(article) ?? 0) + 1);
         }
         walk(node.children);
       }
     }
     walk(tree);
-    return Array.from(seen);
+    return counts;
   }, [tree, bomSet]);
 
-  async function addArticles(articles: string[]) {
-    if (!onAddToBom || articles.length === 0) return;
+  async function addArticles(items: { article: string; qty: number }[]) {
+    if (!onAddToBom || items.length === 0) return;
     setBulkError(null);
-    setPendingArticles((prev) => new Set([...prev, ...articles]));
+    setPendingArticles((prev) => new Set([...prev, ...items.map((i) => i.article)]));
     try {
-      const { notFound } = await onAddToBom(articles);
+      const { notFound } = await onAddToBom(items);
       setNotFoundArticles((prev) => new Set([...prev, ...notFound]));
     } catch (err) {
       setBulkError(err instanceof Error ? err.message : String(err));
     } finally {
       setPendingArticles((prev) => {
         const next = new Set(prev);
-        for (const a of articles) next.delete(a);
+        for (const i of items) next.delete(i.article);
         return next;
       });
     }
@@ -258,15 +272,15 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       </div>
       {showTree && (
         <div className="flex h-40 w-full shrink-0 flex-col overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-t-0 sm:border-l">
-          {onAddToBom && unmatchedArticles.length > 0 && (
+          {onAddToBom && unmatchedArticleCounts.size > 0 && (
             <button
               type="button"
-              onClick={() => addArticles(unmatchedArticles)}
+              onClick={() => addArticles(Array.from(unmatchedArticleCounts, ([article, qty]) => ({ article, qty })))}
               disabled={pendingArticles.size > 0}
               className="mb-2 flex shrink-0 items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50"
             >
               {pendingArticles.size > 0 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              {t('addAllToBom', { count: unmatchedArticles.length })}
+              {t('addAllToBom', { count: unmatchedArticleCounts.size })}
             </button>
           )}
           {bulkError && <p className="mb-2 shrink-0 text-xs text-destructive">{bulkError}</p>}
@@ -276,6 +290,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
             onSelect={setSelectedId}
             bomSet={bomSet}
             onAddToBom={onAddToBom ? addArticles : undefined}
+            articleCounts={unmatchedArticleCounts}
             pendingArticles={pendingArticles}
             notFoundArticles={notFoundArticles}
             onCreateProduct={onCreateProduct}
@@ -292,6 +307,7 @@ function ModelTreeList({
   onSelect,
   bomSet,
   onAddToBom,
+  articleCounts,
   pendingArticles,
   notFoundArticles,
   onCreateProduct,
@@ -300,10 +316,11 @@ function ModelTreeList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
-  onAddToBom?: (articles: string[]) => void;
+  onAddToBom?: (items: { article: string; qty: number }[]) => void;
+  articleCounts: Map<string, number>;
   pendingArticles: Set<string>;
   notFoundArticles: Set<string>;
-  onCreateProduct?: (article: string, suggestedName: string) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
 }) {
   return (
     <ul className="space-y-0.5">
@@ -315,6 +332,7 @@ function ModelTreeList({
           onSelect={onSelect}
           bomSet={bomSet}
           onAddToBom={onAddToBom}
+          articleCounts={articleCounts}
           pendingArticles={pendingArticles}
           notFoundArticles={notFoundArticles}
           onCreateProduct={onCreateProduct}
@@ -330,6 +348,7 @@ function ModelTreeRow({
   onSelect,
   bomSet,
   onAddToBom,
+  articleCounts,
   pendingArticles,
   notFoundArticles,
   onCreateProduct,
@@ -338,10 +357,11 @@ function ModelTreeRow({
   selectedId: string | null;
   onSelect: (id: string) => void;
   bomSet: Set<string> | null;
-  onAddToBom?: (articles: string[]) => void;
+  onAddToBom?: (items: { article: string; qty: number }[]) => void;
+  articleCounts: Map<string, number>;
   pendingArticles: Set<string>;
   notFoundArticles: Set<string>;
-  onCreateProduct?: (article: string, suggestedName: string) => void;
+  onCreateProduct?: (article: string, suggestedName: string, qty: number) => void;
 }) {
   const t = useTranslations('files');
   const [open, setOpen] = useState(true);
@@ -358,6 +378,13 @@ function ModelTreeRow({
   const article = node.name ? extractArticleCandidate(node.name) : '';
   const adding = pendingArticles.has(article);
   const notInCatalog = notFoundArticles.has(article);
+  // "однієї позиції там може бути декілька штук" (2026-10-08): how many
+  // separate instance nodes share this same article — falls back to 1 for
+  // a node outside `articleCounts` (e.g. a dashless/generic name a human
+  // explicitly "+"'d despite the bulk action skipping it — see
+  // `unmatchedArticleCounts`'s own header comment), where no reliable
+  // instance count exists.
+  const qty = articleCounts.get(article) ?? 1;
 
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
@@ -365,12 +392,12 @@ function ModelTreeRow({
 
   function handleAdd(e: React.MouseEvent) {
     e.stopPropagation();
-    onAddToBom?.([article]);
+    onAddToBom?.([{ article, qty }]);
   }
 
   function handleCreateProduct(e: React.MouseEvent) {
     e.stopPropagation();
-    onCreateProduct?.(article, suggestProductName(node.name));
+    onCreateProduct?.(article, suggestProductName(node.name), qty);
   }
 
   return (
@@ -404,6 +431,7 @@ function ModelTreeRow({
         {matched === true && <Check className="h-3 w-3 shrink-0 text-success" />}
         {matched === false && (
           <>
+            {qty > 1 && <span className="shrink-0 text-[10px] text-muted-foreground">×{qty}</span>}
             <span title={notInCatalog ? undefined : article}>
               <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
             </span>
@@ -439,6 +467,7 @@ function ModelTreeRow({
             onSelect={onSelect}
             bomSet={bomSet}
             onAddToBom={onAddToBom}
+            articleCounts={articleCounts}
             pendingArticles={pendingArticles}
             notFoundArticles={notFoundArticles}
             onCreateProduct={onCreateProduct}
