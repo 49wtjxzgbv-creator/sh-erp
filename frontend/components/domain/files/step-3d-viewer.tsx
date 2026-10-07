@@ -43,8 +43,11 @@ import { cn } from '@/lib/utils';
  *
  * When `bomArticles` is supplied (the assembly's own current BOM product
  * articles — only the ASSEMBLY caller passes this, never the generic
- * Product one), each LEAF node's name is matched against it
- * (case-insensitive, trimmed) and flagged ✅/⚠️ — a quick visual check for
+ * Product one), EVERY named node (not just leaves — a real article often
+ * sits on a parent/group node, with the actual mesh underneath carrying
+ * a generic auto-generated name) is matched against it (case-insensitive,
+ * trimmed, article-prefix-before-the-first-"-" as a fallback — see
+ * `articleMatches`) and flagged ✅/⚠️ — a quick visual check for
  * "does this 3D model's parts list line up with what's actually in the
  * specification". This is a convenience cross-reference, not a data
  * source: it never writes back to the BOM, and a mismatch only means the
@@ -215,7 +218,13 @@ function ModelTreeRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const isSelected = node.id === selectedId;
   const hasChildren = node.children.length > 0;
-  const matched = bomSet && node.isLeaf && node.name ? articleMatches(node.name, bomSet) : null;
+  // Not restricted to leaves: a real article often sits on a PARENT/group
+  // node, with the actual mesh underneath carrying a generic, auto-
+  // generated name (e.g. "263803-Stirnzahnrad_..." as the parent, with a
+  // child literally named "Твердое_тело1_4429") — 2026-10-08 user report,
+  // a real file where isLeaf-only matching silently never checked the one
+  // node that actually had the article.
+  const matched = bomSet && node.name ? articleMatches(node.name, bomSet) : null;
 
   useEffect(() => {
     if (isSelected) rowRef.current?.scrollIntoView({ block: 'nearest' });
