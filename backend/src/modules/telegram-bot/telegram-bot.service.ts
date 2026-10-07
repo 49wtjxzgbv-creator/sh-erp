@@ -35,6 +35,7 @@ const HELP_TEXT =
   '3️⃣ Введіть кількість (або суму — для загальної роботи).\n' +
   '4️⃣ Вкажіть, чи працювали самі, чи з колегами.\n' +
   '5️⃣ Перевірте дані і підтвердіть — запис піде на підтвердження керівнику, і лише після цього потрапить у вашу зарплату.\n\n' +
+  '👥 Якщо працювали з колегами, за замовчуванням сума ділиться рівно — кнопка «✏️ Відсотки» на картці перевірки дозволяє задати інший розподіл.\n' +
   '📊 «Мої подання сьогодні» — побачити, що ви вже здали і на якому воно етапі.\n' +
   '📷 Після підтвердження можна додати фото як підтвердження роботи.\n' +
   '/unlink — відв\'язати цей Telegram-акаунт.\n' +
@@ -72,7 +73,7 @@ function buildAdminHelpText(admin: { canRecord: boolean; canConfirm: boolean }):
         '1️⃣ Оберіть одного чи кількох працівників («✅ Готово»).\n' +
         '2️⃣ Оберіть виріб (замовлення) чи загальну роботу, або напишіть частину артикулу/назви.\n' +
         '3️⃣ Введіть кількість (або суму).\n' +
-        '4️⃣ Перевірте і підтвердіть — запис піде на підтвердження керівнику.',
+        '4️⃣ Перевірте і підтвердіть — запис піде на підтвердження керівнику. Якщо обрано кількох, за замовчуванням сума ділиться рівно — «✏️ Відсотки» дозволяє задати інший розподіл.',
     );
   }
   if (admin.canConfirm) {
@@ -230,6 +231,14 @@ export class TelegramBotService implements OnModuleInit {
   private async handleEmployeeMessage(employee: PairedEmployee, text: string): Promise<void> {
     const chatId = employee.telegramChatId;
     const paired = employee;
+
+    // "✏️ Відсотки" asked for a number list; this text IS that list —
+    // checked before the qty-review state below since it can only be true
+    // once telegramPendingQty is already set (entered from the review card).
+    if (paired.telegramAwaitingPercentsInput) {
+      await this.handlePercentsMessage(paired, text);
+      return;
+    }
 
     // State 4 — a review card is already on screen. A freshly typed
     // number updates it in place rather than demanding ✏️ first.
@@ -433,8 +442,8 @@ export class TelegramBotService implements OnModuleInit {
 
     if (callback.data === 'team:solo') {
       await this.telegram.answerCallbackQuery(callback.id);
-      await this.pairingPrisma.employee.update({ where: { id: paired.id }, data: { telegramPendingAllocations: null } });
-      await this.sendConfirmationCard({ ...paired, telegramPendingQty: paired.telegramPendingQty!, telegramPendingAllocations: null });
+      await this.pairingPrisma.employee.update({ where: { id: paired.id }, data: { telegramPendingAllocations: null, telegramPendingPercents: null } });
+      await this.sendConfirmationCard({ ...paired, telegramPendingQty: paired.telegramPendingQty!, telegramPendingAllocations: null, telegramPendingPercents: null });
       return;
     }
     if (callback.data === 'team:start') {
@@ -450,7 +459,11 @@ export class TelegramBotService implements OnModuleInit {
     }
     if (callback.data === 'team:done') {
       await this.telegram.answerCallbackQuery(callback.id);
-      await this.sendConfirmationCard({ ...paired, telegramPendingQty: paired.telegramPendingQty! });
+      // The colleague set may have just changed — any previously-entered
+      // custom percents are keyed by a potentially different participant
+      // list now, so they're cleared here, not just at submit time.
+      await this.pairingPrisma.employee.update({ where: { id: paired.id }, data: { telegramPendingPercents: null } });
+      await this.sendConfirmationCard({ ...paired, telegramPendingQty: paired.telegramPendingQty!, telegramPendingPercents: null });
       return;
     }
     if (callback.data === 'team:cancel') {
@@ -471,6 +484,11 @@ export class TelegramBotService implements OnModuleInit {
       await this.telegram.sendMessage(chatId, paired.telegramPendingWorkTaskId ? '💶 Введіть суму ще раз.' : '🔢 Введіть кількість ще раз.');
       return;
     }
+    if (callback.data === 'submit:editpercents') {
+      await this.telegram.answerCallbackQuery(callback.id);
+      await this.promptForPercents(paired);
+      return;
+    }
     if (callback.data === 'submit:cancel') {
       await this.telegram.answerCallbackQuery(callback.id);
       await this.clearPending(paired.id);
@@ -484,7 +502,14 @@ export class TelegramBotService implements OnModuleInit {
   private async clearPending(employeeId: string): Promise<void> {
     await this.pairingPrisma.employee.update({
       where: { id: employeeId },
-      data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+      data: {
+        telegramPendingProductionOrderId: null,
+        telegramPendingWorkTaskId: null,
+        telegramPendingQty: null,
+        telegramPendingAllocations: null,
+        telegramPendingPercents: null,
+        telegramAwaitingPercentsInput: false,
+      },
     });
   }
 
@@ -557,6 +582,8 @@ export class TelegramBotService implements OnModuleInit {
         telegramPendingWorkTaskId: null,
         telegramPendingQty: null,
         telegramPendingAllocations: null,
+        telegramPendingPercents: null,
+        telegramAwaitingPercentsInput: false,
         telegramAwaitingPhotoForExecutionId: null,
       },
       0,
@@ -633,6 +660,8 @@ export class TelegramBotService implements OnModuleInit {
         telegramPendingWorkTaskId: null,
         telegramPendingQty: null,
         telegramPendingAllocations: null,
+        telegramPendingPercents: null,
+        telegramAwaitingPercentsInput: false,
         telegramAwaitingPhotoForExecutionId: null,
       },
     });
@@ -677,6 +706,8 @@ export class TelegramBotService implements OnModuleInit {
       telegramAdminPendingProductionOrderId: user.telegramAdminPendingProductionOrderId,
       telegramAdminPendingWorkTaskId: user.telegramAdminPendingWorkTaskId,
       telegramAdminPendingQty: user.telegramAdminPendingQty,
+      telegramAdminPendingPercents: user.telegramAdminPendingPercents,
+      telegramAdminAwaitingPercentsInput: Boolean(user.telegramAdminAwaitingPercentsInput),
       telegramAdminAwaitingPhotoForExecutionId: user.telegramAdminAwaitingPhotoForExecutionId,
       telegramAdminAwaitingSummaryQuery: Boolean(user.telegramAdminAwaitingSummaryQuery),
     };
@@ -690,6 +721,8 @@ export class TelegramBotService implements OnModuleInit {
         telegramAdminPendingProductionOrderId: null,
         telegramAdminPendingWorkTaskId: null,
         telegramAdminPendingQty: null,
+        telegramAdminPendingPercents: null,
+        telegramAdminAwaitingPercentsInput: false,
         telegramAdminAwaitingSummaryQuery: false,
       },
     });
@@ -715,6 +748,12 @@ export class TelegramBotService implements OnModuleInit {
     // State E — "📈 Підсумок по працівнику" asked for a name; this text IS that query.
     if (admin.telegramAdminAwaitingSummaryQuery) {
       await this.handleAdminSummaryQuery(admin, text);
+      return;
+    }
+
+    // "✏️ Відсотки" asked for a number list; this text IS that list.
+    if (admin.telegramAdminAwaitingPercentsInput) {
+      await this.handleAdminPercentsMessage(admin, text);
       return;
     }
 
@@ -1248,21 +1287,62 @@ export class TelegramBotService implements OnModuleInit {
       const valueSuffix = admin.telegramAdminPendingWorkTaskId ? ' €' : '';
 
       const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
-      const employees: Array<{ fullName: string }> = await tx.employee.findMany({ where: { id: { in: employeeIds } }, select: { fullName: true } });
-      const namesLine = `\n👥 За: ${employees.map((e) => escapeHtml(e.fullName)).join(', ')}`;
+      const employees: Array<{ id: string; fullName: string }> = await tx.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, fullName: true } });
+      const employeeById = new Map(employees.map((e) => [e.id, e.fullName]));
+      const participants = employeeIds.map((id) => ({ id, label: employeeById.get(id) ?? '…' }));
+      const namesLine = formatPercentsLine(participants, parsePercentMap(admin.telegramAdminPendingPercents)) || `\n👥 За: ${participants.map((p) => escapeHtml(p.label)).join(', ')}`;
 
-      const buttons: TelegramInlineKeyboard = {
-        inline_keyboard: [
-          [{ text: '✅ Підтвердити', callback_data: 'admin:submit:confirm' }],
-          [{ text: '✏️ Змінити', callback_data: 'admin:submit:editqty' }, { text: '❌ Скасувати', callback_data: 'admin:submit:cancel' }],
-        ],
-      };
+      const buttons: TelegramInlineKeyboard =
+        participants.length > 1
+          ? {
+              inline_keyboard: [
+                [{ text: '✅ Підтвердити', callback_data: 'admin:submit:confirm' }],
+                [{ text: '✏️ Кількість', callback_data: 'admin:submit:editqty' }, { text: '✏️ Відсотки', callback_data: 'admin:submit:editpercents' }],
+                [{ text: '❌ Скасувати', callback_data: 'admin:submit:cancel' }],
+              ],
+            }
+          : {
+              inline_keyboard: [
+                [{ text: '✅ Підтвердити', callback_data: 'admin:submit:confirm' }],
+                [{ text: '✏️ Змінити', callback_data: 'admin:submit:editqty' }, { text: '❌ Скасувати', callback_data: 'admin:submit:cancel' }],
+              ],
+            };
       await this.telegram.sendMessage(
         admin.telegramChatId,
         `👀 <b>Перевірте перед підтвердженням</b>\n\n${description}${namesLine}\n${valueLabel}: <b>${admin.telegramAdminPendingQty}${valueSuffix}</b>\n\nВсе вірно?`,
         buttons,
       );
     });
+  }
+
+  /** Admin counterpart to promptForPercents — see that method's own doc comment. */
+  private async promptForAdminPercents(admin: PairedAdminUser): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
+      const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+      const employees: Array<{ id: string; fullName: string }> = await tx.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, fullName: true } });
+      const employeeById = new Map(employees.map((e) => [e.id, e.fullName]));
+      const labels = employeeIds.map((id) => employeeById.get(id) ?? '…');
+      await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminAwaitingPercentsInput: true } });
+      await this.telegram.sendMessage(
+        admin.telegramChatId,
+        `🔢 Введіть відсотки через пробіл чи кому, у тому ж порядку: <b>${escapeHtml(labels.join(', '))}</b>\n(наприклад: 60 40)`,
+      );
+    });
+  }
+
+  private async handleAdminPercentsMessage(admin: PairedAdminUser, text: string): Promise<void> {
+    const employeeIds = parseAllocations(admin.telegramAdminPendingEmployeeIds);
+    const parsed = parsePercentList(text, employeeIds.length);
+    if (!parsed) {
+      await this.telegram.sendMessage(admin.telegramChatId, `⚠️ Потрібно рівно ${employeeIds.length} додатних чисел, через пробіл чи кому. Спробуйте ще раз або /cancel.`);
+      return;
+    }
+    const percents = Object.fromEntries(employeeIds.map((id, i) => [id, parsed[i]]));
+    await this.pairingPrisma.user.update({
+      where: { id: admin.id },
+      data: { telegramAdminPendingPercents: JSON.stringify(percents), telegramAdminAwaitingPercentsInput: false },
+    });
+    await this.sendAdminConfirmationCard({ ...admin, telegramAdminPendingQty: admin.telegramAdminPendingQty!, telegramAdminPendingPercents: JSON.stringify(percents) });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is PrismaService's extended, request-scoped transactional client; see loadAssembliesFor's own identical comment.
@@ -1285,7 +1365,8 @@ export class TelegramBotService implements OnModuleInit {
       await this.telegram.sendMessage(admin.telegramChatId, 'Нічого очікує підтвердження — оберіть ще раз.', buildAdminMenu(admin));
       return;
     }
-    const percent = round2(100 / employeeIds.length);
+    const equalShare = round2(100 / employeeIds.length);
+    const customPercents = parsePercentMap(admin.telegramAdminPendingPercents);
 
     await this.prisma.runInTenantTransaction({ companyId: admin.companyId, userId: admin.id }, async (tx) => {
       const description = await this.describeAdminPendingParent(tx, admin);
@@ -1298,7 +1379,7 @@ export class TelegramBotService implements OnModuleInit {
         totalAmount: workTaskId ? value : undefined,
         method: employeeIds.length > 1 ? 'MULTI_WORKER' : 'SOLO',
         allocationMode: 'PERCENT',
-        allocations: employeeIds.map((employeeId) => ({ employeeId, percent })),
+        allocations: employeeIds.map((employeeId) => ({ employeeId, percent: customPercents?.[employeeId] ?? equalShare })),
         note: `Подано через Telegram (адміністратором ${admin.fullName})`,
       };
 
@@ -1462,6 +1543,11 @@ export class TelegramBotService implements OnModuleInit {
       await this.telegram.answerCallbackQuery(callbackId);
       await this.pairingPrisma.user.update({ where: { id: admin.id }, data: { telegramAdminPendingQty: null } });
       await this.telegram.sendMessage(chatId, admin.telegramAdminPendingWorkTaskId ? '💶 Введіть суму ще раз.' : '🔢 Введіть кількість ще раз.');
+      return;
+    }
+    if (data === 'admin:submit:editpercents') {
+      await this.telegram.answerCallbackQuery(callbackId);
+      await this.promptForAdminPercents(admin);
       return;
     }
     if (data === 'admin:submit:cancel') {
@@ -1678,24 +1764,72 @@ export class TelegramBotService implements OnModuleInit {
       const valueSuffix = employee.telegramPendingWorkTaskId ? ' €' : '';
 
       const colleagueIds = parseAllocations(employee.telegramPendingAllocations);
-      let participantsLine = '';
+      const participants: Array<{ id: string; label: string }> = [{ id: employee.id, label: 'Ви' }];
       if (colleagueIds.length > 0) {
-        const colleagues: Array<{ fullName: string }> = await tx.employee.findMany({ where: { id: { in: colleagueIds } }, select: { fullName: true } });
-        participantsLine = `\n👥 Разом з: ${colleagues.map((c) => escapeHtml(c.fullName)).join(', ')}`;
+        const colleagues: Array<{ id: string; fullName: string }> = await tx.employee.findMany({ where: { id: { in: colleagueIds } }, select: { id: true, fullName: true } });
+        const colleagueById = new Map(colleagues.map((c) => [c.id, c.fullName]));
+        for (const id of colleagueIds) participants.push({ id, label: colleagueById.get(id) ?? '…' });
       }
+      const participantsLine = formatPercentsLine(participants, parsePercentMap(employee.telegramPendingPercents));
 
-      const buttons: TelegramInlineKeyboard = {
-        inline_keyboard: [
-          [{ text: '✅ Підтвердити', callback_data: 'submit:confirm' }],
-          [{ text: '✏️ Змінити', callback_data: 'submit:editqty' }, { text: '❌ Скасувати', callback_data: 'submit:cancel' }],
-        ],
-      };
+      const buttons: TelegramInlineKeyboard =
+        participants.length > 1
+          ? {
+              inline_keyboard: [
+                [{ text: '✅ Підтвердити', callback_data: 'submit:confirm' }],
+                [{ text: '✏️ Кількість', callback_data: 'submit:editqty' }, { text: '✏️ Відсотки', callback_data: 'submit:editpercents' }],
+                [{ text: '❌ Скасувати', callback_data: 'submit:cancel' }],
+              ],
+            }
+          : {
+              inline_keyboard: [
+                [{ text: '✅ Підтвердити', callback_data: 'submit:confirm' }],
+                [{ text: '✏️ Змінити', callback_data: 'submit:editqty' }, { text: '❌ Скасувати', callback_data: 'submit:cancel' }],
+              ],
+            };
       await this.telegram.sendMessage(
         employee.telegramChatId,
         `👀 <b>Перевірте перед підтвердженням</b>\n\n${description}\n${valueLabel}: <b>${employee.telegramPendingQty}${valueSuffix}</b>${participantsLine}\n\nВсе вірно?`,
         buttons,
       );
     });
+  }
+
+  /** "✏️ Відсотки" on the review card (2026-10-07 — "не зрозуміло за якими відсотками йде розподіл"): asks for one number per participant, in the SAME order the confirmation card just listed them. */
+  private async promptForPercents(employee: PairedEmployee): Promise<void> {
+    await this.prisma.runInTenantTransaction({ companyId: employee.companyId, userId: employee.telegramLinkedByUserId ?? employee.id }, async (tx) => {
+      const colleagueIds = parseAllocations(employee.telegramPendingAllocations);
+      const labels = ['Ви'];
+      if (colleagueIds.length > 0) {
+        const colleagues: Array<{ id: string; fullName: string }> = await tx.employee.findMany({ where: { id: { in: colleagueIds } }, select: { id: true, fullName: true } });
+        const colleagueById = new Map(colleagues.map((c) => [c.id, c.fullName]));
+        for (const id of colleagueIds) labels.push(colleagueById.get(id) ?? '…');
+      }
+      await this.pairingPrisma.employee.update({ where: { id: employee.id }, data: { telegramAwaitingPercentsInput: true } });
+      await this.telegram.sendMessage(
+        employee.telegramChatId,
+        `🔢 Введіть відсотки через пробіл чи кому, у тому ж порядку: <b>${escapeHtml(labels.join(', '))}</b>\n(наприклад: 60 40)`,
+      );
+    });
+  }
+
+  private async handlePercentsMessage(employee: PairedEmployee, text: string): Promise<void> {
+    const colleagueIds = parseAllocations(employee.telegramPendingAllocations);
+    const participantIds = [employee.id, ...colleagueIds];
+    const parsed = parsePercentList(text, participantIds.length);
+    if (!parsed) {
+      await this.telegram.sendMessage(
+        employee.telegramChatId,
+        `⚠️ Потрібно рівно ${participantIds.length} додатних чисел, через пробіл чи кому. Спробуйте ще раз або /cancel.`,
+      );
+      return;
+    }
+    const percents = Object.fromEntries(participantIds.map((id, i) => [id, parsed[i]]));
+    await this.pairingPrisma.employee.update({
+      where: { id: employee.id },
+      data: { telegramPendingPercents: JSON.stringify(percents), telegramAwaitingPercentsInput: false },
+    });
+    await this.sendConfirmationCard({ ...employee, telegramPendingQty: employee.telegramPendingQty!, telegramPendingPercents: JSON.stringify(percents) });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1719,7 +1853,8 @@ export class TelegramBotService implements OnModuleInit {
     }
     const colleagueIds = parseAllocations(employee.telegramPendingAllocations);
     const participantIds = [employee.id, ...colleagueIds];
-    const percent = round2(100 / participantIds.length);
+    const equalShare = round2(100 / participantIds.length);
+    const customPercents = parsePercentMap(employee.telegramPendingPercents);
 
     await this.prisma.runInTenantTransaction({ companyId: employee.companyId, userId: employee.telegramLinkedByUserId ?? employee.id }, async (tx) => {
       const description = await this.describePendingParent(tx, employee);
@@ -1732,7 +1867,7 @@ export class TelegramBotService implements OnModuleInit {
         totalAmount: workTaskId ? value : undefined,
         method: participantIds.length > 1 ? 'MULTI_WORKER' : 'SOLO',
         allocationMode: 'PERCENT',
-        allocations: participantIds.map((employeeId) => ({ employeeId, percent })),
+        allocations: participantIds.map((employeeId) => ({ employeeId, percent: customPercents?.[employeeId] ?? equalShare })),
         note: 'Подано через Telegram',
       };
 
@@ -1991,6 +2126,8 @@ interface PairedEmployee {
   telegramPendingWorkTaskId: string | null;
   telegramPendingQty: string | null;
   telegramPendingAllocations: string | null;
+  telegramPendingPercents: string | null;
+  telegramAwaitingPercentsInput: boolean;
   telegramAwaitingPhotoForExecutionId: string | null;
 }
 
@@ -2007,6 +2144,8 @@ interface PairedAdminUser {
   telegramAdminPendingProductionOrderId: string | null;
   telegramAdminPendingWorkTaskId: string | null;
   telegramAdminPendingQty: string | null;
+  telegramAdminPendingPercents: string | null;
+  telegramAdminAwaitingPercentsInput: boolean;
   telegramAdminAwaitingPhotoForExecutionId: string | null;
   telegramAdminAwaitingSummaryQuery: boolean;
 }
@@ -2090,6 +2229,50 @@ function summaryPeriodRange(period: SummaryPeriod): { start: Date; end: Date; la
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** `User.telegramAdminPendingPercents`/`Employee.telegramPendingPercents` — a JSON `{employeeId: percent}` map, or null for "no custom override, use equal split". */
+function parsePercentMap(raw: string | null): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scales arbitrary positive weights to percentages summing to EXACTLY 100
+ * — same rounding-remainder technique as ProductionExecutionsService
+ * #buildAllocationRows (round every value but the last, then let the last
+ * absorb whatever's left so there's no floating-point drift). Returns
+ * null if `text` doesn't contain exactly `count` positive numbers.
+ */
+function parsePercentList(text: string, count: number): number[] | null {
+  const parts = text.split(/[\s,]+/).filter((p) => p.length > 0);
+  if (parts.length !== count) return null;
+  const weights = parts.map((p) => Number(p.replace(',', '.')));
+  if (weights.some((w) => !Number.isFinite(w) || w < 0)) return null;
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum <= 0) return null;
+  const scaled = weights.map((w) => round2((w / sum) * 100));
+  const sumExceptLast = scaled.slice(0, -1).reduce((s, v) => s + v, 0);
+  scaled[scaled.length - 1] = round2(100 - sumExceptLast);
+  return scaled;
+}
+
+/** Review-card participants line — "" for a solo submission (nothing to split), otherwise every participant's effective percent (custom override, or the equal-split default) in the SAME order submission will use. */
+function formatPercentsLine(participants: Array<{ id: string; label: string }>, customPercents: Record<string, number> | null): string {
+  if (participants.length <= 1) return '';
+  const equalShare = round2(100 / participants.length);
+  const parts = participants.map((p) => `${escapeHtml(p.label)} — ${customPercents?.[p.id] ?? equalShare}%`);
+  return `\n👥 Розподіл: ${parts.join(', ')}`;
 }
 
 function escapeHtml(value: string): string {

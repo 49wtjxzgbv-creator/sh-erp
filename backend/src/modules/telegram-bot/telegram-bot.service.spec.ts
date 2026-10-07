@@ -404,7 +404,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
         where: { id: 'emp1' },
-        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null, telegramPendingPercents: null, telegramAwaitingPercentsInput: false },
       });
     });
 
@@ -455,7 +455,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       expect(tx.productionExecution.update).toHaveBeenCalledWith({ where: { id: 'exec1' }, data: { submittedViaTelegram: true } });
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
         where: { id: 'emp1' },
-        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null, telegramPendingPercents: null, telegramAwaitingPercentsInput: false },
       });
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPhotoForExecutionId: 'exec1' } });
       expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('✅'), expect.anything());
@@ -485,7 +485,7 @@ describe('TelegramBotService (2026-10-01)', () => {
       await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:cancel', message: { chat: { id: 555 }, message_id: 1 } } });
       expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
         where: { id: 'emp1' },
-        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null },
+        data: { telegramPendingProductionOrderId: null, telegramPendingWorkTaskId: null, telegramPendingQty: null, telegramPendingAllocations: null, telegramPendingPercents: null, telegramAwaitingPercentsInput: false },
       });
       expect(productionExecutionsService.create).not.toHaveBeenCalled();
     });
@@ -579,7 +579,7 @@ describe('TelegramBotService (2026-10-01)', () => {
 
     it('team:done with colleagues selected shows the review card listing participants', async () => {
       pairingPrisma.employee.findFirst.mockResolvedValue({ ...pendingEmployee, telegramPendingAllocations: JSON.stringify(['emp2']) });
-      tx.employee.findMany.mockResolvedValue([{ fullName: 'Марія К.' }]);
+      tx.employee.findMany.mockResolvedValue([{ id: 'emp2', fullName: 'Марія К.' }]);
 
       await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:done', message: { chat: { id: 555 }, message_id: 1 } } });
 
@@ -596,6 +596,104 @@ describe('TelegramBotService (2026-10-01)', () => {
         expect.anything(),
         expect.objectContaining({ method: 'MULTI_WORKER', allocations: [{ employeeId: 'emp1', percent: 50 }, { employeeId: 'emp2', percent: 50 }] }),
       );
+    });
+  });
+
+  describe('custom percent split (2026-10-07 user report: "не зрозуміло за якими відсотками йде розподіл")', () => {
+    const withColleague = { ...employee, telegramPendingProductionOrderId: 'po1', telegramPendingQty: '10', telegramPendingAllocations: JSON.stringify(['emp2']) };
+
+    beforeEach(() => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague });
+      tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', unitsPlanned: 10, status: 'IN_PROGRESS' });
+      tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: '409219.L', name: 'Förderband' });
+      tx.employee.findMany.mockResolvedValue([{ id: 'emp2', fullName: 'Марія К.' }]);
+    });
+
+    it('the review card shows the EQUAL split with explicit percentages by default, plus a "✏️ Відсотки" button', async () => {
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:done', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.stringContaining('Ви — 50%, Марія К. — 50%'),
+        expect.objectContaining({ inline_keyboard: expect.arrayContaining([expect.arrayContaining([expect.objectContaining({ callback_data: 'submit:editpercents' })])]) }),
+      );
+    });
+
+    it('a solo submission (no colleagues) shows no percent breakdown and no "✏️ Відсотки" button', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...employee, telegramPendingProductionOrderId: 'po1', telegramPendingQty: '10' });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:solo', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        '555',
+        expect.not.stringContaining('Розподіл'),
+        expect.objectContaining({ inline_keyboard: [[expect.objectContaining({ callback_data: 'submit:confirm' })], [expect.objectContaining({ callback_data: 'submit:editqty' }), expect.objectContaining({ callback_data: 'submit:cancel' })]] }),
+      );
+    });
+
+    it('"✏️ Відсотки" asks for numbers in participant order and sets the awaiting flag', async () => {
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:editpercents', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramAwaitingPercentsInput: true } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Ви, Марія К.'));
+    });
+
+    it('typing "70 30" while awaiting stores a custom split and re-shows the review card with it', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramAwaitingPercentsInput: true });
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '70 30' } });
+
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({
+        where: { id: 'emp1' },
+        data: { telegramPendingPercents: JSON.stringify({ emp1: 70, emp2: 30 }), telegramAwaitingPercentsInput: false },
+      });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('Ви — 70%, Марія К. — 30%'), expect.anything());
+    });
+
+    it('accepts comma-separated input too, and normalizes weights that don\'t already sum to 100', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramAwaitingPercentsInput: true });
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '2,1' } }); // 2:1 ratio -> 66.67/33.33
+
+      const call = pairingPrisma.employee.update.mock.calls.find((c: any) => c[0].data.telegramPendingPercents);
+      const stored = JSON.parse(call[0].data.telegramPendingPercents);
+      expect(stored.emp1 + stored.emp2).toBe(100);
+      expect(stored.emp1).toBeCloseTo(66.67, 1);
+    });
+
+    it('rejects the wrong NUMBER of values and keeps the awaiting flag (re-prompts rather than crashing)', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramAwaitingPercentsInput: true });
+
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '50' } }); // only 1 number for 2 participants
+
+      expect(pairingPrisma.employee.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ telegramPendingPercents: expect.anything() }) }));
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('рівно 2'));
+    });
+
+    it('rejects negative/non-numeric input the same way', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramAwaitingPercentsInput: true });
+      await service.handleUpdate({ message: { chat: { id: 555 }, text: '-10 110' } });
+      expect(telegram.sendMessage).toHaveBeenCalledWith('555', expect.stringContaining('рівно 2'));
+    });
+
+    it('submitting with a custom split sends those exact percents to ProductionExecutionsService', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramPendingPercents: JSON.stringify({ emp1: 70, emp2: 30 }) });
+      productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'submit:confirm', message: { chat: { id: 555 }, message_id: 1 } } });
+
+      expect(productionExecutionsService.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ allocations: [{ employeeId: 'emp1', percent: 70 }, { employeeId: 'emp2', percent: 30 }] }),
+      );
+    });
+
+    it('"🙋 Тільки я" (team:solo) clears any previously-set custom percents', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramPendingPercents: JSON.stringify({ emp1: 70, emp2: 30 }) });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:solo', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingAllocations: null, telegramPendingPercents: null } });
+    });
+
+    it('re-reaching the review card via team:done clears a stale custom split (the participant set may have just changed)', async () => {
+      pairingPrisma.employee.findFirst.mockResolvedValue({ ...withColleague, telegramPendingPercents: JSON.stringify({ emp1: 70, emp2: 30 }) });
+      await service.handleUpdate({ callback_query: { id: 'cb1', data: 'team:done', message: { chat: { id: 555 }, message_id: 1 } } });
+      expect(pairingPrisma.employee.update).toHaveBeenCalledWith({ where: { id: 'emp1' }, data: { telegramPendingPercents: null } });
     });
   });
 
@@ -623,6 +721,8 @@ describe('TelegramBotService (2026-10-01)', () => {
           telegramPendingWorkTaskId: null,
           telegramPendingQty: null,
           telegramPendingAllocations: null,
+          telegramPendingPercents: null,
+          telegramAwaitingPercentsInput: false,
           telegramAwaitingPhotoForExecutionId: null,
         },
       });
@@ -930,7 +1030,7 @@ describe('TelegramBotService (2026-10-01)', () => {
         });
         tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
         tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
-        tx.employee.findMany.mockResolvedValue([{ fullName: 'Петро Іваненко' }, { fullName: 'Олена Сидоренко' }]);
+        tx.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Петро Іваненко' }, { id: 'e2', fullName: 'Олена Сидоренко' }]);
 
         await service.handleUpdate({ message: { chat: { id: 777 }, text: '12' } });
 
@@ -993,6 +1093,62 @@ describe('TelegramBotService (2026-10-01)', () => {
       });
     });
 
+    describe('custom percent split for admin submit-for-employee (2026-10-07)', () => {
+      beforeEach(() => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']),
+          telegramAdminPendingProductionOrderId: 'po1',
+          telegramAdminPendingQty: '12',
+        });
+        tx.productionOrder.findUnique.mockResolvedValue({ id: 'po1', assemblyId: 'a1', status: 'IN_PROGRESS' });
+        tx.assembly.findUnique.mockResolvedValue({ id: 'a1', article: 'ART-1', name: 'Виріб 1' });
+        tx.employee.findMany.mockResolvedValue([{ id: 'e1', fullName: 'Петро Іваненко' }, { id: 'e2', fullName: 'Олена Сидоренко' }]);
+      });
+
+      it('"✏️ Відсотки" asks for numbers in order and sets the awaiting flag', async () => {
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:submit:editpercents', message: { chat: { id: 777 }, message_id: 7 } } });
+        expect(pairingPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'admin1' }, data: { telegramAdminAwaitingPercentsInput: true } });
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('Петро Іваненко, Олена Сидоренко'));
+      });
+
+      it('typing "80 20" while awaiting stores and shows the custom split', async () => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']),
+          telegramAdminPendingProductionOrderId: 'po1',
+          telegramAdminPendingQty: '12',
+          telegramAdminAwaitingPercentsInput: true,
+        });
+
+        await service.handleUpdate({ message: { chat: { id: 777 }, text: '80 20' } });
+
+        expect(pairingPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'admin1' },
+          data: { telegramAdminPendingPercents: JSON.stringify({ e1: 80, e2: 20 }), telegramAdminAwaitingPercentsInput: false },
+        });
+        expect(telegram.sendMessage).toHaveBeenCalledWith('777', expect.stringContaining('Петро Іваненко — 80%, Олена Сидоренко — 20%'), expect.anything());
+      });
+
+      it('submitting with a custom split sends those exact percents', async () => {
+        pairingPrisma.user.findFirst.mockResolvedValue({
+          ...adminUser,
+          telegramAdminPendingEmployeeIds: JSON.stringify(['e1', 'e2']),
+          telegramAdminPendingProductionOrderId: 'po1',
+          telegramAdminPendingQty: '12',
+          telegramAdminPendingPercents: JSON.stringify({ e1: 80, e2: 20 }),
+        });
+        productionExecutionsService.create.mockResolvedValue({ id: 'exec1' });
+
+        await service.handleUpdate({ callback_query: { id: 'cb1', data: 'admin:submit:confirm', message: { chat: { id: 777 }, message_id: 7 } } });
+
+        expect(productionExecutionsService.create).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ allocations: [{ employeeId: 'e1', percent: 80 }, { employeeId: 'e2', percent: 20 }] }),
+        );
+      });
+    });
+
     it('/cancel clears admin pending state', async () => {
       pairingPrisma.user.findFirst.mockResolvedValue({ ...adminUser, telegramAdminPendingEmployeeIds: JSON.stringify(['e1']) });
       await service.handleUpdate({ message: { chat: { id: 777 }, text: '/cancel' } });
@@ -1003,6 +1159,8 @@ describe('TelegramBotService (2026-10-01)', () => {
           telegramAdminPendingProductionOrderId: null,
           telegramAdminPendingWorkTaskId: null,
           telegramAdminPendingQty: null,
+          telegramAdminPendingPercents: null,
+          telegramAdminAwaitingPercentsInput: false,
           telegramAdminAwaitingSummaryQuery: false,
         },
       });

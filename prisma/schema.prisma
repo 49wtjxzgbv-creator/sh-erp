@@ -258,6 +258,11 @@ model User {
   telegramAdminPendingProductionOrderId  String? @db.Uuid
   telegramAdminPendingWorkTaskId         String? @db.Uuid
   telegramAdminPendingQty                String?
+  // Manual percent override for the selected employees — see Employee
+  // .telegramPendingPercents' own comment for the full rationale (2026-
+  // 10-07 user report). JSON `{employeeId: percent}`, null = equal split.
+  telegramAdminPendingPercents           String?
+  telegramAdminAwaitingPercentsInput     Boolean @default(false)
   telegramAdminAwaitingPhotoForExecutionId String? @db.Uuid
   // "📈 Підсумок по працівнику" (2026-10-06 user request): true for exactly
   // one bot turn — set when the admin taps the button, cleared the moment
@@ -2701,6 +2706,20 @@ model Employee {
   // as the other pending fields: must survive between webhook calls while
   // the employee is still picking people.
   telegramPendingAllocations String?
+  // "Не зрозуміло за якими відсотками йде розподіл" (2026-10-07 user
+  // report): manual percent override for a MULTI_WORKER submission, JSON
+  // `{employeeId: percent}` covering every current participant (self +
+  // colleagues) — null means "equal split" (the original, still-default
+  // behavior). Cleared whenever the participant set changes (team:solo,
+  // team:done after re-toggling colleagues) since a stale map keyed by a
+  // DIFFERENT set of ids would silently mis-split; only ever (re)written
+  // by handlePercentsMessage, right after the employee types new numbers.
+  telegramPendingPercents String?
+  // True for exactly one bot turn — set when "✏️ Відсотки" is tapped on
+  // the review card, cleared the moment the next free-text message is
+  // consumed as the percent list (success or failure). Same transient-
+  // flag shape as User.telegramAdminAwaitingSummaryQuery.
+  telegramAwaitingPercentsInput Boolean @default(false)
   // Set right after a successful submission while the bot is offering an
   // optional "додати фото" follow-up — cleared the moment a photo arrives
   // or the employee taps "Пропустити". Deliberately NOT part of the
