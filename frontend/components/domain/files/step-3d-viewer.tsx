@@ -647,6 +647,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const volumeScaleToMm3 = volumeUnitScaleToMm3(maxDim);
   group.position.sub(center);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
@@ -779,7 +780,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   function computeVolume(id: string): number | null {
     const target = findByTreeId(group, id);
     if (!target || meshesUnder(target).length === 0) return null;
-    return computeMeshVolume(target);
+    return computeMeshVolume(target, volumeScaleToMm3);
   }
 
   return {
@@ -814,35 +815,65 @@ function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
 }
 
 /**
+ * Not every GLB this app loads uses the same linear unit, even though the
+ * returned volume always needs to end up in mm³. The server's own
+ * STEP→GLB pipeline (`step-convert-child.js`) never rescales — those
+ * files stay in the STEP file's native millimeters, with a whole
+ * multi-part assembly's bounding box typically in the hundreds-to-low-
+ * thousands. A directly user-uploaded `.glb` (bypassing that pipeline
+ * entirely) can instead follow glTF's own spec-mandated "canonical
+ * meters" convention — confirmed live on a real file: its mesh nodes
+ * carried an explicit `0.01` local scale (cm→m) layered under a parent
+ * chain whose own translations were already meter-scale (e.g. `0.0248`
+ * for a ~24.8mm offset) — so a correctly `matrixWorld`-composed point is
+ * already in meters there, and treating it as mm (dividing by 1e9 a
+ * second time downstream) silently rounds any real part's weight to
+ * "0.000 кг" (a real, reported bug: "пише 0 кг" for a confirmed-solid
+ * bracket).
+ *
+ * Resolved per FILE, not per part: a single small part's own size is
+ * genuinely ambiguous (a bare "5" could be 5mm or 5m, both plausible for
+ * *something*), but a whole ASSEMBLY's composed bounding box is not — no
+ * mechanical assembly this app handles is realistically 50+ meters
+ * across, so a group-level `maxDim` that big can only mean the file's
+ * units are still raw millimeters; anything smaller is (already
+ * correctly scaled) meters. Call this once per model load (`group`'s own
+ * bounding box, already computed for camera framing) and reuse the
+ * result for every part's volume in that file.
+ */
+function volumeUnitScaleToMm3(groupMaxDim: number): number {
+  const ALREADY_METERS_MAX_DIM = 50;
+  return groupMaxDim < ALREADY_METERS_MAX_DIM ? 1e9 : 1;
+}
+
+/**
  * "там би воно рахувало вагу залежно від обєму і матеріалу" (2026-10-08):
  * an estimate of `object`'s own solid volume (and every descendant's), in
- * the model's native unit³ — assumed mm³, since every CAD-derived model
- * this app has actually seen is a millimeter-scale SolidWorks/STEP export
- * and nothing in the STEP→GLB pipeline (`step-convert-child.js`) rescales
- * to glTF's own "canonical meters" convention. The caller
+ * mm³ (`unitScaleToMm3` — see `volumeUnitScaleToMm3` above — converts from
+ * whatever linear unit this particular file's `matrixWorld`-composed
+ * coordinates actually turned out to be in). The caller
  * (`CreateProductDialog`'s material/weight helper) divides by 1e9 to get
  * m³ before multiplying by a density in kg/m³.
  *
  * Via the CONVEX HULL of the part's own vertices, not the raw triangle
  * mesh directly — real, confirmed-live bug this works around: the
  * straightforward signed-tetrahedron-sum (divergence theorem) approach
- * tried first came back ≈0 for a genuine solid aluminum bracket (confirmed
- * via its own CAD-encoded dimensions, "40_x_15_x_75"), because CAD-export
- * tessellation is not reliably a single consistently-wound closed shell —
- * many exporters (including whatever produced this app's real-world test
- * files) duplicate every face with the opposite winding so back-face
- * culling never hides anything from any viewing angle, and two
- * perfectly opposite-signed copies of every triangle cancel to exactly
- * zero when summed directly. A convex hull's own faces are, by
- * construction, consistently wound with no duplicates, so the same
- * tetrahedron-sum math on the HULL's triangles can't fall into that trap.
- * Trade-off: the hull volume is an OVERESTIMATE for any non-convex part
- * (a bracket's cutouts/holes/concave bends get filled in) — acceptable
- * here since this is explicitly a rough starting estimate the user reviews
- * and can adjust, not a certified measurement, and overestimating a
- * weight is a safer default error than reporting zero.
+ * tried first came back ≈0 even after accounting for the unit issue
+ * above, because CAD-export tessellation is not reliably a single
+ * consistently-wound closed shell — many exporters duplicate every face
+ * with the opposite winding so back-face culling never hides anything
+ * from any viewing angle, and two perfectly opposite-signed copies of
+ * every triangle cancel to exactly zero when summed directly. A convex
+ * hull's own faces are, by construction, consistently wound with no
+ * duplicates, so the same tetrahedron-sum math on the HULL's triangles
+ * can't fall into that trap. Trade-off: the hull volume is an
+ * OVERESTIMATE for any non-convex part (a bracket's cutouts/holes/concave
+ * bends get filled in) — acceptable here since this is explicitly a rough
+ * starting estimate the user reviews and can adjust, not a certified
+ * measurement, and overestimating a weight is a safer default error than
+ * reporting zero.
  */
-function computeMeshVolume(object: THREE.Object3D): number {
+function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): number {
   const points: THREE.Vector3[] = [];
   for (const mesh of meshesUnder(object)) {
     mesh.updateWorldMatrix(true, false);
@@ -871,7 +902,7 @@ function computeMeshVolume(object: THREE.Object3D): number {
     c.fromBufferAttribute(hullPosition, i * 3 + 2);
     volume += a.dot(b.clone().cross(c)) / 6;
   }
-  return Math.abs(volume);
+  return Math.abs(volume) * unitScaleToMm3;
 }
 
 /**
@@ -1014,6 +1045,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const volumeScaleToMm3 = volumeUnitScaleToMm3(maxDim);
   group.position.sub(center);
 
   const scene = new THREE.Scene();
@@ -1033,7 +1065,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     .map((part) => {
       const target = findByTreeId(group, part.nodeId);
       const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
-      const volumeMm3 = target ? computeMeshVolume(target) : null;
+      const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
       return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3 };
     })
     .sort((a, b) => a.article.localeCompare(b.article));
