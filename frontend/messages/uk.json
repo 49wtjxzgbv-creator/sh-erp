@@ -157,6 +157,8 @@
     "materialWeightApply": "Підставити у вагу",
     "calculateVolumeFromModel": "Порахувати вагу з 3D-моделі (GLB)",
     "materialWeightNoVolume": "Не вдалося визначити об'єм за цією 3D-моделлю.",
+    "refreshPhotoFromModel": "Оновити фото з 3D-моделі (GLB)",
+    "refreshPhotoFailed": "Не вдалося отримати фото з цієї 3D-моделі.",
     "material_steel": "Сталь",
     "material_stainlessSteel": "Нержавіюча сталь",
     "material_castIron": "Чавун",

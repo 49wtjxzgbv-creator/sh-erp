@@ -1162,6 +1162,48 @@ export async function computeGlbVolume(glbUrl: string): Promise<number | null> {
   return volume > 0 ? volume : null;
 }
 
+/**
+ * "зроби можливість оновити фото в каталозі існуючих товарів якщо фото
+ * витягнуло з gbl" (2026-10-08): whole-file counterpart to
+ * `isolateRenderToDataUrl` (used per-part by `analyzeGlbParts`) — for a
+ * product's own standalone .glb, the entire loaded scene already IS that
+ * one part, so there's nothing to isolate (`target` = `group` itself,
+ * same object twice). A one-off offscreen render, same camera-framing math
+ * as every other snapshot in this file, torn down immediately after.
+ */
+export async function captureGlbSnapshot(glbUrl: string): Promise<string | null> {
+  const group = await loadGlb(glbUrl);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  if (meshesUnder(group).length === 0) return null;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf3f4f6);
+  scene.add(group);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  dirLight.position.set(maxDim, maxDim, maxDim);
+  scene.add(dirLight);
+
+  const SNAPSHOT_SIZE = 480;
+  const camera = new THREE.PerspectiveCamera(45, 1, maxDim / 1000, maxDim * 100);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE);
+
+  const dataUrl = isolateRenderToDataUrl(renderer, scene, camera, group, group);
+
+  renderer.dispose();
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
+    }
+  });
+
+  return dataUrl;
+}
+
 export interface GlbModelAnalysis {
   parts: GlbPartAnalysis[];
   /**

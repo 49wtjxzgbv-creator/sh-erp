@@ -5,10 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import { useCompanyUnits } from '@/lib/hooks/use-catalog';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import type { Product, CreateProductInput } from '@/lib/api-client/catalog';
 import { toNumber } from '@/lib/api-client/decimal';
+import { uploadFile } from '@/lib/api-client/files';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,6 +22,7 @@ import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 import { EntityDocumentsField, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
+import { dataUrlToFile } from '@/components/domain/bom/use-create-product-from-part';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
@@ -196,6 +200,60 @@ function MaterialWeightPicker({ volumeMm3, onApply }: { volumeMm3: number; onApp
 }
 
 /**
+ * "зроби можливість оновити фото в каталозі існуючих товарів якщо фото
+ * витягнуло з gbl" (2026-10-08): same shape as `ModelWeightCalculator`
+ * below — renders nothing without a `.glb` document attached, loads
+ * three.js only on click (`captureGlbSnapshot`, dynamically imported),
+ * then re-renders the model's own isolated snapshot and uploads it as a
+ * fresh `PRODUCT_PHOTO` (newest wins — see `EntityPhotoField`'s own header
+ * comment — so this doesn't need to delete the old one itself). Useful
+ * whenever the auto-captured photo from the original "Створити товар" (3D
+ * part) flow came out poorly framed, or the attached `.glb` was replaced
+ * with a better model since.
+ */
+function RefreshPhotoFromModel({ productId }: { productId: string }) {
+  const t = useTranslations('catalog');
+  const tc = useTranslations('common');
+  const qc = useQueryClient();
+  const { data: byEntity } = useFilesForEntities('Product', [productId], 'PRODUCT_DOCUMENT');
+  const glbFile = (byEntity?.[productId] ?? []).find((f) => isGlbFile(f.originalName));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!glbFile) return null;
+
+  async function refreshPhoto() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { captureGlbSnapshot } = await import('@/components/domain/files/step-3d-viewer');
+      const dataUrl = await captureGlbSnapshot(glbFile!.downloadUrl);
+      const file = dataUrl ? dataUrlToFile(dataUrl, `${productId}.png`) : null;
+      if (!file) {
+        setError(t('refreshPhotoFailed'));
+        return;
+      }
+      await uploadFile(file, { domain: 'PRODUCT_PHOTO', entityType: 'Product', entityId: productId });
+      qc.invalidateQueries({ queryKey: ['files', 'Product', productId] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc('error'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Button type="button" variant="outline" size="sm" loading={loading} onClick={refreshPhoto}>
+        <RefreshCw className="mr-2 h-4 w-4" />
+        {t('refreshPhotoFromModel')}
+      </Button>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
  * "до існуючих товарів де є файл glb додай можливість рахувати вагу"
  * (2026-10-08): the create-mode `MaterialWeightPicker` above gets its
  * `volumeMm3` handed to it from the BOM 3D-viewer flow that created the
@@ -334,9 +392,12 @@ export function ProductForm({
         <CardHeader>
           <CardTitle className="text-base">{t('photo')}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           {product ? (
-            <EntityPhotoField domain="PRODUCT_PHOTO" entityType="Product" entityId={product.id} />
+            <>
+              <EntityPhotoField domain="PRODUCT_PHOTO" entityType="Product" entityId={product.id} />
+              <RefreshPhotoFromModel productId={product.id} />
+            </>
           ) : (
             <PendingPhotoField value={pendingPhoto ?? null} onChange={onPendingPhotoChange ?? (() => {})} />
           )}
