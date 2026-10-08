@@ -24,6 +24,25 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
 // the same role client-side for the plain <input type="number"> string values.
+//
+// Every optional numeric field below is `optionalNonNegativeNumber`, NOT the
+// seemingly-equivalent `z.coerce.number().min(0).optional().or(z.literal(''))`
+// — that more obvious-looking form has a real bug (caught 2026-10-08: a
+// product created with "Вага за одиницю" left blank came back with
+// `weightPerUnitKg` stored as a confirmed `0`, not left unset). Root cause:
+// `z.coerce.number()` on `''` runs `Number('')`, which in JS is `0` — a valid
+// number, not a parse failure — so the branch succeeds with `0` and
+// `.or(z.literal(''))` never even gets a chance to catch the blank input.
+// `optionalNonNegativeNumber` preprocesses `''`/`null` to `undefined` BEFORE
+// the number schema ever sees them, so a blank field reliably comes out as
+// `undefined` — the distinction the whole point of an *optional* field rests
+// on (e.g. BOM weight roll-up treats "not set" and "confirmed 0" very
+// differently, see assemblies.service.ts's `calcAssemblyWeightRecursive`).
+const optionalNonNegativeNumber = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.coerce.number().min(0).optional(),
+);
+
 const productSchema = z.object({
   article: z.string().min(1),
   code: z.string().optional(),
@@ -37,15 +56,15 @@ const productSchema = z.object({
   productLine: z.string().optional(),
   barcode: z.string().optional(),
   unitId: z.string().uuid(),
-  unitsPerPackage: z.coerce.number().min(0).optional().or(z.literal('')),
+  unitsPerPackage: optionalNonNegativeNumber,
   cell: z.string().optional(),
-  minQty: z.coerce.number().min(0).optional().or(z.literal('')),
-  localPriceExclVat: z.coerce.number().min(0).optional().or(z.literal('')),
-  localPriceInclVat: z.coerce.number().min(0).optional().or(z.literal('')),
-  germanPriceExclVat: z.coerce.number().min(0).optional().or(z.literal('')),
-  germanPriceInclVat: z.coerce.number().min(0).optional().or(z.literal('')),
-  sellPriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
-  weightPerUnitKg: z.coerce.number().min(0).optional().or(z.literal('')),
+  minQty: optionalNonNegativeNumber,
+  localPriceExclVat: optionalNonNegativeNumber,
+  localPriceInclVat: optionalNonNegativeNumber,
+  germanPriceExclVat: optionalNonNegativeNumber,
+  germanPriceInclVat: optionalNonNegativeNumber,
+  sellPriceEur: optionalNonNegativeNumber,
+  weightPerUnitKg: optionalNonNegativeNumber,
   warrantyMonths: z.string().optional(),
   status: z.string().optional(),
   manufacturer: z.string().optional(),
@@ -58,7 +77,7 @@ const productSchema = z.object({
   // it's the single path that mutates WarehouseStock/Product.qty). Stripped
   // out in submit() and reported to the caller separately so it can record
   // a real RECEIVE movement after the product is created.
-  initialQty: z.coerce.number().min(0).optional().or(z.literal('')),
+  initialQty: optionalNonNegativeNumber,
   initialWarehouseId: z.string().optional(),
 });
 
@@ -298,21 +317,12 @@ export function ProductForm({
   }
 
   async function submit(values: ProductFormValues) {
-    const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
-    const { initialQty, initialWarehouseId: warehouseId, ...productValues } = values;
-    const qty = numeric(initialQty);
+    // No more '' => undefined mapping needed here — `optionalNonNegativeNumber`
+    // (see the schema above) already produces a real `number | undefined` for
+    // every one of these fields by the time react-hook-form hands them over.
+    const { initialQty: qty, initialWarehouseId: warehouseId, ...productValues } = values;
     await onSubmit(
-      {
-        ...productValues,
-        unitsPerPackage: numeric(productValues.unitsPerPackage),
-        minQty: numeric(productValues.minQty),
-        localPriceExclVat: numeric(productValues.localPriceExclVat),
-        localPriceInclVat: numeric(productValues.localPriceInclVat),
-        germanPriceExclVat: numeric(productValues.germanPriceExclVat),
-        germanPriceInclVat: numeric(productValues.germanPriceInclVat),
-        sellPriceEur: numeric(productValues.sellPriceEur),
-        weightPerUnitKg: numeric(productValues.weightPerUnitKg),
-      },
+      productValues,
       !product && qty && qty > 0 && warehouseId ? { warehouseId, qty } : undefined,
     );
   }
