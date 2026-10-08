@@ -350,6 +350,7 @@
     "partsCheckAdd": "Add to specification",
     "partsCheckAdded": "In specification",
     "partsCheckRefreshPhoto": "Refresh product photo from 3D model",
+    "partsCheckAttachGlb": "Attach this part's GLB file to the product",
     "componentType": "Component type",
     "component": "Component",
     "warehouseOptional": "Warehouse (optional)",

@@ -351,6 +351,7 @@
     "partsCheckAdd": "Додати в специфікацію",
     "partsCheckAdded": "У специфікації",
     "partsCheckRefreshPhoto": "Оновити фото товару з 3D-моделі",
+    "partsCheckAttachGlb": "Додати GLB-файл цієї деталі до товару",
     "componentType": "Тип компонента",
     "component": "Компонент",
     "warehouseOptional": "Склад (необов'язково)",

@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
+import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useCreateProductFromPart, dataUrlToFile } from '@/components/domain/bom/use-create-product-from-part';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 import { getProductsByArticles, type Product } from '@/lib/api-client/catalog';
@@ -97,7 +99,22 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [exportingArticles, setExportingArticles] = useState<Set<string>>(new Set());
   const [updatingPhotoArticles, setUpdatingPhotoArticles] = useState<Set<string>>(new Set());
+  const [attachingGlbArticles, setAttachingGlbArticles] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+
+  // "можна ще окрім фото додавати gbl до існуючих товарів в яких gbl
+  // відсутній" (2026-10-08): one batch request for every matched product's
+  // documents (same `getProductsByArticles`-style fix as `resolveAgainstCatalog`
+  // above — N individual per-row requests is the exact rate-limit incident
+  // this app already got burned by once) — just to know which ones already
+  // have a `.glb` attached, so "Додати GLB" only shows up where it's
+  // actually missing.
+  const inCatalogProductIds = parts.map((p) => p.product?.id).filter((id): id is string => Boolean(id));
+  const { data: productDocsByEntity } = useFilesForEntities('Product', inCatalogProductIds, 'PRODUCT_DOCUMENT');
+  function hasGlbAttached(productId: string | undefined): boolean {
+    if (!productId) return false;
+    return (productDocsByEntity?.[productId] ?? []).some((f) => isGlbFile(f.originalName));
+  }
 
   async function handleCreateClick(part: ResolvedPart) {
     setExportingArticles((prev) => new Set(prev).add(part.article));
@@ -154,6 +171,30 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     }
   }
 
+  // Same "can't re-run analyzeGlbParts per click" reasoning as
+  // `handleCreateClick`'s own `exportPartGlb` call — reuses the SAME kept-
+  // alive `group` (`analysisRef`), no second fetch/parse of the whole
+  // model just to attach one part's own standalone .glb.
+  async function handleAttachGlb(part: ResolvedPart) {
+    if (!part.product) return;
+    const productId = part.product.id;
+    setAttachingGlbArticles((prev) => new Set(prev).add(part.article));
+    try {
+      const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
+      if (glb) {
+        const glbFile = new File([glb], `${part.product.article}.glb`, { type: 'model/gltf-binary' });
+        await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: productId });
+        qc.invalidateQueries({ queryKey: ['files-batch', 'Product'] });
+      }
+    } finally {
+      setAttachingGlbArticles((prev) => {
+        const next = new Set(prev);
+        next.delete(part.article);
+        return next;
+      });
+    }
+  }
+
   async function handleAdd(part: ResolvedPart) {
     if (!part.product) return;
     setPendingArticles((prev) => new Set(prev).add(part.article));
@@ -193,12 +234,16 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
             bomSet={bomSet}
             pendingArticles={pendingArticles}
             updatingPhotoArticles={updatingPhotoArticles}
+            attachingGlbArticles={attachingGlbArticles}
+            hasGlbAttached={hasGlbAttached}
             readOnly={readOnly}
             onAdd={handleAdd}
             onRefreshPhoto={handleRefreshPhoto}
+            onAttachGlb={handleAttachGlb}
             addLabel={t('partsCheckAdd')}
             addedLabel={t('partsCheckAdded')}
             refreshPhotoLabel={t('partsCheckRefreshPhoto')}
+            attachGlbLabel={t('partsCheckAttachGlb')}
           />
         )}
       </section>
@@ -256,23 +301,31 @@ function PartsGrid({
   bomSet,
   pendingArticles,
   updatingPhotoArticles,
+  attachingGlbArticles,
+  hasGlbAttached,
   readOnly,
   onAdd,
   onRefreshPhoto,
+  onAttachGlb,
   addLabel,
   addedLabel,
   refreshPhotoLabel,
+  attachGlbLabel,
 }: {
   parts: ResolvedPart[];
   bomSet: Set<string>;
   pendingArticles: Set<string>;
   updatingPhotoArticles: Set<string>;
+  attachingGlbArticles: Set<string>;
+  hasGlbAttached: (productId: string | undefined) => boolean;
   readOnly?: boolean;
   onAdd: (part: ResolvedPart) => void;
   onRefreshPhoto: (part: ResolvedPart) => void;
+  onAttachGlb: (part: ResolvedPart) => void;
   addLabel: string;
   addedLabel: string;
   refreshPhotoLabel: string;
+  attachGlbLabel: string;
 }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -280,6 +333,8 @@ function PartsGrid({
         const inBom = part.product ? bomSet.has(part.product.article.trim().toUpperCase()) : false;
         const pending = pendingArticles.has(part.article);
         const updatingPhoto = updatingPhotoArticles.has(part.article);
+        const attachingGlb = attachingGlbArticles.has(part.article);
+        const needsGlb = !hasGlbAttached(part.product?.id);
         return (
           <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
             <PartThumb part={part} />
@@ -325,6 +380,18 @@ function PartsGrid({
                     className="flex shrink-0 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
                   >
                     {updatingPhoto ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  </button>
+                )}
+                {needsGlb && (
+                  <button
+                    type="button"
+                    onClick={() => onAttachGlb(part)}
+                    disabled={attachingGlb}
+                    title={attachGlbLabel}
+                    aria-label={attachGlbLabel}
+                    className="flex shrink-0 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
+                  >
+                    {attachingGlb ? <Loader2 className="h-3 w-3 animate-spin" /> : <Box className="h-3 w-3" />}
                   </button>
                 )}
               </div>
