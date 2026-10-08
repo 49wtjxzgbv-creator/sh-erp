@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { ChevronDown, ChevronRight, Check, AlertTriangle, Plus, Loader2 } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
@@ -814,46 +815,61 @@ function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
 
 /**
  * "там би воно рахувало вагу залежно від обєму і матеріалу" (2026-10-08):
- * solid volume of `object`'s own mesh geometry (and every descendant's),
- * in the model's native unit³ — assumed mm³, since every CAD-derived
- * model this app has actually seen is a millimeter-scale SolidWorks/STEP
- * export and nothing in the STEP→GLB pipeline (`step-convert-child.js`)
- * rescales to glTF's own "canonical meters" convention. The caller
+ * an estimate of `object`'s own solid volume (and every descendant's), in
+ * the model's native unit³ — assumed mm³, since every CAD-derived model
+ * this app has actually seen is a millimeter-scale SolidWorks/STEP export
+ * and nothing in the STEP→GLB pipeline (`step-convert-child.js`) rescales
+ * to glTF's own "canonical meters" convention. The caller
  * (`CreateProductDialog`'s material/weight helper) divides by 1e9 to get
  * m³ before multiplying by a density in kg/m³.
  *
- * Signed-tetrahedron-volume method (the discrete form of the divergence
- * theorem applied to a closed mesh): sum the signed volume of the
- * tetrahedron formed by the world origin and each triangle, over every
- * triangle of every descendant mesh, in WORLD space (`matrixWorld`, so a
- * node's own inherited position/rotation/scale is accounted for) — the
- * signs cancel out everywhere except the enclosed solid, same reasoning
- * as computing area via the shoelace formula one dimension up. Assumes
- * closed, non-self-intersecting (manifold) geometry per mesh, same
- * assumption any real CAD-derived solid body satisfies; an open/degenerate
- * mesh would just give a physically meaningless number here, not a
- * crash — this is an estimate to speed up data entry, not a certified
- * measurement.
+ * Via the CONVEX HULL of the part's own vertices, not the raw triangle
+ * mesh directly — real, confirmed-live bug this works around: the
+ * straightforward signed-tetrahedron-sum (divergence theorem) approach
+ * tried first came back ≈0 for a genuine solid aluminum bracket (confirmed
+ * via its own CAD-encoded dimensions, "40_x_15_x_75"), because CAD-export
+ * tessellation is not reliably a single consistently-wound closed shell —
+ * many exporters (including whatever produced this app's real-world test
+ * files) duplicate every face with the opposite winding so back-face
+ * culling never hides anything from any viewing angle, and two
+ * perfectly opposite-signed copies of every triangle cancel to exactly
+ * zero when summed directly. A convex hull's own faces are, by
+ * construction, consistently wound with no duplicates, so the same
+ * tetrahedron-sum math on the HULL's triangles can't fall into that trap.
+ * Trade-off: the hull volume is an OVERESTIMATE for any non-convex part
+ * (a bracket's cutouts/holes/concave bends get filled in) — acceptable
+ * here since this is explicitly a rough starting estimate the user reviews
+ * and can adjust, not a certified measurement, and overestimating a
+ * weight is a safer default error than reporting zero.
  */
 function computeMeshVolume(object: THREE.Object3D): number {
+  const points: THREE.Vector3[] = [];
+  for (const mesh of meshesUnder(object)) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      points.push(new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+    }
+  }
+  if (points.length < 4) return 0;
+
+  let hull: THREE.BufferGeometry;
+  try {
+    hull = new ConvexGeometry(points);
+  } catch {
+    return 0; // degenerate point set (e.g. coplanar) — no well-defined hull, not worth crashing the create-product flow over
+  }
+
+  const hullPosition = hull.attributes.position; // ConvexGeometry emits a non-indexed, already-triangulated, consistently-wound BufferGeometry
   let volume = 0;
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const c = new THREE.Vector3();
-  for (const mesh of meshesUnder(object)) {
-    mesh.updateWorldMatrix(true, false);
-    const position = mesh.geometry.attributes.position;
-    const index = mesh.geometry.index;
-    const triCount = index ? index.count / 3 : position.count / 3;
-    for (let i = 0; i < triCount; i++) {
-      const ia = index ? index.getX(i * 3) : i * 3;
-      const ib = index ? index.getX(i * 3 + 1) : i * 3 + 1;
-      const ic = index ? index.getX(i * 3 + 2) : i * 3 + 2;
-      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
-      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
-      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
-      volume += a.dot(b.clone().cross(c)) / 6;
-    }
+  for (let i = 0; i < hullPosition.count / 3; i++) {
+    a.fromBufferAttribute(hullPosition, i * 3);
+    b.fromBufferAttribute(hullPosition, i * 3 + 1);
+    c.fromBufferAttribute(hullPosition, i * 3 + 2);
+    volume += a.dot(b.clone().cross(c)) / 6;
   }
   return Math.abs(volume);
 }
