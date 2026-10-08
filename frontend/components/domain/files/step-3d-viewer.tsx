@@ -117,6 +117,12 @@ export interface Step3DViewerProps {
    *   ends up with both a quick photo AND a real, independently-viewable
    *   3D model of just that part, not the whole assembly it came from.
    *   Also `null` only when there's no geometry to export.
+   * - that same part's own solid volume in mm³ (see `computeMeshVolume`)
+   *   — "якби я вказував що це за матеріал... воно б рахувало його вагу
+   *   залежно від обєму і матеріалу" (2026-10-08): lets the create-product
+   *   form offer a material picker that turns this into a weight estimate
+   *   (volume × density) instead of the user having to weigh or guess it.
+   *   `null` only when there's no geometry to measure.
    */
   onCreateProduct?: (
     article: string,
@@ -124,6 +130,7 @@ export interface Step3DViewerProps {
     qty: number,
     photoDataUrl: string | null,
     glb: ArrayBuffer | null,
+    volumeMm3: number | null,
   ) => void;
 }
 
@@ -141,6 +148,7 @@ interface SceneApi {
   setSelected: (id: string | null) => void;
   captureSnapshot: (id: string) => string | null;
   exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
+  computeVolume: (id: string) => number | null;
 }
 
 /**
@@ -289,7 +297,8 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   async function handleCreateProductRequest(nodeId: string, article: string, suggestedName: string, qty: number) {
     const photoDataUrl = sceneApiRef.current?.captureSnapshot(nodeId) ?? null;
     const glb = (await sceneApiRef.current?.exportPartGlb(nodeId)) ?? null;
-    onCreateProduct?.(article, suggestedName, qty, photoDataUrl, glb);
+    const volumeMm3 = sceneApiRef.current?.computeVolume(nodeId) ?? null;
+    onCreateProduct?.(article, suggestedName, qty, photoDataUrl, glb, volumeMm3);
   }
 
   return (
@@ -766,10 +775,17 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     return result instanceof ArrayBuffer ? result : null;
   }
 
+  function computeVolume(id: string): number | null {
+    const target = findByTreeId(group, id);
+    if (!target || meshesUnder(target).length === 0) return null;
+    return computeMeshVolume(target);
+  }
+
   return {
     setSelected,
     captureSnapshot,
     exportPartGlb,
+    computeVolume,
     dispose: () => {
       renderer.domElement.removeEventListener('click', onClick);
       if (animationFrame) cancelAnimationFrame(animationFrame);
@@ -794,6 +810,52 @@ function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
   const found: THREE.Mesh[] = [];
   object.traverse((o) => { if (o instanceof THREE.Mesh) found.push(o); });
   return found;
+}
+
+/**
+ * "там би воно рахувало вагу залежно від обєму і матеріалу" (2026-10-08):
+ * solid volume of `object`'s own mesh geometry (and every descendant's),
+ * in the model's native unit³ — assumed mm³, since every CAD-derived
+ * model this app has actually seen is a millimeter-scale SolidWorks/STEP
+ * export and nothing in the STEP→GLB pipeline (`step-convert-child.js`)
+ * rescales to glTF's own "canonical meters" convention. The caller
+ * (`CreateProductDialog`'s material/weight helper) divides by 1e9 to get
+ * m³ before multiplying by a density in kg/m³.
+ *
+ * Signed-tetrahedron-volume method (the discrete form of the divergence
+ * theorem applied to a closed mesh): sum the signed volume of the
+ * tetrahedron formed by the world origin and each triangle, over every
+ * triangle of every descendant mesh, in WORLD space (`matrixWorld`, so a
+ * node's own inherited position/rotation/scale is accounted for) — the
+ * signs cancel out everywhere except the enclosed solid, same reasoning
+ * as computing area via the shoelace formula one dimension up. Assumes
+ * closed, non-self-intersecting (manifold) geometry per mesh, same
+ * assumption any real CAD-derived solid body satisfies; an open/degenerate
+ * mesh would just give a physically meaningless number here, not a
+ * crash — this is an estimate to speed up data entry, not a certified
+ * measurement.
+ */
+function computeMeshVolume(object: THREE.Object3D): number {
+  let volume = 0;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (const mesh of meshesUnder(object)) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    const index = mesh.geometry.index;
+    const triCount = index ? index.count / 3 : position.count / 3;
+    for (let i = 0; i < triCount; i++) {
+      const ia = index ? index.getX(i * 3) : i * 3;
+      const ib = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const ic = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
+      volume += a.dot(b.clone().cross(c)) / 6;
+    }
+  }
+  return Math.abs(volume);
 }
 
 /**
@@ -864,6 +926,8 @@ export interface GlbPartAnalysis {
   name: string;
   qty: number;
   photoDataUrl: string | null;
+  /** This one instance's own solid volume in mm³ (see `computeMeshVolume`) — for the material/weight picker in the create-product flow. `null` only if the node somehow has no mesh geometry. */
+  volumeMm3: number | null;
 }
 
 export interface GlbModelAnalysis {
@@ -953,7 +1017,8 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     .map((part) => {
       const target = findByTreeId(group, part.nodeId);
       const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
-      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl };
+      const volumeMm3 = target ? computeMeshVolume(target) : null;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3 };
     })
     .sort((a, b) => a.article.localeCompare(b.article));
 

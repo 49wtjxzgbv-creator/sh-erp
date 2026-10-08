@@ -3,7 +3,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useCompanyUnits } from '@/lib/hooks/use-catalog';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
@@ -114,6 +114,65 @@ export interface ProductFormProps {
   initialValues?: Partial<ProductFormValues>;
   /** View-only: disables every field (a `<fieldset>` wrap, not per-input) and hides the Save button — for a role with `products:read` but not `products:write`. */
   readOnly?: boolean;
+  /**
+   * "якби я вказував що це за матеріал... воно б рахувало його вагу
+   * залежно від обєму і матеріалу" (2026-10-08): the 3D-model part this
+   * product is being created from has a known solid volume (mm³, see
+   * Step3DViewer's `computeMeshVolume`) — when present, renders a small
+   * material picker next to "Вага за одиницю" that turns volume × density
+   * into a weight estimate, one click away from filling that field. Omit
+   * (or `null`) for every non-3D-model flow — the picker just doesn't
+   * render, same as `initialPhoto`/`initialVolumeMm3` on
+   * `CreateProductDialog` upstream.
+   */
+  initialVolumeMm3?: number | null;
+}
+
+/** kg/m³ — standard reference densities, not per-alloy precise; this is a data-entry speed-up (an estimate the user reviews and adjusts), not a certified measurement. */
+const MATERIAL_DENSITIES = [
+  { key: 'steel', density: 7850 },
+  { key: 'stainlessSteel', density: 8000 },
+  { key: 'castIron', density: 7200 },
+  { key: 'aluminum', density: 2700 },
+  { key: 'copper', density: 8960 },
+  { key: 'brass', density: 8500 },
+  { key: 'plastic', density: 1100 },
+] as const;
+
+/** `volumeMm3` is assumed millimeter-scale (see `computeMeshVolume`'s own header comment on why) — 1 m³ = 1e9 mm³, so weight(kg) = volume(mm³) / 1e9 × density(kg/m³). */
+function MaterialWeightPicker({ volumeMm3, onApply }: { volumeMm3: number; onApply: (weightKg: number) => void }) {
+  const t = useTranslations('catalog');
+  const [materialKey, setMaterialKey] = useState<string>('');
+  const selected = MATERIAL_DENSITIES.find((m) => m.key === materialKey);
+  const weightKg = selected ? (volumeMm3 / 1e9) * selected.density : null;
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-dashed border-border p-3 sm:col-span-3">
+      <Label>{t('materialWeightLabel')}</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={materialKey} onValueChange={setMaterialKey}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder={t('materialWeightPlaceholder')} />
+          </SelectTrigger>
+          <SelectContent>
+            {MATERIAL_DENSITIES.map((m) => (
+              <SelectItem key={m.key} value={m.key}>
+                {t(`material_${m.key}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {weightKg !== null && (
+          <>
+            <span className="text-sm text-muted-foreground">{t('materialWeightResult', { weight: weightKg.toFixed(3) })}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => onApply(weightKg)}>
+              {t('materialWeightApply')}
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ProductForm({
@@ -125,6 +184,7 @@ export function ProductForm({
   onPendingPhotoChange,
   initialValues,
   readOnly,
+  initialVolumeMm3,
 }: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
@@ -427,6 +487,12 @@ export function ProductForm({
             <Label htmlFor="countryOfOrigin">{t('countryOfOrigin')}</Label>
             <Input id="countryOfOrigin" {...register('countryOfOrigin')} />
           </div>
+          {initialVolumeMm3 != null && initialVolumeMm3 > 0 && (
+            <MaterialWeightPicker
+              volumeMm3={initialVolumeMm3}
+              onApply={(weightKg) => setValue('weightPerUnitKg', Number(weightKg.toFixed(3)))}
+            />
+          )}
         </CardContent>
       </Card>
 

@@ -26,11 +26,13 @@ export interface CreateProductDialogProps {
    * user can remove or replace it before saving.
    */
   initialPhoto?: File | null;
+  /** The 3D-model part's own solid volume in mm³ (see Step3DViewer's `onCreateProduct` / `analyzeGlbParts`) — lets `ProductForm` offer a material picker that turns this into a weight estimate. Omit entirely (or pass `null`) for every non-3D-model create flow (e.g. Invoice recognition) — the picker just doesn't render. */
+  initialVolumeMm3?: number | null;
   onCreated: (product: Product) => void;
 }
 
 /** Quick "new product in a dialog" flow, reusing the full ProductForm (same validation as /catalog/new) — used from Invoice recognition to create an unmatched line as a real Product without leaving the page. */
-export function CreateProductDialog({ open, onOpenChange, initialValues, initialPhoto, onCreated }: CreateProductDialogProps) {
+export function CreateProductDialog({ open, onOpenChange, initialValues, initialPhoto, initialVolumeMm3, onCreated }: CreateProductDialogProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
@@ -80,6 +82,7 @@ export function CreateProductDialog({ open, onOpenChange, initialValues, initial
           pendingPhoto={pendingPhoto}
           onPendingPhotoChange={setPendingPhoto}
           initialValues={initialValues}
+          initialVolumeMm3={initialVolumeMm3}
         />
       </DialogContent>
     </Dialog>

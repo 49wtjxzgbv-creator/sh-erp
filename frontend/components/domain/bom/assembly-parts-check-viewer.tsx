@@ -99,7 +99,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     setExportingArticles((prev) => new Set(prev).add(part.article));
     try {
       const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
-      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb);
+      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb, part.volumeMm3);
     } finally {
       setExportingArticles((prev) => {
         const next = new Set(prev);

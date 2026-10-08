@@ -26,6 +26,7 @@ export interface PendingPartProduct {
   qty: number;
   photo: File | null;
   glb: ArrayBuffer | null;
+  volumeMm3: number | null;
 }
 
 /**
@@ -51,9 +52,16 @@ export interface PendingPartProduct {
 export function useCreateProductFromPart(onAppend: (items: { productId: string; qty: number }[]) => Promise<void>) {
   const [pending, setPending] = useState<PendingPartProduct | null>(null);
 
-  function requestCreate(article: string, suggestedName: string, qty: number, photoDataUrl: string | null, glb: ArrayBuffer | null) {
+  function requestCreate(
+    article: string,
+    suggestedName: string,
+    qty: number,
+    photoDataUrl: string | null,
+    glb: ArrayBuffer | null,
+    volumeMm3: number | null,
+  ) {
     const photo = photoDataUrl ? dataUrlToFile(photoDataUrl, `${article}.png`) : null;
-    setPending({ article, name: suggestedName, qty, photo, glb });
+    setPending({ article, name: suggestedName, qty, photo, glb, volumeMm3 });
   }
 
   async function handleCreated(product: Product) {
@@ -77,6 +85,7 @@ export function useCreateProductFromPart(onAppend: (items: { productId: string; 
       onOpenChange: (open: boolean) => { if (!open) setPending(null); },
       initialValues: pending ? { article: pending.article, name: pending.name } : undefined,
       initialPhoto: pending?.photo ?? null,
+      initialVolumeMm3: pending?.volumeMm3 ?? null,
       onCreated: handleCreated,
     },
   };
