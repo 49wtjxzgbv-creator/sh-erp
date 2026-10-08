@@ -23,6 +23,7 @@ function tabsFor(id: string) {
   return [
     { href: `/bom/${id}`, labelKey: 'assemblyHeader', tour: undefined },
     { href: `/bom/${id}/components`, labelKey: 'tabBom', tour: 'bom-components-tab' },
+    { href: `/bom/${id}/parts-check`, labelKey: 'tabPartsCheck', tour: undefined },
     { href: `/bom/${id}/cost`, labelKey: 'tabCost', tour: 'bom-cost-tab' },
     { href: `/bom/${id}/availability`, labelKey: 'tabAvailability', tour: 'bom-availability-tab' },
     { href: `/bom/${id}/versions`, labelKey: 'tabVersions', tour: undefined },

@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   queryAssemblies,
@@ -26,6 +27,8 @@ import {
   type SetAssemblySupplierInput,
   type ProduceAssemblyInput,
 } from '@/lib/api-client/bom';
+import { toNumber } from '@/lib/api-client/decimal';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 
 const assembliesKey = (query: QueryAssembliesInput) => ['assemblies', query] as const;
 const assemblyKey = (id: string) => ['assemblies', id] as const;
@@ -219,4 +222,63 @@ export function useProduceAssembly(assemblyId: string) {
       qc.invalidateQueries({ queryKey: ['stock-history'] });
     },
   });
+}
+
+/**
+ * The assembly's own current PRODUCT-type BOM lines, resolved to real
+ * articles — originally written once inline in `assembly-form.tsx` to
+ * feed Step3DViewer's ✅/⚠️ cross-reference (via EntityDocumentsField),
+ * now also used by the "Деталі (3D)" tab to know which of the model's
+ * parts are already in this BOM (vs. just in the catalog).
+ */
+export function useAssemblyBomArticles(assemblyId: string | undefined) {
+  const { data: components } = useAssemblyComponents(assemblyId);
+  const productIds = useMemo(
+    () => Array.from(new Set((components ?? []).filter((c) => c.componentType === 'PRODUCT' && c.productId).map((c) => c.productId as string))),
+    [components],
+  );
+  const { data: productsById } = useProductsByIds(productIds);
+  const bomArticles = useMemo(
+    () => Array.from(productsById?.values() ?? []).map((p) => p.article).filter(Boolean),
+    [productsById],
+  );
+  return { components, productIds, productsById, bomArticles };
+}
+
+/**
+ * Shared "append PRODUCT lines to this assembly's BOM, preserving
+ * everything already there" logic — originally written once inline in
+ * `assembly-form.tsx` for the 3D-model "add to BOM"/"create product"
+ * flows, now also used by the standalone "Деталі (3D)" tab
+ * (`assembly-parts-check.tsx`), which needs the exact same
+ * read-current-lines-then-replace-with-everything-plus-new behavior.
+ * `setAssemblyComponents` REPLACES the whole line list, so any caller
+ * doing more than one append in a row must batch them into ONE
+ * `appendProductLines` call (passing every new line together) rather than
+ * calling it repeatedly back-to-back — a second call before the first's
+ * own query invalidation lands would read a stale `components` snapshot
+ * and silently drop the first call's addition.
+ */
+export function useAssemblyBomActions(assemblyId: string | undefined) {
+  const { data: components } = useAssemblyComponents(assemblyId);
+  const setComponents = useSetAssemblyComponents(assemblyId ?? '');
+
+  async function appendProductLines(items: { productId: string; qty: number }[]): Promise<void> {
+    if (items.length === 0) return;
+    const existingLines: AssemblyComponentLineInput[] = (components ?? []).map((c) => ({
+      componentType: c.componentType,
+      productId: c.productId ?? undefined,
+      subAssemblyId: c.subAssemblyId ?? undefined,
+      warehouseId: c.warehouseId ?? undefined,
+      qtyPerUnit: toNumber(c.qtyPerUnit) ?? 0,
+    }));
+    const newLines: AssemblyComponentLineInput[] = items.map(({ productId, qty }) => ({
+      componentType: 'PRODUCT',
+      productId,
+      qtyPerUnit: qty,
+    }));
+    await setComponents.mutateAsync([...existingLines, ...newLines]);
+  }
+
+  return { components, appendProductLines, isAppending: setComponents.isPending };
 }

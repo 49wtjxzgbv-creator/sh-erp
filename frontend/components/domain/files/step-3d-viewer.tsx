@@ -681,11 +681,6 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   const pointer = new THREE.Vector2();
   let highlighted: THREE.Mesh[] = [];
 
-  function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
-    const found: THREE.Mesh[] = [];
-    object.traverse((o) => { if (o instanceof THREE.Mesh) found.push(o); });
-    return found;
-  }
   function applyHighlight(mesh: THREE.Mesh) {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of materials) {
@@ -721,78 +716,28 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   // "потрібно щоб воно робило фото саме цієї деталі" (2026-10-08): a
   // "create product" prefill photo — isolates `id`'s own mesh(es) (every
   // other mesh in the model hidden), frames the camera tight on just its
-  // bounding box, renders ONE frame into the existing (already-mounted,
-  // already-sized) renderer, and reads it back as a PNG data URL. Runs
-  // fully synchronously — visibility/camera mutation, render, `toDataURL`
-  // readback, and restore all happen in one JS turn with no `await`
-  // between them — so the browser never gets a chance to paint the
-  // isolated/zoomed intermediate frame; the visible canvas only ever shows
-  // the normal view before and after. `toDataURL` reads the backbuffer
-  // immediately after `render()`, before the NEXT `render()` (the restore
-  // call) touches it — the standard three.js screenshot pattern, and why
-  // this doesn't need `preserveDrawingBuffer: true` on the renderer (which
-  // would cost the main animation loop a copy every frame for a feature
-  // used maybe once per session).
+  // bounding box (see the shared `isolateRenderToDataUrl`), renders ONE
+  // frame into the existing (already-mounted, already-sized) renderer,
+  // and reads it back as a PNG data URL. Runs fully synchronously —
+  // visibility/camera mutation, render, `toDataURL` readback, and restore
+  // all happen in one JS turn with no `await` between them — so the
+  // browser never gets a chance to paint the isolated/zoomed intermediate
+  // frame; the visible canvas only ever shows the normal view before and
+  // after. `toDataURL` reads the backbuffer immediately after `render()`,
+  // before the NEXT `render()` (the restore call) touches it — the
+  // standard three.js screenshot pattern, and why this doesn't need
+  // `preserveDrawingBuffer: true` on the renderer (which would cost the
+  // main animation loop a copy every frame for a feature used maybe once
+  // per session).
   function captureSnapshot(id: string): string | null {
     const target = findByTreeId(group, id);
-    if (!target) return null;
-    const targetMeshes = meshesUnder(target);
-    if (targetMeshes.length === 0) return null;
-    const targetSet = new Set(targetMeshes);
-
-    const savedVisibility: [THREE.Mesh, boolean][] = [];
-    const savedEmissive: [THREE.MeshStandardMaterial, THREE.Color][] = [];
-    group.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      savedVisibility.push([o, o.visible]);
-      o.visible = targetSet.has(o);
-      const materials = Array.isArray(o.material) ? o.material : [o.material];
-      for (const mat of materials) {
-        if ('emissive' in mat) {
-          const m = mat as THREE.MeshStandardMaterial;
-          savedEmissive.push([m, m.emissive.clone()]);
-          m.emissive.set(0x000000);
-        }
-      }
-    });
+    if (!target || meshesUnder(target).length === 0) return null;
 
     const savedCameraPosition = camera.position.clone();
     const savedTarget = controls.target.clone();
 
-    // "можна якось її більше зробити бо залишилось багато вільного місця"
-    // (2026-10-08): the old framing used fixed 1.5x/1.2x offsets off the
-    // part's largest single-axis extent, with no relation to the camera's
-    // actual field of view — for a roughly cubic part that left a sizeable
-    // margin, and for a long thin part (a rod, a flat bar) viewed from a
-    // fixed isometric-ish corner it left MOST of the frame empty, since
-    // the part's own bounding SPHERE (its true footprint from any angle,
-    // dominated by its longest dimension) was never what the distance was
-    // derived from. Fit the camera distance to the part's bounding sphere
-    // against the camera's real FOV instead — both the vertical fov and
-    // the derived horizontal one (so a wide-but-short part doesn't clip
-    // sideways on a portrait-ish aspect container), taking whichever axis
-    // needs more distance, with just a small 10% margin so the part isn't
-    // touching the frame edges.
-    const targetBox = new THREE.Box3().setFromObject(target);
-    const targetSphere = targetBox.getBoundingSphere(new THREE.Sphere());
-    const targetCenter = targetSphere.center;
-    const vFov = THREE.MathUtils.degToRad(camera.fov);
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-    const margin = 1.1;
-    const distance = Math.max(
-      (targetSphere.radius * margin) / Math.sin(vFov / 2),
-      (targetSphere.radius * margin) / Math.sin(hFov / 2),
-      camera.near * 2, // guards a tiny part in a huge assembly from landing inside the near plane
-    );
-    camera.position.copy(targetCenter).add(new THREE.Vector3(0.6, 0.5, 0.6).normalize().multiplyScalar(distance));
-    camera.lookAt(targetCenter);
-    camera.updateProjectionMatrix();
+    const dataUrl = isolateRenderToDataUrl(renderer, scene, camera, group, target);
 
-    renderer.render(scene, camera);
-    const dataUrl = renderer.domElement.toDataURL('image/png');
-
-    savedVisibility.forEach(([mesh, visible]) => { mesh.visible = visible; });
-    savedEmissive.forEach(([mat, emissive]) => { mat.emissive.copy(emissive); });
     camera.position.copy(savedCameraPosition);
     controls.target.copy(savedTarget);
     camera.lookAt(controls.target);
@@ -843,6 +788,157 @@ function findByTreeId(root: THREE.Object3D, id: string): THREE.Object3D | null {
     if (found) return found;
   }
   return null;
+}
+
+function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  object.traverse((o) => { if (o instanceof THREE.Mesh) found.push(o); });
+  return found;
+}
+
+/**
+ * Shared by `captureSnapshot` (interactive viewer) and `analyzeGlbParts`
+ * (headless, "Деталі (3D)" tab — see below): hides every mesh except
+ * `target`'s own, frames `camera` tight on `target`'s bounding sphere
+ * (fit against both the vertical AND the derived horizontal FOV, with a
+ * small 10% margin — see the "можна якось її більше зробити" header note
+ * on why a bounding-sphere+FOV fit replaced the old fixed-offset framing),
+ * renders one frame, reads it back as a PNG data URL, then restores every
+ * mesh's visibility/emissive. Deliberately does NOT restore the camera's
+ * own position — `captureSnapshot` does that itself (it has a "normal
+ * view" to return to); the headless caller doesn't need to, since it
+ * repositions the camera fresh for every part anyway.
+ */
+function isolateRenderToDataUrl(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  camera: THREE.PerspectiveCamera,
+  group: THREE.Object3D,
+  target: THREE.Object3D,
+): string {
+  const targetSet = new Set(meshesUnder(target));
+
+  const savedVisibility: [THREE.Mesh, boolean][] = [];
+  const savedEmissive: [THREE.MeshStandardMaterial, THREE.Color][] = [];
+  group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    savedVisibility.push([o, o.visible]);
+    o.visible = targetSet.has(o);
+    const materials = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of materials) {
+      if ('emissive' in mat) {
+        const m = mat as THREE.MeshStandardMaterial;
+        savedEmissive.push([m, m.emissive.clone()]);
+        m.emissive.set(0x000000);
+      }
+    }
+  });
+
+  const targetBox = new THREE.Box3().setFromObject(target);
+  const targetSphere = targetBox.getBoundingSphere(new THREE.Sphere());
+  const targetCenter = targetSphere.center;
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const margin = 1.1;
+  const distance = Math.max(
+    (targetSphere.radius * margin) / Math.sin(vFov / 2),
+    (targetSphere.radius * margin) / Math.sin(hFov / 2),
+    camera.near * 2, // guards a tiny part in a huge assembly from landing inside the near plane
+  );
+  camera.position.copy(targetCenter).add(new THREE.Vector3(0.6, 0.5, 0.6).normalize().multiplyScalar(distance));
+  camera.lookAt(targetCenter);
+  camera.updateProjectionMatrix();
+
+  renderer.render(scene, camera);
+  const dataUrl = renderer.domElement.toDataURL('image/png');
+
+  savedVisibility.forEach(([mesh, visible]) => { mesh.visible = visible; });
+  savedEmissive.forEach(([mat, emissive]) => { mat.emissive.copy(emissive); });
+
+  return dataUrl;
+}
+
+export interface GlbPartAnalysis {
+  article: string;
+  name: string;
+  qty: number;
+  photoDataUrl: string | null;
+}
+
+/**
+ * "потрібно в специфікації щоб кожен раз не відкривати glb файл а була
+ * вкладка аналізувати де весь склад прописаний" (2026-10-08): headless
+ * counterpart to the interactive tree in `Step3DViewer` — loads a .glb,
+ * walks its node tree, and returns one entry per distinct article (same
+ * "ARTICLE-description" dash-shaped restriction as the interactive tree's
+ * own "Додати все" candidate set — see `unmatchedArticleCounts`'s header
+ * comment for why: a real model's thousands of generic auto-named solid
+ * bodies and internal CAD instance ids would otherwise flood the list)
+ * with a rendered isolated-part snapshot for each — no visible 3D canvas,
+ * no interactivity, just the data a flat parts-check table needs. Used by
+ * `assembly-parts-check.tsx` so the user doesn't have to open the GLB
+ * viewer dialog at all to see what's in the model.
+ *
+ * Matching against the assembly's current BOM, and catalog-existence
+ * lookups, are deliberately NOT done here — this only answers "what parts
+ * does the model contain", kept separate from "which of those are already
+ * in this BOM / already in the catalog", which belong to the caller.
+ */
+export async function analyzeGlbParts(glbUrl: string): Promise<GlbPartAnalysis[]> {
+  const group = await loadGlb(glbUrl);
+  const tree = buildTree(group);
+
+  const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
+  function walk(nodes: ModelTreeNode[]) {
+    for (const node of nodes) {
+      if (node.name && node.name.trim().indexOf('-') > 0) {
+        const article = extractArticleCandidate(node.name);
+        const existing = byArticle.get(article);
+        if (existing) existing.qty += 1;
+        else byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: 1 });
+      }
+      walk(node.children);
+    }
+  }
+  walk(tree);
+
+  const parts = Array.from(byArticle.values());
+  if (parts.length === 0) return [];
+
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  group.position.sub(center);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf3f4f6);
+  scene.add(group);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  dirLight.position.set(maxDim, maxDim, maxDim);
+  scene.add(dirLight);
+
+  const SNAPSHOT_SIZE = 360;
+  const camera = new THREE.PerspectiveCamera(45, 1, maxDim / 1000, maxDim * 100);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
+
+  const results: GlbPartAnalysis[] = parts.map((part) => {
+    const target = findByTreeId(group, part.nodeId);
+    const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
+    return { article: part.article, name: part.name, qty: part.qty, photoDataUrl };
+  });
+
+  renderer.dispose();
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
+    }
+  });
+
+  return results.sort((a, b) => a.article.localeCompare(b.article));
 }
 
 /**

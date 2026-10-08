@@ -32,11 +32,11 @@ function DrawingViewerLoading() {
 function isStepFile(name: string): boolean {
   return /\.(step|stp)$/i.test(name);
 }
-/** A pre-converted .glb needs no server-side conversion at all (StepConversionService exists only because most CAD exports are .step, not .glb) — Step3DViewer already accepts a `glbUrl` directly, so this is purely a "recognize the extension, skip straight to that path" addition. */
-function isGlbFile(name: string): boolean {
+/** A pre-converted .glb needs no server-side conversion at all (StepConversionService exists only because most CAD exports are .step, not .glb) — Step3DViewer already accepts a `glbUrl` directly, so this is purely a "recognize the extension, skip straight to that path" addition. Exported — `assembly-parts-check.tsx` needs the same "which uploaded document is the 3D model" check to find the assembly's .glb without re-implementing it. */
+export function isGlbFile(name: string): boolean {
   return /\.glb$/i.test(name);
 }
-function is3DModelFile(name: string): boolean {
+export function is3DModelFile(name: string): boolean {
   return isStepFile(name) || isGlbFile(name);
 }
 function isDxfFile(name: string): boolean {

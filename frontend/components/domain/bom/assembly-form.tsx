@@ -1,17 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
-import type { Assembly, AssemblyComponentLineInput, CreateAssemblyInput } from '@/lib/api-client/bom';
-import type { Product } from '@/lib/api-client/catalog';
+import type { Assembly, CreateAssemblyInput } from '@/lib/api-client/bom';
 import { toNumber } from '@/lib/api-client/decimal';
-import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
-import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { queryProducts } from '@/lib/api-client/catalog';
-import { uploadFile } from '@/lib/api-client/files';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,17 +19,7 @@ import { EntityDocumentsField } from '@/components/domain/files/entity-documents
 import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
-
-/** Converts Step3DViewer's captured `data:image/png;base64,...` snapshot into a real File for PendingPhotoField/uploadFile — synchronous, no `fetch(dataUrl)` round trip needed for a same-process base64 string. */
-function dataUrlToFile(dataUrl: string, filename: string): File | null {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-  if (!match) return null;
-  const [, mimeType, base64] = match;
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], filename, { type: mimeType });
-}
+import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -93,16 +79,7 @@ export function AssemblyForm({
   // PRODUCT-type BOM lines, resolved to real articles — passed down to
   // Step3DViewer (via EntityDocumentsField) so it can flag which 3D-model
   // parts do/don't line up with what's actually in the specification.
-  const { data: components } = useAssemblyComponents(assembly?.id);
-  const productIds = useMemo(
-    () => Array.from(new Set((components ?? []).filter((c) => c.componentType === 'PRODUCT' && c.productId).map((c) => c.productId as string))),
-    [components],
-  );
-  const { data: productsById } = useProductsByIds(productIds);
-  const bomArticles = useMemo(
-    () => Array.from(productsById?.values() ?? []).map((p) => p.article).filter(Boolean),
-    [productsById],
-  );
+  const { bomArticles } = useAssemblyBomArticles(assembly?.id);
 
   // "Якщо деталей якихось не має, то має бути кнопка додати до BOM
   // специфікації" + "потрібна кнопка додати все" + "однієї позиції там
@@ -110,39 +87,19 @@ export function AssemblyForm({
   // every requested article against this company's own catalog (exact
   // match, case-insensitive — `queryProducts`'s own `search` is a loose
   // `contains`, so this re-filters down to a real match) and appends
-  // whichever ones matched as new PRODUCT lines in ONE `setComponents`
-  // write, each with qtyPerUnit set to how many times that article's node
-  // actually appears in the 3D model (Step3DViewer's own `qty`, counted
-  // from the tree — see its `unmatchedArticleCounts` header comment), not
-  // a flat 1 — the user still adjusts it afterward in «Склад (BOM)» if
-  // needed, same as any other line. Doing every article in a single write
-  // (rather than one call per article) is required, not just an
-  // optimization: `setAssemblyComponents` REPLACES the whole line list
-  // from a snapshot of `components`, so calling it repeatedly back-to-back
-  // before the snapshot refreshes would silently drop everything but the
-  // last addition. `setComponents`'s own `onSuccess` already invalidates
+  // whichever ones matched as new PRODUCT lines in ONE write (via the
+  // shared `useAssemblyBomActions` — see its own header comment for why
+  // every article must go through a single `appendProductLines` call
+  // rather than one call per article), each with qtyPerUnit set to how
+  // many times that article's node actually appears in the 3D model
+  // (Step3DViewer's own `qty`, counted from the tree — see its
+  // `unmatchedArticleCounts` header comment), not a flat 1 — the user
+  // still adjusts it afterward in «Склад (BOM)» if needed, same as any
+  // other line. `setComponents`'s own `onSuccess` already invalidates
   // this assembly's components query, which is what `bomArticles` above is
   // derived from — no separate refetch wiring needed, the ✅ just appears
   // once the chain above re-renders with the new data.
-  const setComponents = useSetAssemblyComponents(assembly?.id ?? '');
-  function existingComponentLines(): AssemblyComponentLineInput[] {
-    return (components ?? []).map((c) => ({
-      componentType: c.componentType,
-      productId: c.productId ?? undefined,
-      subAssemblyId: c.subAssemblyId ?? undefined,
-      warehouseId: c.warehouseId ?? undefined,
-      qtyPerUnit: toNumber(c.qtyPerUnit) ?? 0,
-    }));
-  }
-  async function appendProductLines(items: { productId: string; qty: number }[]): Promise<void> {
-    if (items.length === 0) return;
-    const newLines: AssemblyComponentLineInput[] = items.map(({ productId, qty }) => ({
-      componentType: 'PRODUCT',
-      productId,
-      qtyPerUnit: qty,
-    }));
-    await setComponents.mutateAsync([...existingComponentLines(), ...newLines]);
-  }
+  const { appendProductLines } = useAssemblyBomActions(assembly?.id);
   async function handleAddToBom(items: { article: string; qty: number }[]): Promise<{ notFound: string[] }> {
     const notFound: string[] = [];
     const productLines: { productId: string; qty: number }[] = [];
@@ -162,46 +119,12 @@ export function AssemblyForm({
   // (2026-10-08): the 3D viewer bubbles up "create article X, named
   // roughly Y, qty Z, here's a photo AND the standalone .glb of just that
   // part" rather than owning the create-product UI itself (see
-  // Step3DViewer's `onCreateProduct` header comment) — this owns the
-  // actual dialog, seeds its photo field with the snapshot (still
-  // user-editable — see CreateProductDialog's own `initialPhoto`
-  // comment), and once the product is created: appends it straight away
-  // by id with that same qty (no need to re-search the catalog for the
-  // article we just created it with), and uploads the .glb as that new
-  // product's own document (`PRODUCT_DOCUMENT`, same domain/field
-  // `ProductForm` already renders for every product) — non-fatal on
-  // failure, same as the photo upload inside CreateProductDialog itself:
-  // the product and its BOM line are already saved by that point, so a
-  // failed document upload shouldn't strand the user, they can re-attach
-  // it from the product's own page.
-  const [pendingNewProduct, setPendingNewProduct] = useState<{
-    article: string;
-    name: string;
-    qty: number;
-    photo: File | null;
-    glb: ArrayBuffer | null;
-  } | null>(null);
-  function handleCreateProduct(
-    article: string,
-    suggestedName: string,
-    qty: number,
-    photoDataUrl: string | null,
-    glb: ArrayBuffer | null,
-  ) {
-    const photo = photoDataUrl ? dataUrlToFile(photoDataUrl, `${article}.png`) : null;
-    setPendingNewProduct({ article, name: suggestedName, qty, photo, glb });
-  }
-  async function handleProductCreated(product: Product) {
-    const qty = pendingNewProduct?.qty ?? 1;
-    const article = pendingNewProduct?.article ?? product.article;
-    const glb = pendingNewProduct?.glb ?? null;
-    setPendingNewProduct(null);
-    await appendProductLines([{ productId: product.id, qty }]);
-    if (glb) {
-      const glbFile = new File([glb], `${article}.glb`, { type: 'model/gltf-binary' });
-      await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: product.id }).catch(() => undefined);
-    }
-  }
+  // Step3DViewer's `onCreateProduct` header comment) — the shared
+  // `useCreateProductFromPart` owns the actual dialog wiring (seeds its
+  // photo field with the snapshot — still user-editable — and, once the
+  // product is created, appends it to the BOM and uploads the .glb as
+  // that new product's own document); this just forwards its handlers.
+  const { requestCreate: handleCreateProduct, dialogProps: createProductDialogProps } = useCreateProductFromPart(appendProductLines);
 
   const {
     register,
@@ -358,14 +281,7 @@ export function AssemblyForm({
           {tc('save')}
         </Button>
       )}
-      <CreateProductDialog
-        key={pendingNewProduct?.article ?? 'none'}
-        open={pendingNewProduct !== null}
-        onOpenChange={(open) => !open && setPendingNewProduct(null)}
-        initialValues={pendingNewProduct ? { article: pendingNewProduct.article, name: pendingNewProduct.name } : undefined}
-        initialPhoto={pendingNewProduct?.photo ?? null}
-        onCreated={handleProductCreated}
-      />
+      <CreateProductDialog {...createProductDialogProps} />
     </form>
   );
 }
