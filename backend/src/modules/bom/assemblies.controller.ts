@@ -125,6 +125,13 @@ export class AssembliesController {
     return this.assembliesService.calculateCost(user, id);
   }
 
+  @Get(':id/weight')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({ summary: 'Recursive per-unit weight calculation from Product.weightPerUnitKg, cycle-protected — same structure as /cost. `complete=false` means at least one component (at any BOM depth) has no weight set.' })
+  async calculateWeight(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.assembliesService.calculateWeight(user, id);
+  }
+
   @Get(':id/sub-assemblies-needed')
   @RequirePermissions('assemblies:read')
   @ApiOperation({

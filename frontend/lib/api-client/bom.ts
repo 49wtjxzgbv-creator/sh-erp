@@ -193,6 +193,30 @@ export function calculateAssemblyCost(assemblyId: string): Promise<AssemblyCostR
   return apiClient.get<AssemblyCostResult>(`assemblies/${assemblyId}/cost`);
 }
 
+export interface WeightBreakdownLine {
+  componentType: ComponentType;
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** `null` = not set on the Product (or, for an ASSEMBLY line, somewhere inside that sub-assembly) — NOT a confirmed zero. */
+  unitWeightKg: number | null;
+  lineWeightKg: number;
+  /** False if this line (or, recursively, anything under it) has a missing weight. */
+  complete: boolean;
+}
+
+/** Weighed from Product.weightPerUnitKg — missing values contribute 0 to `weightPerUnitKg`, with `complete: false` flagging that the total understates reality (see `WeightBreakdownLine`). */
+export interface AssemblyWeightResult {
+  assemblyId: string;
+  weightPerUnitKg: number;
+  complete: boolean;
+  breakdown: WeightBreakdownLine[];
+}
+
+export function calculateAssemblyWeight(assemblyId: string): Promise<AssemblyWeightResult> {
+  return apiClient.get<AssemblyWeightResult>(`assemblies/${assemblyId}/weight`);
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;

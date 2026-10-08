@@ -27,6 +27,26 @@ export interface AssemblyCostResult {
   breakdown: CostBreakdownLine[];
 }
 
+export interface WeightBreakdownLine {
+  componentType: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** `null` means "not set" (Product.weightPerUnitKg is nullable), not "known to weigh 0" — distinguishes a genuinely weightless line from a gap in the data. For an ASSEMBLY line, this is the sub-assembly's own `weightPerUnitKg` (0 if every one of ITS lines is also missing). */
+  unitWeightKg: number | null;
+  lineWeightKg: number;
+  /** False if `unitWeightKg` is null, or (for an ASSEMBLY line) if the sub-assembly's own calculation wasn't complete either — propagates up so a gap anywhere in the tree surfaces at the top. */
+  complete: boolean;
+}
+
+/** Weighed from Product.weightPerUnitKg — missing values contribute 0 to `weightPerUnitKg` (never silently treated as "confirmed zero"), with `complete: false` flagging that the total understates reality. See `WeightBreakdownLine` for how a gap at any BOM depth propagates. */
+export interface AssemblyWeightResult {
+  assemblyId: string;
+  weightPerUnitKg: number;
+  complete: boolean;
+  breakdown: WeightBreakdownLine[];
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;
@@ -612,6 +632,79 @@ export class AssembliesService {
 
     visited.delete(assemblyId);
     return { assemblyId, costPerUnit, breakdown };
+  }
+
+  // ============================================================
+  // Weight calculation — mirrors the cost calculation above exactly
+  // (same recursive structure, same ancestor-path cycle guard), just
+  // summing Product.weightPerUnitKg × qtyPerUnit instead of sellPriceEur.
+  // ============================================================
+
+  async calculateWeight(user: RequestUser, assemblyId: string): Promise<AssemblyWeightResult> {
+    return this.calcAssemblyWeightRecursive(assemblyId, new Set());
+  }
+
+  private async calcAssemblyWeightRecursive(
+    assemblyId: string,
+    visited: Set<string>,
+  ): Promise<AssemblyWeightResult> {
+    if (visited.has(assemblyId)) {
+      throw new CodedConflictException(
+        'BOM_CIRCULAR_WEIGHT_CALC',
+        `Circular BOM detected while calculating weight (assembly ${assemblyId} references itself, directly or indirectly). ` +
+          'This should be unreachable for BOMs saved after cycle detection was added — see setComponents.',
+      );
+    }
+    visited.add(assemblyId);
+
+    const assembly = await this.prisma.tenant.assembly.findUnique({
+      where: { id: assemblyId },
+      include: { components: true },
+    });
+    if (!assembly) {
+      throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
+    }
+
+    let weightPerUnit = 0;
+    let complete = true;
+    const breakdown: WeightBreakdownLine[] = [];
+
+    for (const line of assembly.components) {
+      const qtyPerUnit = Number(line.qtyPerUnit);
+
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
+        if (!product) throw new CodedNotFoundException('BOM_COMPONENT_PRODUCT_NOT_FOUND', `Component product ${line.productId} not found.`);
+        const unitWeightKg = product.weightPerUnitKg != null ? Number(product.weightPerUnitKg) : null;
+        const lineWeightKg = (unitWeightKg ?? 0) * qtyPerUnit;
+        weightPerUnit += lineWeightKg;
+        if (unitWeightKg == null) complete = false;
+        breakdown.push({
+          componentType: 'PRODUCT',
+          productId: line.productId,
+          qtyPerUnit,
+          unitWeightKg,
+          lineWeightKg,
+          complete: unitWeightKg != null,
+        });
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const sub = await this.calcAssemblyWeightRecursive(line.subAssemblyId, visited);
+        const lineWeightKg = sub.weightPerUnitKg * qtyPerUnit;
+        weightPerUnit += lineWeightKg;
+        if (!sub.complete) complete = false;
+        breakdown.push({
+          componentType: 'ASSEMBLY',
+          subAssemblyId: line.subAssemblyId,
+          qtyPerUnit,
+          unitWeightKg: sub.weightPerUnitKg,
+          lineWeightKg,
+          complete: sub.complete,
+        });
+      }
+    }
+
+    visited.delete(assemblyId);
+    return { assemblyId, weightPerUnitKg: weightPerUnit, complete, breakdown };
   }
 
   // ============================================================
