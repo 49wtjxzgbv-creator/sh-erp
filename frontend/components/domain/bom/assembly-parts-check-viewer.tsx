@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Check, Loader2, Plus } from 'lucide-react';
-import { analyzeGlbParts, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
+import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
@@ -55,15 +55,25 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const tf = useTranslations('files');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [parts, setParts] = useState<ResolvedPart[]>([]);
+  // "коли тут створюєш товар то не додається до нього файл gbl" (2026-10-08):
+  // the analysis keeps the parsed model alive (see `analyzeGlbParts`'s own
+  // `dispose` comment) specifically so a part's standalone .glb can be
+  // exported on demand — at "Створити товар" time, not up front for every
+  // part. Disposed on unmount/glbUrl-change below.
+  const analysisRef = useRef<GlbModelAnalysis | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState('loading');
     (async () => {
       try {
-        const analyzed = await analyzeGlbParts(glbUrl);
-        if (cancelled) return;
-        const resolved = await resolveAgainstCatalog(analyzed);
+        const analysis = await analyzeGlbParts(glbUrl);
+        if (cancelled) {
+          analysis.dispose();
+          return;
+        }
+        analysisRef.current = analysis;
+        const resolved = await resolveAgainstCatalog(analysis.parts);
         if (cancelled) return;
         setParts(resolved);
         setState('ready');
@@ -74,6 +84,8 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     })();
     return () => {
       cancelled = true;
+      analysisRef.current?.dispose();
+      analysisRef.current = null;
     };
   }, [glbUrl]);
 
@@ -82,6 +94,21 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const { appendProductLines } = useAssemblyBomActions(assemblyId);
   const { pending, requestCreate, dialogProps } = useCreateProductFromPart(appendProductLines);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
+  const [exportingArticles, setExportingArticles] = useState<Set<string>>(new Set());
+
+  async function handleCreateClick(part: ResolvedPart) {
+    setExportingArticles((prev) => new Set(prev).add(part.article));
+    try {
+      const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
+      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb);
+    } finally {
+      setExportingArticles((prev) => {
+        const next = new Set(prev);
+        next.delete(part.article);
+        return next;
+      });
+    }
+  }
 
   // The one-time `analyzeGlbParts` + catalog-resolution pass (the effect
   // above) never re-runs after this — otherwise every "Створити товар"
@@ -163,10 +190,11 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
                 {!readOnly && (
                   <button
                     type="button"
-                    onClick={() => requestCreate(part.article, part.name, part.qty, part.photoDataUrl, null)}
-                    className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50"
+                    onClick={() => handleCreateClick(part)}
+                    disabled={exportingArticles.has(part.article)}
+                    className="flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50"
                   >
-                    {tf('createProduct')}
+                    {exportingArticles.has(part.article) ? <Loader2 className="h-3 w-3 animate-spin" /> : tf('createProduct')}
                   </button>
                 )}
               </li>

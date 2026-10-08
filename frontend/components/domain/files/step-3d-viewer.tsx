@@ -859,10 +859,28 @@ function isolateRenderToDataUrl(
 }
 
 export interface GlbPartAnalysis {
+  nodeId: string;
   article: string;
   name: string;
   qty: number;
   photoDataUrl: string | null;
+}
+
+export interface GlbModelAnalysis {
+  parts: GlbPartAnalysis[];
+  /**
+   * "коли тут створюєш товар то не додається до нього файл gbl"
+   * (2026-10-08): a part's own standalone .glb is only worth exporting
+   * for the ones the user actually turns into a product — exporting it
+   * for every part up front (most of which are already in the catalog
+   * and never touch this) would be wasted work. Reuses the SAME loaded
+   * `group` this analysis already parsed — no second fetch/parse per
+   * part. Returns `null` after `dispose()`, or if the node has no
+   * geometry (shouldn't happen for a `nodeId` taken from `parts` itself).
+   */
+  exportPartGlb: (nodeId: string) => Promise<ArrayBuffer | null>;
+  /** Releases the renderer + every mesh's geometry/material — call once `exportPartGlb` is no longer needed (component unmount, or before re-analyzing a different `glbUrl`). */
+  dispose: () => void;
 }
 
 /**
@@ -883,8 +901,13 @@ export interface GlbPartAnalysis {
  * lookups, are deliberately NOT done here — this only answers "what parts
  * does the model contain", kept separate from "which of those are already
  * in this BOM / already in the catalog", which belong to the caller.
+ *
+ * The loaded `group` is deliberately NOT disposed when this returns (only
+ * the rendering is done at that point, not every possible use of the
+ * parsed model) — kept alive, captured in the returned `exportPartGlb`
+ * closure, until the caller calls `dispose()` itself.
  */
-export async function analyzeGlbParts(glbUrl: string): Promise<GlbPartAnalysis[]> {
+export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis> {
   const group = await loadGlb(glbUrl);
   const tree = buildTree(group);
 
@@ -902,8 +925,10 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbPartAnalysis[]
   }
   walk(tree);
 
-  const parts = Array.from(byArticle.values());
-  if (parts.length === 0) return [];
+  const partsMeta = Array.from(byArticle.values());
+  if (partsMeta.length === 0) {
+    return { parts: [], exportPartGlb: async () => null, dispose: () => {} };
+  }
 
   const box = new THREE.Box3().setFromObject(group);
   const size = box.getSize(new THREE.Vector3());
@@ -924,21 +949,36 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbPartAnalysis[]
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
 
-  const results: GlbPartAnalysis[] = parts.map((part) => {
-    const target = findByTreeId(group, part.nodeId);
-    const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
-    return { article: part.article, name: part.name, qty: part.qty, photoDataUrl };
-  });
+  const parts: GlbPartAnalysis[] = partsMeta
+    .map((part) => {
+      const target = findByTreeId(group, part.nodeId);
+      const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl };
+    })
+    .sort((a, b) => a.article.localeCompare(b.article));
 
-  renderer.dispose();
-  group.traverse((o) => {
-    if (o instanceof THREE.Mesh) {
-      o.geometry.dispose();
-      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
-    }
-  });
+  let disposed = false;
+  async function exportPartGlb(nodeId: string): Promise<ArrayBuffer | null> {
+    if (disposed) return null;
+    const target = findByTreeId(group, nodeId);
+    if (!target || meshesUnder(target).length === 0) return null;
+    const result = await new GLTFExporter().parseAsync(target, { binary: true });
+    return result instanceof ArrayBuffer ? result : null;
+  }
 
-  return results.sort((a, b) => a.article.localeCompare(b.article));
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    renderer.dispose();
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
+      }
+    });
+  }
+
+  return { parts, exportPartGlb, dispose };
 }
 
 /**
