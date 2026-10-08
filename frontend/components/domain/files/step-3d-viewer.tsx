@@ -594,6 +594,27 @@ function articleMatches(name: string, bomSet: Set<string>): boolean {
  * shared material would wrongly light up every part using it.
  */
 let treeNodeIdCounter = 0;
+/**
+ * GLTFLoader's own `_loadNodeShallow` (three/examples/jsm/loaders/GLTFLoader.js)
+ * unconditionally does `node.userData.name = nodeDef.name; node.name =
+ * parser.createUniqueName(nodeDef.name)` for every named node — `.name`
+ * itself is NOT the raw glTF name, it's a scene-graph-unique one, with a
+ * `_1`, `_2`, ... suffix appended per repeat of an already-seen name
+ * (tracked globally across the whole file, in `GLTFParser.nodeNamesUsed`).
+ * Real, confirmed-live impact (2026-10-08 user report: "2754301666_415_4
+ * 2754301666_415_3 2754301666_415_2" visibly duplicated in Деталі (3D)): a
+ * part physically reused N times in one assembly, with the SAME raw name
+ * on every instance (e.g. "275430.1666_415" ×5 in a real file), got
+ * fragmented into N differently-named tree nodes by the time any of this
+ * file's own code ever saw `.name` — so `analyzeGlbParts`'s dedup-by-name
+ * (and the interactive tree's own "Додати все"/qty count) created N
+ * separate 1-off articles instead of recognizing one article used N
+ * times. `userData.name` is the one place the original, non-mangled name
+ * survives — prefer it here so every consumer of `ModelTreeNode.name`
+ * (article matching, dedup, display) sees the real name, while distinct
+ * `ModelTreeNode`s stay distinct via their own `id` (never `.name`
+ * itself) regardless.
+ */
 function buildTree(group: THREE.Object3D): ModelTreeNode[] {
   function walk(object: THREE.Object3D): ModelTreeNode {
     const id = `tree-${treeNodeIdCounter++}`;
@@ -601,9 +622,10 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
     if (object instanceof THREE.Mesh) {
       object.material = Array.isArray(object.material) ? object.material.map((m) => m.clone()) : object.material.clone();
     }
+    const originalName = typeof object.userData.name === 'string' ? object.userData.name : undefined;
     return {
       id,
-      name: object.name ?? '',
+      name: originalName ?? object.name ?? '',
       isLeaf: object.children.length === 0,
       children: object.children.map(walk),
     };
