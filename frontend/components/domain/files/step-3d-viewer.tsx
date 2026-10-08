@@ -238,25 +238,26 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   // changes, so it stays accurate after a partial add (some rows flip to
   // ✅ and drop out automatically).
   //
-  // Restricted to nodes shaped like "ARTICLE-description" (has a dash) —
-  // deliberately NOT every ⚠️ node, unlike the per-row "+" button. A real
-  // assembly's generic, auto-generated solid-body names (e.g.
-  // "Твердое_тело1_4429") and internal CAD instance ids (e.g. "440166_1")
-  // also show up as ⚠️ (the display cross-reference checks every named
-  // node, on purpose — see the file header comment), and there can be
-  // thousands of them in one file (a real 440158.glb here had ~18k such
-  // names). Bulk-querying the catalog once per name for that many bogus
-  // candidates would be slow and pointless — none of them are real
-  // articles. A human clicking one specific row's own "+" still works on
-  // any name, dash or not; this bulk action only fires on names that
-  // actually look like the CAD export's own article convention.
+  // Restricted to nodes shaped like a real article — "ARTICLE-description"
+  // (has a dash) or a bare numeric article using `_`/`.` as its own
+  // separator (e.g. "434924_195", "440166_1") — see `isArticleCandidateName`
+  // — deliberately NOT every ⚠️ node, unlike the per-row "+" button. A real
+  // assembly's generic, auto-generated solid-body leaf name (e.g. "Твердое
+  // тело1") also shows up as ⚠️ (the display cross-reference checks every
+  // named node, on purpose — see the file header comment), and it alone can
+  // repeat thousands of times in one file (confirmed: 17034 of 34257 nodes
+  // in a real 440158.glb). Bulk-querying the catalog once per name for that
+  // many bogus candidates would be slow and pointless — it's not a real
+  // article. A human clicking one specific row's own "+" still works on any
+  // name; this bulk action only fires on names that actually look like the
+  // CAD export's own article convention.
   const unmatchedArticleCounts = useMemo(() => {
     const counts = new Map<string, number>();
     if (!bomSet) return counts;
     const set = bomSet;
     function walk(nodes: ModelTreeNode[]) {
       for (const node of nodes) {
-        if (node.name && node.name.trim().indexOf('-') > 0 && !articleMatches(node.name, set)) {
+        if (node.name && isArticleCandidateName(node.name.trim()) && !articleMatches(node.name, set)) {
           const article = extractArticleCandidate(node.name);
           counts.set(article, (counts.get(article) ?? 0) + 1);
         }
@@ -524,6 +525,24 @@ function ModelTreeRow({
       )}
     </li>
   );
+}
+
+/**
+ * Does this node name look like a real CAD-export article, as opposed to a
+ * generic auto-named solid body or internal instance id? Two shapes seen in
+ * practice: "ARTICLE-description" (a dash not at the very start), and a bare
+ * numeric article that uses `_`/`.` as its OWN internal separator instead of
+ * a dash — e.g. "434924_195", "440166_1", "264084.02" (real example,
+ * 2026-10-08 user report: "434924_195_59" was visible in the interactive GLB
+ * tree but missing from the Деталі (3D) tab, because this gate used to
+ * require a literal dash). A name made of letters (e.g. "Твердое тело1", the
+ * generic CAD-export placeholder repeated on every mesh leaf — confirmed via
+ * a real file: 17034 of its 34257 nodes carry that exact name, none with
+ * children) matches neither shape and is correctly excluded.
+ */
+function isArticleCandidateName(trimmed: string): boolean {
+  if (trimmed.indexOf('-') > 0) return true;
+  return /^\d+([._]\d+)*$/.test(trimmed);
 }
 
 /** Best-guess article for the "➕ add to BOM" action — mirrors `articleMatches`' own fallback: prefer the dash-prefix when present (the far more common "ARTICLE-description" shape), else the full trimmed name. */
@@ -999,10 +1018,10 @@ export interface GlbModelAnalysis {
  * вкладка аналізувати де весь склад прописаний" (2026-10-08): headless
  * counterpart to the interactive tree in `Step3DViewer` — loads a .glb,
  * walks its node tree, and returns one entry per distinct article (same
- * "ARTICLE-description" dash-shaped restriction as the interactive tree's
- * own "Додати все" candidate set — see `unmatchedArticleCounts`'s header
- * comment for why: a real model's thousands of generic auto-named solid
- * bodies and internal CAD instance ids would otherwise flood the list)
+ * `isArticleCandidateName` restriction as the interactive tree's own
+ * "Додати все" candidate set — see `unmatchedArticleCounts`'s header
+ * comment for why: a real model's generic auto-named solid-body leaf can
+ * otherwise repeat thousands of times and would flood the list)
  * with a rendered isolated-part snapshot for each — no visible 3D canvas,
  * no interactivity, just the data a flat parts-check table needs. Used by
  * `assembly-parts-check.tsx` so the user doesn't have to open the GLB
@@ -1025,7 +1044,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
   function walk(nodes: ModelTreeNode[]) {
     for (const node of nodes) {
-      if (node.name && node.name.trim().indexOf('-') > 0) {
+      if (node.name && isArticleCandidateName(node.name.trim())) {
         const article = extractArticleCandidate(node.name);
         const existing = byArticle.get(article);
         if (existing) existing.qty += 1;
