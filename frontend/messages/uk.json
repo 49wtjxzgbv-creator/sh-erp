@@ -1512,7 +1512,12 @@
     "model3dHint": "Самодостатній HTML-файл з інтерактивним переглядачем (наприклад, «Publish eDrawings HTML» з SolidWorks) — усі дані мають бути в одному файлі, без окремих сусідніх файлів.",
     "view3dModel": "Переглянути 3D-модель",
     "addAllToBom": "Додати все в BOM ({count})",
-    "createProduct": "Створити товар"
+    "createProduct": "Створити товар",
+    "searchByCodePlaceholder": "Пошук за кодом...",
+    "searchNoMatches": "не знайдено",
+    "searchPrevious": "Попередній збіг",
+    "searchNext": "Наступний збіг",
+    "searchClear": "Очистити пошук"
   },
   "supplierPortal": {
     "loginTitle": "Портал постачальника",

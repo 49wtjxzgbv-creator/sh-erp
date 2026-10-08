@@ -1385,7 +1385,12 @@
     "model3dHint": "A self-contained HTML file with an interactive viewer (e.g. SolidWorks \"Publish eDrawings HTML\") — everything must be in one file, no separate sibling files.",
     "view3dModel": "View 3D model",
     "addAllToBom": "Add all to BOM ({count})",
-    "createProduct": "Create product"
+    "createProduct": "Create product",
+    "searchByCodePlaceholder": "Search by code...",
+    "searchNoMatches": "not found",
+    "searchPrevious": "Previous match",
+    "searchNext": "Next match",
+    "searchClear": "Clear search"
   },
   "supplierPortal": {
     "loginTitle": "Supplier Portal",

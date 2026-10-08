@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { ChevronDown, ChevronRight, Check, AlertTriangle, Plus, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -174,6 +174,8 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [state, setState] = useState<ViewerState>('loading');
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchIndex, setSearchIndex] = useState(0);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [notFoundArticles, setNotFoundArticles] = useState<Set<string>>(new Set());
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -220,6 +222,45 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   useEffect(() => {
     sceneApiRef.current?.setSelected(selectedId);
   }, [selectedId]);
+
+  // "коли ми відкриваємо у специфікації gbl файл і там він складається з
+  // багатьох позицій додай пошук... ввожу код і підсвічується потрібна
+  // деталь" (2026-10-08): every tree row with a matching name, in tree
+  // order — NOT deduped by article (unlike `analyzeGlbParts`'s own
+  // candidate list), since this is searching the INTERACTIVE tree, where
+  // a repeated article genuinely has one row per physical instance and
+  // the user may want to jump to any specific one of them, not just "the"
+  // article as a concept.
+  const searchMatches = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+    const matches: string[] = [];
+    function walk(nodes: ModelTreeNode[]) {
+      for (const node of nodes) {
+        if (node.name && node.name.toLowerCase().includes(query)) matches.push(node.id);
+        walk(node.children);
+      }
+    }
+    walk(tree);
+    return matches;
+  }, [tree, searchQuery]);
+
+  // A fresh query always starts back at its first match — otherwise a
+  // leftover index from a previous search could silently point past the
+  // end of a shorter new match list.
+  useEffect(() => {
+    setSearchIndex(0);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchMatches.length === 0) return;
+    setSelectedId(searchMatches[Math.min(searchIndex, searchMatches.length - 1)]);
+  }, [searchMatches, searchIndex]);
+
+  function goToSearchMatch(delta: number) {
+    if (searchMatches.length === 0) return;
+    setSearchIndex((i) => (i + delta + searchMatches.length) % searchMatches.length);
+  }
 
   const bomSet = useMemo(
     () => (bomArticles ? new Set(bomArticles.map((a) => a.trim().toUpperCase()).filter(Boolean)) : null),
@@ -322,6 +363,59 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       </div>
       {showTree && (
         <div className="flex h-40 w-full shrink-0 flex-col overflow-y-auto border-t border-border p-2 sm:h-auto sm:w-64 sm:border-t-0 sm:border-l">
+          <div className="sticky top-0 z-10 mb-2 shrink-0 bg-background pb-2">
+            <div className="flex items-center gap-1 rounded border border-border px-1.5">
+              <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    goToSearchMatch(e.shiftKey ? -1 : 1);
+                  }
+                }}
+                placeholder={t('searchByCodePlaceholder')}
+                className="min-w-0 flex-1 bg-transparent py-1 text-xs outline-none placeholder:text-muted-foreground"
+              />
+              {searchQuery && (
+                <>
+                  <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                    {searchMatches.length > 0 ? `${searchIndex + 1}/${searchMatches.length}` : t('searchNoMatches')}
+                  </span>
+                  {searchMatches.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => goToSearchMatch(-1)}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        aria-label={t('searchPrevious')}
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => goToSearchMatch(1)}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        aria-label={t('searchNext')}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label={t('searchClear')}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
           {onAddToBom && unmatchedArticleCounts.size > 0 && (
             <button
               type="button"
