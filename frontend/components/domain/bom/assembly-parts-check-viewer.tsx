@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Check, Loader2, Plus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Check, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
-import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
+import { useCreateProductFromPart, dataUrlToFile } from '@/components/domain/bom/use-create-product-from-part';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 import { getProductsByArticles, type Product } from '@/lib/api-client/catalog';
+import { uploadFile } from '@/lib/api-client/files';
 import { cn } from '@/lib/utils';
 
 interface ResolvedPart extends GlbPartAnalysis {
@@ -94,6 +96,8 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const { pending, requestCreate, dialogProps } = useCreateProductFromPart(appendProductLines);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [exportingArticles, setExportingArticles] = useState<Set<string>>(new Set());
+  const [updatingPhotoArticles, setUpdatingPhotoArticles] = useState<Set<string>>(new Set());
+  const qc = useQueryClient();
 
   async function handleCreateClick(part: ResolvedPart) {
     setExportingArticles((prev) => new Set(prev).add(part.article));
@@ -123,6 +127,30 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     await dialogProps.onCreated(product);
     if (article) {
       setParts((prev) => prev.map((p) => (p.article === article ? { ...p, product } : p)));
+    }
+  }
+
+  // "саме з сецифікації бум з деталі 3д тих товарів які є в каталозі
+  // оновити їх фото" (2026-10-08): the snapshot already sitting in
+  // `part.photoDataUrl` IS this GLB's own current render of the part — no
+  // second model load needed, just upload it as that matched product's
+  // new photo (newest wins, see `EntityPhotoField`'s own header comment).
+  async function handleRefreshPhoto(part: ResolvedPart) {
+    if (!part.product || !part.photoDataUrl) return;
+    const productId = part.product.id;
+    setUpdatingPhotoArticles((prev) => new Set(prev).add(part.article));
+    try {
+      const file = dataUrlToFile(part.photoDataUrl, `${part.product.article}.png`);
+      if (file) {
+        await uploadFile(file, { domain: 'PRODUCT_PHOTO', entityType: 'Product', entityId: productId });
+        qc.invalidateQueries({ queryKey: ['files', 'Product', productId] });
+      }
+    } finally {
+      setUpdatingPhotoArticles((prev) => {
+        const next = new Set(prev);
+        next.delete(part.article);
+        return next;
+      });
     }
   }
 
@@ -164,10 +192,13 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
             parts={inCatalog}
             bomSet={bomSet}
             pendingArticles={pendingArticles}
+            updatingPhotoArticles={updatingPhotoArticles}
             readOnly={readOnly}
             onAdd={handleAdd}
+            onRefreshPhoto={handleRefreshPhoto}
             addLabel={t('partsCheckAdd')}
             addedLabel={t('partsCheckAdded')}
+            refreshPhotoLabel={t('partsCheckRefreshPhoto')}
           />
         )}
       </section>
@@ -224,24 +255,31 @@ function PartsGrid({
   parts,
   bomSet,
   pendingArticles,
+  updatingPhotoArticles,
   readOnly,
   onAdd,
+  onRefreshPhoto,
   addLabel,
   addedLabel,
+  refreshPhotoLabel,
 }: {
   parts: ResolvedPart[];
   bomSet: Set<string>;
   pendingArticles: Set<string>;
+  updatingPhotoArticles: Set<string>;
   readOnly?: boolean;
   onAdd: (part: ResolvedPart) => void;
+  onRefreshPhoto: (part: ResolvedPart) => void;
   addLabel: string;
   addedLabel: string;
+  refreshPhotoLabel: string;
 }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {parts.map((part) => {
         const inBom = part.product ? bomSet.has(part.product.article.trim().toUpperCase()) : false;
         const pending = pendingArticles.has(part.article);
+        const updatingPhoto = updatingPhotoArticles.has(part.article);
         return (
           <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
             <PartThumb part={part} />
@@ -255,27 +293,41 @@ function PartsGrid({
               {part.qty > 1 && <p className="text-xs text-muted-foreground">×{part.qty}</p>}
             </div>
             {!readOnly && (
-              <button
-                type="button"
-                onClick={() => onAdd(part)}
-                disabled={inBom || pending}
-                className={cn(
-                  'flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50',
-                  inBom && 'border-none bg-transparent text-success hover:bg-transparent',
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onAdd(part)}
+                  disabled={inBom || pending}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50',
+                    inBom && 'border-none bg-transparent text-success hover:bg-transparent',
+                  )}
+                >
+                  {inBom ? (
+                    <>
+                      <Check className="h-3 w-3" /> {addedLabel}
+                    </>
+                  ) : pending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="h-3 w-3" /> {addLabel}
+                    </>
+                  )}
+                </button>
+                {part.photoDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => onRefreshPhoto(part)}
+                    disabled={updatingPhoto}
+                    title={refreshPhotoLabel}
+                    aria-label={refreshPhotoLabel}
+                    className="flex shrink-0 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
+                  >
+                    {updatingPhoto ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  </button>
                 )}
-              >
-                {inBom ? (
-                  <>
-                    <Check className="h-3 w-3" /> {addedLabel}
-                  </>
-                ) : pending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <>
-                    <Plus className="h-3 w-3" /> {addLabel}
-                  </>
-                )}
-              </button>
+              </div>
             )}
           </li>
         );

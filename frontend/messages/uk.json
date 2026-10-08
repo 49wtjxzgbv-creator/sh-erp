@@ -350,6 +350,7 @@
     "partsCheckNone": "Немає позицій у цій групі.",
     "partsCheckAdd": "Додати в специфікацію",
     "partsCheckAdded": "У специфікації",
+    "partsCheckRefreshPhoto": "Оновити фото товару з 3D-моделі",
     "componentType": "Тип компонента",
     "component": "Компонент",
     "warehouseOptional": "Склад (необов'язково)",

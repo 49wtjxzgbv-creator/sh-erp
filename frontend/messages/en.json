@@ -349,6 +349,7 @@
     "partsCheckNone": "No items in this group.",
     "partsCheckAdd": "Add to specification",
     "partsCheckAdded": "In specification",
+    "partsCheckRefreshPhoto": "Refresh product photo from 3D model",
     "componentType": "Component type",
     "component": "Component",
     "warehouseOptional": "Warehouse (optional)",
