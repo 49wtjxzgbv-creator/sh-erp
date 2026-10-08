@@ -84,6 +84,24 @@ export class ProductsController {
     return this.productsService.findByIds(user, ids.split(',').filter(Boolean));
   }
 
+  /**
+   * Same "one request, however many rows" rationale as `GET /products/batch`
+   * (by id) above — and the same real incident `ProductsService.bulkRemove`'s
+   * own header comment describes (N parallel per-row requests blowing
+   * through the global 100 req/60s per-client `ThrottlerModule` budget).
+   * The "Деталі (3D)" tab (`assembly-parts-check-viewer.tsx`) used to issue
+   * one `GET /products?search=...` per distinct part found in a 3D model —
+   * for a real assembly with 40-50 parts, intermittently 429'd exactly
+   * like the old bulk-delete did. This resolves every part's article
+   * against the catalog in ONE request instead.
+   */
+  @Get('batch-by-article')
+  @RequirePermissions('products:read')
+  @ApiOperation({ summary: 'Many products in one call by exact article — avoids an N-request fan-out resolving article strings into Products for a list view.' })
+  async findByArticles(@CurrentUser() user: RequestUser, @Query('articles') articles: string) {
+    return this.productsService.findByArticles(user, articles.split(',').filter(Boolean));
+  }
+
   @Get(':id')
   @RequirePermissions('products:read')
   @ApiOperation({ summary: 'Get one product.' })

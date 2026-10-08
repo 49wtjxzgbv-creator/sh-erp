@@ -149,6 +149,12 @@ export function getProductsByIds(ids: string[]): Promise<Product[]> {
   return apiClient.get<Product[]>('products/batch', { query: { ids: ids.join(',') } });
 }
 
+/** Same "one request, however many rows" shape as `getProductsByIds`, keyed by exact article instead — the "Деталі (3D)" tab's own catalog-resolution pass used to fire one `queryProducts` per distinct part and intermittently hit the global per-client rate limit (real, reported: "через раз то відкриває то ні"). */
+export function getProductsByArticles(articles: string[]): Promise<Product[]> {
+  if (articles.length === 0) return Promise.resolve([]);
+  return apiClient.get<Product[]>('products/batch-by-article', { query: { articles: articles.join(',') } });
+}
+
 export function createProduct(dto: CreateProductInput): Promise<Product> {
   return apiClient.post<Product>('products', dto);
 }

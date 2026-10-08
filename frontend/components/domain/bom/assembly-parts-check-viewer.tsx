@@ -7,33 +7,32 @@ import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
-import { queryProducts, type Product } from '@/lib/api-client/catalog';
+import { getProductsByArticles, type Product } from '@/lib/api-client/catalog';
 import { cn } from '@/lib/utils';
 
 interface ResolvedPart extends GlbPartAnalysis {
   product: Product | null;
 }
 
-/** Runs `fn` over `items` with at most `limit` in flight at once — a plain `Promise.all` over every distinct part in the model would fire dozens of catalog lookups at the same instant the moment this tab opens (not a deliberate user click, unlike the tree's own "Додати все"), so this keeps that burst bounded. */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
+/**
+ * "через раз то відкриває то ні" (2026-10-08, real user report): this used
+ * to fire one `queryProducts` request PER distinct part (up to a few dozen
+ * for a real assembly, even with concurrency capped) — the exact same
+ * failure mode `ProductsService.bulkRemove`'s own header comment already
+ * documents from a past incident: N parallel per-row requests blow
+ * straight through the global per-client rate limit
+ * (`app.module.ts`'s `ThrottlerModule`, 100 req/60s), so whichever
+ * requests didn't fit under whatever budget was left that moment 429'd —
+ * intermittent by nature, since it depends on everything ELSE the same
+ * client did in the preceding minute. `getProductsByArticles` resolves
+ * every part's article in ONE request instead (see
+ * `GET /products/batch-by-article`), the same fix already applied to the
+ * bulk-delete case.
+ */
 async function resolveAgainstCatalog(parts: GlbPartAnalysis[]): Promise<ResolvedPart[]> {
-  return mapWithConcurrency(parts, 5, async (part) => {
-    const matches = await queryProducts({ search: part.article, limit: 20 });
-    const product = matches.items.find((p) => p.article.trim().toUpperCase() === part.article.trim().toUpperCase()) ?? null;
-    return { ...part, product };
-  });
+  const products = await getProductsByArticles(parts.map((p) => p.article));
+  const byArticle = new Map(products.map((p) => [p.article.trim().toUpperCase(), p]));
+  return parts.map((part) => ({ ...part, product: byArticle.get(part.article.trim().toUpperCase()) ?? null }));
 }
 
 export interface AssemblyPartsCheckViewerProps {

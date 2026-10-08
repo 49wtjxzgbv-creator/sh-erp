@@ -50,6 +50,12 @@ export class ProductsService {
     return this.prisma.tenant.product.findMany({ where: { id: { in: ids } } });
   }
 
+  /** `article` is `citext` (case-insensitive) and unique per company, so a plain `in` match already resolves each requested article to at most one real Product — no extra `mode: 'insensitive'` needed, and no risk of returning two rows for one requested article. */
+  async findByArticles(user: RequestUser, articles: string[]) {
+    if (articles.length === 0) return [];
+    return this.prisma.tenant.product.findMany({ where: { article: { in: articles }, deletedAt: null } });
+  }
+
   async query(user: RequestUser, query: QueryProductsDto) {
     const where: Prisma.ProductWhereInput = {};
     if (!query.includeDeleted) where.deletedAt = null;
