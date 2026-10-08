@@ -265,6 +265,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       }
     }
     walk(tree);
+    mergeByPositionPrefix(counts);
     return counts;
   }, [tree, bomSet]);
 
@@ -550,6 +551,80 @@ function extractArticleCandidate(name: string): string {
   const trimmed = name.trim();
   const dashIndex = trimmed.indexOf('-');
   return dashIndex > 0 ? trimmed.slice(0, dashIndex).trim() : trimmed;
+}
+
+/**
+ * For a dash-free numeric article like "434743_118": is the trailing
+ * `_NNN` the article's own stable identity, or a per-position tag from the
+ * original drawing (2026-10-08 user report: "434743_118 434743_118
+ * 434743_120 а позиції товари такого плану")? The name alone can't say —
+ * "434924_195"/"440167_421" repeat that exact full string on every one of
+ * their instances (a real, stable article), while "434743_118"/"_119"/
+ * "_120"/"_121"/"_45" and "437908_46".."437908_125" each occur ONLY ONCE,
+ * as one of many distinct siblings sharing a prefix (a classic CAD-export
+ * "поз." position number, not the article). So this only returns a
+ * candidate prefix — `mergeByPositionPrefix` below decides whether to
+ * actually use it, based on whether that prefix turned out to have more
+ * than one distinct full name under it.
+ */
+function positionPrefixOf(article: string): string | null {
+  const match = article.match(/^(\d+(?:[._]\d+)*)_(\d+)$/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Collapses a `article -> qty` tally (already counted by exact full name)
+ * down to one entry per `positionPrefixOf` prefix — but ONLY for a prefix
+ * that turned out to have more than one distinct full name under it (the
+ * actual signal that the trailing `_NNN` was a position tag, not part of
+ * the article — see `positionPrefixOf`'s own header comment). A prefix
+ * with just one distinct full name (however many times THAT exact name
+ * repeats, e.g. "434924_195" ×60) is left exactly as already counted,
+ * whole name and all — this function only ever merges, never splits.
+ */
+function mergeByPositionPrefix(counts: Map<string, number>): void {
+  const groups = new Map<string, string[]>();
+  for (const article of counts.keys()) {
+    const prefix = positionPrefixOf(article);
+    if (!prefix) continue;
+    const members = groups.get(prefix) ?? [];
+    members.push(article);
+    groups.set(prefix, members);
+  }
+  for (const [prefix, members] of groups) {
+    if (members.length < 2) continue;
+    let total = 0;
+    for (const member of members) {
+      total += counts.get(member) ?? 0;
+      counts.delete(member);
+    }
+    counts.set(prefix, total);
+  }
+}
+
+/** Same merge as `mergeByPositionPrefix` above, over `analyzeGlbParts`'s own richer per-article record (nodeId/name alongside qty) instead of a bare count. The merged entry keeps one member's nodeId (so its photo/volume still stand in for the whole family — every instance under a position-tag family is the same physical part), but both `article` AND `name` become the bare prefix — showing the original single instance's own "_118"-suffixed name next to a now-different article would be confusing. */
+function mergeDetailedByPositionPrefix(byArticle: Map<string, { nodeId: string; article: string; name: string; qty: number }>): void {
+  const groups = new Map<string, string[]>();
+  for (const article of byArticle.keys()) {
+    const prefix = positionPrefixOf(article);
+    if (!prefix) continue;
+    const members = groups.get(prefix) ?? [];
+    members.push(article);
+    groups.set(prefix, members);
+  }
+  for (const [prefix, members] of groups) {
+    if (members.length < 2) continue;
+    let qty = 0;
+    let representative: { nodeId: string; article: string; name: string; qty: number } | undefined;
+    for (const member of members) {
+      const entry = byArticle.get(member);
+      if (!entry) continue;
+      qty += entry.qty;
+      if (!representative) representative = entry;
+      byArticle.delete(member);
+    }
+    if (representative) byArticle.set(prefix, { ...representative, article: prefix, name: prefix, qty });
+  }
 }
 
 /** Rough product-name guess for the "create product" prefill: everything after the article's dash, with CAD-export underscores turned back into spaces — just a starting point the user edits in the create form, not meant to be exact. */
@@ -1145,6 +1220,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     }
   }
   walk(tree);
+  mergeDetailedByPositionPrefix(byArticle);
 
   const partsMeta = Array.from(byArticle.values());
   if (partsMeta.length === 0) {
