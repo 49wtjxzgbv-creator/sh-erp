@@ -1390,7 +1390,9 @@
     "searchNoMatches": "not found",
     "searchPrevious": "Previous match",
     "searchNext": "Next match",
-    "searchClear": "Clear search"
+    "searchClear": "Clear search",
+    "isolatePart": "Show only this part",
+    "showAllParts": "Show all parts"
   },
   "supplierPortal": {
     "loginTitle": "Supplier Portal",

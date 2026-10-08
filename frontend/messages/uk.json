@@ -1517,7 +1517,9 @@
     "searchNoMatches": "не знайдено",
     "searchPrevious": "Попередній збіг",
     "searchNext": "Наступний збіг",
-    "searchClear": "Очистити пошук"
+    "searchClear": "Очистити пошук",
+    "isolatePart": "Показати лише цю деталь",
+    "showAllParts": "Показати всі деталі"
   },
   "supplierPortal": {
     "loginTitle": "Портал постачальника",

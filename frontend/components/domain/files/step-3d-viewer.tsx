@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -147,6 +147,8 @@ interface ModelTreeNode {
 interface SceneApi {
   dispose: () => void;
   setSelected: (id: string | null) => void;
+  /** "додай кнопку приховати все і залишити показ саме цієї деталі" (2026-10-08) — hides every mesh except the current selection's own; re-applies automatically if the selection changes while still enabled. No-op (shows everything) whenever nothing is selected. */
+  setIsolated: (enabled: boolean) => void;
   captureSnapshot: (id: string) => string | null;
   exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
   computeVolume: (id: string) => number | null;
@@ -174,6 +176,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [state, setState] = useState<ViewerState>('loading');
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isolateMode, setIsolateMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
@@ -192,6 +195,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       setState('loading');
       setTree([]);
       setSelectedId(null);
+      setIsolateMode(false);
       try {
         const group = glbUrl ? await loadGlb(glbUrl) : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
@@ -222,6 +226,10 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   useEffect(() => {
     sceneApiRef.current?.setSelected(selectedId);
   }, [selectedId]);
+
+  useEffect(() => {
+    sceneApiRef.current?.setIsolated(isolateMode);
+  }, [isolateMode]);
 
   // "коли ми відкриваємо у специфікації gbl файл і там він складається з
   // багатьох позицій додай пошук... ввожу код і підсвічується потрібна
@@ -354,6 +362,19 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     <div className="flex h-full w-full flex-col sm:flex-row">
       <div className="relative min-h-0 min-w-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
+        {state === 'ready' && selectedId && (
+          <button
+            type="button"
+            onClick={() => setIsolateMode((v) => !v)}
+            className={cn(
+              'absolute left-2 top-2 flex items-center gap-1.5 rounded border border-border bg-background/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-secondary/50',
+              isolateMode && 'border-primary text-primary',
+            )}
+          >
+            {isolateMode ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            {isolateMode ? t('showAllParts') : t('isolatePart')}
+          </button>
+        )}
         {state === 'loading' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
         )}
@@ -880,9 +901,59 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   controls.enableDamping = true;
   controls.target.set(0, 0, 0);
 
+  // "додай приближення саме до неї бо не завжди видно" (2026-10-08): a
+  // selected part can be a tiny fraction of a large assembly's bounding
+  // box, easy to miss at the model's own default overview framing. Eased
+  // camera position/target interpolation, driven from the existing render
+  // loop rather than a second rAF loop — `focusCameraOn` below just sets
+  // the start/end state and a start time; `animate` advances it every
+  // frame until `duration` elapses, then clears it so `controls.update()`
+  // (user-drag orbiting) takes back over undisturbed.
+  let flyAnimation: {
+    fromPos: THREE.Vector3;
+    toPos: THREE.Vector3;
+    fromTarget: THREE.Vector3;
+    toTarget: THREE.Vector3;
+    start: number;
+    duration: number;
+  } | null = null;
+
+  function focusCameraOn(target: THREE.Object3D) {
+    const targetBox = new THREE.Box3().setFromObject(target);
+    const targetSphere = targetBox.getBoundingSphere(new THREE.Sphere());
+    if (targetSphere.radius <= 0) return;
+    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+    const margin = 1.8; // looser than the snapshot's 1.1 — leaves nearby context visible, not just the bare part
+    const distance = Math.max(
+      (targetSphere.radius * margin) / Math.sin(vFov / 2),
+      (targetSphere.radius * margin) / Math.sin(hFov / 2),
+      camera.near * 2,
+    );
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() === 0) dir.set(0.6, 0.5, 0.6);
+    dir.normalize();
+    flyAnimation = {
+      fromPos: camera.position.clone(),
+      toPos: targetSphere.center.clone().add(dir.multiplyScalar(distance)),
+      fromTarget: controls.target.clone(),
+      toTarget: targetSphere.center.clone(),
+      start: performance.now(),
+      duration: 450,
+    };
+  }
+
   let animationFrame: number | undefined;
   function animate() {
     animationFrame = requestAnimationFrame(animate);
+    if (flyAnimation) {
+      const elapsed = (performance.now() - flyAnimation.start) / flyAnimation.duration;
+      const t = Math.min(1, elapsed);
+      const eased = 1 - (1 - t) ** 3; // ease-out cubic
+      camera.position.lerpVectors(flyAnimation.fromPos, flyAnimation.toPos, eased);
+      controls.target.lerpVectors(flyAnimation.fromTarget, flyAnimation.toTarget, eased);
+      if (t >= 1) flyAnimation = null;
+    }
     controls.update();
     renderer.render(scene, camera);
   }
@@ -914,14 +985,34 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
       if ('emissive' in mat) (mat as THREE.MeshStandardMaterial).emissive.set(0x000000);
     }
   }
+  let isolated = false;
+  let currentTarget: THREE.Object3D | null = null;
+
+  /** `target === null` means "nothing to isolate" — shows every mesh regardless of `isolated`'s own flag, since isolating down to nothing would just be a blank viewport. */
+  function applyIsolation(target: THREE.Object3D | null) {
+    const visible = target ? new Set(meshesUnder(target)) : null;
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.visible = visible ? visible.has(o) : true;
+    });
+  }
+
   function setSelected(id: string | null) {
     highlighted.forEach(clearHighlight);
     highlighted = [];
-    if (!id) return;
-    const target = findByTreeId(group, id);
-    if (!target) return;
-    highlighted = meshesUnder(target);
+    currentTarget = id ? findByTreeId(group, id) : null;
+    if (!currentTarget) {
+      if (isolated) applyIsolation(null);
+      return;
+    }
+    highlighted = meshesUnder(currentTarget);
     highlighted.forEach(applyHighlight);
+    focusCameraOn(currentTarget);
+    if (isolated) applyIsolation(currentTarget);
+  }
+
+  function setIsolated(enabled: boolean) {
+    isolated = enabled;
+    applyIsolation(enabled ? currentTarget : null);
   }
 
   function onClick(e: MouseEvent) {
@@ -995,6 +1086,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
 
   return {
     setSelected,
+    setIsolated,
     captureSnapshot,
     exportPartGlb,
     computeVolume,
