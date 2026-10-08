@@ -17,11 +17,30 @@ export class ProductsService {
 
   async create(user: RequestUser, dto: CreateProductDto) {
     try {
-      const product = await this.prisma.tenant.product.create({ data: dto as any });
+      // "якщо я видалив з каталога і намагаюсь знову додати воно пише що
+      // вже є в каталозі а по факту нема" (2026-10-08, real user report):
+      // `remove()` below is soft-delete only (Product rows are never
+      // hard-removed — keeps order/stock history intact), so the old row
+      // still occupies the `uq_products_companyId_article` unique
+      // constraint forever. Re-creating with the same article used to hit
+      // that constraint and surface a confusing "already exists" error for
+      // an article that's genuinely invisible everywhere else — every
+      // read path (`query`, `findByArticles`, `findByIds`) already filters
+      // `deletedAt: null`. Reviving the existing soft-deleted row (instead
+      // of attempting a fresh insert) is the correct fix, not just a
+      // workaround for the error: it keeps that product's real order/stock
+      // history attached to the SAME id, rather than starting a
+      // disconnected new row that happens to share an article string.
+      const deleted = await this.prisma.tenant.product.findFirst({
+        where: { article: dto.article, deletedAt: { not: null } },
+      });
+      const product = deleted
+        ? await this.prisma.tenant.product.update({ where: { id: deleted.id }, data: { ...(dto as any), deletedAt: null } })
+        : await this.prisma.tenant.product.create({ data: dto as any });
       await this.auditService.record({
         companyId: user.companyId,
         actorUserId: user.userId,
-        action: 'product.created',
+        action: deleted ? 'product.restored' : 'product.created',
         entityType: 'Product',
         entityId: product.id,
         after: product,
