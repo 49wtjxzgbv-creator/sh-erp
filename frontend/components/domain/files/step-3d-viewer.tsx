@@ -866,50 +866,43 @@ function volumeUnitScaleToMm3(groupMaxDim: number): number {
 }
 
 /**
- * "там би воно рахувало вагу залежно від обєму і матеріалу" (2026-10-08):
- * an estimate of `object`'s own solid volume (and every descendant's), in
- * mm³ (`unitScaleToMm3` — see `volumeUnitScaleToMm3` above — converts from
- * whatever linear unit this particular file's `matrixWorld`-composed
- * coordinates actually turned out to be in). The caller
- * (`CreateProductDialog`'s material/weight helper) divides by 1e9 to get
- * m³ before multiplying by a density in kg/m³.
- *
- * Via the CONVEX HULL of the part's own vertices, not the raw triangle
- * mesh directly — real, confirmed-live bug this works around: the
- * straightforward signed-tetrahedron-sum (divergence theorem) approach
- * tried first came back ≈0 even after accounting for the unit issue
- * above, because CAD-export tessellation is not reliably a single
- * consistently-wound closed shell — many exporters duplicate every face
- * with the opposite winding so back-face culling never hides anything
- * from any viewing angle, and two perfectly opposite-signed copies of
- * every triangle cancel to exactly zero when summed directly. A convex
- * hull's own faces are, by construction, consistently wound with no
- * duplicates, so the same tetrahedron-sum math on the HULL's triangles
- * can't fall into that trap. Trade-off: the hull volume is an
- * OVERESTIMATE for any non-convex part (a bracket's cutouts/holes/concave
- * bends get filled in) — acceptable here since this is explicitly a rough
- * starting estimate the user reviews and can adjust, not a certified
- * measurement, and overestimating a weight is a safer default error than
- * reporting zero.
+ * Sum of signed tetrahedron volumes (divergence theorem) over every
+ * triangle of every mesh under `object`, in world space — the
+ * mathematically EXACT volume for a proper single-sided closed mesh.
+ * Returns the raw signed value (not `Math.abs`'d) so the caller can
+ * compare its magnitude against a convex-hull volume to detect the
+ * face-duplication trap described on `computeMeshVolume`.
  */
-function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): number {
-  const points: THREE.Vector3[] = [];
-  for (const mesh of meshesUnder(object)) {
+function signedMeshVolume(meshes: THREE.Mesh[]): number {
+  let volume = 0;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (const mesh of meshes) {
     mesh.updateWorldMatrix(true, false);
     const position = mesh.geometry.attributes.position;
-    for (let i = 0; i < position.count; i++) {
-      points.push(new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+    const index = mesh.geometry.index;
+    const triCount = index ? index.count / 3 : position.count / 3;
+    for (let i = 0; i < triCount; i++) {
+      const ia = index ? index.getX(i * 3) : i * 3;
+      const ib = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const ic = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
+      volume += a.dot(b.clone().cross(c)) / 6;
     }
   }
-  if (points.length < 4) return 0;
+  return volume;
+}
 
+function convexHullVolume(points: THREE.Vector3[]): number {
   let hull: THREE.BufferGeometry;
   try {
     hull = new ConvexGeometry(points);
   } catch {
-    return 0; // degenerate point set (e.g. coplanar) — no well-defined hull, not worth crashing the create-product flow over
+    return 0; // degenerate point set (e.g. coplanar) — no well-defined hull
   }
-
   const hullPosition = hull.attributes.position; // ConvexGeometry emits a non-indexed, already-triangulated, consistently-wound BufferGeometry
   let volume = 0;
   const a = new THREE.Vector3();
@@ -921,7 +914,57 @@ function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): numb
     c.fromBufferAttribute(hullPosition, i * 3 + 2);
     volume += a.dot(b.clone().cross(c)) / 6;
   }
-  return Math.abs(volume) * unitScaleToMm3;
+  return Math.abs(volume);
+}
+
+/**
+ * "там би воно рахувало вагу залежно від обєму і матеріалу" (2026-10-08):
+ * an estimate of `object`'s own solid volume (and every descendant's), in
+ * mm³ (`unitScaleToMm3` — see `volumeUnitScaleToMm3` above — converts from
+ * whatever linear unit this particular file's `matrixWorld`-composed
+ * coordinates actually turned out to be in). The caller
+ * (`CreateProductDialog`'s material/weight helper) divides by 1e9 to get
+ * m³ before multiplying by a density in kg/m³.
+ *
+ * Prefers the EXACT `signedMeshVolume` (the raw triangle mesh, via the
+ * divergence theorem) and only falls back to the convex hull when that
+ * comes back suspiciously near zero. Real, confirmed-live history behind
+ * this: the signed-tetrahedron sum was tried first, came back ≈0 for a
+ * bearing, and got replaced outright with the convex hull (CAD-export
+ * tessellation is not reliably a single consistently-wound closed shell —
+ * many exporters duplicate every face with the opposite winding for
+ * backface-safe rendering, and two perfectly opposite-signed copies of
+ * every triangle cancel to exactly zero when summed directly, which a
+ * hull's own consistently-wound, non-duplicated faces can't fall into).
+ * But the hull is an OVERESTIMATE for any non-convex part, and for a part
+ * whose cross-section varies sharply along its length (2026-10-08 user
+ * report: "434924_195" is a ~2.2m rail with thick mounting ends and a
+ * thin web between them) that overestimate is severe — the hull fills in
+ * the whole tapered gap as solid material along the full length. Measured
+ * on that exact part: hull → "136.554 кг", exact signed volume →
+ * "11.78 кг" (a real mechanical dimension spec confirms the thin-web rail
+ * reading is the right order of magnitude). So: trust the exact value
+ * whenever it's not the near-zero cancellation artifact (its magnitude is
+ * at least 1% of the hull's — real cancellation residue is floating-point
+ * noise, orders of magnitude smaller than that), and only fall back to
+ * the hull's known-overestimate for the genuine duplicated-face case.
+ */
+function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): number {
+  const meshes = meshesUnder(object);
+  const points: THREE.Vector3[] = [];
+  for (const mesh of meshes) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      points.push(new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+    }
+  }
+  if (points.length < 4) return 0;
+
+  const hullVolume = convexHullVolume(points);
+  const exactVolume = Math.abs(signedMeshVolume(meshes));
+  const volume = exactVolume > hullVolume * 0.01 ? exactVolume : hullVolume;
+  return volume * unitScaleToMm3;
 }
 
 /**
