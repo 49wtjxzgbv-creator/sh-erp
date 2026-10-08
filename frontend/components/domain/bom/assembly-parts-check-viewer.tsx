@@ -80,8 +80,25 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const { bomArticles } = useAssemblyBomArticles(assemblyId);
   const bomSet = new Set(bomArticles.map((a) => a.trim().toUpperCase()));
   const { appendProductLines } = useAssemblyBomActions(assemblyId);
-  const { requestCreate, dialogProps } = useCreateProductFromPart(appendProductLines);
+  const { pending, requestCreate, dialogProps } = useCreateProductFromPart(appendProductLines);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
+
+  // The one-time `analyzeGlbParts` + catalog-resolution pass (the effect
+  // above) never re-runs after this — otherwise every "Створити товар"
+  // would re-parse the whole model and re-query the catalog for every
+  // part again. So a just-created product has to be patched into the
+  // already-resolved `parts` state directly, or the row would keep
+  // showing "Немає в каталозі"/"Створити товар" for a part that now DOES
+  // have a product (and is already in the BOM, via `dialogProps`'s own
+  // `onCreated`). `pending?.article` is read BEFORE awaiting — the hook's
+  // own `onCreated` clears `pending` as part of handling the call.
+  async function handleCreated(product: Product) {
+    const article = pending?.article;
+    await dialogProps.onCreated(product);
+    if (article) {
+      setParts((prev) => prev.map((p) => (p.article === article ? { ...p, product } : p)));
+    }
+  }
 
   async function handleAdd(part: ResolvedPart) {
     if (!part.product) return;
@@ -158,7 +175,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
         )}
       </section>
 
-      <CreateProductDialog {...dialogProps} />
+      <CreateProductDialog {...dialogProps} onCreated={handleCreated} />
     </div>
   );
 }
