@@ -17,8 +17,9 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
-import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { EntityDocumentsField, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 
 // Every optional numeric field mirrors backend/src/modules/catalog/dto/create-product.dto.ts
 // exactly (@Type(() => Number) + @Min(0) there); zod's z.coerce.number() plays
@@ -171,6 +172,56 @@ function MaterialWeightPicker({ volumeMm3, onApply }: { volumeMm3: number; onApp
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * "до існуючих товарів де є файл glb додай можливість рахувати вагу"
+ * (2026-10-08): the create-mode `MaterialWeightPicker` above gets its
+ * `volumeMm3` handed to it from the BOM 3D-viewer flow that created the
+ * product in the first place — an already-existing product has no such
+ * flow to hook into, but may well have its own `.glb` sitting right there
+ * in its documents (`EntityDocumentsField`, domain `PRODUCT_DOCUMENT`).
+ * Looks for one; renders nothing if there isn't one. Loads and measures
+ * the model (`computeGlbVolume`, dynamically imported — three.js is a
+ * heavy client-only dependency not worth pulling into the main catalog
+ * bundle for the common case where this button is never clicked) only on
+ * the user's own click, not automatically on every page load.
+ */
+function ModelWeightCalculator({ productId, onApply }: { productId: string; onApply: (weightKg: number) => void }) {
+  const t = useTranslations('catalog');
+  const tc = useTranslations('common');
+  const { data: byEntity } = useFilesForEntities('Product', [productId], 'PRODUCT_DOCUMENT');
+  const glbFile = (byEntity?.[productId] ?? []).find((f) => isGlbFile(f.originalName));
+  const [volumeMm3, setVolumeMm3] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!glbFile) return null;
+  if (volumeMm3 != null) return <MaterialWeightPicker volumeMm3={volumeMm3} onApply={onApply} />;
+
+  async function computeVolume() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { computeGlbVolume } = await import('@/components/domain/files/step-3d-viewer');
+      const volume = await computeGlbVolume(glbFile!.downloadUrl);
+      if (volume == null) setError(t('materialWeightNoVolume'));
+      else setVolumeMm3(volume);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc('error'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5 sm:col-span-3">
+      <Button type="button" variant="outline" size="sm" loading={loading} onClick={computeVolume}>
+        {t('calculateVolumeFromModel')}
+      </Button>
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -490,6 +541,12 @@ export function ProductForm({
           {initialVolumeMm3 != null && initialVolumeMm3 > 0 && (
             <MaterialWeightPicker
               volumeMm3={initialVolumeMm3}
+              onApply={(weightKg) => setValue('weightPerUnitKg', Number(weightKg.toFixed(3)))}
+            />
+          )}
+          {product && (
+            <ModelWeightCalculator
+              productId={product.id}
               onApply={(weightKg) => setValue('weightPerUnitKg', Number(weightKg.toFixed(3)))}
             />
           )}

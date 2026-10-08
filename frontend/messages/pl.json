@@ -154,6 +154,8 @@
     "materialWeightPlaceholder": "Select material",
     "materialWeightResult": "≈ {weight} kg",
     "materialWeightApply": "Apply to weight",
+    "calculateVolumeFromModel": "Calculate weight from 3D model (GLB)",
+    "materialWeightNoVolume": "Could not determine volume from this 3D model.",
     "material_steel": "Steel",
     "material_stainlessSteel": "Stainless steel",
     "material_castIron": "Cast iron",

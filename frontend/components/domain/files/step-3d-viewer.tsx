@@ -1039,6 +1039,32 @@ export interface GlbPartAnalysis {
   volumeMm3: number | null;
 }
 
+/**
+ * "до існуючих товарів де є файл glb додай можливість рахувати вагу"
+ * (2026-10-08): headless, whole-file counterpart to `analyzeGlbParts`'s
+ * per-part `computeVolume` — for a product that already has its OWN
+ * standalone .glb attached (not a sub-part inside some assembly's
+ * model), the entire loaded scene already IS that one part, so there's
+ * no tree-walking or per-article dedup to do, just the same volume math
+ * (see `computeMeshVolume`) applied to the whole loaded group. Returns
+ * `null` for an empty/degenerate model instead of `0`, so a caller can
+ * tell "no usable geometry" apart from "a genuinely weightless sliver".
+ */
+export async function computeGlbVolume(glbUrl: string): Promise<number | null> {
+  const group = await loadGlb(glbUrl);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const volume = computeMeshVolume(group, volumeUnitScaleToMm3(maxDim));
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
+    }
+  });
+  return volume > 0 ? volume : null;
+}
+
 export interface GlbModelAnalysis {
   parts: GlbPartAnalysis[];
   /**
