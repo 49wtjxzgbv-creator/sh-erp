@@ -348,13 +348,13 @@ function PartsGrid({
               {part.qty > 1 && <p className="text-xs text-muted-foreground">×{part.qty}</p>}
             </div>
             {!readOnly && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <button
                   type="button"
                   onClick={() => onAdd(part)}
                   disabled={inBom || pending}
                   className={cn(
-                    'flex flex-1 items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50',
+                    'flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50',
                     inBom && 'border-none bg-transparent text-success hover:bg-transparent',
                   )}
                 >
@@ -370,29 +370,33 @@ function PartsGrid({
                     </>
                   )}
                 </button>
-                {part.photoDataUrl && (
-                  <button
-                    type="button"
-                    onClick={() => onRefreshPhoto(part)}
-                    disabled={updatingPhoto}
-                    title={refreshPhotoLabel}
-                    aria-label={refreshPhotoLabel}
-                    className="flex shrink-0 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
-                  >
-                    {updatingPhoto ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  </button>
-                )}
-                {needsGlb && (
-                  <button
-                    type="button"
-                    onClick={() => onAttachGlb(part)}
-                    disabled={attachingGlb}
-                    title={attachGlbLabel}
-                    aria-label={attachGlbLabel}
-                    className="flex shrink-0 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
-                  >
-                    {attachingGlb ? <Loader2 className="h-3 w-3 animate-spin" /> : <Box className="h-3 w-3" />}
-                  </button>
+                {(part.photoDataUrl || needsGlb) && (
+                  <div className="flex items-center gap-1.5">
+                    {part.photoDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => onRefreshPhoto(part)}
+                        disabled={updatingPhoto}
+                        title={refreshPhotoLabel}
+                        aria-label={refreshPhotoLabel}
+                        className="flex flex-1 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
+                      >
+                        {updatingPhoto ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      </button>
+                    )}
+                    {needsGlb && (
+                      <button
+                        type="button"
+                        onClick={() => onAttachGlb(part)}
+                        disabled={attachingGlb}
+                        title={attachGlbLabel}
+                        aria-label={attachGlbLabel}
+                        className="flex flex-1 items-center justify-center rounded border border-border p-1.5 text-muted-foreground hover:bg-secondary/50 disabled:opacity-50"
+                      >
+                        {attachingGlb ? <Loader2 className="h-3 w-3 animate-spin" /> : <Box className="h-3 w-3" />}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
