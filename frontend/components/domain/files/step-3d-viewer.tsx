@@ -661,11 +661,34 @@ function isArticleCandidateName(trimmed: string): boolean {
   return /^\d+([._]\d+)*$/.test(trimmed);
 }
 
-/** Best-guess article for the "➕ add to BOM" action — mirrors `articleMatches`' own fallback: prefer the dash-prefix when present (the far more common "ARTICLE-description" shape), else the full trimmed name. */
+/**
+ * "артикули також до нижнього підкреслення щоб читало наприклад ось так
+ * K00030 а не так K00030_ISO 4017" (2026-10-09): a dash isn't the only
+ * "article, then description" separator CAD exports use — a code without
+ * a dash at all (e.g. "K00030_ISO 4017", a DIN/ISO standard reference
+ * tacked on after the real code) needs the SAME treatment, splitting at
+ * the underscore instead. Whichever of `-`/`_` comes first in the string
+ * wins (a name can well have both, e.g. "K00023-SK Schraube_M 8 x 20...",
+ * where the dash right after the code must still win over the later
+ * underscore inside the description). The one exception: a name already
+ * shaped like a bare numeric article (`isArticleCandidateName`'s own
+ * regex — e.g. "434924_195", "275430.1666_415") is NOT split at all —
+ * confirmed live (2026-10-08) that for those, the underscore is part of
+ * the article's own stable identity, not a description separator.
+ */
+function articleSplitIndex(trimmed: string): number {
+  if (/^\d+([._]\d+)*$/.test(trimmed)) return -1;
+  const dashIndex = trimmed.indexOf('-');
+  const underscoreIndex = trimmed.indexOf('_');
+  const candidates = [dashIndex, underscoreIndex].filter((i) => i > 0);
+  return candidates.length > 0 ? Math.min(...candidates) : -1;
+}
+
+/** Best-guess article for the "➕ add to BOM" action — mirrors `articleMatches`' own fallback: prefer the prefix before the split point (`articleSplitIndex`) when present, else the full trimmed name. */
 function extractArticleCandidate(name: string): string {
   const trimmed = name.trim();
-  const dashIndex = trimmed.indexOf('-');
-  return dashIndex > 0 ? trimmed.slice(0, dashIndex).trim() : trimmed;
+  const splitIndex = articleSplitIndex(trimmed);
+  return splitIndex > 0 ? trimmed.slice(0, splitIndex).trim() : trimmed;
 }
 
 /**
@@ -742,11 +765,11 @@ function mergeDetailedByPositionPrefix(byArticle: Map<string, { nodeId: string; 
   }
 }
 
-/** Rough product-name guess for the "create product" prefill: everything after the article's dash, with CAD-export underscores turned back into spaces — just a starting point the user edits in the create form, not meant to be exact. */
+/** Rough product-name guess for the "create product" prefill: everything after the article's split point (`articleSplitIndex`), with CAD-export underscores turned back into spaces — just a starting point the user edits in the create form, not meant to be exact. */
 function suggestProductName(name: string): string {
   const trimmed = name.trim();
-  const dashIndex = trimmed.indexOf('-');
-  const rest = dashIndex > 0 ? trimmed.slice(dashIndex + 1) : trimmed;
+  const splitIndex = articleSplitIndex(trimmed);
+  const rest = splitIndex > 0 ? trimmed.slice(splitIndex + 1) : trimmed;
   return rest.trim().replace(/_/g, ' ');
 }
 
@@ -758,18 +781,17 @@ function treeHasNames(nodes: ModelTreeNode[]): boolean {
  * A glTF node's name is rarely JUST the article — a real-world example
  * (2026-10-08 user report) is `"278807-Flachstahl_EST;_120_x_..."`:
  * article, then a bare `-` (no surrounding spaces), then the part's own
- * name. Tries the full trimmed name first (covers a node that genuinely
- * IS only the article), then falls back to everything before the FIRST
- * `-` — every real article seen in this app so far uses `_`/`.` instead
- * of `-` internally (e.g. "288171_172_173", "264084.02"), so splitting on
- * the first `-` is a safe, if heuristic, way to isolate it.
+ * name; another (2026-10-09) is `"K00030_ISO 4017"`, same shape but split
+ * on `_` instead. Tries the full trimmed name first (covers a node that
+ * genuinely IS only the article), then falls back to everything before
+ * `articleSplitIndex`'s split point.
  */
 function articleMatches(name: string, bomSet: Set<string>): boolean {
   const trimmed = name.trim();
   if (bomSet.has(trimmed.toUpperCase())) return true;
-  const dashIndex = trimmed.indexOf('-');
-  if (dashIndex > 0) {
-    const prefix = trimmed.slice(0, dashIndex).trim();
+  const splitIndex = articleSplitIndex(trimmed);
+  if (splitIndex > 0) {
+    const prefix = trimmed.slice(0, splitIndex).trim();
     if (bomSet.has(prefix.toUpperCase())) return true;
   }
   return false;
