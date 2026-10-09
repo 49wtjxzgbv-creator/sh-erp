@@ -12,6 +12,7 @@ import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { peekGlbNodeCount, MOBILE_NODE_COUNT_LIMIT } from '@/lib/glb-node-count';
 
 /**
  * Renders a STEP (.step/.stp) or glTF (.glb) CAD file in-browser.
@@ -232,6 +233,24 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       if (sizeBytes != null && sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice()) {
         setState('too-large-for-mobile');
         return;
+      }
+
+      // "так до цього ж працювало і це не тільки на мому телефоні ... а
+      // на всіх" (2026-10-09, real crash report): a real 440158.glb was
+      // only ~10MB — well under the byte-size gate above — but has
+      // 34,257 scene-graph nodes, and crashed right as GLTFLoader finished
+      // building that many THREE.Object3D instances. Byte size alone
+      // doesn't catch this; a cheap Range-request peek at the node count
+      // (see `peekGlbNodeCount` for why this doesn't need the full
+      // download) does. Skipped entirely on desktop — no reason to spend
+      // the extra round trip where the crash risk doesn't exist.
+      if (glbUrl && isMobileDevice()) {
+        const nodeCount = await peekGlbNodeCount(glbUrl);
+        if (cancelled) return;
+        if (nodeCount != null && nodeCount > MOBILE_NODE_COUNT_LIMIT) {
+          setState('too-large-for-mobile');
+          return;
+        }
       }
 
       setState('loading');
