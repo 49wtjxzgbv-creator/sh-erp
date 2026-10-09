@@ -328,11 +328,21 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     const counts = new Map<string, number>();
     if (!bomSet) return counts;
     const set = bomSet;
+    // "а пише 121" (2026-10-09) — same "qtyOverride is authoritative, stray
+    // un-instanced leftovers for an already-locked article don't add
+    // anything" reasoning as `analyzeGlbParts`'s own walk — see its
+    // comment for the full why.
+    const qtyLockedArticles = new Set<string>();
     function walk(nodes: ModelTreeNode[]) {
       for (const node of nodes) {
         if (node.name && isArticleCandidateName(node.name.trim()) && !articleMatches(node.name, set)) {
           const article = extractArticleCandidate(node.name);
-          counts.set(article, (counts.get(article) ?? 0) + (node.qtyOverride ?? 1));
+          if (node.qtyOverride != null) {
+            counts.set(article, node.qtyOverride);
+            qtyLockedArticles.add(article);
+          } else if (!qtyLockedArticles.has(article)) {
+            counts.set(article, (counts.get(article) ?? 0) + 1);
+          }
         }
         walk(node.children);
       }
@@ -1555,14 +1565,29 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const tree = buildTree(group);
 
   const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
+  // "а пише 121" (2026-10-09, real report): `instance()` occasionally
+  // leaves ONE extra node un-batched for a group it otherwise correctly
+  // collapsed (confirmed on a real file — not every node sharing a mesh
+  // with the protected representative actually gets swept into the
+  // batch; gltf-transform's own instancing heuristics have edge cases
+  // this app doesn't need to fully understand to work around). Once a
+  // `qtyOverride`-bearing node is seen for an article, its value is
+  // AUTHORITATIVE — every other node matching that same article (stray
+  // leftovers like the one above) is a counting artifact, not a real
+  // extra instance, and is ignored rather than added on top.
+  const qtyLockedArticles = new Set<string>();
   function walk(nodes: ModelTreeNode[]) {
     for (const node of nodes) {
       if (node.name && isArticleCandidateName(node.name.trim())) {
         const article = extractArticleCandidate(node.name);
-        const existing = byArticle.get(article);
-        const increment = node.qtyOverride ?? 1;
-        if (existing) existing.qty += increment;
-        else byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: increment });
+        if (node.qtyOverride != null) {
+          byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: node.qtyOverride });
+          qtyLockedArticles.add(article);
+        } else if (!qtyLockedArticles.has(article)) {
+          const existing = byArticle.get(article);
+          if (existing) existing.qty += 1;
+          else byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: 1 });
+        }
       }
       walk(node.children);
     }
