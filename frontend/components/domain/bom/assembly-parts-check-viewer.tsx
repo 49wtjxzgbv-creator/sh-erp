@@ -219,8 +219,19 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     return <p className="text-sm text-muted-foreground">{t('partsCheckEmpty')}</p>;
   }
 
-  const inCatalog = parts.filter((p) => p.product);
-  const notInCatalog = parts.filter((p) => !p.product);
+  // "деталі які складаються з одної а є деталі які складаються з
+  // декількох... ті які складаються з декількох то це підвиріб"
+  // (2026-10-09): a candidate whose own subtree has more than one mesh
+  // isn't a simple part — "Створити товар" doesn't make sense for it (a
+  // real example: a node that LOOKED like a plain article turned out to
+  // bundle 184 unrelated fasteners as a CAD-export selection-group, not
+  // one physical thing). Split out into their own section instead of
+  // mixing them into the simple-parts lists; the user decides by hand
+  // whether each one is a real sub-assembly worth its own specification.
+  const simpleParts = parts.filter((p) => p.meshCount <= 1);
+  const multiPieceParts = parts.filter((p) => p.meshCount > 1);
+  const inCatalog = simpleParts.filter((p) => p.product);
+  const notInCatalog = simpleParts.filter((p) => !p.product);
 
   return (
     <div className="space-y-6">
@@ -271,6 +282,37 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
                   >
                     {exportingArticles.has(part.article) ? <Loader2 className="h-3 w-3 animate-spin" /> : tf('createProduct')}
                   </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold">{t('partsCheckAssemblies', { count: multiPieceParts.length })}</h2>
+        <p className="text-xs text-muted-foreground">{t('partsCheckAssembliesHint')}</p>
+        {multiPieceParts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('partsCheckNone')}</p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {multiPieceParts.map((part) => (
+              <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
+                <PartThumb part={part} />
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium" title={part.article}>{part.article}</p>
+                  <p className="truncate text-xs text-muted-foreground" title={part.name}>{part.name}</p>
+                  <p className="text-xs text-muted-foreground">{t('partsCheckMeshCount', { count: part.meshCount })}</p>
+                </div>
+                {!readOnly && (
+                  <a
+                    href="/bom/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50"
+                  >
+                    {t('partsCheckCreateAssembly')}
+                  </a>
                 )}
               </li>
             ))}

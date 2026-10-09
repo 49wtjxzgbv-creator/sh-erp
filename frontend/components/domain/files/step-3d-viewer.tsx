@@ -1269,6 +1269,19 @@ export interface GlbPartAnalysis {
   photoDataUrl: string | null;
   /** This one instance's own solid volume in mm³ (see `computeMeshVolume`) — for the material/weight picker in the create-product flow. `null` only if the node somehow has no mesh geometry. */
   volumeMm3: number | null;
+  /**
+   * "деталі які складаються з одної а є деталі які складаються з
+   * декількох... ті які складаються з декількох то це підвиріб"
+   * (2026-10-09): how many distinct meshes sit under this candidate's own
+   * subtree. A real example from a live file: a node named like a plain
+   * article ("437908_46") turned out to have 184 CHILDREN of its own —
+   * not one screw, but a CAD-export selection-group bundling dozens of
+   * unrelated fasteners under one (largely accidental) name. `1` is the
+   * overwhelming common case (a real single part); the caller uses
+   * `> 1` to split these into their own "Складові вузли" section instead
+   * of offering "Створити товар" on something that isn't a simple part.
+   */
+  meshCount: number;
 }
 
 /**
@@ -1428,7 +1441,8 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
       const target = findByTreeId(group, part.nodeId);
       const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
       const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
-      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3 };
+      const meshCount = target ? meshesUnder(target).length : 0;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount };
     })
     .sort((a, b) => a.article.localeCompare(b.article));
 
