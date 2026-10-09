@@ -110,13 +110,30 @@ async function buildOptimizedDoc(io, inputBytes, simplifyFirst, label) {
 
   const seenArticles = new Set();
   const representativeNodes = [];
+  const articleCounts = new Map();
   for (const node of allNodes) {
     const name = (node.getName() || '').trim();
     if (!name || !isArticleCandidateName(name)) continue;
     const article = extractArticleCandidate(name);
+    articleCounts.set(article, (articleCounts.get(article) ?? 0) + 1);
     if (seenArticles.has(article)) continue;
     seenArticles.add(article);
     representativeNodes.push(node);
+  }
+
+  // "відображає неправильно потрібну кількість товарів" (2026-10-09):
+  // instancing below collapses every OTHER occurrence of a repeated part
+  // into an anonymous, unnamed batch — so by the time the client walks
+  // the resulting tree counting same-named nodes (the ONLY way it had to
+  // recover "how many of this part"), only this one representative is
+  // left and the count always comes out to 1. Stamping the real original
+  // count into this node's own glTF `extras` survives instancing (it's
+  // never touched after this), and three.js's GLTFLoader merges `extras`
+  // straight into `object.userData` — see `ModelTreeNode.qtyOverride`
+  // (step-3d-viewer.tsx) for the client-side read.
+  for (const node of representativeNodes) {
+    const article = extractArticleCandidate((node.getName() || '').trim());
+    node.setExtras({ ...node.getExtras(), shQty: articleCounts.get(article) ?? 1 });
   }
 
   const { dedup, instance } = require('@gltf-transform/functions');

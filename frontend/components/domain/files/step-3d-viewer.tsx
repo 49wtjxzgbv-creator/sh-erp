@@ -142,6 +142,22 @@ interface ModelTreeNode {
   name: string;
   isLeaf: boolean;
   children: ModelTreeNode[];
+  /**
+   * "відображає неправильно потрібну кількість товарів" (2026-10-09):
+   * GlbOptimizationService's instancing collapses every duplicate
+   * occurrence of a repeated part into ONE surviving named node (the
+   * rest become anonymous instance-buffer entries — see
+   * glb-optimize-child.js's own header comment) — so simply counting how
+   * many tree nodes share an article name, which used to equal the real
+   * quantity, now always comes out to 1 for an optimized file. The
+   * backend stamps the real original count onto that one surviving
+   * node's glTF `extras` (`shQty`) before instancing runs; GLTFLoader
+   * merges `extras` straight into `object.userData` (confirmed in its own
+   * source), so it's just read through here. `undefined` for anything
+   * that was never optimized — every qty-counting walk below falls back
+   * to its original "count matching nodes" behavior in that case.
+   */
+  qtyOverride?: number;
 }
 
 interface SceneApi {
@@ -316,7 +332,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       for (const node of nodes) {
         if (node.name && isArticleCandidateName(node.name.trim()) && !articleMatches(node.name, set)) {
           const article = extractArticleCandidate(node.name);
-          counts.set(article, (counts.get(article) ?? 0) + 1);
+          counts.set(article, (counts.get(article) ?? 0) + (node.qtyOverride ?? 1));
         }
         walk(node.children);
       }
@@ -784,11 +800,13 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
       object.material = Array.isArray(object.material) ? object.material.map((m) => m.clone()) : object.material.clone();
     }
     const originalName = typeof object.userData.name === 'string' ? object.userData.name : undefined;
+    const qtyOverride = typeof object.userData.shQty === 'number' ? object.userData.shQty : undefined;
     return {
       id,
       name: originalName ?? object.name ?? '',
       isLeaf: object.children.length === 0,
       children: object.children.map(walk),
+      qtyOverride,
     };
   }
   return group.children.map(walk);
@@ -1542,8 +1560,9 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
       if (node.name && isArticleCandidateName(node.name.trim())) {
         const article = extractArticleCandidate(node.name);
         const existing = byArticle.get(article);
-        if (existing) existing.qty += 1;
-        else byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: 1 });
+        const increment = node.qtyOverride ?? 1;
+        if (existing) existing.qty += increment;
+        else byArticle.set(article, { nodeId: node.id, article, name: node.name, qty: increment });
       }
       walk(node.children);
     }
