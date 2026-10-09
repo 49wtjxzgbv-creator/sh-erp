@@ -45,7 +45,7 @@ export class CreatePresignedUploadDto {
   @ApiProperty({ example: 245_760, description: 'Bytes. Enforced again at confirm time against R2 HeadObject.' })
   @IsInt()
   @Min(1)
-  @Max(100 * 1024 * 1024) // 100MB ceiling — generous for QC/assembly photos and drawings, well under R2's own limits
+  @Max(200 * 1024 * 1024) // 200MB ceiling (2026-10-09, raised from 100MB — a real assembly .glb came in at ~105MB) — still well under R2's own limits
   sizeBytes!: number;
 
   @ApiProperty({ required: false, default: false, description: 'true for branding assets that must be visible pre-login.' })

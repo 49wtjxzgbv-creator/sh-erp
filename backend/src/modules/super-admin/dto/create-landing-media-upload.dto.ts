@@ -16,6 +16,6 @@ export class CreateLandingMediaUploadDto {
   @ApiProperty({ example: 245_760, description: 'Bytes. Enforced again at confirm time against R2 HeadObject.' })
   @IsInt()
   @Min(1)
-  @Max(20 * 1024 * 1024) // 20MB ceiling — generous for a full-page screenshot PNG, well below files module's 100MB (marketing images, not drawings/videos)
+  @Max(20 * 1024 * 1024) // 20MB ceiling — generous for a full-page screenshot PNG, well below files module's 200MB (marketing images, not drawings/videos)
   sizeBytes!: number;
 }
