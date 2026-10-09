@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
@@ -120,7 +119,6 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const [updatingPhotoArticles, setUpdatingPhotoArticles] = useState<Set<string>>(new Set());
   const [attachingGlbArticles, setAttachingGlbArticles] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
-  const router = useRouter();
 
   // "можна ще окрім фото додавати gbl до існуючих товарів в яких gbl
   // відсутній" (2026-10-08): one batch request for every matched product's
@@ -168,9 +166,14 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     }
   }
 
+  // "коли там натискаємо створити специфікацію то відкривай в новій
+  // вкладці а не в цій самій" (2026-10-09): this check-viewer tab stays
+  // open (its own `analysisRef`-held model is what the NEXT "Створити
+  // специфікацію" click would reuse) so the just-created assembly opens
+  // alongside it instead of navigating the current tab away.
   async function handleAssemblyCreated(assembly: Assembly) {
     await assemblyDialogProps.onCreated(assembly);
-    router.push(`/bom/${assembly.id}/components`);
+    window.open(`/bom/${assembly.id}/components`, '_blank');
   }
 
   // The one-time `analyzeGlbParts` + catalog-resolution pass (the effect

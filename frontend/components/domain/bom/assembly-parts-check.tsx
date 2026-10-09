@@ -20,6 +20,14 @@ export interface AssemblyPartsCheckProps {
   readOnly?: boolean;
 }
 
+// Same guard, same threshold, as `Step3DViewer`'s own `MOBILE_SIZE_LIMIT_BYTES`/`isMobileDevice`
+// (step-3d-viewer.tsx) — duplicated rather than imported so this tab's static bundle doesn't
+// pull in three.js just to decide whether to even lazy-load the heavy viewer below.
+const MOBILE_SIZE_LIMIT_BYTES = 40 * 1024 * 1024;
+function isMobileDevice(): boolean {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 /**
  * "потрібно в специфікації щоб кожен раз не відкривати glb файл а була
  * вкладка аналізувати де весь склад прописаний" (2026-10-08): a dedicated
@@ -56,6 +64,9 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
   }
   if (!glbUrl) {
     return <p className="text-sm text-muted-foreground">{t('partsCheckConverting')}</p>;
+  }
+  if (modelDoc.sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice()) {
+    return <p className="text-sm text-muted-foreground">{t('partsCheckTooLargeForMobile')}</p>;
   }
 
   return <AssemblyPartsCheckViewer assemblyId={assemblyId} glbUrl={glbUrl} readOnly={readOnly} />;

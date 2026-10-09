@@ -133,9 +133,30 @@ export interface Step3DViewerProps {
     glb: ArrayBuffer | null,
     volumeMm3: number | null,
   ) => void;
+  /**
+   * "з телефона не завантажується модель... сторінка просто зависає або
+   * перезавантажується" (2026-10-09): a big assembly .glb (seen in
+   * production at ~105MB) decodes into geometry + textures that, held in
+   * memory on top of everything else the page already uses, blows past
+   * mobile Safari/Chrome's much lower per-tab memory ceiling — the OS
+   * kills the tab outright, which can't be caught as a JS error (there's
+   * nothing to `catch`, the page just goes blank/reloads). Passing the
+   * file's own size lets `Step3DViewer` refuse up front on a phone instead
+   * of attempting a load that's liable to crash the tab. Omit to skip this
+   * guard entirely (e.g. callers that don't have the size handy).
+   */
+  sizeBytes?: number;
 }
 
-type ViewerState = 'loading' | 'ready' | 'error';
+type ViewerState = 'loading' | 'ready' | 'error' | 'too-large-for-mobile';
+
+/** Phones/tablets only (not just "narrow window" — a resized desktop window shouldn't trip this) — see `sizeBytes` prop for why. */
+function isMobileDevice(): boolean {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+/** Conservative — comfortably under the memory budgets that real mobile crashes (a ~105MB file) came in well above; ordinary assembly .glb files are nowhere near this. */
+const MOBILE_SIZE_LIMIT_BYTES = 40 * 1024 * 1024;
 
 interface ModelTreeNode {
   id: string;
@@ -171,7 +192,7 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct, sizeBytes }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -194,6 +215,11 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     async function init() {
       const container = containerRef.current;
       if (!container) return;
+
+      if (sizeBytes != null && sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice()) {
+        setState('too-large-for-mobile');
+        return;
+      }
 
       setState('loading');
       setTree([]);
@@ -225,7 +251,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       disposeScene?.();
       sceneApiRef.current = null;
     };
-  }, [url, glbUrl]);
+  }, [url, glbUrl, sizeBytes]);
 
   useEffect(() => {
     sceneApiRef.current?.setSelected(selectedId);
@@ -401,6 +427,11 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
         )}
         {state === 'error' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('modelLoadError')}</p>
+        )}
+        {state === 'too-large-for-mobile' && (
+          <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
+            {t('modelTooLargeForMobile')}
+          </p>
         )}
       </div>
       {showTree && (
@@ -1532,6 +1563,11 @@ export interface GlbModelAnalysis {
  * parsed model) — kept alive, captured in the returned `exportPartGlb`
  * closure, until the caller calls `dispose()` itself.
  */
+/** Hands control back to the browser for one macrotask — see the call site in `analyzeGlbParts` for why. */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis> {
   const group = await loadGlb(glbUrl);
   const tree = buildTree(group);
@@ -1577,17 +1613,29 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
 
-  const parts: GlbPartAnalysis[] = partsMeta
-    .map((part) => {
-      const target = findByTreeId(group, part.nodeId);
-      const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
-      const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
-      const meshCount = target ? meshesUnder(target).length : 0;
-      const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
-      const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
-      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 };
-    })
-    .sort((a, b) => a.article.localeCompare(b.article));
+  // "коли завантажуються деталі 3d то браузер вибиває що сайт не
+  // відповідає" (2026-10-09, real mobile report): this used to be one
+  // synchronous `.map()` doing an offscreen WebGL render + readback PLUS
+  // exact whole-mesh triangle math (volume/area/dimensions) for EVERY
+  // distinct part back to back — for a real assembly with dozens of
+  // parts this blocks the main thread continuously for long enough that
+  // mobile Chrome's hang watchdog offers to close the tab (weaker mobile
+  // CPUs/GPUs make it far worse than on desktop, where the same loop just
+  // felt like a brief stall). Yielding one macrotask between parts lets
+  // the browser service input/paint/the hang-watchdog in between, without
+  // changing what gets computed.
+  const parts: GlbPartAnalysis[] = [];
+  for (const part of partsMeta) {
+    const target = findByTreeId(group, part.nodeId);
+    const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
+    const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
+    const meshCount = target ? meshesUnder(target).length : 0;
+    const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
+    const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
+    parts.push({ nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 });
+    await yieldToMain();
+  }
+  parts.sort((a, b) => a.article.localeCompare(b.article));
 
   let disposed = false;
   async function exportPartGlb(nodeId: string): Promise<ArrayBuffer | null> {
