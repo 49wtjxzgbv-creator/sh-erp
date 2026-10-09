@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -149,6 +149,8 @@ interface SceneApi {
   setSelected: (id: string | null) => void;
   /** "додай кнопку приховати все і залишити показ саме цієї деталі" (2026-10-08) — hides every mesh except the current selection's own; re-applies automatically if the selection changes while still enabled. No-op (shows everything) whenever nothing is selected. */
   setIsolated: (enabled: boolean) => void;
+  /** "просто подивитись анімацію" (2026-10-09) — eases every top-level node out along its own direction from the assembly's center (`true`) or back to its real assembled position (`false`). Idempotent — calling with the same value mid-animation just lets the current tween keep going. */
+  setExploded: (enabled: boolean) => void;
   captureSnapshot: (id: string) => string | null;
   exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
   computeVolume: (id: string) => number | null;
@@ -177,6 +179,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isolateMode, setIsolateMode] = useState(false);
+  const [explodedMode, setExplodedMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
@@ -196,6 +199,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       setTree([]);
       setSelectedId(null);
       setIsolateMode(false);
+      setExplodedMode(false);
       try {
         const group = glbUrl ? await loadGlb(glbUrl) : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
@@ -230,6 +234,10 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   useEffect(() => {
     sceneApiRef.current?.setIsolated(isolateMode);
   }, [isolateMode]);
+
+  useEffect(() => {
+    sceneApiRef.current?.setExploded(explodedMode);
+  }, [explodedMode]);
 
   // "коли ми відкриваємо у специфікації gbl файл і там він складається з
   // багатьох позицій додай пошук... ввожу код і підсвічується потрібна
@@ -372,6 +380,20 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
           >
             {isolateMode ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
             {isolateMode ? t('showAllParts') : t('isolatePart')}
+          </button>
+        )}
+        {state === 'ready' && (
+          <button
+            type="button"
+            onClick={() => setExplodedMode((v) => !v)}
+            className={cn(
+              'absolute left-2 flex items-center gap-1.5 rounded border border-border bg-background/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-secondary/50',
+              selectedId ? 'top-10' : 'top-2',
+              explodedMode && 'border-primary text-primary',
+            )}
+          >
+            {explodedMode ? <Shrink className="h-3 w-3" /> : <Expand className="h-3 w-3" />}
+            {explodedMode ? t('assembleModel') : t('explodeModel')}
           </button>
         )}
         {state === 'loading' && (
@@ -892,6 +914,33 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     };
   }
 
+  // "просто подивитись анімацію" (2026-10-09): every direct child of
+  // `group` (the CAD export's own top-level grouping — confirmed on both
+  // real test files to be a sane, human-scale count: 125 and 310, not the
+  // tens of thousands a full per-mesh explode would churn through) eases
+  // outward along its OWN direction from the assembly's center (`group`
+  // is already re-centered on that center a few lines up, at `group.
+  // position.sub(center)`, so a child's own local `.position` IS already
+  // that direction) and back. `explodeT` (0 = assembled, 1 = fully
+  // exploded) is the single source of truth `setExploded` tweens toward —
+  // computed once, lazily, on first use (no need to redo this if the
+  // user toggles back and forth without reselecting anything).
+  const EXPLODE_DISTANCE_FACTOR = 0.6;
+  let explodeTargets: { object: THREE.Object3D; assembled: THREE.Vector3; exploded: THREE.Vector3 }[] | null = null;
+  let explodeT = 0;
+  let explodeAnimation: { from: number; to: number; start: number; duration: number } | null = null;
+
+  function setExploded(enabled: boolean) {
+    if (!explodeTargets) {
+      explodeTargets = group.children.map((object) => {
+        const assembled = object.position.clone();
+        const dir = assembled.lengthSq() > 1e-9 ? assembled.clone().normalize() : new THREE.Vector3(0, 1, 0);
+        return { object, assembled, exploded: assembled.clone().addScaledVector(dir, maxDim * EXPLODE_DISTANCE_FACTOR) };
+      });
+    }
+    explodeAnimation = { from: explodeT, to: enabled ? 1 : 0, start: performance.now(), duration: 900 };
+  }
+
   let animationFrame: number | undefined;
   function animate() {
     animationFrame = requestAnimationFrame(animate);
@@ -902,6 +951,16 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
       camera.position.lerpVectors(flyAnimation.fromPos, flyAnimation.toPos, eased);
       controls.target.lerpVectors(flyAnimation.fromTarget, flyAnimation.toTarget, eased);
       if (t >= 1) flyAnimation = null;
+    }
+    if (explodeAnimation) {
+      const elapsed = (performance.now() - explodeAnimation.start) / explodeAnimation.duration;
+      const t = Math.min(1, elapsed);
+      const eased = 1 - (1 - t) ** 3;
+      explodeT = explodeAnimation.from + (explodeAnimation.to - explodeAnimation.from) * eased;
+      if (explodeTargets) {
+        for (const target of explodeTargets) target.object.position.lerpVectors(target.assembled, target.exploded, explodeT);
+      }
+      if (t >= 1) explodeAnimation = null;
     }
     controls.update();
     renderer.render(scene, camera);
@@ -1036,6 +1095,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
   return {
     setSelected,
     setIsolated,
+    setExploded,
     captureSnapshot,
     exportPartGlb,
     computeVolume,

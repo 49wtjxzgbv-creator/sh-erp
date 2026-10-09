@@ -1524,7 +1524,9 @@
     "searchNext": "Наступний збіг",
     "searchClear": "Очистити пошук",
     "isolatePart": "Показати лише цю деталь",
-    "showAllParts": "Показати всі деталі"
+    "showAllParts": "Показати всі деталі",
+    "explodeModel": "Розібрати збірку",
+    "assembleModel": "Зібрати назад"
   },
   "supplierPortal": {
     "loginTitle": "Портал постачальника",
