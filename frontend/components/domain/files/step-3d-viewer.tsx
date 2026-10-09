@@ -314,7 +314,6 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       }
     }
     walk(tree);
-    mergeByPositionPrefix(counts);
     return counts;
   }, [tree, bomSet]);
 
@@ -662,22 +661,24 @@ function isArticleCandidateName(trimmed: string): boolean {
 }
 
 /**
- * "артикули також до нижнього підкреслення щоб читало наприклад ось так
- * K00030 а не так K00030_ISO 4017" (2026-10-09): a dash isn't the only
- * "article, then description" separator CAD exports use — a code without
- * a dash at all (e.g. "K00030_ISO 4017", a DIN/ISO standard reference
- * tacked on after the real code) needs the SAME treatment, splitting at
- * the underscore instead. Whichever of `-`/`_` comes first in the string
- * wins (a name can well have both, e.g. "K00023-SK Schraube_M 8 x 20...",
- * where the dash right after the code must still win over the later
- * underscore inside the description). The one exception: a name already
- * shaped like a bare numeric article (`isArticleCandidateName`'s own
- * regex — e.g. "434924_195", "275430.1666_415") is NOT split at all —
- * confirmed live (2026-10-08) that for those, the underscore is part of
- * the article's own stable identity, not a description separator.
+ * "та ж логіка така що якщо є _ то артикул до нього а підкреслення і все
+ * що далі то не артикул" (2026-10-09, user-confirmed, explicitly overriding
+ * the earlier narrower rule): whichever of `-`/`_` comes FIRST in the
+ * string is the split point, full stop — no exception for a name shaped
+ * like a bare numeric article. A name can have both separators (e.g.
+ * "K00023-SK Schraube_M 8 x 20..."), where the dash right after the code
+ * must still win over the later underscore inside the description.
+ *
+ * This is deliberately simpler than (and supersedes) an earlier version
+ * that special-cased "434924_195"-shaped names to NOT split, reasoning
+ * that the underscore was part of a stable, repeating identity there —
+ * the user confirmed they want the blanket rule anyway, even knowing a
+ * few products already created today under the old rule (article
+ * "434924_195" itself, plus "434920_211"/"440167_421"/"275430.1666_415")
+ * will no longer match their own already-stored article once this
+ * extracts "434924" instead.
  */
 function articleSplitIndex(trimmed: string): number {
-  if (/^\d+([._]\d+)*$/.test(trimmed)) return -1;
   const dashIndex = trimmed.indexOf('-');
   const underscoreIndex = trimmed.indexOf('_');
   const candidates = [dashIndex, underscoreIndex].filter((i) => i > 0);
@@ -689,80 +690,6 @@ function extractArticleCandidate(name: string): string {
   const trimmed = name.trim();
   const splitIndex = articleSplitIndex(trimmed);
   return splitIndex > 0 ? trimmed.slice(0, splitIndex).trim() : trimmed;
-}
-
-/**
- * For a dash-free numeric article like "434743_118": is the trailing
- * `_NNN` the article's own stable identity, or a per-position tag from the
- * original drawing (2026-10-08 user report: "434743_118 434743_118
- * 434743_120 а позиції товари такого плану")? The name alone can't say —
- * "434924_195"/"440167_421" repeat that exact full string on every one of
- * their instances (a real, stable article), while "434743_118"/"_119"/
- * "_120"/"_121"/"_45" and "437908_46".."437908_125" each occur ONLY ONCE,
- * as one of many distinct siblings sharing a prefix (a classic CAD-export
- * "поз." position number, not the article). So this only returns a
- * candidate prefix — `mergeByPositionPrefix` below decides whether to
- * actually use it, based on whether that prefix turned out to have more
- * than one distinct full name under it.
- */
-function positionPrefixOf(article: string): string | null {
-  const match = article.match(/^(\d+(?:[._]\d+)*)_(\d+)$/);
-  return match ? match[1] : null;
-}
-
-/**
- * Collapses a `article -> qty` tally (already counted by exact full name)
- * down to one entry per `positionPrefixOf` prefix — but ONLY for a prefix
- * that turned out to have more than one distinct full name under it (the
- * actual signal that the trailing `_NNN` was a position tag, not part of
- * the article — see `positionPrefixOf`'s own header comment). A prefix
- * with just one distinct full name (however many times THAT exact name
- * repeats, e.g. "434924_195" ×60) is left exactly as already counted,
- * whole name and all — this function only ever merges, never splits.
- */
-function mergeByPositionPrefix(counts: Map<string, number>): void {
-  const groups = new Map<string, string[]>();
-  for (const article of counts.keys()) {
-    const prefix = positionPrefixOf(article);
-    if (!prefix) continue;
-    const members = groups.get(prefix) ?? [];
-    members.push(article);
-    groups.set(prefix, members);
-  }
-  for (const [prefix, members] of groups) {
-    if (members.length < 2) continue;
-    let total = 0;
-    for (const member of members) {
-      total += counts.get(member) ?? 0;
-      counts.delete(member);
-    }
-    counts.set(prefix, total);
-  }
-}
-
-/** Same merge as `mergeByPositionPrefix` above, over `analyzeGlbParts`'s own richer per-article record (nodeId/name alongside qty) instead of a bare count. The merged entry keeps one member's nodeId (so its photo/volume still stand in for the whole family — every instance under a position-tag family is the same physical part), but both `article` AND `name` become the bare prefix — showing the original single instance's own "_118"-suffixed name next to a now-different article would be confusing. */
-function mergeDetailedByPositionPrefix(byArticle: Map<string, { nodeId: string; article: string; name: string; qty: number }>): void {
-  const groups = new Map<string, string[]>();
-  for (const article of byArticle.keys()) {
-    const prefix = positionPrefixOf(article);
-    if (!prefix) continue;
-    const members = groups.get(prefix) ?? [];
-    members.push(article);
-    groups.set(prefix, members);
-  }
-  for (const [prefix, members] of groups) {
-    if (members.length < 2) continue;
-    let qty = 0;
-    let representative: { nodeId: string; article: string; name: string; qty: number } | undefined;
-    for (const member of members) {
-      const entry = byArticle.get(member);
-      if (!entry) continue;
-      qty += entry.qty;
-      if (!representative) representative = entry;
-      byArticle.delete(member);
-    }
-    if (representative) byArticle.set(prefix, { ...representative, article: prefix, name: prefix, qty });
-  }
 }
 
 /** Rough product-name guess for the "create product" prefill: everything after the article's split point (`articleSplitIndex`), with CAD-export underscores turned back into spaces — just a starting point the user edits in the create form, not meant to be exact. */
@@ -1470,7 +1397,6 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     }
   }
   walk(tree);
-  mergeDetailedByPositionPrefix(byArticle);
 
   const partsMeta = Array.from(byArticle.values());
   if (partsMeta.length === 0) {
