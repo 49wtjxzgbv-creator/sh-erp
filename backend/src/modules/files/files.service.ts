@@ -542,6 +542,17 @@ export class FilesService {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
+        // "додатково спростити геометрію... тільки якщо переглядати на
+        // телефоні" (2026-10-09): only set past
+        // GlbOptimizationService's own MOBILE_SIMPLIFY_THRESHOLD_BYTES —
+        // the client picks this over `optimizedDownloadUrl` ONLY on a
+        // mobile device, so a computer always keeps full detail.
+        mobileOptimizedDownloadUrl:
+          file.mobileOptimizationStatus === 'DONE' && file.mobileOptimizedStorageKey
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.mobileOptimizedStorageKey }), {
+                expiresIn: DOWNLOAD_URL_TTL_SECONDS,
+              })
+            : undefined,
       })),
     );
 

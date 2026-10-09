@@ -29,23 +29,39 @@ import { GlbOptimizationService } from '../src/modules/files/glb-optimization.se
 
 const APPLY = process.env.APPLY === '1';
 const GLB_EXTENSION = /\.glb$/i;
+// Same number as GlbOptimizationService's own MOBILE_SIMPLIFY_THRESHOLD_BYTES — duplicated rather than imported, same "small constant, not worth a shared module for one script" reasoning as elsewhere in this codebase.
+const MOBILE_SIMPLIFY_THRESHOLD_BYTES = 70 * 1024 * 1024;
 
 async function main() {
   const prisma = new PrismaClient();
   const glbOptimization = new GlbOptimizationService(prisma as any);
   try {
+    // "додатково спростити геометрію для файлів більше 70 мб" (2026-10-09):
+    // also re-visits a file whose desktop pass already finished (DONE)
+    // but is big enough to need a mobile variant it never got — real
+    // case: 447873.glb was optimized before this threshold/field existed.
+    // `glbOptimization.optimize()` is idempotent (always rebuilds both
+    // outputs from the original), so re-running it here is safe even for
+    // files that already have a desktop variant.
     const candidates = await prisma.fileAsset.findMany({
-      where: { originalName: { endsWith: '.glb', mode: 'insensitive' }, optimizationStatus: 'NONE', deletedAt: null },
+      where: {
+        originalName: { endsWith: '.glb', mode: 'insensitive' },
+        deletedAt: null,
+        OR: [
+          { optimizationStatus: 'NONE' },
+          { sizeBytes: { gt: MOBILE_SIMPLIFY_THRESHOLD_BYTES }, mobileOptimizationStatus: 'NONE' },
+        ],
+      },
     });
 
-    console.log(`Found ${candidates.length} un-optimized .glb file(s).`);
+    console.log(`Found ${candidates.length} .glb file(s) needing (re-)optimization.`);
     for (const file of candidates) {
       if (!GLB_EXTENSION.test(file.originalName)) continue; // belt-and-suspenders against a case Prisma's `endsWith` matched oddly
       console.log(`  ${file.originalName} (${file.id}, company ${file.companyId}, ${(file.sizeBytes / 1024 / 1024).toFixed(1)}MB)`);
       if (APPLY) {
         await glbOptimization.optimize(file);
         const updated = await prisma.fileAsset.findUnique({ where: { id: file.id } });
-        console.log(`    -> ${updated?.optimizationStatus}`);
+        console.log(`    -> optimizationStatus=${updated?.optimizationStatus} mobileOptimizationStatus=${updated?.mobileOptimizationStatus}`);
       }
     }
     if (!APPLY) console.log('DRY RUN — re-run with APPLY=1 to actually optimize.');

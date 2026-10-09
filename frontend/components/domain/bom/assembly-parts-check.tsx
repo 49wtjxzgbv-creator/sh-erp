@@ -15,6 +15,11 @@ function ViewerLoading() {
   return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
 }
 
+/** "тільки якщо переглядати на телефоні" (2026-10-09) — same duplicated helper as `entity-documents-field.tsx`'s own copy (see that file for why: avoids pulling the heavy three.js chunk in just to decide this). */
+function isMobileDevice(): boolean {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 export interface AssemblyPartsCheckProps {
   assemblyId: string;
   readOnly?: boolean;
@@ -48,7 +53,7 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
   const modelDoc = files.find((f) => is3DModelFile(f.originalName));
   const glbUrl = modelDoc
     ? isGlbFile(modelDoc.originalName)
-      ? (modelDoc.optimizedDownloadUrl ?? modelDoc.downloadUrl)
+      ? ((isMobileDevice() && modelDoc.mobileOptimizedDownloadUrl) || modelDoc.optimizedDownloadUrl || modelDoc.downloadUrl)
       : modelDoc.convertedDownloadUrl
     : undefined;
 

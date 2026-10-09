@@ -20,6 +20,18 @@ const MAX_OPTIMIZATION_RSS_BYTES = 2.5 * 1024 * 1024 * 1024;
 const MEMORY_CHECK_INTERVAL_MS = 3000;
 
 /**
+ * "додатково спростити геометрію для файлів більше 70 мб і тільки якщо
+ * переглядати на телефоні" (2026-10-09): past this size, instancing alone
+ * isn't reliably enough — see `glb-optimize-child.js`'s own header
+ * comment for the real 106MB/1,718-unique-mesh file that confirmed it
+ * (instancing alone: 35,586 objects, still too many). Below this
+ * threshold, a file is assumed safe on mobile with instancing alone, so
+ * no lossy mobile variant is generated for it at all — matches the user's
+ * explicit "only simplify above 70MB, never on desktop" scoping.
+ */
+const MOBILE_SIMPLIFY_THRESHOLD_BYTES = 70 * 1024 * 1024;
+
+/**
  * "ціль щоб з телефона також відкривалось" (2026-10-09): a directly-
  * uploaded .glb from a CAD export can have tens of thousands of
  * scene-graph nodes despite a modest byte size — a real file came in at
@@ -58,33 +70,59 @@ export class GlbOptimizationService {
     return GLB_EXTENSION.test(originalName);
   }
 
-  /** Fire-and-forget entry point — see class header comment. Never throws; every failure path ends in a FAILED row update instead, leaving the original .glb as the only (still fully usable) version. */
+  /** Fire-and-forget entry point — see class header comment. Never throws; every failure path ends in a FAILED row update instead, leaving the original .glb (and, for optimizationStatus, the already-written non-mobile variant) as the only (still fully usable) version. */
   async optimize(fileAsset: FileAsset): Promise<void> {
-    const { id, companyId, storageKey, originalName } = fileAsset;
+    const { id, companyId, storageKey, originalName, sizeBytes } = fileAsset;
+    const needsMobileVariant = sizeBytes > MOBILE_SIMPLIFY_THRESHOLD_BYTES;
     let workDir: string | undefined;
     try {
-      await this.setStatus(companyId, id, 'PENDING');
+      await this.setStatus(companyId, id, 'optimizationStatus', 'optimizedStorageKey', 'PENDING');
+      if (needsMobileVariant) await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'PENDING');
 
       workDir = await mkdtemp(join(tmpdir(), 'glb-optimize-'));
       const inputPath = join(workDir, 'input.glb');
       const outputPath = join(workDir, 'output.glb');
+      const mobileOutputPath = needsMobileVariant ? join(workDir, 'output.mobile.glb') : undefined;
 
       const inputBytes = await this.getObjectBytes(storageKey);
       await writeFile(inputPath, inputBytes);
 
-      await runOptimizeChild(inputPath, outputPath);
+      await runOptimizeChild(inputPath, outputPath, mobileOutputPath);
       const optimized = await readFile(outputPath);
 
       const optimizedStorageKey = storageKey.replace(GLB_EXTENSION, '') + '.optimized.glb';
       await this.r2.send(
         new PutObjectCommand({ Bucket: R2_BUCKET, Key: optimizedStorageKey, Body: optimized, ContentType: 'model/gltf-binary' }),
       );
-
-      await this.setStatus(companyId, id, 'DONE', optimizedStorageKey);
+      await this.setStatus(companyId, id, 'optimizationStatus', 'optimizedStorageKey', 'DONE', optimizedStorageKey);
       this.logger.log(`Optimized ${originalName} (${id}): ${inputBytes.byteLength} -> ${optimized.byteLength} bytes.`);
+
+      // Own try/catch, deliberately separate from the block above: both
+      // output files come from the SAME child process run, so a failure
+      // here can only be the follow-up R2 upload — the desktop variant
+      // above already succeeded and must keep its own DONE status, not
+      // get dragged down to FAILED by a problem that's purely the mobile
+      // variant's.
+      if (mobileOutputPath) {
+        try {
+          const mobileOptimized = await readFile(mobileOutputPath);
+          const mobileOptimizedStorageKey = storageKey.replace(GLB_EXTENSION, '') + '.mobile.glb';
+          await this.r2.send(
+            new PutObjectCommand({ Bucket: R2_BUCKET, Key: mobileOptimizedStorageKey, Body: mobileOptimized, ContentType: 'model/gltf-binary' }),
+          );
+          await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'DONE', mobileOptimizedStorageKey);
+          this.logger.log(`Optimized ${originalName} (${id}) for mobile: ${inputBytes.byteLength} -> ${mobileOptimized.byteLength} bytes.`);
+        } catch (err) {
+          this.logger.error(`Failed to upload mobile-optimized ${originalName} (${id}): ${err instanceof Error ? err.message : String(err)}`);
+          await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'FAILED').catch(() => undefined);
+        }
+      }
     } catch (err) {
       this.logger.error(`Failed to optimize ${originalName} (${id}): ${err instanceof Error ? err.message : String(err)}`);
-      await this.setStatus(companyId, id, 'FAILED').catch(() => undefined);
+      await this.setStatus(companyId, id, 'optimizationStatus', 'optimizedStorageKey', 'FAILED').catch(() => undefined);
+      if (needsMobileVariant) {
+        await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'FAILED').catch(() => undefined);
+      }
     } finally {
       if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -100,18 +138,28 @@ export class GlbOptimizationService {
     return Buffer.concat(chunks);
   }
 
-  /** Same "own transaction, set app.current_company_id directly" pattern as `StepConversionService#setStatus` — see that method's header comment for why (fire-and-forget, no ambient request/userId context). */
+  /**
+   * Same "own transaction, set app.current_company_id directly" pattern as
+   * `StepConversionService#setStatus` — see that method's header comment
+   * for why (fire-and-forget, no ambient request/userId context). Takes
+   * the status/key COLUMN NAMES as parameters (not hardcoded) so this one
+   * method serves both the desktop (`optimizationStatus`/
+   * `optimizedStorageKey`) and mobile (`mobileOptimizationStatus`/
+   * `mobileOptimizedStorageKey`) variants independently.
+   */
   private async setStatus(
     companyId: string,
     fileAssetId: string,
-    optimizationStatus: 'PENDING' | 'DONE' | 'FAILED',
-    optimizedStorageKey?: string,
+    statusField: 'optimizationStatus' | 'mobileOptimizationStatus',
+    keyField: 'optimizedStorageKey' | 'mobileOptimizedStorageKey',
+    status: 'PENDING' | 'DONE' | 'FAILED',
+    storageKey?: string,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyId}'`);
       await tx.fileAsset.update({
         where: { id: fileAssetId },
-        data: { optimizationStatus, ...(optimizedStorageKey ? { optimizedStorageKey } : {}) },
+        data: { [statusField]: status, ...(storageKey ? { [keyField]: storageKey } : {}) },
       });
     });
   }
@@ -124,10 +172,11 @@ export class GlbOptimizationService {
  * `StepConversionService`'s own `runConvertChild`, see that function's
  * header comment for the full reasoning.
  */
-function runOptimizeChild(inputPath: string, outputPath: string): Promise<void> {
+function runOptimizeChild(inputPath: string, outputPath: string, mobileOutputPath?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const childScript = join(__dirname, 'glb-optimize-child.js');
-    const child = spawn(process.execPath, ['--max-old-space-size=4096', childScript, inputPath, outputPath], {
+    const args = [childScript, inputPath, outputPath, ...(mobileOutputPath ? [mobileOutputPath] : [])];
+    const child = spawn(process.execPath, ['--max-old-space-size=4096', ...args], {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
 

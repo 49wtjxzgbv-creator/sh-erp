@@ -633,6 +633,20 @@ model FileAsset {
   optimizationStatus  FileConversionStatus @default(NONE)
   optimizedStorageKey String? // R2 key of the instanced .glb, set once optimizationStatus = DONE
 
+  // "додатково спростити геометрію для файлів більше 70 мб і тільки якщо
+  // переглядати на телефоні" (2026-10-09): instancing alone wasn't enough
+  // for a real, much larger/more-varied assembly (106MB, 1,718 unique
+  // meshes — most nodes aren't repeated fasteners, so dedup+instance only
+  // cut it to 35,586 objects). A THIRD variant, generated only past
+  // MOBILE_SIMPLIFY_THRESHOLD_BYTES, additionally runs lossy mesh
+  // decimation (weld+simplify) before instancing — confirmed on that same
+  // file: 25.1M triangles -> 6.75M (73% smaller), real memory relief on
+  // top of the node-count cut. Desktop never uses this lossy variant —
+  // only optimizedStorageKey — so viewing from a computer always keeps
+  // full detail regardless of file size.
+  mobileOptimizationStatus  FileConversionStatus @default(NONE)
+  mobileOptimizedStorageKey String? // R2 key of the decimated+instanced .glb, set once mobileOptimizationStatus = DONE
+
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 

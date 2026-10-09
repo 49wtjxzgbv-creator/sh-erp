@@ -29,6 +29,11 @@ function DrawingViewerLoading() {
   return <p className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('loadingDrawing')}</p>;
 }
 
+/** "тільки якщо переглядати на телефоні" (2026-10-09) — phones/tablets only, not just a narrow window. Duplicated at each call site that needs it rather than shared, same "avoid pulling this chunk into a lighter bundle" reasoning as elsewhere in this file. */
+function isMobileDevice(): boolean {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 function isStepFile(name: string): boolean {
   return /\.(step|stp)$/i.test(name);
 }
@@ -258,8 +263,18 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 // exists — same geometry, far fewer scene-graph nodes;
                 // falls back to the original while optimization is still
                 // pending/failed, same as every other "server job hasn't
-                // finished yet" fallback in this file.
-                glbUrl={isGlbFile(modelDoc.originalName) ? (modelDoc.optimizedDownloadUrl ?? modelDoc.downloadUrl) : modelDoc.convertedDownloadUrl}
+                // finished yet" fallback in this file. On a PHONE
+                // specifically, "додатково спростити геометрію... тільки
+                // якщо переглядати на телефоні" (2026-10-09) — prefer the
+                // further-decimated mobile variant over even the
+                // instanced-only one, when it exists (only generated past
+                // 70MB — see GlbOptimizationService's own threshold). A
+                // computer never sees this lossy variant.
+                glbUrl={
+                  isGlbFile(modelDoc.originalName)
+                    ? ((isMobileDevice() && modelDoc.mobileOptimizedDownloadUrl) || modelDoc.optimizedDownloadUrl || modelDoc.downloadUrl)
+                    : modelDoc.convertedDownloadUrl
+                }
                 bomArticles={bomArticles}
                 onAddToBom={onAddToBom}
                 onCreateProduct={onCreateProduct}
