@@ -108,7 +108,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
     setProgress(null);
     (async () => {
       try {
-        const analysis = await analyzeGlbParts(glbUrl, (p) => !cancelled && setProgress(p), { lazy });
+        const analysis = await analyzeGlbParts(glbUrl, (p) => !cancelled && setProgress(p), { lazy, sizeBytes });
         if (cancelled) {
           analysis.dispose();
           return;
@@ -128,7 +128,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
       analysisRef.current?.dispose();
       analysisRef.current = null;
     };
-  }, [glbUrl, lazy]);
+  }, [glbUrl, lazy, sizeBytes]);
 
   const { bomArticles } = useAssemblyBomArticles(assemblyId);
   const bomSet = new Set(bomArticles.map((a) => a.trim().toUpperCase()));

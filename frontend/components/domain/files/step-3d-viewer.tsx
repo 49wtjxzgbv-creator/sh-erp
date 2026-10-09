@@ -159,6 +159,17 @@ function isMobileDevice(): boolean {
 /** Conservative — comfortably under the memory budgets that real mobile crashes (a ~105MB file) came in well above; ordinary assembly .glb files are nowhere near this. */
 const MOBILE_SIZE_LIMIT_BYTES = 40 * 1024 * 1024;
 
+/**
+ * "забери ресурс з файлів менше 50мб" (2026-10-09): below this, a file
+ * downloads fast enough that a live percentage isn't worth its cost —
+ * `loadGlb` gets no `onProgress` at all for these (not even the
+ * throttled version), so there isn't a single extra per-chunk event or
+ * re-render during the load, exactly like before the progress bar
+ * existed. Only a file this big or bigger — where the download is slow
+ * enough to actually need the feedback — gets the live percentage UI.
+ */
+export const PROGRESS_UI_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
 interface ModelTreeNode {
   id: string;
   name: string;
@@ -229,9 +240,10 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       setIsolateMode(false);
       setExplodedMode(false);
       setDownloadedBytes(0);
+      const showProgress = sizeBytes != null && sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES;
       try {
         const group = glbUrl
-          ? await loadGlb(glbUrl, (loaded) => !cancelled && setDownloadedBytes(loaded))
+          ? await loadGlb(glbUrl, showProgress ? (loaded) => !cancelled && setDownloadedBytes(loaded) : undefined)
           : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
 
@@ -429,12 +441,16 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
         )}
         {state === 'loading' && (
           <div className="absolute inset-0 flex items-center justify-center px-6">
-            <div className="w-full max-w-xs space-y-2">
-              <p className="text-center text-sm text-muted-foreground">
-                {sizeBytes ? `${t('loadingModel')} ${Math.min(100, Math.round((downloadedBytes / sizeBytes) * 100))}%` : t('loadingModel')}
-              </p>
-              <ProgressBar percent={sizeBytes ? (downloadedBytes / sizeBytes) * 100 : undefined} />
-            </div>
+            {sizeBytes != null && sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES ? (
+              <div className="w-full max-w-xs space-y-2">
+                <p className="text-center text-sm text-muted-foreground">
+                  {t('loadingModel')} {Math.min(100, Math.round((downloadedBytes / sizeBytes) * 100))}%
+                </p>
+                <ProgressBar percent={(downloadedBytes / sizeBytes) * 100} />
+              </div>
+            ) : (
+              <p className="text-center text-sm text-muted-foreground">{t('loadingModel')}</p>
+            )}
           </div>
         )}
         {state === 'error' && (
@@ -1675,10 +1691,16 @@ export type GlbAnalysisProgress = { stage: 'downloading'; loadedBytes: number } 
 export async function analyzeGlbParts(
   glbUrl: string,
   onProgress?: (progress: GlbAnalysisProgress) => void,
-  options?: { lazy?: boolean },
+  options?: { lazy?: boolean; sizeBytes?: number },
 ): Promise<GlbModelAnalysis> {
   const lazy = options?.lazy ?? false;
-  const group = await loadGlb(glbUrl, onProgress ? (loadedBytes) => onProgress({ stage: 'downloading', loadedBytes }) : undefined);
+  // "забери ресурс з файлів менше 50мб" (2026-10-09): below the threshold,
+  // `loadGlb` gets no download-progress callback at all — see
+  // `PROGRESS_UI_THRESHOLD_BYTES`'s own comment. The per-part 'analyzing'
+  // progress below is unaffected either way — it's one event per part,
+  // not per network chunk, so there's nothing to throttle or gate there.
+  const showDownloadProgress = options?.sizeBytes != null && options.sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES;
+  const group = await loadGlb(glbUrl, onProgress && showDownloadProgress ? (loadedBytes) => onProgress({ stage: 'downloading', loadedBytes }) : undefined);
   const tree = buildTree(group);
 
   const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
