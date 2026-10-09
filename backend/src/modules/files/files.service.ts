@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { createR2Client, R2_BUCKET } from './r2-client';
 import { CreatePresignedUploadDto } from './dto/create-presigned-upload.dto';
 import { StepConversionService } from './step-conversion.service';
+import { GlbOptimizationService } from './glb-optimization.service';
 
 const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 const DOWNLOAD_URL_TTL_SECONDS = 60 * 60;
@@ -30,6 +31,7 @@ export class FilesService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly stepConversionService: StepConversionService,
+    private readonly glbOptimizationService: GlbOptimizationService,
   ) {}
 
   /**
@@ -122,6 +124,15 @@ export class FilesService {
     // parse has no business blocking the upload-confirm response.
     if (this.stepConversionService.isStepFile(fileAsset.originalName)) {
       void this.stepConversionService.convert(fileAsset);
+    }
+
+    // "ціль щоб з телефона також відкривалось" (2026-10-09): a directly-
+    // uploaded .glb (not one StepConversionService just produced — those
+    // come from OCCT tessellation, already far more modest in node count
+    // than a real CAD-export .glb) gets the same fire-and-forget treatment
+    // — see GlbOptimizationService's header comment for the full "why".
+    if (this.glbOptimizationService.isGlbFile(fileAsset.originalName)) {
+      void this.glbOptimizationService.optimize(fileAsset);
     }
 
     return fileAsset;
@@ -518,6 +529,16 @@ export class FilesService {
         convertedDownloadUrl:
           file.conversionStatus === 'DONE' && file.convertedStorageKey
             ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.convertedStorageKey }), {
+                expiresIn: DOWNLOAD_URL_TTL_SECONDS,
+              })
+            : undefined,
+        // Only set once GlbOptimizationService finishes — see that
+        // service's header comment. The client prefers this over the
+        // original .glb's own `downloadUrl` when present (same
+        // conditional-fallback shape as `convertedDownloadUrl` above).
+        optimizedDownloadUrl:
+          file.optimizationStatus === 'DONE' && file.optimizedStorageKey
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.optimizedStorageKey }), {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,

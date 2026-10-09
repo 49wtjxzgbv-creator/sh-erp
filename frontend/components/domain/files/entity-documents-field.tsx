@@ -252,7 +252,14 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
             {modelDoc && (
               <Step3DViewer
                 url={modelDoc.downloadUrl}
-                glbUrl={isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl}
+                // "ціль щоб з телефона також відкривалось" (2026-10-09):
+                // a directly-uploaded .glb prefers its own GPU-instancing-
+                // optimized sibling (see GlbOptimizationService) once one
+                // exists — same geometry, far fewer scene-graph nodes;
+                // falls back to the original while optimization is still
+                // pending/failed, same as every other "server job hasn't
+                // finished yet" fallback in this file.
+                glbUrl={isGlbFile(modelDoc.originalName) ? (modelDoc.optimizedDownloadUrl ?? modelDoc.downloadUrl) : modelDoc.convertedDownloadUrl}
                 bomArticles={bomArticles}
                 onAddToBom={onAddToBom}
                 onCreateProduct={onCreateProduct}

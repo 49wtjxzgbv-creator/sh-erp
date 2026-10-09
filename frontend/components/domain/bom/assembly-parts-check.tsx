@@ -46,7 +46,11 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
   const { data: byEntity, isLoading } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_DOCUMENT');
   const files = byEntity?.[assemblyId] ?? [];
   const modelDoc = files.find((f) => is3DModelFile(f.originalName));
-  const glbUrl = modelDoc ? (isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl) : undefined;
+  const glbUrl = modelDoc
+    ? isGlbFile(modelDoc.originalName)
+      ? (modelDoc.optimizedDownloadUrl ?? modelDoc.downloadUrl)
+      : modelDoc.convertedDownloadUrl
+    : undefined;
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;

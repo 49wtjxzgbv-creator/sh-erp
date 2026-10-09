@@ -8,6 +8,10 @@
       {
         "include": "modules/files/step-convert-child.js",
         "outDir": "dist"
+      },
+      {
+        "include": "modules/files/glb-optimize-child.js",
+        "outDir": "dist"
       }
     ]
   }

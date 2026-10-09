@@ -99,6 +99,8 @@ export interface FileAssetWithUrl extends FileAsset {
   downloadUrl: string;
   /** Presigned URL for the converted .glb — only present when `conversionStatus === 'DONE'`. */
   convertedDownloadUrl?: string;
+  /** Presigned URL for the GPU-instancing-optimized .glb (see backend's GlbOptimizationService) — only present when `optimizationStatus === 'DONE'`. Same node geometry, far fewer scene-graph nodes; prefer this over `downloadUrl` for a directly-uploaded .glb whenever it's present. */
+  optimizedDownloadUrl?: string;
 }
 
 /** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */

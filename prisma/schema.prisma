@@ -620,6 +620,19 @@ model FileAsset {
   conversionStatus    FileConversionStatus @default(NONE)
   convertedStorageKey String? // R2 key of the generated .glb, set once conversionStatus = DONE
 
+  // "ціль щоб з телефона також відкривалось" (2026-10-09): a directly-
+  // uploaded .glb from a CAD export can have tens of thousands of
+  // scene-graph nodes despite a modest byte size (confirmed real case:
+  // 10MB, 34,257 nodes, only 54 unique meshes — mobile Safari/WebKit
+  // crashes building that many THREE.Object3D instances). GlbOptimizationService
+  // runs GPU-instancing (dedup+instance, see that service's header
+  // comment) once, fire-and-forget, same state-machine shape as
+  // conversionStatus/convertedStorageKey above but a DISTINCT pair of
+  // fields — a file can independently be STEP-converted AND optimized,
+  // and the two jobs shouldn't share one status/key pair.
+  optimizationStatus  FileConversionStatus @default(NONE)
+  optimizedStorageKey String? // R2 key of the instanced .glb, set once optimizationStatus = DONE
+
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
