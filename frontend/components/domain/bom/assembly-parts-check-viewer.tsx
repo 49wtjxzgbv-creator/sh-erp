@@ -22,6 +22,19 @@ interface ResolvedPart extends GlbPartAnalysis {
   product: Product | null;
 }
 
+/** "габаритні розміри... площа поверхні" (2026-10-09): compact one-line summary shown right on the part card — `null` dimensions or a zero area (see `GlbPartAnalysis`'s own field comments) just omit that half. */
+function formatDimensionsAndArea(part: GlbPartAnalysis): string | null {
+  const bits: string[] = [];
+  if (part.dimensionsMm) {
+    const { x, y, z } = part.dimensionsMm;
+    bits.push(`${Math.round(x)}×${Math.round(y)}×${Math.round(z)} мм`);
+  }
+  if (part.surfaceAreaMm2 > 0) {
+    bits.push(`${(part.surfaceAreaMm2 / 100).toFixed(1)} см²`);
+  }
+  return bits.length > 0 ? bits.join(' · ') : null;
+}
+
 /**
  * "через раз то відкриває то ні" (2026-10-08, real user report): this used
  * to fire one `queryProducts` request PER distinct part (up to a few dozen
@@ -127,7 +140,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     setExportingArticles((prev) => new Set(prev).add(part.article));
     try {
       const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
-      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb, part.volumeMm3);
+      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb, part.volumeMm3, part.dimensionsMm, part.surfaceAreaMm2);
     } finally {
       setExportingArticles((prev) => {
         const next = new Set(prev);
@@ -301,6 +314,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium" title={part.article}>{part.article}</p>
                   <p className="truncate text-xs text-muted-foreground" title={part.name}>{part.name}</p>
+                  {formatDimensionsAndArea(part) && <p className="truncate text-[10px] text-muted-foreground">{formatDimensionsAndArea(part)}</p>}
                   {part.qty > 1 && <p className="text-xs text-muted-foreground">×{part.qty}</p>}
                 </div>
                 {!readOnly && (
@@ -418,6 +432,7 @@ function PartsGrid({
               <p className="truncate text-xs text-muted-foreground" title={part.product?.name ?? part.name}>
                 {part.product?.name ?? part.name}
               </p>
+              {formatDimensionsAndArea(part) && <p className="truncate text-[10px] text-muted-foreground">{formatDimensionsAndArea(part)}</p>}
               {part.qty > 1 && <p className="text-xs text-muted-foreground">×{part.qty}</p>}
             </div>
             {!readOnly && (

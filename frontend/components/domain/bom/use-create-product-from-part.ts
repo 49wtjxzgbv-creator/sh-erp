@@ -27,6 +27,8 @@ export interface PendingPartProduct {
   photo: File | null;
   glb: ArrayBuffer | null;
   volumeMm3: number | null;
+  dimensionsMm: { x: number; y: number; z: number } | null;
+  surfaceAreaMm2: number | null;
 }
 
 /**
@@ -59,9 +61,16 @@ export function useCreateProductFromPart(onAppend: (items: { productId: string; 
     photoDataUrl: string | null,
     glb: ArrayBuffer | null,
     volumeMm3: number | null,
+    // Optional, trailing — the interactive Step3DViewer's own single-part
+    // "create product" button (assembly-form.tsx) doesn't compute these
+    // (see Step3DViewer's `SceneApi`, which never grew a dimensions/area
+    // counterpart to `computeVolume`), only the headless Деталі (3D) flow
+    // does (`analyzeGlbParts`'s own `dimensionsMm`/`surfaceAreaMm2`).
+    dimensionsMm?: { x: number; y: number; z: number } | null,
+    surfaceAreaMm2?: number | null,
   ) {
     const photo = photoDataUrl ? dataUrlToFile(photoDataUrl, `${article}.png`) : null;
-    setPending({ article, name: suggestedName, qty, photo, glb, volumeMm3 });
+    setPending({ article, name: suggestedName, qty, photo, glb, volumeMm3, dimensionsMm: dimensionsMm ?? null, surfaceAreaMm2: surfaceAreaMm2 ?? null });
   }
 
   async function handleCreated(product: Product) {
@@ -86,6 +95,8 @@ export function useCreateProductFromPart(onAppend: (items: { productId: string; 
       initialValues: pending ? { article: pending.article, name: pending.name } : undefined,
       initialPhoto: pending?.photo ?? null,
       initialVolumeMm3: pending?.volumeMm3 ?? null,
+      initialDimensionsMm: pending?.dimensionsMm ?? null,
+      initialSurfaceAreaMm2: pending?.surfaceAreaMm2 ?? null,
       onCreated: handleCreated,
     },
   };

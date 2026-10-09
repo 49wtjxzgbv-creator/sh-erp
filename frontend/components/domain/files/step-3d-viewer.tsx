@@ -1092,9 +1092,14 @@ function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
  * bounding box, already computed for camera framing) and reuse the
  * result for every part's volume in that file.
  */
-function volumeUnitScaleToMm3(groupMaxDim: number): number {
+function linearUnitScaleToMm(groupMaxDim: number): number {
   const ALREADY_METERS_MAX_DIM = 50;
-  return groupMaxDim < ALREADY_METERS_MAX_DIM ? 1e9 : 1;
+  return groupMaxDim < ALREADY_METERS_MAX_DIM ? 1000 : 1;
+}
+
+/** Volume scales as the CUBE of the linear unit factor above — same per-file unit decision, just raised to the power that matches what's being converted (mm vs mm³ vs, below, mm²). */
+function volumeUnitScaleToMm3(groupMaxDim: number): number {
+  return linearUnitScaleToMm(groupMaxDim) ** 3;
 }
 
 /**
@@ -1200,6 +1205,76 @@ function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): numb
 }
 
 /**
+ * "габаритні розміри... довжина ширина висота" (2026-10-09): a plain
+ * world-space axis-aligned bounding box of the part's own vertices, in
+ * mm. Simpler than (and consistent with) the volume/camera-framing math
+ * above, with the same known trade-off those already accept — a part
+ * installed at an angle gets measured along the WORLD's X/Y/Z axes, not
+ * its own natural ones, so a diagonally-mounted part can read larger
+ * than its real envelope. Treated the same as weight/volume throughout
+ * this app: a quick estimate the user reviews, not a certified
+ * measurement.
+ */
+function computeMeshDimensionsMm(object: THREE.Object3D, linearScaleToMm: number): { x: number; y: number; z: number } | null {
+  const points: THREE.Vector3[] = [];
+  for (const mesh of meshesUnder(object)) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      points.push(new THREE.Vector3().fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+    }
+  }
+  if (points.length === 0) return null;
+  const size = new THREE.Box3().setFromPoints(points).getSize(new THREE.Vector3());
+  return { x: size.x * linearScaleToMm, y: size.y * linearScaleToMm, z: size.z * linearScaleToMm };
+}
+
+/**
+ * "площа поверхні... для автоматичного прорахунку витрат фарби чи лаку"
+ * (2026-10-09): exact sum of triangle areas (not an approximation like
+ * the hull fallback `computeMeshVolume` sometimes needs) — area, unlike
+ * signed volume, can't use cancellation to detect the duplicated-
+ * opposite-winding-face trap those other functions work around, so this
+ * instead skips any triangle whose 3 world-space vertices (rounded to
+ * 4 decimals) were already counted once under a DIFFERENT winding order
+ * — the exact shape of that trap (two perfectly coincident copies of
+ * the same triangle, wound oppositely for backface-safe rendering).
+ */
+function computeMeshSurfaceAreaMm2(object: THREE.Object3D, areaScaleToMm2: number): number {
+  const seen = new Set<string>();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  const keyOf = (v: THREE.Vector3) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+  let area = 0;
+  for (const mesh of meshesUnder(object)) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    const index = mesh.geometry.index;
+    const triCount = index ? index.count / 3 : position.count / 3;
+    for (let i = 0; i < triCount; i++) {
+      const ia = index ? index.getX(i * 3) : i * 3;
+      const ib = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const ic = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
+      const triKey = [keyOf(a), keyOf(b), keyOf(c)].sort().join('|');
+      if (seen.has(triKey)) continue;
+      seen.add(triKey);
+      ab.subVectors(b, a);
+      ac.subVectors(c, a);
+      cross.crossVectors(ab, ac);
+      area += cross.length() / 2;
+    }
+  }
+  return area * areaScaleToMm2;
+}
+
+/**
  * Shared by `captureSnapshot` (interactive viewer) and `analyzeGlbParts`
  * (headless, "Деталі (3D)" tab — see below): hides every mesh except
  * `target`'s own, frames `camera` tight on `target`'s bounding sphere
@@ -1269,6 +1344,10 @@ export interface GlbPartAnalysis {
   photoDataUrl: string | null;
   /** This one instance's own solid volume in mm³ (see `computeMeshVolume`) — for the material/weight picker in the create-product flow. `null` only if the node somehow has no mesh geometry. */
   volumeMm3: number | null;
+  /** World-space axis-aligned bounding box in mm (see `computeMeshDimensionsMm`'s own header comment on the "world axes, not the part's own" trade-off). `null` only if the node somehow has no mesh geometry. */
+  dimensionsMm: { x: number; y: number; z: number } | null;
+  /** Exact mesh surface area in mm² (see `computeMeshSurfaceAreaMm2`) — e.g. for estimating paint/coating per part. */
+  surfaceAreaMm2: number;
   /**
    * "деталі які складаються з одної а є деталі які складаються з
    * декількох... ті які складаються з декількох то це підвиріб"
@@ -1421,6 +1500,8 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
   const volumeScaleToMm3 = volumeUnitScaleToMm3(maxDim);
+  const linearScaleToMm = linearUnitScaleToMm(maxDim);
+  const areaScaleToMm2 = linearScaleToMm ** 2;
   group.position.sub(center);
 
   const scene = new THREE.Scene();
@@ -1442,7 +1523,9 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
       const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
       const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
       const meshCount = target ? meshesUnder(target).length : 0;
-      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount };
+      const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
+      const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 };
     })
     .sort((a, b) => a.article.localeCompare(b.article));
 

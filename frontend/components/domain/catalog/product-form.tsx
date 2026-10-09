@@ -150,6 +150,10 @@ export interface ProductFormProps {
    * `CreateProductDialog` upstream.
    */
   initialVolumeMm3?: number | null;
+  /** "габаритні розміри... площа поверхні" (2026-10-09): world-space bounding box (mm) from the same 3D-model part — shown as a plain informational line next to the weight picker. No `Product` DB field backs this (there isn't one), purely a reference for the user while filling the form in by hand. */
+  initialDimensionsMm?: { x: number; y: number; z: number } | null;
+  /** Exact mesh surface area (mm²) from the same part — e.g. for eyeballing paint/coating needed. Same informational-only treatment as `initialDimensionsMm`. */
+  initialSurfaceAreaMm2?: number | null;
 }
 
 /** kg/m³ — standard reference densities, not per-alloy precise; this is a data-entry speed-up (an estimate the user reviews and adjusts), not a certified measurement. */
@@ -327,6 +331,8 @@ export function ProductForm({
   initialValues,
   readOnly,
   initialVolumeMm3,
+  initialDimensionsMm,
+  initialSurfaceAreaMm2,
 }: ProductFormProps) {
   const t = useTranslations('catalog');
   const tc = useTranslations('common');
@@ -638,6 +644,19 @@ export function ProductForm({
               volumeMm3={initialVolumeMm3}
               onApply={(weightKg) => setValue('weightPerUnitKg', Number(weightKg.toFixed(3)))}
             />
+          )}
+          {(initialDimensionsMm || (initialSurfaceAreaMm2 != null && initialSurfaceAreaMm2 > 0)) && (
+            <p className="text-xs text-muted-foreground sm:col-span-3">
+              {t('modelDimensionsLabel')}{' '}
+              {[
+                initialDimensionsMm
+                  ? `${Math.round(initialDimensionsMm.x)}×${Math.round(initialDimensionsMm.y)}×${Math.round(initialDimensionsMm.z)} мм`
+                  : null,
+                initialSurfaceAreaMm2 != null && initialSurfaceAreaMm2 > 0 ? `${(initialSurfaceAreaMm2 / 100).toFixed(1)} см²` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
           )}
           {product && (
             <ModelWeightCalculator

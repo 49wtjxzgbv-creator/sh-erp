@@ -152,6 +152,7 @@
     "germanPriceInclVat": "Ціна (DE, з ПДВ)",
     "weightPerUnitKg": "Вага за одиницю (кг)",
     "materialWeightLabel": "Розрахунок ваги за об'ємом 3D-моделі",
+    "modelDimensionsLabel": "Розміри з 3D-моделі:",
     "materialWeightPlaceholder": "Оберіть матеріал",
     "materialWeightResult": "≈ {weight} кг",
     "materialWeightApply": "Підставити у вагу",

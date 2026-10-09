@@ -151,6 +151,7 @@
     "germanPriceInclVat": "Price (DE, incl. VAT)",
     "weightPerUnitKg": "Weight per unit (kg)",
     "materialWeightLabel": "Calculate weight from 3D model volume",
+    "modelDimensionsLabel": "Dimensions from 3D model:",
     "materialWeightPlaceholder": "Select material",
     "materialWeightResult": "≈ {weight} kg",
     "materialWeightApply": "Apply to weight",
