@@ -839,42 +839,31 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
 
 /**
  * "потрібно додати якусь полоску з відсотком завантаження" (2026-10-09):
- * `GLTFLoader.loadAsync`'s own progress events derive the percentage from
- * the response's `Content-Length` header — which the storage proxy no
- * longer sends once a response is gzip-compressed on the fly (compressed
- * size isn't known upfront, so nginx drops the header instead of lying
- * about it). Reading the download ourselves via `fetch`'s stream `reader`
- * sidesteps that entirely: `value.byteLength` per chunk is real bytes
- * received regardless of `Content-Length`, and the caller already knows
- * the file's true (decompressed) size from its own file-asset metadata
- * (`sizeBytes`) to use as the percentage's denominator — no header needed
- * on either end. Falls back to the plain one-shot loader when no progress
- * callback is wanted (every caller that doesn't show a progress UI).
+ * `GLTFLoader.loadAsync`'s progress events derive the standard
+ * `ProgressEvent.total`/`lengthComputable` from the response's
+ * `Content-Length` header — which the storage proxy no longer sends once
+ * a response is gzip-compressed on the fly (compressed size isn't known
+ * upfront, so nginx drops the header instead of lying about it). That's
+ * fine: `event.loaded` (real bytes received so far) is still accurate
+ * regardless of whether `total` is known — three.js's own `FileLoader`
+ * computes it from the stream's chunks directly (not from the header) —
+ * so this just reads `loaded` and compares it against the file's true
+ * (decompressed) size from the caller's own file-asset metadata
+ * (`sizeBytes`), ignoring the event's own `total`/`lengthComputable`.
+ *
+ * "специфікація 440158 чомусь 3д модель перестала завантажуватись на
+ * телефоні" (2026-10-09, real regression): this used to hand-roll its
+ * own `fetch` + `response.body.getReader()` loop instead of delegating to
+ * `loadAsync` — which meant losing `FileLoader`'s own defensive fallback
+ * for browsers where `response.body`/`getReader` isn't usable (its own
+ * comment names a real in-app-browser bug it already works around). The
+ * hand-rolled version threw outright in that case — breaking EVERY model
+ * load, not just large ones, the moment a progress callback was passed
+ * (which `Step3DViewer` always does now). Delegating back to `loadAsync`
+ * gets that same protection for free.
  */
 async function loadGlb(glbUrl: string, onProgress?: (loadedBytes: number) => void): Promise<THREE.Object3D> {
-  if (!onProgress) {
-    const gltf = await new GLTFLoader().loadAsync(glbUrl);
-    return gltf.scene;
-  }
-  const response = await fetch(glbUrl);
-  if (!response.ok || !response.body) throw new Error(`Failed to download model (${response.status})`);
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.byteLength;
-    onProgress(loaded);
-  }
-  const merged = new Uint8Array(loaded);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const gltf = await new GLTFLoader().parseAsync(merged.buffer, '');
+  const gltf = await new GLTFLoader().loadAsync(glbUrl, onProgress ? (event) => onProgress(event.loaded) : undefined);
   return gltf.scene;
 }
 
