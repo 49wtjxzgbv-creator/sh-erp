@@ -256,7 +256,6 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 bomArticles={bomArticles}
                 onAddToBom={onAddToBom}
                 onCreateProduct={onCreateProduct}
-                sizeBytes={modelDoc.sizeBytes}
               />
             )}
           </div>

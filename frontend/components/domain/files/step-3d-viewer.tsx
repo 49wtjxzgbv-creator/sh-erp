@@ -11,7 +11,6 @@ import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loade
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
-import { ProgressBar } from '@/components/ui/progress-bar';
 
 /**
  * Renders a STEP (.step/.stp) or glTF (.glb) CAD file in-browser.
@@ -134,41 +133,9 @@ export interface Step3DViewerProps {
     glb: ArrayBuffer | null,
     volumeMm3: number | null,
   ) => void;
-  /**
-   * "з телефона не завантажується модель... сторінка просто зависає або
-   * перезавантажується" (2026-10-09): a big assembly .glb (seen in
-   * production at ~105MB) decodes into geometry + textures that, held in
-   * memory on top of everything else the page already uses, blows past
-   * mobile Safari/Chrome's much lower per-tab memory ceiling — the OS
-   * kills the tab outright, which can't be caught as a JS error (there's
-   * nothing to `catch`, the page just goes blank/reloads). Passing the
-   * file's own size lets `Step3DViewer` refuse up front on a phone instead
-   * of attempting a load that's liable to crash the tab. Omit to skip this
-   * guard entirely (e.g. callers that don't have the size handy).
-   */
-  sizeBytes?: number;
 }
 
-type ViewerState = 'loading' | 'ready' | 'error' | 'too-large-for-mobile';
-
-/** Phones/tablets only (not just "narrow window" — a resized desktop window shouldn't trip this) — see `sizeBytes` prop for why. */
-function isMobileDevice(): boolean {
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-}
-
-/** Conservative — comfortably under the memory budgets that real mobile crashes (a ~105MB file) came in well above; ordinary assembly .glb files are nowhere near this. */
-const MOBILE_SIZE_LIMIT_BYTES = 40 * 1024 * 1024;
-
-/**
- * "забери ресурс з файлів менше 50мб" (2026-10-09): below this, a file
- * downloads fast enough that a live percentage isn't worth its cost —
- * `loadGlb` gets no `onProgress` at all for these (not even the
- * throttled version), so there isn't a single extra per-chunk event or
- * re-render during the load, exactly like before the progress bar
- * existed. Only a file this big or bigger — where the download is slow
- * enough to actually need the feedback — gets the live percentage UI.
- */
-export const PROGRESS_UI_THRESHOLD_BYTES = 50 * 1024 * 1024;
+type ViewerState = 'loading' | 'ready' | 'error';
 
 interface ModelTreeNode {
   id: string;
@@ -204,7 +171,7 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct, sizeBytes }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -218,7 +185,6 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [notFoundArticles, setNotFoundArticles] = useState<Set<string>>(new Set());
   const [bulkError, setBulkError] = useState<string | null>(null);
-  const [downloadedBytes, setDownloadedBytes] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,22 +195,13 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       const container = containerRef.current;
       if (!container) return;
 
-      if (sizeBytes != null && sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice()) {
-        setState('too-large-for-mobile');
-        return;
-      }
-
       setState('loading');
       setTree([]);
       setSelectedId(null);
       setIsolateMode(false);
       setExplodedMode(false);
-      setDownloadedBytes(0);
-      const showProgress = sizeBytes != null && sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES;
       try {
-        const group = glbUrl
-          ? await loadGlb(glbUrl, showProgress ? (loaded) => !cancelled && setDownloadedBytes(loaded) : undefined)
-          : await loadStepViaWorker(url, (w) => (worker = w));
+        const group = glbUrl ? await loadGlb(glbUrl) : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
 
         const builtTree = buildTree(group);
@@ -268,7 +225,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       disposeScene?.();
       sceneApiRef.current = null;
     };
-  }, [url, glbUrl, sizeBytes]);
+  }, [url, glbUrl]);
 
   useEffect(() => {
     sceneApiRef.current?.setSelected(selectedId);
@@ -440,26 +397,10 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
           </button>
         )}
         {state === 'loading' && (
-          <div className="absolute inset-0 flex items-center justify-center px-6">
-            {sizeBytes != null && sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES ? (
-              <div className="w-full max-w-xs space-y-2">
-                <p className="text-center text-sm text-muted-foreground">
-                  {t('loadingModel')} {Math.min(100, Math.round((downloadedBytes / sizeBytes) * 100))}%
-                </p>
-                <ProgressBar percent={(downloadedBytes / sizeBytes) * 100} />
-              </div>
-            ) : (
-              <p className="text-center text-sm text-muted-foreground">{t('loadingModel')}</p>
-            )}
-          </div>
+          <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
         )}
         {state === 'error' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('modelLoadError')}</p>
-        )}
-        {state === 'too-large-for-mobile' && (
-          <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            {t('modelTooLargeForMobile')}
-          </p>
         )}
       </div>
       {showTree && (
@@ -853,57 +794,8 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
   return group.children.map(walk);
 }
 
-/**
- * "потрібно додати якусь полоску з відсотком завантаження" (2026-10-09):
- * `GLTFLoader.loadAsync`'s progress events derive the standard
- * `ProgressEvent.total`/`lengthComputable` from the response's
- * `Content-Length` header — which the storage proxy no longer sends once
- * a response is gzip-compressed on the fly (compressed size isn't known
- * upfront, so nginx drops the header instead of lying about it). That's
- * fine: `event.loaded` (real bytes received so far) is still accurate
- * regardless of whether `total` is known — three.js's own `FileLoader`
- * computes it from the stream's chunks directly (not from the header) —
- * so this just reads `loaded` and compares it against the file's true
- * (decompressed) size from the caller's own file-asset metadata
- * (`sizeBytes`), ignoring the event's own `total`/`lengthComputable`.
- *
- * "специфікація 440158 чомусь 3д модель перестала завантажуватись на
- * телефоні" (2026-10-09, real regression): this used to hand-roll its
- * own `fetch` + `response.body.getReader()` loop instead of delegating to
- * `loadAsync` — which meant losing `FileLoader`'s own defensive fallback
- * for browsers where `response.body`/`getReader` isn't usable (its own
- * comment names a real in-app-browser bug it already works around). The
- * hand-rolled version threw outright in that case — breaking EVERY model
- * load, not just large ones, the moment a progress callback was passed
- * (which `Step3DViewer` always does now). Delegating back to `loadAsync`
- * gets that same protection for free.
- */
-/** How often `loadGlb`'s progress forwards to its caller — see the throttling comment at the call site below. */
-const PROGRESS_THROTTLE_MS = 150;
-
-async function loadGlb(glbUrl: string, onProgress?: (loadedBytes: number) => void): Promise<THREE.Object3D> {
-  // "давай тільки 1" (2026-10-09): three.js's FileLoader fires a progress
-  // event on EVERY network chunk — for a real file that can be dozens to
-  // hundreds of events during one download. Forwarding every single one
-  // straight into a React state update means that many extra re-renders
-  // of the viewer while it's loading, which didn't happen at all before
-  // this progress bar existed (a real candidate for why a WebKit/iPhone
-  // crash on a file that used to load fine). Time-throttling here — not
-  // per-caller — fixes it once for every `loadGlb` caller. The final
-  // value is never forwarded late: once `loadAsync` resolves, the caller
-  // moves on to a 'ready' state that stops rendering the progress bar
-  // anyway, so an in-flight chunk that got throttled away is harmless.
-  let lastForwarded = 0;
-  const throttledOnProgress = onProgress
-    ? (event: ProgressEvent) => {
-        const now = Date.now();
-        if (now - lastForwarded >= PROGRESS_THROTTLE_MS) {
-          lastForwarded = now;
-          onProgress(event.loaded);
-        }
-      }
-    : undefined;
-  const gltf = await new GLTFLoader().loadAsync(glbUrl, throttledOnProgress);
+async function loadGlb(glbUrl: string): Promise<THREE.Object3D> {
+  const gltf = await new GLTFLoader().loadAsync(glbUrl);
   return gltf.scene;
 }
 
@@ -1529,21 +1421,6 @@ export interface GlbPartAnalysis {
    * of offering "Створити товар" on something that isn't a simple part.
    */
   meshCount: number;
-  /**
-   * "показувати список миттєво... а знімок/об'єм підтягувати лише коли
-   * користувач реально розгортає/додає конкретну деталь" (2026-10-09,
-   * for files over `LAZY_ANALYSIS_THRESHOLD_BYTES`): a real 105MB
-   * assembly came in at 1008 distinct parts, each needing its own
-   * offscreen WebGL render + exact triangle-math pass — measured at
-   * ~108 SECONDS total for that file, utterly dwarfing the ~3s download
-   * and parse combined (see `analyzeGlbParts`'s `lazy` option). `false`
-   * means `photoDataUrl`/`volumeMm3`/`dimensionsMm`/`surfaceAreaMm2`
-   * above are still placeholders (`null`/`0`) — call `analyzePart` to
-   * fill them in for this one part. Always `true` in the (default)
-   * eager mode, where every part already has real values by the time
-   * `analyzeGlbParts` resolves.
-   */
-  detailsLoaded: boolean;
 }
 
 /**
@@ -1627,35 +1504,9 @@ export interface GlbModelAnalysis {
    * geometry (shouldn't happen for a `nodeId` taken from `parts` itself).
    */
   exportPartGlb: (nodeId: string) => Promise<ArrayBuffer | null>;
-  /**
-   * Fills in one part's `photoDataUrl`/`volumeMm3`/`dimensionsMm`/
-   * `surfaceAreaMm2` on demand — only meaningful for a part whose
-   * `detailsLoaded` is still `false` (lazy mode; see that field's own
-   * comment). Safe to call again for an already-loaded part — it just
-   * redoes the same render/math — so callers that want to avoid the
-   * repeat work should check `detailsLoaded` themselves first. `null`
-   * only after `dispose()`, or if the node somehow has no geometry.
-   */
-  analyzePart: (nodeId: string) => Promise<Pick<GlbPartAnalysis, 'photoDataUrl' | 'volumeMm3' | 'dimensionsMm' | 'surfaceAreaMm2'> | null>;
   /** Releases the renderer + every mesh's geometry/material — call once `exportPartGlb` is no longer needed (component unmount, or before re-analyzing a different `glbUrl`). */
   dispose: () => void;
 }
-
-/**
- * "так давай але для файлів більше 40 мб" (2026-10-09): past this size, a
- * real file's part count/geometry complexity makes eagerly rendering
- * every single distinct part's snapshot + volume/area math (see
- * `GlbPartAnalysis.detailsLoaded`'s own comment — a real 105MB file
- * measured at ~108s for that phase alone) a bad trade against just
- * showing the list instantly and filling each part's heavy fields in
- * lazily. Reused as-is for `Step3DViewer`'s unrelated "refuse on mobile"
- * gate (`MOBILE_SIZE_LIMIT_BYTES`) only because the two thresholds
- * happen to agree today — kept as separate constants since they answer
- * different questions (one's a hard refusal by device, this one's an
- * eager-vs-lazy performance trade-off by file size alone) and may need
- * to diverge later.
- */
-export const LAZY_ANALYSIS_THRESHOLD_BYTES = 40 * 1024 * 1024;
 
 /**
  * "потрібно в специфікації щоб кожен раз не відкривати glb файл а була
@@ -1681,26 +1532,8 @@ export const LAZY_ANALYSIS_THRESHOLD_BYTES = 40 * 1024 * 1024;
  * parsed model) — kept alive, captured in the returned `exportPartGlb`
  * closure, until the caller calls `dispose()` itself.
  */
-/** Hands control back to the browser for one macrotask — see the call site in `analyzeGlbParts` for why. */
-function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-export type GlbAnalysisProgress = { stage: 'downloading'; loadedBytes: number } | { stage: 'analyzing'; done: number; total: number };
-
-export async function analyzeGlbParts(
-  glbUrl: string,
-  onProgress?: (progress: GlbAnalysisProgress) => void,
-  options?: { lazy?: boolean; sizeBytes?: number },
-): Promise<GlbModelAnalysis> {
-  const lazy = options?.lazy ?? false;
-  // "забери ресурс з файлів менше 50мб" (2026-10-09): below the threshold,
-  // `loadGlb` gets no download-progress callback at all — see
-  // `PROGRESS_UI_THRESHOLD_BYTES`'s own comment. The per-part 'analyzing'
-  // progress below is unaffected either way — it's one event per part,
-  // not per network chunk, so there's nothing to throttle or gate there.
-  const showDownloadProgress = options?.sizeBytes != null && options.sizeBytes >= PROGRESS_UI_THRESHOLD_BYTES;
-  const group = await loadGlb(glbUrl, onProgress && showDownloadProgress ? (loadedBytes) => onProgress({ stage: 'downloading', loadedBytes }) : undefined);
+export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis> {
+  const group = await loadGlb(glbUrl);
   const tree = buildTree(group);
 
   const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
@@ -1719,7 +1552,7 @@ export async function analyzeGlbParts(
 
   const partsMeta = Array.from(byArticle.values());
   if (partsMeta.length === 0) {
-    return { parts: [], exportPartGlb: async () => null, analyzePart: async () => null, dispose: () => {} };
+    return { parts: [], exportPartGlb: async () => null, dispose: () => {} };
   }
 
   const box = new THREE.Box3().setFromObject(group);
@@ -1744,75 +1577,19 @@ export async function analyzeGlbParts(
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
 
+  const parts: GlbPartAnalysis[] = partsMeta
+    .map((part) => {
+      const target = findByTreeId(group, part.nodeId);
+      const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
+      const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
+      const meshCount = target ? meshesUnder(target).length : 0;
+      const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
+      const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 };
+    })
+    .sort((a, b) => a.article.localeCompare(b.article));
+
   let disposed = false;
-
-  /** The actual render+math for one part — shared by the eager loop below and the on-demand `analyzePart`. */
-  function computeHeavyFields(target: THREE.Object3D) {
-    return {
-      photoDataUrl: isolateRenderToDataUrl(renderer, scene, camera, group, target),
-      volumeMm3: computeMeshVolume(target, volumeScaleToMm3),
-      dimensionsMm: computeMeshDimensionsMm(target, linearScaleToMm),
-      surfaceAreaMm2: computeMeshSurfaceAreaMm2(target, areaScaleToMm2),
-    };
-  }
-
-  const parts: GlbPartAnalysis[] = [];
-  if (lazy) {
-    // "показувати список миттєво... підтягувати лише коли користувач
-    // реально розгортає/додає" (2026-10-09): `meshCount` alone is cheap
-    // (just counting `Mesh` instances under the subtree, no triangle
-    // math, no WebGL) — stays eager so the simple/multi-piece split still
-    // works immediately. The expensive fields are left as placeholders;
-    // `analyzePart` fills them in per part, on demand.
-    for (const part of partsMeta) {
-      const target = findByTreeId(group, part.nodeId);
-      const meshCount = target ? meshesUnder(target).length : 0;
-      parts.push({
-        nodeId: part.nodeId,
-        article: part.article,
-        name: part.name,
-        qty: part.qty,
-        photoDataUrl: null,
-        volumeMm3: null,
-        meshCount,
-        dimensionsMm: null,
-        surfaceAreaMm2: 0,
-        detailsLoaded: false,
-      });
-    }
-  } else {
-    // "коли завантажуються деталі 3d то браузер вибиває що сайт не
-    // відповідає" (2026-10-09, real mobile report): this used to be one
-    // synchronous `.map()` doing an offscreen WebGL render + readback PLUS
-    // exact whole-mesh triangle math (volume/area/dimensions) for EVERY
-    // distinct part back to back — for a real assembly with dozens of
-    // parts this blocks the main thread continuously for long enough that
-    // mobile Chrome's hang watchdog offers to close the tab (weaker mobile
-    // CPUs/GPUs make it far worse than on desktop, where the same loop just
-    // felt like a brief stall). Yielding one macrotask between parts lets
-    // the browser service input/paint/the hang-watchdog in between, without
-    // changing what gets computed.
-    for (let i = 0; i < partsMeta.length; i++) {
-      const part = partsMeta[i];
-      const target = findByTreeId(group, part.nodeId);
-      const heavy = target ? computeHeavyFields(target) : { photoDataUrl: null, volumeMm3: null, dimensionsMm: null, surfaceAreaMm2: 0 };
-      const meshCount = target ? meshesUnder(target).length : 0;
-      parts.push({ nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, meshCount, detailsLoaded: true, ...heavy });
-      onProgress?.({ stage: 'analyzing', done: i + 1, total: partsMeta.length });
-      await yieldToMain();
-    }
-  }
-  parts.sort((a, b) => a.article.localeCompare(b.article));
-
-  async function analyzePart(nodeId: string): Promise<Pick<GlbPartAnalysis, 'photoDataUrl' | 'volumeMm3' | 'dimensionsMm' | 'surfaceAreaMm2'> | null> {
-    if (disposed) return null;
-    const target = findByTreeId(group, nodeId);
-    if (!target) return null;
-    const heavy = computeHeavyFields(target);
-    await yieldToMain();
-    return heavy;
-  }
-
   async function exportPartGlb(nodeId: string): Promise<ArrayBuffer | null> {
     if (disposed) return null;
     const target = findByTreeId(group, nodeId);
@@ -1833,7 +1610,7 @@ export async function analyzeGlbParts(
     });
   }
 
-  return { parts, exportPartGlb, analyzePart, dispose };
+  return { parts, exportPartGlb, dispose };
 }
 
 /**

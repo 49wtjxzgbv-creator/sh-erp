@@ -1,17 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
-import {
-  analyzeGlbParts,
-  LAZY_ANALYSIS_THRESHOLD_BYTES,
-  type GlbAnalysisProgress,
-  type GlbModelAnalysis,
-  type GlbPartAnalysis,
-} from '@/components/domain/files/step-3d-viewer';
-import { ProgressBar } from '@/components/ui/progress-bar';
+import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
 import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -65,8 +59,6 @@ async function resolveAgainstCatalog(parts: GlbPartAnalysis[]): Promise<Resolved
 export interface AssemblyPartsCheckViewerProps {
   assemblyId: string;
   glbUrl: string;
-  /** The model file's own size, for the download phase's progress percentage (see `GlbAnalysisProgress`) — omit to just show an indeterminate bar. */
-  sizeBytes?: number;
   readOnly?: boolean;
 }
 
@@ -78,37 +70,24 @@ export interface AssemblyPartsCheckViewerProps {
  * `next/dynamic`-loaded (`ssr: false`) from `assembly-parts-check.tsx` so
  * three.js only enters this one tab's chunk, not every BOM tab's.
  */
-export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOnly }: AssemblyPartsCheckViewerProps) {
+export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: AssemblyPartsCheckViewerProps) {
   const t = useTranslations('bom');
   const tf = useTranslations('files');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [parts, setParts] = useState<ResolvedPart[]>([]);
-  // "потрібно додати якусь полоску з відсотком завантаження щоб людина
-  // розуміла що сайт не завис" (2026-10-09): `analyzeGlbParts` reports two
-  // distinct phases (downloading the file, then analyzing each distinct
-  // part) — kept as one slot since they're sequential, never simultaneous.
-  const [progress, setProgress] = useState<GlbAnalysisProgress | null>(null);
   // "коли тут створюєш товар то не додається до нього файл gbl" (2026-10-08):
   // the analysis keeps the parsed model alive (see `analyzeGlbParts`'s own
   // `dispose` comment) specifically so a part's standalone .glb can be
   // exported on demand — at "Створити товар" time, not up front for every
   // part. Disposed on unmount/glbUrl-change below.
   const analysisRef = useRef<GlbModelAnalysis | null>(null);
-  // "так давай але для файлів більше 40 мб" (2026-10-09): past this size,
-  // rendering every part's snapshot + volume/area math up front is the
-  // ~108-SECOND bottleneck a real 105MB file measured at (see
-  // `LAZY_ANALYSIS_THRESHOLD_BYTES`'s own comment) — the list itself
-  // appears instantly either way; only whether photos/dimensions arrive
-  // immediately or lazily (see `ensurePartDetails` below) depends on this.
-  const lazy = sizeBytes != null && sizeBytes > LAZY_ANALYSIS_THRESHOLD_BYTES;
 
   useEffect(() => {
     let cancelled = false;
     setState('loading');
-    setProgress(null);
     (async () => {
       try {
-        const analysis = await analyzeGlbParts(glbUrl, (p) => !cancelled && setProgress(p), { lazy, sizeBytes });
+        const analysis = await analyzeGlbParts(glbUrl);
         if (cancelled) {
           analysis.dispose();
           return;
@@ -128,7 +107,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
       analysisRef.current?.dispose();
       analysisRef.current = null;
     };
-  }, [glbUrl, lazy, sizeBytes]);
+  }, [glbUrl]);
 
   const { bomArticles } = useAssemblyBomArticles(assemblyId);
   const bomSet = new Set(bomArticles.map((a) => a.trim().toUpperCase()));
@@ -141,6 +120,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
   const [updatingPhotoArticles, setUpdatingPhotoArticles] = useState<Set<string>>(new Set());
   const [attachingGlbArticles, setAttachingGlbArticles] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+  const router = useRouter();
 
   // "можна ще окрім фото додавати gbl до існуючих товарів в яких gbl
   // відсутній" (2026-10-08): one batch request for every matched product's
@@ -156,30 +136,11 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
     return (productDocsByEntity?.[productId] ?? []).some((f) => isGlbFile(f.originalName));
   }
 
-  // "показувати список миттєво... підтягувати лише коли користувач
-  // реально розгортає/додає конкретну деталь" (2026-10-09): a no-op
-  // (returns `part` as-is) once `detailsLoaded` is already `true` —
-  // always the case in non-lazy mode, so this changes nothing for
-  // smaller files. In lazy mode, this is what both the scroll-triggered
-  // thumbnail reveal (`LazyPartThumb` below) AND every action handler
-  // that actually NEEDS the photo/volume/dimensions (create product,
-  // create spec, refresh photo) call first, so acting on a part never
-  // depends on whether its card happened to scroll into view yet.
-  const ensurePartDetails = useCallback(async (part: ResolvedPart): Promise<ResolvedPart> => {
-    if (part.detailsLoaded || !analysisRef.current) return part;
-    const details = await analysisRef.current.analyzePart(part.nodeId);
-    if (!details) return part;
-    const updated: ResolvedPart = { ...part, ...details, detailsLoaded: true };
-    setParts((prev) => prev.map((p) => (p.nodeId === part.nodeId ? updated : p)));
-    return updated;
-  }, []);
-
   async function handleCreateClick(part: ResolvedPart) {
     setExportingArticles((prev) => new Set(prev).add(part.article));
     try {
-      const resolved = await ensurePartDetails(part);
       const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
-      requestCreate(resolved.article, resolved.name, resolved.qty, resolved.photoDataUrl, glb, resolved.volumeMm3, resolved.dimensionsMm, resolved.surfaceAreaMm2);
+      requestCreate(part.article, part.name, part.qty, part.photoDataUrl, glb, part.volumeMm3, part.dimensionsMm, part.surfaceAreaMm2);
     } finally {
       setExportingArticles((prev) => {
         const next = new Set(prev);
@@ -196,9 +157,8 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
   async function handleCreateSpecClick(part: ResolvedPart) {
     setExportingAssemblyArticles((prev) => new Set(prev).add(part.article));
     try {
-      const resolved = await ensurePartDetails(part);
       const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
-      requestCreateAssembly(resolved.article, resolved.name, resolved.photoDataUrl, glb);
+      requestCreateAssembly(part.article, part.name, part.photoDataUrl, glb);
     } finally {
       setExportingAssemblyArticles((prev) => {
         const next = new Set(prev);
@@ -208,14 +168,9 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
     }
   }
 
-  // "коли там натискаємо створити специфікацію то відкривай в новій
-  // вкладці а не в цій самій" (2026-10-09): this check-viewer tab stays
-  // open (its own `analysisRef`-held model is what the NEXT "Створити
-  // специфікацію" click would reuse) so the just-created assembly opens
-  // alongside it instead of navigating the current tab away.
   async function handleAssemblyCreated(assembly: Assembly) {
     await assemblyDialogProps.onCreated(assembly);
-    window.open(`/bom/${assembly.id}/components`, '_blank');
+    router.push(`/bom/${assembly.id}/components`);
   }
 
   // The one-time `analyzeGlbParts` + catalog-resolution pass (the effect
@@ -241,13 +196,11 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
   // second model load needed, just upload it as that matched product's
   // new photo (newest wins, see `EntityPhotoField`'s own header comment).
   async function handleRefreshPhoto(part: ResolvedPart) {
-    if (!part.product) return;
+    if (!part.product || !part.photoDataUrl) return;
     const productId = part.product.id;
     setUpdatingPhotoArticles((prev) => new Set(prev).add(part.article));
     try {
-      const resolved = await ensurePartDetails(part);
-      if (!resolved.photoDataUrl) return;
-      const file = dataUrlToFile(resolved.photoDataUrl, `${part.product.article}.png`);
+      const file = dataUrlToFile(part.photoDataUrl, `${part.product.article}.png`);
       if (file) {
         await uploadFile(file, { domain: 'PRODUCT_PHOTO', entityType: 'Product', entityId: productId });
         qc.invalidateQueries({ queryKey: ['files', 'Product', productId] });
@@ -300,22 +253,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
   }
 
   if (state === 'loading') {
-    const downloadPercent = progress?.stage === 'downloading' && sizeBytes ? (progress.loadedBytes / sizeBytes) * 100 : undefined;
-    const label =
-      progress?.stage === 'downloading'
-        ? sizeBytes
-          ? `${tf('loadingModel')} ${Math.min(100, Math.round(downloadPercent ?? 0))}%`
-          : tf('loadingModel')
-        : progress?.stage === 'analyzing'
-          ? t('partsCheckAnalyzingProgress', { done: progress.done, total: progress.total })
-          : tf('loadingModel');
-    const analyzingPercent = progress?.stage === 'analyzing' ? (progress.done / progress.total) * 100 : undefined;
-    return (
-      <div className="max-w-xs space-y-2">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <ProgressBar percent={downloadPercent ?? analyzingPercent} />
-      </div>
-    );
+    return <p className="text-sm text-muted-foreground">{tf('loadingModel')}</p>;
   }
   if (state === 'error') {
     return <p className="text-sm text-destructive">{tf('modelLoadError')}</p>;
@@ -353,8 +291,6 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
             attachingGlbArticles={attachingGlbArticles}
             hasGlbAttached={hasGlbAttached}
             readOnly={readOnly}
-            lazy={lazy}
-            onNeedDetails={ensurePartDetails}
             onAdd={handleAdd}
             onRefreshPhoto={handleRefreshPhoto}
             onAttachGlb={handleAttachGlb}
@@ -374,7 +310,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {notInCatalog.map((part) => (
               <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
-                <LazyPartThumb part={part} lazy={lazy} onNeedDetails={ensurePartDetails} />
+                <PartThumb part={part} />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium" title={part.article}>{part.article}</p>
                   <p className="truncate text-xs text-muted-foreground" title={part.name}>{part.name}</p>
@@ -406,7 +342,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {multiPieceParts.map((part) => (
               <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
-                <LazyPartThumb part={part} lazy={lazy} onNeedDetails={ensurePartDetails} />
+                <PartThumb part={part} />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium" title={part.article}>{part.article}</p>
                   <p className="truncate text-xs text-muted-foreground" title={part.name}>{part.name}</p>
@@ -434,65 +370,15 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOn
   );
 }
 
-function PartThumb({ part, pending }: { part: GlbPartAnalysis; pending?: boolean }) {
+function PartThumb({ part }: { part: GlbPartAnalysis }) {
   return (
     <div className="flex aspect-square items-center justify-center overflow-hidden rounded bg-secondary/30">
       {part.photoDataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- a same-process data URL, never a remote URL next/image would optimize
         <img src={part.photoDataUrl} alt={part.article} className="h-full w-full object-contain" />
-      ) : pending ? (
-        <div className="h-full w-full animate-pulse bg-secondary/60" />
       ) : (
         <span className="text-xs text-muted-foreground">—</span>
       )}
-    </div>
-  );
-}
-
-/**
- * "так давай але для файлів більше 40 мб" (2026-10-09): in lazy mode
- * (see `AssemblyPartsCheckViewer`'s own `lazy` comment), a part's photo
- * doesn't exist yet when this first mounts — `IntersectionObserver`
- * fires `onNeedDetails` the moment its card actually scrolls into view,
- * so a 1000-part list only ever renders snapshots for what the user is
- * actually looking at, not all 1000 up front. `rootMargin` starts the
- * fetch slightly before the card is literally on-screen, so the photo is
- * usually already there by the time it scrolls fully into view. No-op
- * (and never observes) once `detailsLoaded` is already `true` — the
- * common case in non-lazy mode, where there's nothing to wait for.
- */
-function LazyPartThumb({
-  part,
-  lazy,
-  onNeedDetails,
-}: {
-  part: ResolvedPart;
-  lazy: boolean;
-  onNeedDetails: (part: ResolvedPart) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const requestedRef = useRef(false);
-
-  useEffect(() => {
-    if (!lazy || part.detailsLoaded || requestedRef.current) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && !requestedRef.current) {
-          requestedRef.current = true;
-          onNeedDetails(part);
-        }
-      },
-      { rootMargin: '300px' },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [lazy, part, onNeedDetails]);
-
-  return (
-    <div ref={containerRef}>
-      <PartThumb part={part} pending={lazy && !part.detailsLoaded} />
     </div>
   );
 }
@@ -505,8 +391,6 @@ function PartsGrid({
   attachingGlbArticles,
   hasGlbAttached,
   readOnly,
-  lazy,
-  onNeedDetails,
   onAdd,
   onRefreshPhoto,
   onAttachGlb,
@@ -522,8 +406,6 @@ function PartsGrid({
   attachingGlbArticles: Set<string>;
   hasGlbAttached: (productId: string | undefined) => boolean;
   readOnly?: boolean;
-  lazy: boolean;
-  onNeedDetails: (part: ResolvedPart) => void;
   onAdd: (part: ResolvedPart) => void;
   onRefreshPhoto: (part: ResolvedPart) => void;
   onAttachGlb: (part: ResolvedPart) => void;
@@ -542,7 +424,7 @@ function PartsGrid({
         const needsGlb = !hasGlbAttached(part.product?.id);
         return (
           <li key={part.article} className="flex flex-col gap-2 rounded-md border border-border p-2">
-            <LazyPartThumb part={part} lazy={lazy} onNeedDetails={onNeedDetails} />
+            <PartThumb part={part} />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium" title={part.product?.article ?? part.article}>
                 {part.product?.article ?? part.article}
