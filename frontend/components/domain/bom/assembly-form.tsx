@@ -32,7 +32,7 @@ const assemblySchema = z.object({
   baseSalePriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
   germanPriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
 });
-type AssemblyFormValues = z.infer<typeof assemblySchema>;
+export type AssemblyFormValues = z.infer<typeof assemblySchema>;
 
 export function assemblyToFormValues(assembly?: Assembly): Partial<AssemblyFormValues> {
   if (!assembly) return {};
@@ -57,6 +57,8 @@ export interface AssemblyFormProps {
   /** Only used in create mode (no `assembly` yet) — see PendingPhotoField. */
   pendingPhoto?: File | null;
   onPendingPhotoChange?: (file: File | null) => void;
+  /** Create-mode only: seeds fields (e.g. name/article from a 3D-model "Складові вузли" candidate — see `useCreateAssemblyFromPart`) without a full `Assembly`. */
+  initialValues?: Partial<AssemblyFormValues>;
   /** View-only for a role with `assemblies:read` but not `assemblies:write`. */
   readOnly?: boolean;
 }
@@ -68,6 +70,7 @@ export function AssemblyForm({
   submitError,
   pendingPhoto,
   onPendingPhotoChange,
+  initialValues,
   readOnly,
 }: AssemblyFormProps) {
   const t = useTranslations('bom');
@@ -132,7 +135,7 @@ export function AssemblyForm({
     formState: { errors },
   } = useForm<AssemblyFormValues>({
     resolver: zodResolver(assemblySchema),
-    defaultValues: assemblyToFormValues(assembly),
+    defaultValues: { ...assemblyToFormValues(assembly), ...initialValues },
   });
 
   async function submit(values: AssemblyFormValues) {

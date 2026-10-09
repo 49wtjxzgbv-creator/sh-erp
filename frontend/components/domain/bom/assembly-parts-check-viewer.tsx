@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
@@ -9,8 +10,11 @@ import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useCreateProductFromPart, dataUrlToFile } from '@/components/domain/bom/use-create-product-from-part';
+import { useCreateAssemblyFromPart } from '@/components/domain/bom/use-create-assembly-from-part';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
+import { CreateAssemblyDialog } from '@/components/domain/bom/create-assembly-dialog';
 import { getProductsByArticles, type Product } from '@/lib/api-client/catalog';
+import type { Assembly } from '@/lib/api-client/bom';
 import { uploadFile } from '@/lib/api-client/files';
 import { cn } from '@/lib/utils';
 
@@ -96,11 +100,14 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const bomSet = new Set(bomArticles.map((a) => a.trim().toUpperCase()));
   const { appendProductLines } = useAssemblyBomActions(assemblyId);
   const { pending, requestCreate, dialogProps } = useCreateProductFromPart(appendProductLines);
+  const { requestCreate: requestCreateAssembly, dialogProps: assemblyDialogProps } = useCreateAssemblyFromPart();
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [exportingArticles, setExportingArticles] = useState<Set<string>>(new Set());
+  const [exportingAssemblyArticles, setExportingAssemblyArticles] = useState<Set<string>>(new Set());
   const [updatingPhotoArticles, setUpdatingPhotoArticles] = useState<Set<string>>(new Set());
   const [attachingGlbArticles, setAttachingGlbArticles] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+  const router = useRouter();
 
   // "можна ще окрім фото додавати gbl до існуючих товарів в яких gbl
   // відсутній" (2026-10-08): one batch request for every matched product's
@@ -128,6 +135,29 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
         return next;
       });
     }
+  }
+
+  // "якщо створюємо специфікацію також автоматично має підтягуватися фото
+  // назва артикул і glb файл" (2026-10-09): same "reuse the kept-alive
+  // group via exportPartGlb" reasoning as `handleCreateClick` above, just
+  // feeding `useCreateAssemblyFromPart` instead of the product one.
+  async function handleCreateSpecClick(part: ResolvedPart) {
+    setExportingAssemblyArticles((prev) => new Set(prev).add(part.article));
+    try {
+      const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
+      requestCreateAssembly(part.article, part.name, part.photoDataUrl, glb);
+    } finally {
+      setExportingAssemblyArticles((prev) => {
+        const next = new Set(prev);
+        next.delete(part.article);
+        return next;
+      });
+    }
+  }
+
+  async function handleAssemblyCreated(assembly: Assembly) {
+    await assemblyDialogProps.onCreated(assembly);
+    router.push(`/bom/${assembly.id}/components`);
   }
 
   // The one-time `analyzeGlbParts` + catalog-resolution pass (the effect
@@ -305,14 +335,14 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
                   <p className="text-xs text-muted-foreground">{t('partsCheckMeshCount', { count: part.meshCount })}</p>
                 </div>
                 {!readOnly && (
-                  <a
-                    href="/bom/new"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50"
+                  <button
+                    type="button"
+                    onClick={() => handleCreateSpecClick(part)}
+                    disabled={exportingAssemblyArticles.has(part.article)}
+                    className="flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-secondary/50 disabled:opacity-50"
                   >
-                    {t('partsCheckCreateAssembly')}
-                  </a>
+                    {exportingAssemblyArticles.has(part.article) ? <Loader2 className="h-3 w-3 animate-spin" /> : t('partsCheckCreateAssembly')}
+                  </button>
                 )}
               </li>
             ))}
@@ -321,6 +351,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
       </section>
 
       <CreateProductDialog {...dialogProps} onCreated={handleCreated} />
+      <CreateAssemblyDialog {...assemblyDialogProps} onCreated={handleAssemblyCreated} />
     </div>
   );
 }
