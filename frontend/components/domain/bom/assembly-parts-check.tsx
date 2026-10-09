@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
-import { peekGlbNodeCount, MOBILE_NODE_COUNT_LIMIT } from '@/lib/glb-node-count';
 
 const AssemblyPartsCheckViewer = dynamic(
   () => import('./assembly-parts-check-viewer').then((m) => m.AssemblyPartsCheckViewer),
@@ -57,31 +55,6 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
   const files = byEntity?.[assemblyId] ?? [];
   const modelDoc = files.find((f) => is3DModelFile(f.originalName));
   const glbUrl = modelDoc ? (isGlbFile(modelDoc.originalName) ? modelDoc.downloadUrl : modelDoc.convertedDownloadUrl) : undefined;
-  const tooLargeByBytes = Boolean(modelDoc && modelDoc.sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice());
-
-  // "так до цього ж працювало і це не тільки на мому телефоні... а на
-  // всіх" (2026-10-09, real crash report): same node-count crash risk as
-  // `Step3DViewer`'s own guard — a model can be small by byte size yet
-  // still have tens of thousands of scene-graph nodes (a real 10MB file
-  // had 34,257). `AssemblyPartsCheckViewer` must not even start lazy-
-  // loading (which immediately downloads the whole file) until this
-  // resolves on mobile — so this is its own 'checking' state, not just a
-  // boolean flipped after the fact.
-  const [mobileNodeCheck, setMobileNodeCheck] = useState<'checking' | 'safe' | 'blocked'>('checking');
-  useEffect(() => {
-    let cancelled = false;
-    if (!glbUrl || tooLargeByBytes || !isMobileDevice()) {
-      setMobileNodeCheck('safe');
-      return;
-    }
-    setMobileNodeCheck('checking');
-    peekGlbNodeCount(glbUrl).then((count) => {
-      if (!cancelled) setMobileNodeCheck(count != null && count > MOBILE_NODE_COUNT_LIMIT ? 'blocked' : 'safe');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [glbUrl, tooLargeByBytes]);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
@@ -92,11 +65,8 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
   if (!glbUrl) {
     return <p className="text-sm text-muted-foreground">{t('partsCheckConverting')}</p>;
   }
-  if (tooLargeByBytes || mobileNodeCheck === 'blocked') {
+  if (modelDoc.sizeBytes > MOBILE_SIZE_LIMIT_BYTES && isMobileDevice()) {
     return <p className="text-sm text-muted-foreground">{t('partsCheckTooLargeForMobile')}</p>;
-  }
-  if (mobileNodeCheck === 'checking') {
-    return <p className="text-sm text-muted-foreground">{tc('loading')}</p>;
   }
 
   return <AssemblyPartsCheckViewer assemblyId={assemblyId} glbUrl={glbUrl} sizeBytes={modelDoc.sizeBytes} readOnly={readOnly} />;
