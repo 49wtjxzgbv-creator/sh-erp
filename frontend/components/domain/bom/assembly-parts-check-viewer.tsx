@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
-import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
+import { analyzeGlbParts, type GlbAnalysisProgress, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -58,6 +59,8 @@ async function resolveAgainstCatalog(parts: GlbPartAnalysis[]): Promise<Resolved
 export interface AssemblyPartsCheckViewerProps {
   assemblyId: string;
   glbUrl: string;
+  /** The model file's own size, for the download phase's progress percentage (see `GlbAnalysisProgress`) — omit to just show an indeterminate bar. */
+  sizeBytes?: number;
   readOnly?: boolean;
 }
 
@@ -69,11 +72,16 @@ export interface AssemblyPartsCheckViewerProps {
  * `next/dynamic`-loaded (`ssr: false`) from `assembly-parts-check.tsx` so
  * three.js only enters this one tab's chunk, not every BOM tab's.
  */
-export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: AssemblyPartsCheckViewerProps) {
+export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, sizeBytes, readOnly }: AssemblyPartsCheckViewerProps) {
   const t = useTranslations('bom');
   const tf = useTranslations('files');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [parts, setParts] = useState<ResolvedPart[]>([]);
+  // "потрібно додати якусь полоску з відсотком завантаження щоб людина
+  // розуміла що сайт не завис" (2026-10-09): `analyzeGlbParts` reports two
+  // distinct phases (downloading the file, then analyzing each distinct
+  // part) — kept as one slot since they're sequential, never simultaneous.
+  const [progress, setProgress] = useState<GlbAnalysisProgress | null>(null);
   // "коли тут створюєш товар то не додається до нього файл gbl" (2026-10-08):
   // the analysis keeps the parsed model alive (see `analyzeGlbParts`'s own
   // `dispose` comment) specifically so a part's standalone .glb can be
@@ -84,9 +92,10 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   useEffect(() => {
     let cancelled = false;
     setState('loading');
+    setProgress(null);
     (async () => {
       try {
-        const analysis = await analyzeGlbParts(glbUrl);
+        const analysis = await analyzeGlbParts(glbUrl, (p) => !cancelled && setProgress(p));
         if (cancelled) {
           analysis.dispose();
           return;
@@ -256,7 +265,22 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   }
 
   if (state === 'loading') {
-    return <p className="text-sm text-muted-foreground">{tf('loadingModel')}</p>;
+    const downloadPercent = progress?.stage === 'downloading' && sizeBytes ? (progress.loadedBytes / sizeBytes) * 100 : undefined;
+    const label =
+      progress?.stage === 'downloading'
+        ? sizeBytes
+          ? `${tf('loadingModel')} ${Math.min(100, Math.round(downloadPercent ?? 0))}%`
+          : tf('loadingModel')
+        : progress?.stage === 'analyzing'
+          ? t('partsCheckAnalyzingProgress', { done: progress.done, total: progress.total })
+          : tf('loadingModel');
+    const analyzingPercent = progress?.stage === 'analyzing' ? (progress.done / progress.total) * 100 : undefined;
+    return (
+      <div className="max-w-xs space-y-2">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <ProgressBar percent={downloadPercent ?? analyzingPercent} />
+      </div>
+    );
   }
   if (state === 'error') {
     return <p className="text-sm text-destructive">{tf('modelLoadError')}</p>;

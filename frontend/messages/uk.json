@@ -353,6 +353,7 @@
     "partsCheckAssemblies": "Складові вузли — підвироби ({count})",
     "partsCheckAssembliesHint": "Ці вузли складаються з кількох деталей (не з однієї) — це можуть бути справжні підвироби або випадкові групування з CAD-файлу. Перевірте і додайте як окрему специфікацію, якщо потрібно.",
     "partsCheckMeshCount": "{count} деталей всередині",
+    "partsCheckAnalyzingProgress": "Аналіз деталей... {done} з {total}",
     "partsCheckCreateAssembly": "Створити специфікацію",
     "partsCheckAdd": "Додати в специфікацію",
     "partsCheckAdded": "У специфікації",

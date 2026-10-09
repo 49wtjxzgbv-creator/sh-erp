@@ -69,5 +69,5 @@ export function AssemblyPartsCheck({ assemblyId, readOnly }: AssemblyPartsCheckP
     return <p className="text-sm text-muted-foreground">{t('partsCheckTooLargeForMobile')}</p>;
   }
 
-  return <AssemblyPartsCheckViewer assemblyId={assemblyId} glbUrl={glbUrl} readOnly={readOnly} />;
+  return <AssemblyPartsCheckViewer assemblyId={assemblyId} glbUrl={glbUrl} sizeBytes={modelDoc.sizeBytes} readOnly={readOnly} />;
 }

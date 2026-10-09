@@ -352,6 +352,7 @@
     "partsCheckAssemblies": "Multi-part nodes (possible sub-assemblies) ({count})",
     "partsCheckAssembliesHint": "These nodes are made of several parts, not one -- they may be real sub-assemblies or just accidental CAD-export groupings. Review and create a separate specification if appropriate.",
     "partsCheckMeshCount": "{count} parts inside",
+    "partsCheckAnalyzingProgress": "Analyzing parts... {done} of {total}",
     "partsCheckCreateAssembly": "Create specification",
     "partsCheckAdd": "Add to specification",
     "partsCheckAdded": "In specification",

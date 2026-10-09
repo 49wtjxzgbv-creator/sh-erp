@@ -11,6 +11,7 @@ import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loade
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
+import { ProgressBar } from '@/components/ui/progress-bar';
 
 /**
  * Renders a STEP (.step/.stp) or glTF (.glb) CAD file in-browser.
@@ -206,6 +207,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [pendingArticles, setPendingArticles] = useState<Set<string>>(new Set());
   const [notFoundArticles, setNotFoundArticles] = useState<Set<string>>(new Set());
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,8 +228,11 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       setSelectedId(null);
       setIsolateMode(false);
       setExplodedMode(false);
+      setDownloadedBytes(0);
       try {
-        const group = glbUrl ? await loadGlb(glbUrl) : await loadStepViaWorker(url, (w) => (worker = w));
+        const group = glbUrl
+          ? await loadGlb(glbUrl, (loaded) => !cancelled && setDownloadedBytes(loaded))
+          : await loadStepViaWorker(url, (w) => (worker = w));
         if (cancelled) return;
 
         const builtTree = buildTree(group);
@@ -423,7 +428,14 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
           </button>
         )}
         {state === 'loading' && (
-          <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
+          <div className="absolute inset-0 flex items-center justify-center px-6">
+            <div className="w-full max-w-xs space-y-2">
+              <p className="text-center text-sm text-muted-foreground">
+                {sizeBytes ? `${t('loadingModel')} ${Math.min(100, Math.round((downloadedBytes / sizeBytes) * 100))}%` : t('loadingModel')}
+              </p>
+              <ProgressBar percent={sizeBytes ? (downloadedBytes / sizeBytes) * 100 : undefined} />
+            </div>
+          </div>
         )}
         {state === 'error' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-destructive">{t('modelLoadError')}</p>
@@ -825,8 +837,44 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
   return group.children.map(walk);
 }
 
-async function loadGlb(glbUrl: string): Promise<THREE.Object3D> {
-  const gltf = await new GLTFLoader().loadAsync(glbUrl);
+/**
+ * "потрібно додати якусь полоску з відсотком завантаження" (2026-10-09):
+ * `GLTFLoader.loadAsync`'s own progress events derive the percentage from
+ * the response's `Content-Length` header — which the storage proxy no
+ * longer sends once a response is gzip-compressed on the fly (compressed
+ * size isn't known upfront, so nginx drops the header instead of lying
+ * about it). Reading the download ourselves via `fetch`'s stream `reader`
+ * sidesteps that entirely: `value.byteLength` per chunk is real bytes
+ * received regardless of `Content-Length`, and the caller already knows
+ * the file's true (decompressed) size from its own file-asset metadata
+ * (`sizeBytes`) to use as the percentage's denominator — no header needed
+ * on either end. Falls back to the plain one-shot loader when no progress
+ * callback is wanted (every caller that doesn't show a progress UI).
+ */
+async function loadGlb(glbUrl: string, onProgress?: (loadedBytes: number) => void): Promise<THREE.Object3D> {
+  if (!onProgress) {
+    const gltf = await new GLTFLoader().loadAsync(glbUrl);
+    return gltf.scene;
+  }
+  const response = await fetch(glbUrl);
+  if (!response.ok || !response.body) throw new Error(`Failed to download model (${response.status})`);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded);
+  }
+  const merged = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const gltf = await new GLTFLoader().parseAsync(merged.buffer, '');
   return gltf.scene;
 }
 
@@ -1568,8 +1616,10 @@ function yieldToMain(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis> {
-  const group = await loadGlb(glbUrl);
+export type GlbAnalysisProgress = { stage: 'downloading'; loadedBytes: number } | { stage: 'analyzing'; done: number; total: number };
+
+export async function analyzeGlbParts(glbUrl: string, onProgress?: (progress: GlbAnalysisProgress) => void): Promise<GlbModelAnalysis> {
+  const group = await loadGlb(glbUrl, onProgress ? (loadedBytes) => onProgress({ stage: 'downloading', loadedBytes }) : undefined);
   const tree = buildTree(group);
 
   const byArticle = new Map<string, { nodeId: string; article: string; name: string; qty: number }>();
@@ -1625,7 +1675,8 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   // the browser service input/paint/the hang-watchdog in between, without
   // changing what gets computed.
   const parts: GlbPartAnalysis[] = [];
-  for (const part of partsMeta) {
+  for (let i = 0; i < partsMeta.length; i++) {
+    const part = partsMeta[i];
     const target = findByTreeId(group, part.nodeId);
     const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
     const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
@@ -1633,6 +1684,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
     const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
     parts.push({ nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 });
+    onProgress?.({ stage: 'analyzing', done: i + 1, total: partsMeta.length });
     await yieldToMain();
   }
   parts.sort((a, b) => a.article.localeCompare(b.article));
