@@ -1500,6 +1500,21 @@ export interface GlbPartAnalysis {
    * of offering "Створити товар" on something that isn't a simple part.
    */
   meshCount: number;
+  /**
+   * "показувати список миттєво... а знімок/об'єм підтягувати лише коли
+   * користувач реально розгортає/додає конкретну деталь" (2026-10-09,
+   * for files over `LAZY_ANALYSIS_THRESHOLD_BYTES`): a real 105MB
+   * assembly came in at 1008 distinct parts, each needing its own
+   * offscreen WebGL render + exact triangle-math pass — measured at
+   * ~108 SECONDS total for that file, utterly dwarfing the ~3s download
+   * and parse combined (see `analyzeGlbParts`'s `lazy` option). `false`
+   * means `photoDataUrl`/`volumeMm3`/`dimensionsMm`/`surfaceAreaMm2`
+   * above are still placeholders (`null`/`0`) — call `analyzePart` to
+   * fill them in for this one part. Always `true` in the (default)
+   * eager mode, where every part already has real values by the time
+   * `analyzeGlbParts` resolves.
+   */
+  detailsLoaded: boolean;
 }
 
 /**
@@ -1583,9 +1598,35 @@ export interface GlbModelAnalysis {
    * geometry (shouldn't happen for a `nodeId` taken from `parts` itself).
    */
   exportPartGlb: (nodeId: string) => Promise<ArrayBuffer | null>;
+  /**
+   * Fills in one part's `photoDataUrl`/`volumeMm3`/`dimensionsMm`/
+   * `surfaceAreaMm2` on demand — only meaningful for a part whose
+   * `detailsLoaded` is still `false` (lazy mode; see that field's own
+   * comment). Safe to call again for an already-loaded part — it just
+   * redoes the same render/math — so callers that want to avoid the
+   * repeat work should check `detailsLoaded` themselves first. `null`
+   * only after `dispose()`, or if the node somehow has no geometry.
+   */
+  analyzePart: (nodeId: string) => Promise<Pick<GlbPartAnalysis, 'photoDataUrl' | 'volumeMm3' | 'dimensionsMm' | 'surfaceAreaMm2'> | null>;
   /** Releases the renderer + every mesh's geometry/material — call once `exportPartGlb` is no longer needed (component unmount, or before re-analyzing a different `glbUrl`). */
   dispose: () => void;
 }
+
+/**
+ * "так давай але для файлів більше 40 мб" (2026-10-09): past this size, a
+ * real file's part count/geometry complexity makes eagerly rendering
+ * every single distinct part's snapshot + volume/area math (see
+ * `GlbPartAnalysis.detailsLoaded`'s own comment — a real 105MB file
+ * measured at ~108s for that phase alone) a bad trade against just
+ * showing the list instantly and filling each part's heavy fields in
+ * lazily. Reused as-is for `Step3DViewer`'s unrelated "refuse on mobile"
+ * gate (`MOBILE_SIZE_LIMIT_BYTES`) only because the two thresholds
+ * happen to agree today — kept as separate constants since they answer
+ * different questions (one's a hard refusal by device, this one's an
+ * eager-vs-lazy performance trade-off by file size alone) and may need
+ * to diverge later.
+ */
+export const LAZY_ANALYSIS_THRESHOLD_BYTES = 40 * 1024 * 1024;
 
 /**
  * "потрібно в специфікації щоб кожен раз не відкривати glb файл а була
@@ -1618,7 +1659,12 @@ function yieldToMain(): Promise<void> {
 
 export type GlbAnalysisProgress = { stage: 'downloading'; loadedBytes: number } | { stage: 'analyzing'; done: number; total: number };
 
-export async function analyzeGlbParts(glbUrl: string, onProgress?: (progress: GlbAnalysisProgress) => void): Promise<GlbModelAnalysis> {
+export async function analyzeGlbParts(
+  glbUrl: string,
+  onProgress?: (progress: GlbAnalysisProgress) => void,
+  options?: { lazy?: boolean },
+): Promise<GlbModelAnalysis> {
+  const lazy = options?.lazy ?? false;
   const group = await loadGlb(glbUrl, onProgress ? (loadedBytes) => onProgress({ stage: 'downloading', loadedBytes }) : undefined);
   const tree = buildTree(group);
 
@@ -1638,7 +1684,7 @@ export async function analyzeGlbParts(glbUrl: string, onProgress?: (progress: Gl
 
   const partsMeta = Array.from(byArticle.values());
   if (partsMeta.length === 0) {
-    return { parts: [], exportPartGlb: async () => null, dispose: () => {} };
+    return { parts: [], exportPartGlb: async () => null, analyzePart: async () => null, dispose: () => {} };
   }
 
   const box = new THREE.Box3().setFromObject(group);
@@ -1663,33 +1709,75 @@ export async function analyzeGlbParts(glbUrl: string, onProgress?: (progress: Gl
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
 
-  // "коли завантажуються деталі 3d то браузер вибиває що сайт не
-  // відповідає" (2026-10-09, real mobile report): this used to be one
-  // synchronous `.map()` doing an offscreen WebGL render + readback PLUS
-  // exact whole-mesh triangle math (volume/area/dimensions) for EVERY
-  // distinct part back to back — for a real assembly with dozens of
-  // parts this blocks the main thread continuously for long enough that
-  // mobile Chrome's hang watchdog offers to close the tab (weaker mobile
-  // CPUs/GPUs make it far worse than on desktop, where the same loop just
-  // felt like a brief stall). Yielding one macrotask between parts lets
-  // the browser service input/paint/the hang-watchdog in between, without
-  // changing what gets computed.
+  let disposed = false;
+
+  /** The actual render+math for one part — shared by the eager loop below and the on-demand `analyzePart`. */
+  function computeHeavyFields(target: THREE.Object3D) {
+    return {
+      photoDataUrl: isolateRenderToDataUrl(renderer, scene, camera, group, target),
+      volumeMm3: computeMeshVolume(target, volumeScaleToMm3),
+      dimensionsMm: computeMeshDimensionsMm(target, linearScaleToMm),
+      surfaceAreaMm2: computeMeshSurfaceAreaMm2(target, areaScaleToMm2),
+    };
+  }
+
   const parts: GlbPartAnalysis[] = [];
-  for (let i = 0; i < partsMeta.length; i++) {
-    const part = partsMeta[i];
-    const target = findByTreeId(group, part.nodeId);
-    const photoDataUrl = target ? isolateRenderToDataUrl(renderer, scene, camera, group, target) : null;
-    const volumeMm3 = target ? computeMeshVolume(target, volumeScaleToMm3) : null;
-    const meshCount = target ? meshesUnder(target).length : 0;
-    const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
-    const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
-    parts.push({ nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 });
-    onProgress?.({ stage: 'analyzing', done: i + 1, total: partsMeta.length });
-    await yieldToMain();
+  if (lazy) {
+    // "показувати список миттєво... підтягувати лише коли користувач
+    // реально розгортає/додає" (2026-10-09): `meshCount` alone is cheap
+    // (just counting `Mesh` instances under the subtree, no triangle
+    // math, no WebGL) — stays eager so the simple/multi-piece split still
+    // works immediately. The expensive fields are left as placeholders;
+    // `analyzePart` fills them in per part, on demand.
+    for (const part of partsMeta) {
+      const target = findByTreeId(group, part.nodeId);
+      const meshCount = target ? meshesUnder(target).length : 0;
+      parts.push({
+        nodeId: part.nodeId,
+        article: part.article,
+        name: part.name,
+        qty: part.qty,
+        photoDataUrl: null,
+        volumeMm3: null,
+        meshCount,
+        dimensionsMm: null,
+        surfaceAreaMm2: 0,
+        detailsLoaded: false,
+      });
+    }
+  } else {
+    // "коли завантажуються деталі 3d то браузер вибиває що сайт не
+    // відповідає" (2026-10-09, real mobile report): this used to be one
+    // synchronous `.map()` doing an offscreen WebGL render + readback PLUS
+    // exact whole-mesh triangle math (volume/area/dimensions) for EVERY
+    // distinct part back to back — for a real assembly with dozens of
+    // parts this blocks the main thread continuously for long enough that
+    // mobile Chrome's hang watchdog offers to close the tab (weaker mobile
+    // CPUs/GPUs make it far worse than on desktop, where the same loop just
+    // felt like a brief stall). Yielding one macrotask between parts lets
+    // the browser service input/paint/the hang-watchdog in between, without
+    // changing what gets computed.
+    for (let i = 0; i < partsMeta.length; i++) {
+      const part = partsMeta[i];
+      const target = findByTreeId(group, part.nodeId);
+      const heavy = target ? computeHeavyFields(target) : { photoDataUrl: null, volumeMm3: null, dimensionsMm: null, surfaceAreaMm2: 0 };
+      const meshCount = target ? meshesUnder(target).length : 0;
+      parts.push({ nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, meshCount, detailsLoaded: true, ...heavy });
+      onProgress?.({ stage: 'analyzing', done: i + 1, total: partsMeta.length });
+      await yieldToMain();
+    }
   }
   parts.sort((a, b) => a.article.localeCompare(b.article));
 
-  let disposed = false;
+  async function analyzePart(nodeId: string): Promise<Pick<GlbPartAnalysis, 'photoDataUrl' | 'volumeMm3' | 'dimensionsMm' | 'surfaceAreaMm2'> | null> {
+    if (disposed) return null;
+    const target = findByTreeId(group, nodeId);
+    if (!target) return null;
+    const heavy = computeHeavyFields(target);
+    await yieldToMain();
+    return heavy;
+  }
+
   async function exportPartGlb(nodeId: string): Promise<ArrayBuffer | null> {
     if (disposed) return null;
     const target = findByTreeId(group, nodeId);
@@ -1710,7 +1798,7 @@ export async function analyzeGlbParts(glbUrl: string, onProgress?: (progress: Gl
     });
   }
 
-  return { parts, exportPartGlb, dispose };
+  return { parts, exportPartGlb, analyzePart, dispose };
 }
 
 /**
