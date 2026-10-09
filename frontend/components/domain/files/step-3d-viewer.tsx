@@ -862,8 +862,32 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
  * (which `Step3DViewer` always does now). Delegating back to `loadAsync`
  * gets that same protection for free.
  */
+/** How often `loadGlb`'s progress forwards to its caller — see the throttling comment at the call site below. */
+const PROGRESS_THROTTLE_MS = 150;
+
 async function loadGlb(glbUrl: string, onProgress?: (loadedBytes: number) => void): Promise<THREE.Object3D> {
-  const gltf = await new GLTFLoader().loadAsync(glbUrl, onProgress ? (event) => onProgress(event.loaded) : undefined);
+  // "давай тільки 1" (2026-10-09): three.js's FileLoader fires a progress
+  // event on EVERY network chunk — for a real file that can be dozens to
+  // hundreds of events during one download. Forwarding every single one
+  // straight into a React state update means that many extra re-renders
+  // of the viewer while it's loading, which didn't happen at all before
+  // this progress bar existed (a real candidate for why a WebKit/iPhone
+  // crash on a file that used to load fine). Time-throttling here — not
+  // per-caller — fixes it once for every `loadGlb` caller. The final
+  // value is never forwarded late: once `loadAsync` resolves, the caller
+  // moves on to a 'ready' state that stops rendering the progress bar
+  // anyway, so an in-flight chunk that got throttled away is harmless.
+  let lastForwarded = 0;
+  const throttledOnProgress = onProgress
+    ? (event: ProgressEvent) => {
+        const now = Date.now();
+        if (now - lastForwarded >= PROGRESS_THROTTLE_MS) {
+          lastForwarded = now;
+          onProgress(event.loaded);
+        }
+      }
+    : undefined;
+  const gltf = await new GLTFLoader().loadAsync(glbUrl, throttledOnProgress);
   return gltf.scene;
 }
 
