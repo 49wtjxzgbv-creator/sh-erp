@@ -166,9 +166,23 @@ const MATERIAL_DENSITIES = [
 /** `volumeMm3` is assumed millimeter-scale (see `computeMeshVolume`'s own header comment on why) — 1 m³ = 1e9 mm³, so weight(kg) = volume(mm³) / 1e9 × density(kg/m³). */
 function MaterialWeightPicker({ volumeMm3, onApply }: { volumeMm3: number; onApply: (weightKg: number) => void }) {
   const t = useTranslations('catalog');
-  const [materialKey, setMaterialKey] = useState<string>('');
+  // "за замовчуванням стояв розрахунок ваги матеріал сталь і відразу
+  // підставлявся в вага за одиницю" (2026-10-09): steel by default
+  // (the most common material for this app's parts so far), applied to
+  // the weight field the instant this picker mounts — the material
+  // dropdown and "Підставити у вагу" button both stay fully usable
+  // afterward for picking something else and re-applying by hand.
+  const [materialKey, setMaterialKey] = useState<string>('steel');
   const selected = MATERIAL_DENSITIES.find((m) => m.key === materialKey);
   const weightKg = selected ? (volumeMm3 / 1e9) * selected.density : null;
+
+  useEffect(() => {
+    if (weightKg !== null) onApply(weightKg);
+    // Runs once on mount only — applying again on every `weightKg` change
+    // would silently overwrite a value the user already edited by hand
+    // after switching materials themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-1.5 rounded-md border border-dashed border-border p-3 sm:col-span-3">
@@ -334,6 +348,16 @@ export function ProductForm({
 
   const unitId = watch('unitId');
   const initialWarehouseId = watch('initialWarehouseId');
+
+  // "потрібно щоб за замовчуванням стояла одиниця виміру шт" (2026-10-09):
+  // same pattern as the default-warehouse effect right below — create mode
+  // only, only if nothing's been picked yet (don't fight a deliberate
+  // selection), applied the instant the company's units load.
+  useEffect(() => {
+    if (product || unitId || !units?.length) return;
+    const def = units.find((u) => u.name.trim().toLowerCase() === 'шт');
+    if (def) setValue('unitId', def.id, { shouldValidate: true });
+  }, [product, unitId, units, setValue]);
 
   // Pre-select the company's default warehouse for the "Наявна кількість"
   // field once warehouses load, so the user only has to type a number in
