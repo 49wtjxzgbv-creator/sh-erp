@@ -345,6 +345,8 @@
     "partsCheckNoModel": "No 3D model (.glb/.step) uploaded to this specification yet — add one on the \"Основні дані\" tab, under Documents.",
     "partsCheckConverting": "The 3D model is still being processed on the server — try refreshing in a minute.",
     "partsCheckEmpty": "No parts with recognizable articles were found in the 3D model.",
+    "partsCheckSearchPlaceholder": "Search by article or name...",
+    "partsCheckSearchNoMatches": "No results for \"{query}\".",
     "partsCheckInCatalog": "In catalog ({count})",
     "partsCheckNotInCatalog": "Not in catalog ({count})",
     "partsCheckNone": "No items in this group.",

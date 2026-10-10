@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
-import { Box, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Box, Check, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { analyzeGlbParts, type GlbModelAnalysis, type GlbPartAnalysis } from '@/components/domain/files/step-3d-viewer';
 import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
@@ -75,6 +75,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   const tf = useTranslations('files');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [parts, setParts] = useState<ResolvedPart[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   // "коли тут створюєш товар то не додається до нього файл gbl" (2026-10-08):
   // the analysis keeps the parsed model alive (see `analyzeGlbParts`'s own
   // `dispose` comment) specifically so a part's standalone .glb can be
@@ -271,13 +272,49 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   // one physical thing). Split out into their own section instead of
   // mixing them into the simple-parts lists; the user decides by hand
   // whether each one is a real sub-assembly worth its own specification.
-  const simpleParts = parts.filter((p) => p.meshCount <= 1);
-  const multiPieceParts = parts.filter((p) => p.meshCount > 1);
+  // "щоб з усього списку можна було шукати що потрібно" (2026-10-10): one
+  // query box above all three sections, matched against both the article
+  // and the name — filters each section independently rather than hiding
+  // sections outright, so a query that only matches catalog parts still
+  // shows the other two sections as empty-with-"немає" rather than vanishing.
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const matchesQuery = (p: GlbPartAnalysis) =>
+    normalizedQuery.length === 0 ||
+    p.article.toLowerCase().includes(normalizedQuery) ||
+    p.name.toLowerCase().includes(normalizedQuery);
+  const filteredParts = parts.filter(matchesQuery);
+
+  const simpleParts = filteredParts.filter((p) => p.meshCount <= 1);
+  const multiPieceParts = filteredParts.filter((p) => p.meshCount > 1);
   const inCatalog = simpleParts.filter((p) => p.product);
   const notInCatalog = simpleParts.filter((p) => !p.product);
 
   return (
     <div className="space-y-6">
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t('partsCheckSearchPlaceholder')}
+          className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        {searchQuery.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {normalizedQuery.length > 0 && filteredParts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('partsCheckSearchNoMatches', { query: searchQuery.trim() })}</p>
+      ) : (
+      <>
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">{t('partsCheckInCatalog', { count: inCatalog.length })}</h2>
         {inCatalog.length === 0 ? (
@@ -363,6 +400,8 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
           </ul>
         )}
       </section>
+      </>
+      )}
 
       <CreateProductDialog {...dialogProps} onCreated={handleCreated} />
       <CreateAssemblyDialog {...assemblyDialogProps} onCreated={handleAssemblyCreated} />

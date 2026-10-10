@@ -346,6 +346,8 @@
     "partsCheckNoModel": "До цієї специфікації ще не завантажено 3D-модель (.glb/.step) — додайте її у вкладці «Основні дані», в розділі «Документи».",
     "partsCheckConverting": "3D-модель ще обробляється на сервері — спробуйте оновити сторінку за хвилину.",
     "partsCheckEmpty": "У 3D-моделі не знайдено деталей з розпізнаваними артикулами.",
+    "partsCheckSearchPlaceholder": "Пошук за артикулом або назвою...",
+    "partsCheckSearchNoMatches": "Нічого не знайдено за запитом «{query}».",
     "partsCheckInCatalog": "У каталозі ({count})",
     "partsCheckNotInCatalog": "Немає в каталозі ({count})",
     "partsCheckNone": "Немає позицій у цій групі.",
