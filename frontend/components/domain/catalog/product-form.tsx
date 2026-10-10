@@ -12,6 +12,7 @@ import { useWarehouses } from '@/lib/hooks/use-inventory';
 import type { Product, CreateProductInput } from '@/lib/api-client/catalog';
 import { toNumber } from '@/lib/api-client/decimal';
 import { uploadFile } from '@/lib/api-client/files';
+import { cn, formatEur } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -354,6 +355,32 @@ export function ProductForm({
 
   const unitId = watch('unitId');
   const initialWarehouseId = watch('initialWarehouseId');
+  const sellPriceEur = watch('sellPriceEur');
+  const germanPriceExclVat = watch('germanPriceExclVat');
+
+  // "щоб бачити різницю між нашими цінами і чужими... собівартість наша
+  // ціна ціна в німеччині і різниця з собівартістю" (2026-10-10): same
+  // comparison the Assembly "Собівартість" page already shows
+  // (germanPriceEur vs. costPerUnit), mirrored here for a single Product —
+  // `sellPriceEur` IS this app's own cost basis for a Product (see
+  // ProductSupplierLineDto's own header comment: "the one cost basis every
+  // BOM/valuation calculation in this app is pinned to"). Live off the
+  // form's own watched values (not the saved `product` record) so typing a
+  // new number updates the comparison immediately, before Save.
+  // Cast past the zod-inferred `number | undefined` type: this is an
+  // uncontrolled input (`register`), so the live watched value during
+  // typing is really whatever the DOM gives back (a string, or '' when
+  // empty) — zod's own coercion only runs at submit time, same reality
+  // assembly-form.tsx's own `numeric` helper already works around.
+  const sellPriceRaw = sellPriceEur as unknown as number | string | undefined;
+  const germanPriceRaw = germanPriceExclVat as unknown as number | string | undefined;
+  const sellPriceNum = sellPriceRaw === '' || sellPriceRaw === undefined ? null : Number(sellPriceRaw);
+  const germanPriceNum = germanPriceRaw === '' || germanPriceRaw === undefined ? null : Number(germanPriceRaw);
+  const priceDiff =
+    sellPriceNum !== null && germanPriceNum !== null && Number.isFinite(sellPriceNum) && Number.isFinite(germanPriceNum)
+      ? germanPriceNum - sellPriceNum
+      : null;
+  const priceDiffPct = priceDiff !== null && sellPriceNum ? (priceDiff / sellPriceNum) * 100 : null;
 
   // "потрібно щоб за замовчуванням стояла одиниця виміру шт" (2026-10-09):
   // same pattern as the default-warehouse effect right below — create mode
@@ -609,6 +636,26 @@ export function ProductForm({
             <Input id="priceListRef" {...register('priceListRef')} />
           </div>
         </CardContent>
+        {priceDiff !== null && (
+          <CardContent className="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">{t('sellPrice')}</p>
+              <p className="text-lg font-semibold">{formatEur(sellPriceNum!)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{t('germanPriceExclVat')}</p>
+              <p className="text-lg font-semibold">{formatEur(germanPriceNum!)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">{t('germanPriceDiff')}</p>
+              <p className={cn('text-lg font-semibold', priceDiff >= 0 ? 'text-success' : 'text-destructive')}>
+                {priceDiff >= 0 ? '+' : ''}
+                {formatEur(priceDiff)}
+                {priceDiffPct !== null && ` (${priceDiffPct >= 0 ? '+' : ''}${priceDiffPct.toFixed(0)}%)`}
+              </p>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {product && (
