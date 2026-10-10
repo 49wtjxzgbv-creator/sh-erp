@@ -98,6 +98,8 @@ export interface EntityDocumentsFieldProps {
     glb: ArrayBuffer | null,
     volumeMm3: number | null,
   ) => void;
+  /** Forwarded to Step3DViewer's own `onActivateAr` prop — see its header comment. */
+  onActivateAr?: (article: string, name: string, glb: ArrayBuffer | null) => Promise<string | null>;
 }
 
 /**
@@ -107,7 +109,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct, onActivateAr }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -275,9 +277,15 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                     ? ((isMobileDevice() && modelDoc.mobileOptimizedDownloadUrl) || modelDoc.optimizedDownloadUrl || modelDoc.downloadUrl)
                     : modelDoc.convertedDownloadUrl
                 }
+                // "показується не весь виріб а по одній деталі" (2026-10-10)
+                // — see Step3DViewer's own `arGlbUrl` header comment for why
+                // the whole-model AR button needs this SEPARATE,
+                // de-instanced variant instead of reusing `glbUrl` above.
+                arGlbUrl={isGlbFile(modelDoc.originalName) ? modelDoc.arOptimizedDownloadUrl : modelDoc.convertedDownloadUrl}
                 bomArticles={bomArticles}
                 onAddToBom={onAddToBom}
                 onCreateProduct={onCreateProduct}
+                onActivateAr={onActivateAr}
               />
             )}
           </div>

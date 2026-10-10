@@ -15,7 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
-import { EntityDocumentsField } from '@/components/domain/files/entity-documents-field';
+import { EntityDocumentsField, isGlbFile } from '@/components/domain/files/entity-documents-field';
+import { listFilesForEntities, getFileDownloadUrl, uploadFile } from '@/lib/api-client/files';
+import { toast } from '@/lib/hooks/use-toast';
 import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
@@ -129,6 +131,39 @@ export function AssemblyForm({
   // that new product's own document); this just forwards its handlers.
   const { requestCreate: handleCreateProduct, dialogProps: createProductDialogProps } = useCreateProductFromPart(appendProductLines);
 
+  // "Камера та Примірка (AR)... у загальному 3D-перегляді, коли обрано
+  // деталь" (2026-10-10): same exact-match catalog lookup as
+  // `handleAddToBom` above (no catalog Product, no AR — there's nothing to
+  // attach a standalone .glb to), then reuses whatever `.glb` the node
+  // already has attached (same `PRODUCT_DOCUMENT` domain/convention as
+  // "Прикріпити GLB" in assembly-parts-check-viewer.tsx) or uploads the one
+  // Step3DViewer just exported if it doesn't.
+  async function handleActivateAr(article: string, _name: string, glb: ArrayBuffer | null): Promise<string | null> {
+    const matches = await queryProducts({ search: article, limit: 20 });
+    const product = matches.items.find((p) => p.article.trim().toUpperCase() === article.trim().toUpperCase());
+    if (!product) {
+      toast.error(tf('arNoProduct', { article }));
+      return null;
+    }
+    // "показується не весь виріб а по одній деталі" (2026-10-10): the
+    // batch endpoint (unlike `listFilesForEntity`) returns presigned URLs
+    // including `arOptimizedDownloadUrl` — the de-instanced variant AR
+    // specifically needs, see GlbOptimizationService's header comment.
+    const existingDocs = (await listFilesForEntities('Product', [product.id], 'PRODUCT_DOCUMENT'))[product.id] ?? [];
+    const existingGlb = existingDocs.find((f) => isGlbFile(f.originalName));
+    if (existingGlb) {
+      return existingGlb.arOptimizedDownloadUrl || existingGlb.downloadUrl;
+    }
+    if (!glb) return null;
+    const glbFile = new File([glb], `${product.article}.glb`, { type: 'model/gltf-binary' });
+    const asset = await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: product.id });
+    // Freshly uploaded — GlbOptimizationService's own AR pass hasn't run
+    // yet (fire-and-forget), so this first AR view necessarily uses the
+    // raw upload until a later click/refetch picks up `arOptimizedDownloadUrl`.
+    const { downloadUrl } = await getFileDownloadUrl(asset.id);
+    return downloadUrl;
+  }
+
   const {
     register,
     handleSubmit,
@@ -195,6 +230,7 @@ export function AssemblyForm({
               bomArticles={bomArticles}
               onAddToBom={readOnly ? undefined : handleAddToBom}
               onCreateProduct={readOnly ? undefined : handleCreateProduct}
+              onActivateAr={readOnly ? undefined : handleActivateAr}
             />
           </CardContent>
         </Card>

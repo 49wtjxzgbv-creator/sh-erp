@@ -40,9 +40,12 @@ async function main() {
     // also re-visits a file whose desktop pass already finished (DONE)
     // but is big enough to need a mobile variant it never got — real
     // case: 447873.glb was optimized before this threshold/field existed.
-    // `glbOptimization.optimize()` is idempotent (always rebuilds both
-    // outputs from the original), so re-running it here is safe even for
-    // files that already have a desktop variant.
+    // "показується не весь виріб а по одній деталі" (2026-10-10): same
+    // re-visit logic for the new AR (de-instanced) variant — every
+    // already-optimized file predates `arOptimizationStatus` and would
+    // otherwise never get one. `glbOptimization.optimize()` is idempotent
+    // (always rebuilds every output from the original), so re-running it
+    // here is safe even for files that already have other variants done.
     const candidates = await prisma.fileAsset.findMany({
       where: {
         originalName: { endsWith: '.glb', mode: 'insensitive' },
@@ -50,6 +53,7 @@ async function main() {
         OR: [
           { optimizationStatus: 'NONE' },
           { sizeBytes: { gt: MOBILE_SIMPLIFY_THRESHOLD_BYTES }, mobileOptimizationStatus: 'NONE' },
+          { arOptimizationStatus: 'NONE' },
         ],
       },
     });
@@ -61,7 +65,9 @@ async function main() {
       if (APPLY) {
         await glbOptimization.optimize(file);
         const updated = await prisma.fileAsset.findUnique({ where: { id: file.id } });
-        console.log(`    -> optimizationStatus=${updated?.optimizationStatus} mobileOptimizationStatus=${updated?.mobileOptimizationStatus}`);
+        console.log(
+          `    -> optimizationStatus=${updated?.optimizationStatus} mobileOptimizationStatus=${updated?.mobileOptimizationStatus} arOptimizationStatus=${updated?.arOptimizationStatus}`,
+        );
       }
     }
     if (!APPLY) console.log('DRY RUN — re-run with APPLY=1 to actually optimize.');

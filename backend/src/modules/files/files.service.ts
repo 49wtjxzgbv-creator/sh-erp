@@ -553,6 +553,19 @@ export class FilesService {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
+        // "показується не весь виріб а по одній деталі" (2026-10-10): the
+        // de-instanced variant AR specifically needs — see
+        // GlbOptimizationService's header comment for why `instance()`'s
+        // own `EXT_mesh_gpu_instancing` output breaks iOS AR Quick Look.
+        // Only this variant should ever reach `ArViewButton` — the
+        // regular viewer keeps using `optimizedDownloadUrl`/
+        // `mobileOptimizedDownloadUrl` above, which it renders correctly.
+        arOptimizedDownloadUrl:
+          file.arOptimizationStatus === 'DONE' && file.arOptimizedStorageKey
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.arOptimizedStorageKey }), {
+                expiresIn: DOWNLOAD_URL_TTL_SECONDS,
+              })
+            : undefined,
       })),
     );
 

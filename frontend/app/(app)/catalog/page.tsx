@@ -8,6 +8,9 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-react';
 import { useProducts, useExportProducts, useDeleteProducts, useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import type { FileAssetWithUrl } from '@/lib/api-client/files';
+import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
+import { ArViewButton } from '@/components/domain/files/ar-view-button';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { SuppliersCell } from '@/components/domain/procurement/suppliers-cell';
@@ -212,13 +215,46 @@ export default function CatalogPage() {
   // ones — see files.service.ts#listForEntities's header comment.
   const productIds = useMemo(() => data?.items.map((p) => p.id) ?? [], [data]);
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  // "а в каталозі просто у кожного товару [AR]" (2026-10-10): same batch
+  // pattern as the photo above, just for PRODUCT_DOCUMENT — only `.glb`/
+  // `.step` attachments resolve to anything (see `resolveArGlbUrl`), every
+  // other document type on the product is simply not found here.
+  const { data: modelsByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_DOCUMENT');
+
+  // Already presigned, real URLs — no export/upload round trip needed the
+  // way a BOM part's own standalone .glb (assembly-parts-check-viewer.tsx)
+  // does, since a product's 3D model is an actual uploaded document, not a
+  // snippet cut out of a bigger assembly file on demand. Always prefers
+  // `arOptimizedDownloadUrl` for a .glb — the ONLY variant that renders
+  // every duplicate part correctly in iOS AR Quick Look (see
+  // GlbOptimizationService's header comment) — falling back to the
+  // regular optimized/raw URL only while that variant is still pending. A
+  // `.step`-converted file never goes through GlbOptimizationService at
+  // all (StepConversionService's own tessellation never instances
+  // anything), so `convertedDownloadUrl` is already AR-safe as-is.
+  function resolveArGlbUrl(files: FileAssetWithUrl[]): string | null {
+    const modelDoc = files.find((f) => is3DModelFile(f.originalName));
+    if (!modelDoc) return null;
+    if (isGlbFile(modelDoc.originalName)) {
+      return modelDoc.arOptimizedDownloadUrl || modelDoc.mobileOptimizedDownloadUrl || modelDoc.optimizedDownloadUrl || modelDoc.downloadUrl;
+    }
+    return modelDoc.convertedDownloadUrl ?? null;
+  }
 
   const columns = useMemo<ColumnDef<Product>[]>(
     () => [
       {
         id: 'photo',
         header: '',
-        cell: ({ row }) => <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="xl" />,
+        cell: ({ row }) => {
+          const glbUrl = resolveArGlbUrl(modelsByProduct?.[row.original.id] ?? []);
+          return (
+            <div className="flex flex-col items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="xl" />
+              {glbUrl && <ArViewButton getGlbUrl={() => Promise.resolve(glbUrl)} className="px-1.5 py-0.5 text-[10px]" />}
+            </div>
+          );
+        },
       },
       { accessorKey: 'article', header: t('article') },
       { accessorKey: 'name', header: t('name') },
@@ -273,7 +309,7 @@ export default function CatalogPage() {
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
       },
     ],
-    [t, photosByProduct, supplierById],
+    [t, photosByProduct, modelsByProduct, supplierById],
   );
 
   if (labelsPreviewPayload) {

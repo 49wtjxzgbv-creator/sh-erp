@@ -15,7 +15,8 @@ import { CreateProductDialog } from '@/components/domain/catalog/create-product-
 import { CreateAssemblyDialog } from '@/components/domain/bom/create-assembly-dialog';
 import { getProductsByArticles, type Product } from '@/lib/api-client/catalog';
 import type { Assembly } from '@/lib/api-client/bom';
-import { uploadFile } from '@/lib/api-client/files';
+import { uploadFile, getFileDownloadUrl } from '@/lib/api-client/files';
+import { ArViewButton } from '@/components/domain/files/ar-view-button';
 import { cn } from '@/lib/utils';
 
 interface ResolvedPart extends GlbPartAnalysis {
@@ -136,6 +137,17 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     if (!productId) return false;
     return (productDocsByEntity?.[productId] ?? []).some((f) => isGlbFile(f.originalName));
   }
+  // "показується не весь виріб а по одній деталі" (2026-10-10): prefers
+  // the de-instanced AR variant once GlbOptimizationService's
+  // fire-and-forget pass finishes — see that service's header comment.
+  // These parts are all single-mesh (`meshCount <= 1`, this grid's own
+  // filter) so there's nothing to de-instance in practice; the fallback
+  // exists purely for whenever that stops being true.
+  function getAttachedGlbUrl(productId: string | undefined): string | undefined {
+    if (!productId) return undefined;
+    const doc = (productDocsByEntity?.[productId] ?? []).find((f) => isGlbFile(f.originalName));
+    return doc?.arOptimizedDownloadUrl || doc?.downloadUrl;
+  }
 
   async function handleCreateClick(part: ResolvedPart) {
     setExportingArticles((prev) => new Set(prev).add(part.article));
@@ -219,17 +231,19 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   // `handleCreateClick`'s own `exportPartGlb` call — reuses the SAME kept-
   // alive `group` (`analysisRef`), no second fetch/parse of the whole
   // model just to attach one part's own standalone .glb.
-  async function handleAttachGlb(part: ResolvedPart) {
-    if (!part.product) return;
+  /** Returns the newly-attached GLB's own presigned download URL — `handleActivateAr` below reuses this exact upload to get a real URL for AR, instead of re-exporting the part a second time. */
+  async function handleAttachGlb(part: ResolvedPart): Promise<string | null> {
+    if (!part.product) return null;
     const productId = part.product.id;
     setAttachingGlbArticles((prev) => new Set(prev).add(part.article));
     try {
       const glb = (await analysisRef.current?.exportPartGlb(part.nodeId)) ?? null;
-      if (glb) {
-        const glbFile = new File([glb], `${part.product.article}.glb`, { type: 'model/gltf-binary' });
-        await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: productId });
-        qc.invalidateQueries({ queryKey: ['files-batch', 'Product'] });
-      }
+      if (!glb) return null;
+      const glbFile = new File([glb], `${part.product.article}.glb`, { type: 'model/gltf-binary' });
+      const asset = await uploadFile(glbFile, { domain: 'PRODUCT_DOCUMENT', entityType: 'Product', entityId: productId });
+      qc.invalidateQueries({ queryKey: ['files-batch', 'Product'] });
+      const { downloadUrl } = await getFileDownloadUrl(asset.id);
+      return downloadUrl;
     } finally {
       setAttachingGlbArticles((prev) => {
         const next = new Set(prev);
@@ -237,6 +251,18 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
         return next;
       });
     }
+  }
+
+  // "Увімкнути камеру" (AR) (2026-10-10): Android Scene Viewer needs a
+  // real, externally-fetchable URL (not a page-scoped `blob:` one), so
+  // reuses the exact same export+upload `handleAttachGlb` already does for
+  // "Прикріпити GLB" — a part that hasn't been attached yet gets uploaded
+  // as its product's PRODUCT_DOCUMENT first (same side effect that button
+  // already has), rather than building a second, parallel upload path.
+  // Already-attached parts skip straight to their existing URL.
+  async function handleActivateAr(part: ResolvedPart): Promise<string | null> {
+    if (!part.product) return null;
+    return getAttachedGlbUrl(part.product.id) ?? handleAttachGlb(part);
   }
 
   async function handleAdd(part: ResolvedPart) {
@@ -331,6 +357,7 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
             onAdd={handleAdd}
             onRefreshPhoto={handleRefreshPhoto}
             onAttachGlb={handleAttachGlb}
+            onActivateAr={handleActivateAr}
             addLabel={t('partsCheckAdd')}
             addedLabel={t('partsCheckAdded')}
             refreshPhotoLabel={t('partsCheckRefreshPhoto')}
@@ -433,6 +460,7 @@ function PartsGrid({
   onAdd,
   onRefreshPhoto,
   onAttachGlb,
+  onActivateAr,
   addLabel,
   addedLabel,
   refreshPhotoLabel,
@@ -448,6 +476,7 @@ function PartsGrid({
   onAdd: (part: ResolvedPart) => void;
   onRefreshPhoto: (part: ResolvedPart) => void;
   onAttachGlb: (part: ResolvedPart) => void;
+  onActivateAr: (part: ResolvedPart) => Promise<string | null>;
   addLabel: string;
   addedLabel: string;
   refreshPhotoLabel: string;
@@ -525,6 +554,7 @@ function PartsGrid({
                     )}
                   </div>
                 )}
+                {part.product && <ArViewButton getGlbUrl={() => onActivateAr(part)} />}
               </div>
             )}
           </li>

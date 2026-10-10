@@ -103,6 +103,8 @@ export interface FileAssetWithUrl extends FileAsset {
   optimizedDownloadUrl?: string;
   /** Presigned URL for the decimated+instanced .glb (lossy — fewer triangles too), only generated for files over GlbOptimizationService's own 70MB threshold. Only present when `mobileOptimizationStatus === 'DONE'`. Use this ONLY on a mobile device — a computer should always get `optimizedDownloadUrl`/`downloadUrl` for full detail. */
   mobileOptimizedDownloadUrl?: string;
+  /** Presigned URL for the de-instanced (`dedup()` only, no `instance()`) .glb — only present when `arOptimizationStatus === 'DONE'`. The ONLY variant that renders every duplicate part correctly in iOS AR Quick Look (see GlbOptimizationService's header comment for why `optimizedDownloadUrl`/`mobileOptimizedDownloadUrl`'s `EXT_mesh_gpu_instancing` silently drops duplicates there) — always prefer this for `ArViewButton`'s `getGlbUrl`, never for the regular interactive viewer. */
+  arOptimizedDownloadUrl?: string;
 }
 
 /** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */

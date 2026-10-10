@@ -11,6 +11,7 @@ import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loade
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
+import { ArViewButton } from './ar-view-button';
 
 /**
  * Renders a STEP (.step/.stp) or glTF (.glb) CAD file in-browser.
@@ -70,6 +71,19 @@ export interface Step3DViewerProps {
   url: string;
   /** Presigned download URL for a .glb — either pre-converted server-side, or the file itself when it's already a .glb. */
   glbUrl?: string;
+  /**
+   * "показується не весь виріб а по одній деталі" (2026-10-10): the SAME
+   * model, but the de-instanced (`arOptimizedDownloadUrl`) variant —
+   * `instance()`'s `EXT_mesh_gpu_instancing` (used in `glbUrl` above
+   * whenever present) silently drops every duplicate part when
+   * `@google/model-viewer` converts to USDZ for iOS AR Quick Look, so the
+   * whole-model AR button (nothing selected) needs its own, separately
+   * presigned URL rather than reusing `glbUrl`. Falls back to `glbUrl`
+   * itself while this variant is still pending/was never generated (a
+   * `.step`-converted file, for instance, never goes through
+   * GlbOptimizationService at all and is already AR-safe as-is).
+   */
+  arGlbUrl?: string;
   /** The hosting assembly's current BOM product articles, for the optional ✅/⚠️ cross-reference — omit entirely for a non-assembly (e.g. Product) file. */
   bomArticles?: string[];
   /**
@@ -133,6 +147,24 @@ export interface Step3DViewerProps {
     glb: ArrayBuffer | null,
     volumeMm3: number | null,
   ) => void;
+  /**
+   * "Камера та Примірка (AR)" (2026-10-10): a floating "Увімкнути камеру"
+   * button always sits over the canvas whenever `glbUrl` is present —
+   * with nothing selected (or this prop omitted entirely) it opens AR on
+   * the WHOLE assembly straight from `glbUrl` itself, no callback needed.
+   * Selecting a node narrows it down to just that one part instead, but
+   * only when this prop IS supplied: the CALLER resolves `article` against
+   * the catalog and returns a real, publicly-fetchable download URL
+   * (Android's Scene Viewer can't use a page-scoped `blob:` one — see
+   * `ArViewButton`'s own header comment), `null` if there's no matching
+   * product to attach a GLB to (the caller is expected to toast its own
+   * explanation in that case, same convention as `onCreateProduct`'s
+   * sibling dialog owning its own errors). `glb` is this node's own
+   * standalone export (`mountScene`'s `exportPartGlb`), already produced
+   * here for the exact same reason `onCreateProduct` gets one — so the
+   * caller never needs to reach back into the live scene itself.
+   */
+  onActivateAr?: (article: string, name: string, glb: ArrayBuffer | null) => Promise<string | null>;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -188,7 +220,7 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreateProduct }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, onCreateProduct, onActivateAr }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -403,6 +435,26 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
     onCreateProduct?.(article, suggestedName, qty, photoDataUrl, glb, volumeMm3);
   }
 
+  // "а 3д модель усього виробу увімкнути камеру" (2026-10-10): with
+  // nothing selected (or no `onActivateAr` wired at all — a caller that
+  // never passed it still gets whole-model AR for free), AR shows the
+  // WHOLE assembly straight from `arGlbUrl` (falling back to `glbUrl` —
+  // see that prop's own header comment for why they can differ) — already
+  // a real, presigned URL, no export/upload round trip needed at all. A
+  // selected node, when `onActivateAr` IS wired, narrows AR down to just
+  // that one part instead (same "don't pay the export cost up front"
+  // reasoning as `ArViewButton` itself — this whole closure only runs once
+  // the user actually taps the button).
+  async function handleActivateArRequest(): Promise<string | null> {
+    const wholeModelArUrl = arGlbUrl ?? glbUrl ?? null;
+    if (!selectedId || !onActivateAr) return wholeModelArUrl;
+    const node = findNodeById(tree, selectedId);
+    if (!node?.name) return wholeModelArUrl;
+    const article = extractArticleCandidate(node.name);
+    const glb = (await sceneApiRef.current?.exportPartGlb(selectedId)) ?? null;
+    return onActivateAr(article, node.name, glb);
+  }
+
   return (
     // Stacked (model on top, tree below, both scrollable in their own
     // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
@@ -438,6 +490,9 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
             {explodedMode ? <Shrink className="h-3 w-3" /> : <Expand className="h-3 w-3" />}
             {explodedMode ? t('assembleModel') : t('explodeModel')}
           </button>
+        )}
+        {state === 'ready' && glbUrl && (
+          <ArViewButton getGlbUrl={handleActivateArRequest} className="absolute right-2 top-2 bg-background/90 shadow-sm" />
         )}
         {state === 'loading' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
@@ -763,6 +818,16 @@ function suggestProductName(name: string): string {
   const splitIndex = articleSplitIndex(trimmed);
   const rest = splitIndex > 0 ? trimmed.slice(splitIndex + 1) : trimmed;
   return rest.trim().replace(/_/g, ' ');
+}
+
+/** Depth-first lookup by id — the tree only ever gets walked top-down via `ModelTreeList`'s own recursion elsewhere; this is the one spot (`handleActivateArRequest`) that needs the selected node's own data outside that recursion. */
+function findNodeById(nodes: ModelTreeNode[], id: string): ModelTreeNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findNodeById(node.children, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 function treeHasNames(nodes: ModelTreeNode[]): boolean {

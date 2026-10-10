@@ -70,7 +70,7 @@ export class GlbOptimizationService {
     return GLB_EXTENSION.test(originalName);
   }
 
-  /** Fire-and-forget entry point — see class header comment. Never throws; every failure path ends in a FAILED row update instead, leaving the original .glb (and, for optimizationStatus, the already-written non-mobile variant) as the only (still fully usable) version. */
+  /** Fire-and-forget entry point — see class header comment. Never throws; every failure path ends in a FAILED row update instead, leaving the original .glb (and whichever variants already succeeded) as the only (still fully usable) version. */
   async optimize(fileAsset: FileAsset): Promise<void> {
     const { id, companyId, storageKey, originalName, sizeBytes } = fileAsset;
     const needsMobileVariant = sizeBytes > MOBILE_SIMPLIFY_THRESHOLD_BYTES;
@@ -78,16 +78,18 @@ export class GlbOptimizationService {
     try {
       await this.setStatus(companyId, id, 'optimizationStatus', 'optimizedStorageKey', 'PENDING');
       if (needsMobileVariant) await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'PENDING');
+      await this.setStatus(companyId, id, 'arOptimizationStatus', 'arOptimizedStorageKey', 'PENDING');
 
       workDir = await mkdtemp(join(tmpdir(), 'glb-optimize-'));
       const inputPath = join(workDir, 'input.glb');
       const outputPath = join(workDir, 'output.glb');
       const mobileOutputPath = needsMobileVariant ? join(workDir, 'output.mobile.glb') : undefined;
+      const arOutputPath = join(workDir, 'output.ar.glb');
 
       const inputBytes = await this.getObjectBytes(storageKey);
       await writeFile(inputPath, inputBytes);
 
-      await runOptimizeChild(inputPath, outputPath, mobileOutputPath);
+      await runOptimizeChild(inputPath, outputPath, mobileOutputPath, arOutputPath);
       const optimized = await readFile(outputPath);
 
       const optimizedStorageKey = storageKey.replace(GLB_EXTENSION, '') + '.optimized.glb';
@@ -117,12 +119,29 @@ export class GlbOptimizationService {
           await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'FAILED').catch(() => undefined);
         }
       }
+
+      // Same independent try/catch shape as the mobile block above — the
+      // AR (de-instanced) variant's own R2 upload failing must not drag
+      // down the already-successful desktop/mobile statuses.
+      try {
+        const arOptimized = await readFile(arOutputPath);
+        const arOptimizedStorageKey = storageKey.replace(GLB_EXTENSION, '') + '.ar.glb';
+        await this.r2.send(
+          new PutObjectCommand({ Bucket: R2_BUCKET, Key: arOptimizedStorageKey, Body: arOptimized, ContentType: 'model/gltf-binary' }),
+        );
+        await this.setStatus(companyId, id, 'arOptimizationStatus', 'arOptimizedStorageKey', 'DONE', arOptimizedStorageKey);
+        this.logger.log(`Optimized ${originalName} (${id}) for AR: ${inputBytes.byteLength} -> ${arOptimized.byteLength} bytes.`);
+      } catch (err) {
+        this.logger.error(`Failed to upload AR-optimized ${originalName} (${id}): ${err instanceof Error ? err.message : String(err)}`);
+        await this.setStatus(companyId, id, 'arOptimizationStatus', 'arOptimizedStorageKey', 'FAILED').catch(() => undefined);
+      }
     } catch (err) {
       this.logger.error(`Failed to optimize ${originalName} (${id}): ${err instanceof Error ? err.message : String(err)}`);
       await this.setStatus(companyId, id, 'optimizationStatus', 'optimizedStorageKey', 'FAILED').catch(() => undefined);
       if (needsMobileVariant) {
         await this.setStatus(companyId, id, 'mobileOptimizationStatus', 'mobileOptimizedStorageKey', 'FAILED').catch(() => undefined);
       }
+      await this.setStatus(companyId, id, 'arOptimizationStatus', 'arOptimizedStorageKey', 'FAILED').catch(() => undefined);
     } finally {
       if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -150,8 +169,8 @@ export class GlbOptimizationService {
   private async setStatus(
     companyId: string,
     fileAssetId: string,
-    statusField: 'optimizationStatus' | 'mobileOptimizationStatus',
-    keyField: 'optimizedStorageKey' | 'mobileOptimizedStorageKey',
+    statusField: 'optimizationStatus' | 'mobileOptimizationStatus' | 'arOptimizationStatus',
+    keyField: 'optimizedStorageKey' | 'mobileOptimizedStorageKey' | 'arOptimizedStorageKey',
     status: 'PENDING' | 'DONE' | 'FAILED',
     storageKey?: string,
   ): Promise<void> {
@@ -172,10 +191,13 @@ export class GlbOptimizationService {
  * `StepConversionService`'s own `runConvertChild`, see that function's
  * header comment for the full reasoning.
  */
-function runOptimizeChild(inputPath: string, outputPath: string, mobileOutputPath?: string): Promise<void> {
+function runOptimizeChild(inputPath: string, outputPath: string, mobileOutputPath?: string, arOutputPath?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const childScript = join(__dirname, 'glb-optimize-child.js');
-    const args = [childScript, inputPath, outputPath, ...(mobileOutputPath ? [mobileOutputPath] : [])];
+    // The child script reads these positionally — an empty string in the
+    // mobile slot (falsy, same as omitting the arg entirely) keeps the AR
+    // path correctly in 4th position even when no mobile variant is needed.
+    const args = [childScript, inputPath, outputPath, ...(arOutputPath ? [mobileOutputPath ?? '', arOutputPath] : mobileOutputPath ? [mobileOutputPath] : [])];
     const child = spawn(process.execPath, ['--max-old-space-size=4096', ...args], {
       stdio: ['ignore', 'ignore', 'pipe'],
     });

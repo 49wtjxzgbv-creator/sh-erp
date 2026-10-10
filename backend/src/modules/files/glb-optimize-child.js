@@ -53,13 +53,27 @@
 // unaffected); only the extra mobile output, when requested via a 3rd CLI
 // arg, pays this lossy cost. Built from a FRESH read of the input bytes
 // each time (gltf-transform's `Document` has no built-in deep-clone) so
-// the two outputs never share mutated state.
+// the outputs never share mutated state.
+//
+// "показується не весь виріб а по одній деталі" (2026-10-10, real user
+// report + confirmed root cause): `EXT_mesh_gpu_instancing` above is read
+// correctly by three.js's own `GLTFLoader` (our interactive viewer) but
+// NOT by `@google/model-viewer`'s bundled `USDZExporter` — confirmed by
+// reading its source: it treats an `InstancedMesh` as a plain single
+// `Mesh` (both share `isMesh === true`) and exports only ONE copy at the
+// instance root's own transform. iOS AR Quick Look (which converts
+// through USDZ) ends up missing every duplicate instance; Android Scene
+// Viewer (raw .glb, no USDZ step) is unaffected. A THIRD variant — `'ar'`
+// mode below, requested via a 4th CLI arg — runs `dedup()` only and skips
+// `instance()` entirely, so every duplicate stays a real, separate glTF
+// node (plus the same lossy weld+simplify decimation `'mobile'` mode
+// uses, since node count can no longer be collapsed for this one).
 
 const fs = require('fs');
 
-const [, , inputGlbPath, outputGlbPath, mobileOutputGlbPath] = process.argv;
+const [, , inputGlbPath, outputGlbPath, mobileOutputGlbPath, arOutputGlbPath] = process.argv;
 if (!inputGlbPath || !outputGlbPath) {
-  console.error('Usage: node glb-optimize-child.js <input.glb> <output.glb> [mobile-output.glb]');
+  console.error('Usage: node glb-optimize-child.js <input.glb> <output.glb> [mobile-output.glb] [ar-output.glb]');
   process.exit(2);
 }
 
@@ -93,16 +107,23 @@ function meshBearingNodesUnder(node, out) {
 
 /**
  * Reads a FRESH `Document` from `inputBytes` and runs the shared
- * "protect named article representatives, then dedup+instance" pipeline
- * — see the file header for the full reasoning. `simplifyFirst` adds the
- * lossy weld+simplify decimation pass (mobile variant only) after
- * instancing (order doesn't actually matter for dedup/instance's own
- * correctness — simplifying first still let identical meshes dedup fine
- * in testing — but doing it after means each already-deduplicated unique
- * mesh gets decimated once, not once per original duplicate, which is
- * strictly cheaper).
+ * "protect named article representatives, then dedup(+instance)" pipeline
+ * — see the file header for the full reasoning. `mode` is one of:
+ * - `'desktop'`: full-subtree protection (needed for `exportPartGlb`),
+ *   `instance()` at its conservative default `min`, no decimation.
+ * - `'mobile'`: first-mesh-only protection, `instance({min: 2})`, plus
+ *   lossy weld+simplify decimation AFTER instancing (order doesn't
+ *   actually matter for dedup/instance's own correctness — simplifying
+ *   first still let identical meshes dedup fine in testing — but doing it
+ *   after means each already-deduplicated unique mesh gets decimated
+ *   once, not once per original duplicate, which is strictly cheaper).
+ * - `'ar'`: `dedup()` only, `instance()` SKIPPED ENTIRELY (see this
+ *   file's header comment on `EXT_mesh_gpu_instancing` vs. model-viewer's
+ *   `USDZExporter` for why), plus the same weld+simplify decimation as
+ *   mobile to keep file size/triangle count in check now that node count
+ *   can no longer be collapsed the way instancing does.
  */
-async function buildOptimizedDoc(io, inputBytes, simplifyFirst, label) {
+async function buildOptimizedDoc(io, inputBytes, mode, label) {
   const doc = await io.readBinary(new Uint8Array(inputBytes));
 
   const allNodes = doc.getRoot().listNodes();
@@ -139,46 +160,57 @@ async function buildOptimizedDoc(io, inputBytes, simplifyFirst, label) {
   const { dedup, instance } = require('@gltf-transform/functions');
   await doc.transform(dedup());
 
-  // "майже завантажилось але сторінка перегрузилась" (2026-10-09): the
-  // FULL-subtree protection below (every mesh-bearing descendant of every
-  // representative, not just one) is what `exportPartGlb` needs to
-  // re-export a multi-piece part's complete geometry later — correct, but
-  // expensive: a real test on this same file protected 22,762 mesh nodes
-  // across just 1,008 representatives (~22.6 each — some "parts" are
-  // really whole sub-assemblies), which alone blocked instance() from
-  // reducing past 34,051 nodes even with `min: 2`. For the MOBILE
-  // variant specifically — viewing-only, not a source for "Створити
-  // специфікацію" — protecting only the FIRST mesh found per
-  // representative is enough to keep that part identifiable/selectable
-  // (and keeps its named parent from being pruned, since pruning only
-  // removes nodes left with no mesh/children at all), while freeing every
-  // OTHER descendant mesh to be instanced normally. Confirmed on the same
-  // file: 34,051 -> 3,818 nodes. Desktop keeps full-subtree protection
-  // unconditionally — it's the one variant actual part re-export relies on.
-  const protectedMeshNodes = simplifyFirst
-    ? representativeNodes.map((node) => meshBearingNodesUnder(node, [])[0]).filter(Boolean)
-    : representativeNodes.flatMap((node) => meshBearingNodesUnder(node, []));
-  for (const node of protectedMeshNodes) {
-    const mesh = node.getMesh();
-    if (mesh) node.setMesh(mesh.clone());
+  let protectedMeshNodes = [];
+  if (mode !== 'ar') {
+    // "майже завантажилось але сторінка перегрузилась" (2026-10-09): the
+    // FULL-subtree protection below (every mesh-bearing descendant of every
+    // representative, not just one) is what `exportPartGlb` needs to
+    // re-export a multi-piece part's complete geometry later — correct, but
+    // expensive: a real test on this same file protected 22,762 mesh nodes
+    // across just 1,008 representatives (~22.6 each — some "parts" are
+    // really whole sub-assemblies), which alone blocked instance() from
+    // reducing past 34,051 nodes even with `min: 2`. For the MOBILE
+    // variant specifically — viewing-only, not a source for "Створити
+    // специфікацію" — protecting only the FIRST mesh found per
+    // representative is enough to keep that part identifiable/selectable
+    // (and keeps its named parent from being pruned, since pruning only
+    // removes nodes left with no mesh/children at all), while freeing every
+    // OTHER descendant mesh to be instanced normally. Confirmed on the same
+    // file: 34,051 -> 3,818 nodes. Desktop keeps full-subtree protection
+    // unconditionally — it's the one variant actual part re-export relies
+    // on. The AR variant skips this block entirely — see below, it never
+    // calls instance() so there's nothing to protect a reference count from.
+    protectedMeshNodes = mode === 'mobile'
+      ? representativeNodes.map((node) => meshBearingNodesUnder(node, [])[0]).filter(Boolean)
+      : representativeNodes.flatMap((node) => meshBearingNodesUnder(node, []));
+    for (const node of protectedMeshNodes) {
+      const mesh = node.getMesh();
+      if (mesh) node.setMesh(mesh.clone());
+    }
+
+    // "майже завантажилось але сторінка перегрузилась" (2026-10-09): on a
+    // real 1,718-unique-mesh file, the default `min: 5` only instanced
+    // meshes repeated 5+ times, leaving 35,586 objects — still a mobile
+    // crash. A real test on the same file: `min: 2` (instance ANY mesh
+    // shared by 2+ nodes — common for mechanical assemblies full of
+    // mirrored/paired parts, not just 5+-times fasteners) cut that to
+    // 1,949 (94.5% reduction, vs. 44%). Protected representative meshes
+    // above are unaffected either way — their reference count was already
+    // dropped to exactly 1 by the `clone()` above, below ANY `min >= 2`.
+    // Desktop keeps the conservative default; this lower bar is bundled
+    // into the same "only for the lossy mobile variant" scoping as
+    // weld/simplify below — it's lossless either way, but kept out of
+    // desktop's output rather than silently changing it too.
+    await doc.transform(instance(mode === 'mobile' ? { min: 2 } : undefined));
   }
+  // "показується не весь виріб а по одній деталі" (2026-10-10): the AR
+  // variant deliberately STOPS after `dedup()` — see this file's header
+  // comment for why `EXT_mesh_gpu_instancing` (what `instance()` above
+  // would write) silently loses every duplicate instance when
+  // `@google/model-viewer`'s USDZExporter converts for iOS AR Quick Look.
+  // Every node stays a real, individually-walkable glTF node.
 
-  // "майже завантажилось але сторінка перегрузилась" (2026-10-09): on a
-  // real 1,718-unique-mesh file, the default `min: 5` only instanced
-  // meshes repeated 5+ times, leaving 35,586 objects — still a mobile
-  // crash. A real test on the same file: `min: 2` (instance ANY mesh
-  // shared by 2+ nodes — common for mechanical assemblies full of
-  // mirrored/paired parts, not just 5+-times fasteners) cut that to
-  // 1,949 (94.5% reduction, vs. 44%). Protected representative meshes
-  // above are unaffected either way — their reference count was already
-  // dropped to exactly 1 by the `clone()` above, below ANY `min >= 2`.
-  // Desktop keeps the conservative default; this lower bar is bundled
-  // into the same "only for the lossy mobile variant" scoping as
-  // weld/simplify below — it's lossless either way, but kept out of
-  // desktop's output rather than silently changing it too.
-  await doc.transform(instance(simplifyFirst ? { min: 2 } : undefined));
-
-  if (simplifyFirst) {
+  if (mode === 'mobile' || mode === 'ar') {
     const { weld, simplify } = require('@gltf-transform/functions');
     const { MeshoptSimplifier } = require('meshoptimizer');
     await MeshoptSimplifier.ready;
@@ -210,14 +242,20 @@ async function main() {
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const inputBytes = fs.readFileSync(inputGlbPath);
 
-  const desktopDoc = await buildOptimizedDoc(io, inputBytes, false, 'desktop');
+  const desktopDoc = await buildOptimizedDoc(io, inputBytes, 'desktop', 'desktop');
   const desktopBytes = await io.writeBinary(desktopDoc);
   fs.writeFileSync(outputGlbPath, Buffer.from(desktopBytes));
 
   if (mobileOutputGlbPath) {
-    const mobileDoc = await buildOptimizedDoc(io, inputBytes, true, 'mobile');
+    const mobileDoc = await buildOptimizedDoc(io, inputBytes, 'mobile', 'mobile');
     const mobileBytes = await io.writeBinary(mobileDoc);
     fs.writeFileSync(mobileOutputGlbPath, Buffer.from(mobileBytes));
+  }
+
+  if (arOutputGlbPath) {
+    const arDoc = await buildOptimizedDoc(io, inputBytes, 'ar', 'ar');
+    const arBytes = await io.writeBinary(arDoc);
+    fs.writeFileSync(arOutputGlbPath, Buffer.from(arBytes));
   }
 }
 

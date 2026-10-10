@@ -647,6 +647,28 @@ model FileAsset {
   mobileOptimizationStatus  FileConversionStatus @default(NONE)
   mobileOptimizedStorageKey String? // R2 key of the decimated+instanced .glb, set once mobileOptimizationStatus = DONE
 
+  // "440158 відображається в ар неправильно... через те що там деталі
+  // обєднані через це там показується не весь виріб а по одній деталі"
+  // (2026-10-10, confirmed root cause): `EXT_mesh_gpu_instancing` (the
+  // extension `instance()` above writes, present in BOTH optimizedStorageKey
+  // and mobileOptimizedStorageKey) is correctly read back by three.js's own
+  // GLTFLoader (our interactive viewer) but NOT by `@google/model-viewer`'s
+  // bundled `USDZExporter` — confirmed by reading its source directly:
+  // `buildHierarchy()` only checks `child.isMesh` (true for `InstancedMesh`
+  // too, since it extends `Mesh`) and exports ONE copy at the instance
+  // root's own transform, silently dropping every other instance's
+  // position. iOS AR Quick Look (which converts to USDZ) ends up missing
+  // every duplicate part; Android Scene Viewer (raw .glb, no USDZ step) is
+  // unaffected. This THIRD variant runs the exact same pipeline minus the
+  // `instance()` call — `dedup()` alone (shared geometry buffers, but each
+  // node stays a plain `Mesh`, so `buildHierarchy` exports every one of
+  // them individually) — so every duplicate part is a real, separate glTF
+  // node again. Always generated (not size-gated like the mobile variant
+  // above) since even a small assembly can have 5+ repeated fasteners that
+  // `instance()` would otherwise collapse for AR specifically.
+  arOptimizationStatus  FileConversionStatus @default(NONE)
+  arOptimizedStorageKey String? // R2 key of the de-instanced (dedup-only) .glb, set once arOptimizationStatus = DONE
+
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
