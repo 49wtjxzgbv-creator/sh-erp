@@ -213,7 +213,18 @@
     "importUpdateQuantitiesHint": "Off by default â the file will only update names/prices/other fields. Enable only if you want the \"Quantity\" column to overwrite current stock.",
     "deleteSelected": "Delete selected ({count})",
     "deleteSelectedConfirmTitle": "Delete {count} products?",
-    "deleteSelectedConfirmDescription": "Products will be marked as deleted. Order and stock history will not be affected."
+    "deleteSelectedConfirmDescription": "Products will be marked as deleted. Order and stock history will not be affected.",
+    "germanPriceImportTitle": "German Price Import",
+    "germanPriceImportDescription": "Upload a PDF (Stuertz purchase order/invoice) or .xlsx with supplier prices. The article and unit price are recognized and matched against your catalog by exact article code — your own price and cost are never changed, only the \"German price\" field is updated.",
+    "germanPriceImportRecognize": "Recognize",
+    "germanPriceImportPreviewSummary": "Matched: {matched}. Not found in catalog: {unmatched}. Ambiguous price (multiple different prices for one article in the document): {ambiguous}.",
+    "germanPriceImportCurrent": "Current",
+    "germanPriceImportRecognized": "Recognized",
+    "germanPriceImportDiff": "Diff",
+    "germanPriceImportUnmatched": "Not in catalog ({count})",
+    "germanPriceImportAmbiguous": "Ambiguous price ({count})",
+    "germanPriceImportApply": "Update ({count})",
+    "germanPriceImportApplied": "Updated prices: {count}."
   },
   "settings": {
     "title": "Ustawienia firmy",

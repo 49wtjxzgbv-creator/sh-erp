@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2 } from 'lucide-react';
+import { Plus, Settings2, Upload, Download, Tag, Grid3x3, Trash2, Euro } from 'lucide-react';
 import { useProducts, useExportProducts, useDeleteProducts, useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
@@ -31,6 +31,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { ImportProductsDialog } from '@/components/domain/catalog/import-products-dialog';
+import { GermanPriceImportDialog } from '@/components/domain/catalog/german-price-import-dialog';
 import { ProductLabelsDialog } from '@/components/domain/catalog/product-labels-dialog';
 import { ProductLabelsPrintContent, expandLabelCopies } from '@/components/domain/catalog/product-labels-print-content';
 import { PrintArea } from '@/components/domain/print/print-area';
@@ -127,6 +128,7 @@ export default function CatalogPage() {
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [germanPriceImportOpen, setGermanPriceImportOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -337,6 +339,12 @@ export default function CatalogPage() {
               {t('importProducts')}
             </Button>
           )}
+          {canWrite && (
+            <Button variant="outline" onClick={() => setGermanPriceImportOpen(true)}>
+              <Euro className="mr-2 h-4 w-4" />
+              {t('germanPriceImportTitle')}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setLabelsOpen(true)}>
             <Tag className="mr-2 h-4 w-4" />
             {t('printLabels')}
@@ -369,6 +377,7 @@ export default function CatalogPage() {
       </div>
 
       {canWrite && <ImportProductsDialog open={importOpen} onOpenChange={setImportOpen} />}
+      {canWrite && <GermanPriceImportDialog open={germanPriceImportOpen} onOpenChange={setGermanPriceImportOpen} />}
       <ProductLabelsDialog open={labelsOpen} onOpenChange={setLabelsOpen} />
 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>

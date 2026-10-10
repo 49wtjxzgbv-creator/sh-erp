@@ -9,8 +9,10 @@ import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 import { SetProductSuppliersDto } from './dto/product-supplier.dto';
+import { ApplyGermanPriceImportDto } from './dto/german-price-import.dto';
 import { ProductsService } from './products.service';
 import { ProductsImportExportService } from './import-export/products-import-export.service';
+import { GermanPriceImportService } from './import-export/german-price-import.service';
 
 const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — generous for a product catalog spreadsheet, small enough to hold entirely in memory (no disk write, see the service's own header comment)
 
@@ -20,6 +22,7 @@ export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly importExportService: ProductsImportExportService,
+    private readonly germanPriceImportService: GermanPriceImportService,
   ) {}
 
   @Post()
@@ -71,6 +74,28 @@ export class ProductsController {
   ) {
     if (!file) throw new CodedBadRequestException('IMPORT_NO_FILE_UPLOADED', 'No file uploaded (expected multipart field "file").');
     return this.importExportService.importProducts(user, file.buffer, updateQuantities === 'true');
+  }
+
+  @Post('german-price-import/preview')
+  @RequirePermissions('products:write')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Recognize article+price rows from an uploaded supplier .pdf/.xlsx (Stuertz-shaped documents only — see ' +
+      'GermanPriceImportService header comment) and preview them against Product.germanPriceExclVat. Read-only — ' +
+      'no DB writes; confirm via POST .../apply.',
+  })
+  async germanPriceImportPreview(@CurrentUser() user: RequestUser, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new CodedBadRequestException('IMPORT_NO_FILE_UPLOADED', 'No file uploaded (expected multipart field "file").');
+    return this.germanPriceImportService.preview(user, file.buffer, file.originalname);
+  }
+
+  @Post('german-price-import/apply')
+  @RequirePermissions('products:write')
+  @ApiOperation({ summary: 'Write the confirmed rows from a prior .../preview call into Product.germanPriceExclVat.' })
+  async germanPriceImportApply(@CurrentUser() user: RequestUser, @Body() dto: ApplyGermanPriceImportDto) {
+    return this.germanPriceImportService.apply(user, dto.updates);
   }
 
   /**

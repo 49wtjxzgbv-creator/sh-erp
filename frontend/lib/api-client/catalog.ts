@@ -249,3 +249,44 @@ export function importProducts(file: File, updateQuantities = false): Promise<Im
 export function exportProducts(): Promise<Blob> {
   return apiClient.getBlob('products/export');
 }
+
+export interface GermanPriceMatch {
+  article: string;
+  productId: string;
+  productName: string;
+  recognizedPrice: number;
+  currentPrice: number | null;
+  diff: number | null;
+}
+export interface GermanPriceUnmatched {
+  article: string;
+  recognizedPrice: number;
+}
+export interface GermanPriceAmbiguous {
+  article: string;
+  prices: number[];
+}
+export interface GermanPricePreviewResult {
+  matched: GermanPriceMatch[];
+  unmatched: GermanPriceUnmatched[];
+  ambiguous: GermanPriceAmbiguous[];
+}
+
+/**
+ * "нам потрібно не оновлювати наші ціни а поруч з нашими писати ці ціни"
+ * (2026-10-10): recognizes article+price rows from a supplier .pdf/.xlsx
+ * (Stuertz-shaped documents — see backend's GermanPriceImportService
+ * header comment) and previews them against `Product.germanPriceExclVat`
+ * — read-only, no writes yet. Same `postFile` multipart shape as
+ * `importProducts` above.
+ */
+export function previewGermanPriceImport(file: File): Promise<GermanPricePreviewResult> {
+  return apiClient.postFile<GermanPricePreviewResult>('products/german-price-import/preview', file);
+}
+
+/** Writes the user-confirmed subset of a prior `previewGermanPriceImport()` result into `Product.germanPriceExclVat`. `errors` is normally empty — each row already matched a real product during preview, so a failure here means that product was deleted in the meantime. */
+export function applyGermanPriceImport(
+  updates: { productId: string; price: number }[],
+): Promise<{ updated: number; errors: { productId: string; message: string }[] }> {
+  return apiClient.post('products/german-price-import/apply', { updates });
+}

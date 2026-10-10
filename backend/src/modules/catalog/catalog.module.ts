@@ -6,6 +6,7 @@ import { CompanyUnitsService } from './company-units.service';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 import { ProductsImportExportService } from './import-export/products-import-export.service';
+import { GermanPriceImportService } from './import-export/german-price-import.service';
 
 @Module({
   // InventoryModule: for StockService — ProductsImportExportService.
@@ -17,7 +18,7 @@ import { ProductsImportExportService } from './import-export/products-import-exp
   // PRODUCT_PHOTO the same way legacy-import's photo migration does.
   imports: [InventoryModule, FilesModule],
   controllers: [ProductsController, CompanyUnitsController],
-  providers: [ProductsService, CompanyUnitsService, ProductsImportExportService],
+  providers: [ProductsService, CompanyUnitsService, ProductsImportExportService, GermanPriceImportService],
   exports: [ProductsService, CompanyUnitsService],
 })
 export class CatalogModule {}

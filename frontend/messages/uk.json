@@ -214,7 +214,18 @@
     "importUpdateQuantitiesHint": "Вимкнено за замовчуванням — файл лише оновить назви/ціни/інші поля. Увімкніть, тільки якщо хочете, щоб колонка \"Кількість\" перезаписала поточні залишки на складі.",
     "deleteSelected": "Видалити вибрані ({count})",
     "deleteSelectedConfirmTitle": "Видалити {count} товарів?",
-    "deleteSelectedConfirmDescription": "Товари буде позначено як видалені. Історію замовлень і складу це не торкнеться."
+    "deleteSelectedConfirmDescription": "Товари буде позначено як видалені. Історію замовлень і складу це не торкнеться.",
+    "germanPriceImportTitle": "Імпорт цін (Німеччина)",
+    "germanPriceImportDescription": "Завантажте PDF (замовлення/рахунок Stuertz) або .xlsx з цінами постачальника. Система розпізнає артикул і ціну за одиницю та зіставить з вашим каталогом за точним артикулом — ваша власна ціна й собівартість не змінюються, оновлюється лише поле \"Ціна в Німеччині\".",
+    "germanPriceImportRecognize": "Розпізнати",
+    "germanPriceImportPreviewSummary": "Знайдено відповідність: {matched}. Не знайдено в каталозі: {unmatched}. Неоднозначна ціна (кілька різних цін для одного артикула в документі): {ambiguous}.",
+    "germanPriceImportCurrent": "Поточна",
+    "germanPriceImportRecognized": "Знайдена",
+    "germanPriceImportDiff": "Різниця",
+    "germanPriceImportUnmatched": "Немає в каталозі ({count})",
+    "germanPriceImportAmbiguous": "Неоднозначна ціна ({count})",
+    "germanPriceImportApply": "Оновити ({count})",
+    "germanPriceImportApplied": "Оновлено цін: {count}."
   },
   "settings": {
     "title": "Налаштування компанії",

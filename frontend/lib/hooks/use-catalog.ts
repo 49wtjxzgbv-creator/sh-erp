@@ -14,6 +14,8 @@ import {
   deleteCompanyUnit,
   importProducts,
   exportProducts,
+  previewGermanPriceImport,
+  applyGermanPriceImport,
   getProductSuppliers,
   setProductSuppliers,
   type QueryProductsInput,
@@ -107,6 +109,19 @@ export function useImportProducts() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ file, updateQuantities }: { file: File; updateQuantities: boolean }) => importProducts(file, updateQuantities),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  });
+}
+
+/** Read-only recognition pass — no cache invalidation, nothing was written yet. */
+export function usePreviewGermanPriceImport() {
+  return useMutation({ mutationFn: (file: File) => previewGermanPriceImport(file) });
+}
+
+export function useApplyGermanPriceImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (updates: { productId: string; price: number }[]) => applyGermanPriceImport(updates),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 }
