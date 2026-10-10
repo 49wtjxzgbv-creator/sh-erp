@@ -150,6 +150,7 @@
     "localPriceInclVat": "Ціна (місцева, з ПДВ)",
     "germanPriceExclVat": "Ціна (DE, без ПДВ)",
     "germanPriceInclVat": "Ціна (DE, з ПДВ)",
+    "germanPriceDiff": "Різниця із собівартістю",
     "weightPerUnitKg": "Вага за одиницю (кг)",
     "materialWeightLabel": "Розрахунок ваги за об'ємом 3D-моделі",
     "modelDimensionsLabel": "Розміри з 3D-моделі:",

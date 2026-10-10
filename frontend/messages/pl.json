@@ -149,6 +149,7 @@
     "localPriceInclVat": "Price (local, incl. VAT)",
     "germanPriceExclVat": "Price (DE, excl. VAT)",
     "germanPriceInclVat": "Price (DE, incl. VAT)",
+    "germanPriceDiff": "Difference from cost",
     "weightPerUnitKg": "Weight per unit (kg)",
     "materialWeightLabel": "Calculate weight from 3D model volume",
     "modelDimensionsLabel": "Dimensions from 3D model:",
