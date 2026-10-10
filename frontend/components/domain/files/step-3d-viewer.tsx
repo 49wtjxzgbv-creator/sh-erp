@@ -162,7 +162,8 @@ interface ModelTreeNode {
 
 interface SceneApi {
   dispose: () => void;
-  setSelected: (id: string | null) => void;
+  /** `instanceId` — see `focusCameraOn`'s own header comment — only ever comes from a raycast hit on an instanced batch; omit for a list-row selection (there's no single instance to point at). */
+  setSelected: (id: string | null, instanceId?: number) => void;
   /** "додай кнопку приховати все і залишити показ саме цієї деталі" (2026-10-08) — hides every mesh except the current selection's own; re-applies automatically if the selection changes while still enabled. No-op (shows everything) whenever nothing is selected. */
   setIsolated: (enabled: boolean) => void;
   /** "просто подивитись анімацію" (2026-10-09) — eases every top-level node out along its own direction from the assembly's center (`true`) or back to its real assembled position (`false`). Idempotent — calling with the same value mid-animation just lets the current tween keep going. */
@@ -194,6 +195,18 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   const [state, setState] = useState<ViewerState>('loading');
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // "коли натискаєш на одну деталь воно виділяє всі однотипні деталі"
+  // (2026-10-09) — see `focusCameraOn`'s own comment (step-3d-viewer.tsx)
+  // for the full "why". Only ever set from a direct 3D raycast click on
+  // an instanced batch; every other selection path (list row, search)
+  // explicitly clears it back to `undefined` — a stale instanceId left
+  // over from a PREVIOUS click would point the camera at the wrong spot.
+  const [selectedInstanceId, setSelectedInstanceId] = useState<number | undefined>(undefined);
+  /** Every selection path EXCEPT the 3D raycast click (list row, search) goes through here — always clears any instanceId left over from a previous click. */
+  function selectTreeNode(id: string | null) {
+    setSelectedId(id);
+    setSelectedInstanceId(undefined);
+  }
   const [isolateMode, setIsolateMode] = useState(false);
   const [explodedMode, setExplodedMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -214,6 +227,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
       setState('loading');
       setTree([]);
       setSelectedId(null);
+      setSelectedInstanceId(undefined);
       setIsolateMode(false);
       setExplodedMode(false);
       try {
@@ -223,7 +237,10 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
         const builtTree = buildTree(group);
         setTree(builtTree);
 
-        const api = mountScene(container, group, (id) => setSelectedId(id));
+        const api = mountScene(container, group, (id, instanceId) => {
+          setSelectedId(id);
+          setSelectedInstanceId(instanceId);
+        });
         sceneApiRef.current = api;
         disposeScene = api.dispose;
         setState('ready');
@@ -244,8 +261,8 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
   }, [url, glbUrl]);
 
   useEffect(() => {
-    sceneApiRef.current?.setSelected(selectedId);
-  }, [selectedId]);
+    sceneApiRef.current?.setSelected(selectedId, selectedInstanceId);
+  }, [selectedId, selectedInstanceId]);
 
   useEffect(() => {
     sceneApiRef.current?.setIsolated(isolateMode);
@@ -286,7 +303,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
 
   useEffect(() => {
     if (searchMatches.length === 0) return;
-    setSelectedId(searchMatches[Math.min(searchIndex, searchMatches.length - 1)]);
+    selectTreeNode(searchMatches[Math.min(searchIndex, searchMatches.length - 1)]);
   }, [searchMatches, searchIndex]);
 
   function goToSearchMatch(delta: number) {
@@ -499,7 +516,7 @@ export function Step3DViewer({ url, glbUrl, bomArticles, onAddToBom, onCreatePro
           <ModelTreeList
             nodes={tree}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectTreeNode}
             bomSet={bomSet}
             onAddToBom={onAddToBom ? addArticles : undefined}
             articleCounts={unmatchedArticleCounts}
@@ -868,7 +885,11 @@ async function loadStepViaWorker(url: string, onWorker: (worker: Worker) => void
  * drive the 3D highlight in either direction (tree click -> 3D highlight,
  * or 3D click -> tree selection, both end up calling the same `setSelected`).
  */
-function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (id: string | null) => void): SceneApi {
+function mountScene(
+  container: HTMLDivElement,
+  group: THREE.Object3D,
+  onPick: (id: string | null, instanceId?: number) => void,
+): SceneApi {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf3f4f6);
   scene.add(group);
@@ -917,8 +938,34 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     duration: number;
   } | null = null;
 
-  function focusCameraOn(target: THREE.Object3D) {
-    const targetBox = new THREE.Box3().setFromObject(target);
+  /**
+   * "коли натискаєш на одну деталь воно виділяє всі однотипні деталі"
+   * (2026-10-09): GPU-instancing (GlbOptimizationService) renders every
+   * "extra" duplicate occurrence of a repeated part as ONE shared
+   * `THREE.InstancedMesh` — one draw call standing in for all of them —
+   * so a plain `Box3().setFromObject(target)` on that object returns the
+   * bounds of the WHOLE group (every instance combined), not the single
+   * one actually clicked. `instanceId` (present only for a raycast hit on
+   * an `InstancedMesh`, via `onClick` below — a list-row selection has no
+   * such thing, since a batched instance isn't individually listed at
+   * all) lets this compute THAT instance's own world-space bounds
+   * instead: its matrix (`getMatrixAt`) composed with the InstancedMesh's
+   * own `matrixWorld`, applied to the shared geometry's local bounding
+   * box. Highlighting still lights up the whole group (one shared
+   * material, no per-instance color pass — a known, accepted gap for
+   * now) — this only fixes where the camera flies to.
+   */
+  function focusCameraOn(target: THREE.Object3D, instanceId?: number) {
+    let targetBox: THREE.Box3;
+    if (target instanceof THREE.InstancedMesh && instanceId != null) {
+      if (!target.geometry.boundingBox) target.geometry.computeBoundingBox();
+      const instanceMatrix = new THREE.Matrix4();
+      target.getMatrixAt(instanceId, instanceMatrix);
+      const worldMatrix = target.matrixWorld.clone().multiply(instanceMatrix);
+      targetBox = (target.geometry.boundingBox as THREE.Box3).clone().applyMatrix4(worldMatrix);
+    } else {
+      targetBox = new THREE.Box3().setFromObject(target);
+    }
     const targetSphere = targetBox.getBoundingSphere(new THREE.Sphere());
     if (targetSphere.radius <= 0) return;
     const vFov = THREE.MathUtils.degToRad(camera.fov);
@@ -1032,7 +1079,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     });
   }
 
-  function setSelected(id: string | null) {
+  function setSelected(id: string | null, instanceId?: number) {
     highlighted.forEach(clearHighlight);
     highlighted = [];
     currentTarget = id ? findByTreeId(group, id) : null;
@@ -1042,7 +1089,7 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     }
     highlighted = meshesUnder(currentTarget);
     highlighted.forEach(applyHighlight);
-    focusCameraOn(currentTarget);
+    focusCameraOn(currentTarget, instanceId);
     if (isolated) applyIsolation(currentTarget);
   }
 
@@ -1057,7 +1104,8 @@ function mountScene(container: HTMLDivElement, group: THREE.Object3D, onPick: (i
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObject(group, true);
-    onPick(hits.length > 0 ? (hits[0].object.userData.__treeNodeId as string | undefined) ?? null : null);
+    const hit = hits[0];
+    onPick(hit ? ((hit.object.userData.__treeNodeId as string | undefined) ?? null) : null, hit?.instanceId);
   }
   renderer.domElement.addEventListener('click', onClick);
 
