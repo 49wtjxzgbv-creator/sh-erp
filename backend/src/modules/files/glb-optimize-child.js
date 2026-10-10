@@ -160,57 +160,76 @@ async function buildOptimizedDoc(io, inputBytes, mode, label) {
   const { dedup, instance } = require('@gltf-transform/functions');
   await doc.transform(dedup());
 
-  let protectedMeshNodes = [];
-  if (mode !== 'ar') {
-    // "майже завантажилось але сторінка перегрузилась" (2026-10-09): the
-    // FULL-subtree protection below (every mesh-bearing descendant of every
-    // representative, not just one) is what `exportPartGlb` needs to
-    // re-export a multi-piece part's complete geometry later — correct, but
-    // expensive: a real test on this same file protected 22,762 mesh nodes
-    // across just 1,008 representatives (~22.6 each — some "parts" are
-    // really whole sub-assemblies), which alone blocked instance() from
-    // reducing past 34,051 nodes even with `min: 2`. For the MOBILE
-    // variant specifically — viewing-only, not a source for "Створити
-    // специфікацію" — protecting only the FIRST mesh found per
-    // representative is enough to keep that part identifiable/selectable
-    // (and keeps its named parent from being pruned, since pruning only
-    // removes nodes left with no mesh/children at all), while freeing every
-    // OTHER descendant mesh to be instanced normally. Confirmed on the same
-    // file: 34,051 -> 3,818 nodes. Desktop keeps full-subtree protection
-    // unconditionally — it's the one variant actual part re-export relies
-    // on. The AR variant skips this block entirely — see below, it never
-    // calls instance() so there's nothing to protect a reference count from.
-    protectedMeshNodes = mode === 'mobile'
-      ? representativeNodes.map((node) => meshBearingNodesUnder(node, [])[0]).filter(Boolean)
-      : representativeNodes.flatMap((node) => meshBearingNodesUnder(node, []));
-    for (const node of protectedMeshNodes) {
-      const mesh = node.getMesh();
-      if (mesh) node.setMesh(mesh.clone());
-    }
-
-    // "майже завантажилось але сторінка перегрузилась" (2026-10-09): on a
-    // real 1,718-unique-mesh file, the default `min: 5` only instanced
-    // meshes repeated 5+ times, leaving 35,586 objects — still a mobile
-    // crash. A real test on the same file: `min: 2` (instance ANY mesh
-    // shared by 2+ nodes — common for mechanical assemblies full of
-    // mirrored/paired parts, not just 5+-times fasteners) cut that to
-    // 1,949 (94.5% reduction, vs. 44%). Protected representative meshes
-    // above are unaffected either way — their reference count was already
-    // dropped to exactly 1 by the `clone()` above, below ANY `min >= 2`.
-    // Desktop keeps the conservative default; this lower bar is bundled
-    // into the same "only for the lossy mobile variant" scoping as
-    // weld/simplify below — it's lossless either way, but kept out of
-    // desktop's output rather than silently changing it too.
-    await doc.transform(instance(mode === 'mobile' ? { min: 2 } : undefined));
+  // "майже завантажилось але сторінка перегрузилась" (2026-10-09): the
+  // FULL-subtree protection below (every mesh-bearing descendant of every
+  // representative, not just one) is what `exportPartGlb` needs to
+  // re-export a multi-piece part's complete geometry later — correct, but
+  // expensive: a real test on this same file protected 22,762 mesh nodes
+  // across just 1,008 representatives (~22.6 each — some "parts" are
+  // really whole sub-assemblies), which alone blocked instance() from
+  // reducing past 34,051 nodes even with `min: 2`. For the MOBILE
+  // variant specifically — viewing-only, not a source for "Створити
+  // специфікацію" — protecting only the FIRST mesh found per
+  // representative is enough to keep that part identifiable/selectable
+  // (and keeps its named parent from being pruned, since pruning only
+  // removes nodes left with no mesh/children at all), while freeing every
+  // OTHER descendant mesh to be instanced normally. Confirmed on the same
+  // file: 34,051 -> 3,818 nodes. Desktop AND ar (see this function's own
+  // header comment for why 'ar' is currently identical to 'desktop') keep
+  // full-subtree protection unconditionally.
+  const protectedMeshNodes = mode === 'mobile'
+    ? representativeNodes.map((node) => meshBearingNodesUnder(node, [])[0]).filter(Boolean)
+    : representativeNodes.flatMap((node) => meshBearingNodesUnder(node, []));
+  for (const node of protectedMeshNodes) {
+    const mesh = node.getMesh();
+    if (mesh) node.setMesh(mesh.clone());
   }
-  // "показується не весь виріб а по одній деталі" (2026-10-10): the AR
-  // variant deliberately STOPS after `dedup()` — see this file's header
-  // comment for why `EXT_mesh_gpu_instancing` (what `instance()` above
-  // would write) silently loses every duplicate instance when
-  // `@google/model-viewer`'s USDZExporter converts for iOS AR Quick Look.
-  // Every node stays a real, individually-walkable glTF node.
 
-  if (mode === 'mobile' || mode === 'ar') {
+  // "майже завантажилось але сторінка перегрузилась" (2026-10-09): on a
+  // real 1,718-unique-mesh file, the default `min: 5` only instanced
+  // meshes repeated 5+ times, leaving 35,586 objects — still a mobile
+  // crash. A real test on the same file: `min: 2` (instance ANY mesh
+  // shared by 2+ nodes — common for mechanical assemblies full of
+  // mirrored/paired parts, not just 5+-times fasteners) cut that to
+  // 1,949 (94.5% reduction, vs. 44%). Protected representative meshes
+  // above are unaffected either way — their reference count was already
+  // dropped to exactly 1 by the `clone()` above, below ANY `min >= 2`.
+  // Desktop/ar keep the conservative default; this lower bar is bundled
+  // into the same "only for the lossy mobile variant" scoping as
+  // weld/simplify below — it's lossless either way, but kept out of
+  // desktop's/ar's output rather than silently changing it too.
+  await doc.transform(instance(mode === 'mobile' ? { min: 2 } : undefined));
+  // "показується не весь виріб а по одній деталі" (2026-10-10) then "все
+  // зависло на завантаженні вже 2 хвилини завантажує" (2026-10-10, real
+  // user report): two attempts at a de-instanced AR variant were tried
+  // and REVERTED here, both confirmed against this exact real file
+  // (440158.glb, 34,257 nodes pre-instancing, one group alone with 16,725
+  // repeated instances):
+  //   1. Skip `instance()` entirely, keep every node literal — node count
+  //      stays at 34,257, i.e. the EXACT scene-graph size that originally
+  //      crashed mobile Safari/WebKit (see this file's own header
+  //      comment), now hit inside model-viewer's hidden canvas instead.
+  //   2. Add `flatten()` + `join({ keepNamed: false })` to collapse those
+  //      nodes back down — node count dropped to 1, but baking 16,725
+  //      instances' worth of geometry into merged vertex buffers inflated
+  //      the file from 10MB to 123MB (gltf-transform's own `join()` docs
+  //      warn about exactly this: "In a Scene that heavily reuses the
+  //      same Mesh data, joining may increase vertex count. Consider
+  //      alternatives, like instancing"). Worse than the original bug.
+  // Both are confirmed, real failure modes on a genuinely large/repetitive
+  // assembly, not speculation. There is no way to show every duplicate
+  // part correctly in iOS AR (USDZ) for a model shaped like this one
+  // without either a huge file or a huge node count — so for now `mode
+  // === 'ar'` deliberately behaves IDENTICALLY to `'desktop'` above (same
+  // `instance()`, same file) rather than shipping either broken
+  // alternative. iOS AR shows one copy per repeated-part group for a
+  // heavily-repetitive assembly — a real, disclosed limitation, not a
+  // crash. A smarter fix (only de-instance groups below some instance-
+  // count threshold, leaving heavily-repeated groups instanced) is a
+  // real possible follow-up, not attempted here under live-incident time
+  // pressure without its own full round of real-file verification.
+
+  if (mode === 'mobile') {
     const { weld, simplify } = require('@gltf-transform/functions');
     const { MeshoptSimplifier } = require('meshoptimizer');
     await MeshoptSimplifier.ready;
