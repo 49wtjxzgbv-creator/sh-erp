@@ -11,7 +11,7 @@ import {
   useVoidProductionExecution,
   useCorrectProductionExecution,
 } from '@/lib/hooks/use-production-labor';
-import { useTeams } from '@/lib/hooks/use-hr';
+import { useTeams, useEmployees } from '@/lib/hooks/use-hr';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type {
   ProductionExecution,
@@ -99,6 +99,16 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
   const query = parent.kind === 'production-order' ? { productionOrderId: parent.productionOrderId } : { workTaskId: parent.workTaskId };
   const { data, isLoading } = useProductionExecutions(query);
   const { data: teamsData } = useTeams({});
+  // `limit: 500` — the default server-side page size (50) would silently
+  // drop names for any company with more employees than that; this panel
+  // needs every employee resolvable by id, not a paged/searchable subset
+  // (unlike `EmployeePicker`, which is search-driven and doesn't need all
+  // of them loaded at once).
+  const { data: employeesData } = useEmployees({ limit: 500 });
+  const employeeNameById = useMemo(
+    () => new Map((employeesData?.items ?? []).map((e) => [e.id, e.fullName])),
+    [employeesData],
+  );
   const createExecution = useCreateProductionExecution();
   const deleteExecution = useDeleteProductionExecution();
   const confirmExecution = useConfirmProductionExecution();
@@ -244,6 +254,31 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
     }
   }
 
+  /**
+   * "список не видно конкретно хто що і коли робив" (2026-10-12): the
+   * table had `performedAt` (коли) and qty/amount (що), but never showed
+   * WHO — `execution.allocations` (the real per-employee breakdown this
+   * whole panel is built around) was only ever read back out in the
+   * "Коригувати" dialog, never rendered in the list itself. One name per
+   * allocation, with its own share (percent, hours, or — for a TEAM
+   * execution with no per-employee split at all — just the team's name)
+   * so the list reads as "хто зробив скільки", not just a head count.
+   */
+  function formatPerformers(execution: ProductionExecution): string {
+    if (execution.allocations.length === 0) {
+      const team = teamsData?.items.find((t) => t.id === execution.teamId);
+      return team?.name ?? '—';
+    }
+    return execution.allocations
+      .map((a) => {
+        const name = employeeNameById.get(a.employeeId) ?? a.employeeId;
+        if (execution.allocationMode === 'PERCENT' && a.percent != null) return `${name} (${toNumber(a.percent)}%)`;
+        if (execution.allocationMode === 'HOURS' && a.hours != null) return `${name} (${toNumber(a.hours)} ${tc('hoursShort')})`;
+        return name;
+      })
+      .join(', ');
+  }
+
   function renderFormFields(f: FormState, setF: (updater: (prev: FormState) => FormState) => void) {
     return (
       <div className="space-y-3">
@@ -385,6 +420,7 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
           <TableHeader>
             <TableRow>
               <TableHead>{t('performedAt')}</TableHead>
+              <TableHead>{t('performedBy')}</TableHead>
               {parent.kind === 'production-order' && <TableHead>{t('qtyCompletedLabel')}</TableHead>}
               <TableHead>{t('totalAmountLabel')}</TableHead>
               <TableHead>{t('method')}</TableHead>
@@ -396,13 +432,13 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                   {tc('loading')}
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                   {tc('noResults')}
                 </TableCell>
               </TableRow>
@@ -410,6 +446,7 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
               items.map((execution) => (
                 <TableRow key={execution.id}>
                   <TableCell>{new Date(execution.performedAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatPerformers(execution)}</TableCell>
                   {parent.kind === 'production-order' && <TableCell>{execution.qtyCompleted ?? '—'}</TableCell>}
                   <TableCell>{formatEur(Number(execution.totalAmount))}</TableCell>
                   <TableCell>{t(`method${execution.method}`)}</TableCell>
