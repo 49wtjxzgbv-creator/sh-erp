@@ -99,6 +99,17 @@ export interface PaginatedProductionExecutions {
   total: number;
   limit: number;
   offset: number;
+  /**
+   * "залишок кількості 10 і залишок фонду" (2026-10-12): a real DB-side
+   * sum over EVERY CONFIRMED execution matching this query's own
+   * productionOrderId/workTaskId — not just `items` (one page, 50 by
+   * default). An order with more executions than that has older
+   * CONFIRMED rows outside the page; summing `items` client-side instead
+   * of using these silently undercounts progress and shows a phantom
+   * remaining qty/fund on an order that's actually fully completed.
+   */
+  confirmedQty: DecimalString;
+  confirmedAmount: DecimalString;
 }
 
 export function queryProductionExecutions(query: QueryProductionExecutionsInput = {}): Promise<PaginatedProductionExecutions> {

@@ -132,16 +132,12 @@ export function ProductionExecutionsPanel({ parent, canRecord, canConfirm }: { p
     'PRODUCTION_EXECUTION_PHOTO',
   );
 
-  const { confirmedQty, confirmedAmount } = useMemo(() => {
-    let qty = 0;
-    let amount = 0;
-    for (const e of data?.items ?? []) {
-      if (e.status !== 'CONFIRMED') continue;
-      qty += toNumber(e.qtyCompleted) ?? 0;
-      amount += toNumber(e.totalAmount) ?? 0;
-    }
-    return { confirmedQty: qty, confirmedAmount: amount };
-  }, [data]);
+  // `data.confirmedQty`/`confirmedAmount` — a real DB-side sum over every
+  // CONFIRMED execution for this order, not just the current page of
+  // `items` (see `PaginatedProductionExecutions`'s own header comment on
+  // why summing the page client-side used to show a phantom remainder).
+  const confirmedQty = toNumber(data?.confirmedQty) ?? 0;
+  const confirmedAmount = toNumber(data?.confirmedAmount) ?? 0;
 
   const fund = parent.kind === 'production-order' ? parent.laborCostEur : parent.fund;
   const remainingFund = Math.max(fund - confirmedAmount, 0);

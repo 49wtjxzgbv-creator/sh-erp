@@ -146,7 +146,7 @@ export class ProductionExecutionsService {
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
-    const [items, total] = await Promise.all([
+    const [items, total, confirmedAgg] = await Promise.all([
       this.prisma.tenant.productionExecution.findMany({
         where,
         include: { allocations: true },
@@ -155,8 +155,33 @@ export class ProductionExecutionsService {
         skip,
       }),
       this.prisma.tenant.productionExecution.count({ where }),
+      // "чомуу цьому пише там де облік праці залишок кількості 10 і
+      // залишок фонду" (2026-10-12): the caller's own "remaining
+      // qty/fund" is a running total over EVERY CONFIRMED execution for
+      // this order — if it's derived by summing just the `items` page
+      // above (the panel used to do exactly that), any order with more
+      // than one page of executions silently drops its oldest rows out
+      // of that sum. Confirmed on a real order: 56 total executions, 50
+      // returned on one page, the 3 CONFIRMED rows among the 6 oldest
+      // (qty 2+4+4 = 10, amount €12.60+€25.20+€25.20 = €63.00) fell off
+      // the page — exactly the "залишок кількості 10" the user saw on an
+      // order that's actually fully completed. A real DB-side aggregate,
+      // scoped the same way as `where` but forced to CONFIRMED
+      // regardless of the caller's own `status` filter, is correct
+      // regardless of how many pages of history an order accumulates.
+      this.prisma.tenant.productionExecution.aggregate({
+        where: { ...where, status: 'CONFIRMED' },
+        _sum: { qtyCompleted: true, totalAmount: true },
+      }),
     ]);
-    return { items, total, limit: take, offset: skip };
+    return {
+      items,
+      total,
+      limit: take,
+      offset: skip,
+      confirmedQty: confirmedAgg._sum.qtyCompleted ?? 0,
+      confirmedAmount: confirmedAgg._sum.totalAmount ?? 0,
+    };
   }
 
   async findOne(user: RequestUser, id: string) {
