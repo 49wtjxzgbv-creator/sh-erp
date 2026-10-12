@@ -231,6 +231,7 @@ export function AssemblyForm({
               onAddToBom={readOnly ? undefined : handleAddToBom}
               onCreateProduct={readOnly ? undefined : handleCreateProduct}
               onActivateAr={readOnly ? undefined : handleActivateAr}
+              readOnly={readOnly}
             />
           </CardContent>
         </Card>

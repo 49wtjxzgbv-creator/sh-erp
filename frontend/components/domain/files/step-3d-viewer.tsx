@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink, Pencil, Save } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -165,6 +165,21 @@ export interface Step3DViewerProps {
    * caller never needs to reach back into the live scene itself.
    */
   onActivateAr?: (article: string, name: string, glb: ArrayBuffer | null) => Promise<string | null>;
+  /**
+   * "зроби так щоб коли ми відкривали glb файл і натискали на деталі з
+   * яких він складається то щоб ми могли перейменовувати самі деталь
+   * артикулом і тоді воно читало артикул та зявлялося в деталі 3д"
+   * (2026-10-12): offered as a rename box for the selected node, plus a
+   * "Зберегти зміни" button once any rename is pending — this receives the
+   * WHOLE model re-exported with every rename baked into real glTF node
+   * `name`s (see `exportFullGlb`), and owns actually persisting it (upload
+   * as the new document, replacing the old one — same shape as
+   * `onCreateProduct`/`onActivateAr`, the viewer itself never touches
+   * storage). Omit to read-only-gate renaming entirely (no caller-side
+   * `assemblies:write`, or a non-assembly file) — same convention as
+   * `onAddToBom`.
+   */
+  onSaveModel?: (glb: ArrayBuffer) => Promise<void>;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -203,6 +218,10 @@ interface SceneApi {
   captureSnapshot: (id: string) => string | null;
   exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
   computeVolume: (id: string) => number | null;
+  /** "перейменовувати самі деталь артикулом" (2026-10-12) — renames a node in the LIVE scene only (`object.name` + `object.userData.name`, the one `buildTree` actually reads — see its own header comment on why `userData.name` is authoritative). Returns `false` if `id` doesn't resolve to a node. Doesn't touch the stored file at all; `exportFullGlb` below is what actually persists it. */
+  renameNode: (id: string, newName: string) => boolean;
+  /** Re-exports the WHOLE currently-loaded scene (every rename applied so far included) as a new binary .glb — the counterpart to `exportPartGlb`, which only exports one node's own subtree. */
+  exportFullGlb: () => Promise<ArrayBuffer | null>;
 }
 
 /**
@@ -220,13 +239,16 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, onCreateProduct, onActivateAr }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, onCreateProduct, onActivateAr, onSaveModel }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
   const [state, setState] = useState<ViewerState>('loading');
   const [tree, setTree] = useState<ModelTreeNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [modelDirty, setModelDirty] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   // "коли натискаєш на одну деталь воно виділяє всі однотипні деталі"
   // (2026-10-09) — see `focusCameraOn`'s own comment (step-3d-viewer.tsx)
   // for the full "why". Only ever set from a direct 3D raycast click on
@@ -239,6 +261,16 @@ export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, o
     setSelectedId(id);
     setSelectedInstanceId(undefined);
   }
+  // Keeps the rename box's draft in sync with whichever node is currently
+  // selected (including right after a rename itself commits — `tree`
+  // changing re-syncs it to the same value, a harmless no-op).
+  useEffect(() => {
+    if (!selectedId) {
+      setRenameDraft('');
+      return;
+    }
+    setRenameDraft(findNodeById(tree, selectedId)?.name ?? '');
+  }, [selectedId, tree]);
   const [isolateMode, setIsolateMode] = useState(false);
   const [explodedMode, setExplodedMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -455,6 +487,37 @@ export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, o
     return onActivateAr(article, node.name, glb);
   }
 
+  // "перейменовувати самі деталь артикулом і тоді воно читало артикул та
+  // зявлялося в деталі 3д" (2026-10-12): renames ONLY the live in-memory
+  // scene/tree — nothing is uploaded yet, so closing without hitting
+  // "Зберегти зміни" below just discards it, same as any other unsaved
+  // form edit. `trim()`'s own emptiness is rejected outright: an empty
+  // glTF node name is indistinguishable from "never named" to every
+  // downstream reader (`isArticleCandidateName` already requires a
+  // non-empty trimmed name).
+  function handleRename() {
+    if (!selectedId) return;
+    const newName = renameDraft.trim();
+    if (!newName) return;
+    const ok = sceneApiRef.current?.renameNode(selectedId, newName);
+    if (!ok) return;
+    setTree((prev) => renameTreeNode(prev, selectedId, newName));
+    setModelDirty(true);
+  }
+
+  async function handleSaveModel() {
+    if (!onSaveModel) return;
+    setSavingModel(true);
+    try {
+      const glb = await sceneApiRef.current?.exportFullGlb();
+      if (!glb) return;
+      await onSaveModel(glb);
+      setModelDirty(false);
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   return (
     // Stacked (model on top, tree below, both scrollable in their own
     // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
@@ -556,6 +619,45 @@ export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, o
               )}
             </div>
           </div>
+          {onSaveModel && selectedId && (
+            <div className="mb-2 flex shrink-0 items-center gap-1">
+              <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleRename();
+                  }
+                }}
+                placeholder={t('renamePartPlaceholder')}
+                className="min-w-0 flex-1 rounded border border-border px-1.5 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={handleRename}
+                disabled={!renameDraft.trim() || renameDraft.trim() === findNodeById(tree, selectedId)?.name}
+                title={t('renamePartApply')}
+                aria-label={t('renamePartApply')}
+                className="shrink-0 rounded border border-border px-1.5 py-1 text-muted-foreground hover:bg-secondary/50 hover:text-foreground disabled:opacity-50"
+              >
+                <Check className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          {onSaveModel && modelDirty && (
+            <button
+              type="button"
+              onClick={handleSaveModel}
+              disabled={savingModel}
+              className="mb-2 flex shrink-0 items-center justify-center gap-1.5 rounded border border-primary bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+            >
+              {savingModel ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {t('savePartRenames')}
+            </button>
+          )}
           {onAddToBom && unmatchedArticleCounts.size > 0 && (
             <button
               type="button"
@@ -828,6 +930,17 @@ function findNodeById(nodes: ModelTreeNode[], id: string): ModelTreeNode | null 
     if (found) return found;
   }
   return null;
+}
+
+/** Immutable rename of one node by id, for `setTree` — mirrors `findNodeById`'s own recursion shape. The live `THREE.Object3D` itself is renamed separately, via `SceneApi.renameNode`; this just keeps the React-rendered tree in sync without a full re-walk of the scene. */
+function renameTreeNode(nodes: ModelTreeNode[], id: string, newName: string): ModelTreeNode[] {
+  return nodes.map((node) =>
+    node.id === id
+      ? { ...node, name: newName }
+      : node.children.length > 0
+        ? { ...node, children: renameTreeNode(node.children, id, newName) }
+        : node,
+  );
 }
 
 function treeHasNames(nodes: ModelTreeNode[]): boolean {
@@ -1233,6 +1346,30 @@ function mountScene(
     return computeMeshVolume(target, volumeScaleToMm3);
   }
 
+  function renameNode(id: string, newName: string): boolean {
+    const target = findByTreeId(group, id);
+    if (!target) return false;
+    target.name = newName;
+    target.userData.name = newName;
+    return true;
+  }
+
+  // "зроби так щоб коли ми відкривали glb файл і натискали на деталі з
+  // яких він складається то щоб ми могли перейменовувати самі деталь
+  // артикулом" (2026-10-12): some CAD->glTF converters (confirmed on a
+  // real file: "Innerscene 3D Viewer", generating only generic
+  // `config0`/`body212`/`mesh0`-style names, zero real article names
+  // anywhere) leave nothing for `isArticleCandidateName` to recognize.
+  // This exports the ENTIRE scene (not just one subtree, unlike
+  // `exportPartGlb`) so every rename made this session is baked into a
+  // real glTF node `name` again — the one thing `analyzeGlbParts`/the
+  // tree/`exportPartGlb` itself all already read, so nothing downstream
+  // needs to change to pick a renamed part up as a real article next load.
+  async function exportFullGlb(): Promise<ArrayBuffer | null> {
+    const result = await new GLTFExporter().parseAsync(group, { binary: true });
+    return result instanceof ArrayBuffer ? result : null;
+  }
+
   return {
     setSelected,
     setIsolated,
@@ -1240,6 +1377,8 @@ function mountScene(
     captureSnapshot,
     exportPartGlb,
     computeVolume,
+    renameNode,
+    exportFullGlb,
     dispose: () => {
       renderer.domElement.removeEventListener('click', onClick);
       if (animationFrame) cancelAnimationFrame(animationFrame);

@@ -100,6 +100,17 @@ export interface EntityDocumentsFieldProps {
   ) => void;
   /** Forwarded to Step3DViewer's own `onActivateAr` prop — see its header comment. */
   onActivateAr?: (article: string, name: string, glb: ArrayBuffer | null) => Promise<string | null>;
+  /**
+   * "перейменовувати самі деталь артикулом" (2026-10-12): gates
+   * Step3DViewer's own `onSaveModel` prop — the actual upload/replace
+   * mechanics live here (this component already owns `modelDoc`'s id and
+   * the domain/entityType/entityId every upload needs), there's no
+   * caller-specific logic the way `onCreateProduct`/`onActivateAr` need
+   * (catalog lookups), so this is just a plain `readOnly` switch rather
+   * than a passed-in handler — same end result (`undefined` when
+   * read-only) as those two, just without a handler to thread through.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -109,7 +120,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct, onActivateAr }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct, onActivateAr, readOnly }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -163,6 +174,27 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
     } catch (err) {
       setTextDoc({ file, content: null, error: err instanceof Error ? err.message : tc('error') });
     }
+  }
+
+  // "зроби так щоб коли ми відкривали glb файл і натискали на деталі з
+  // яких він складається то щоб ми могли перейменовувати самі деталь
+  // артикулом" (2026-10-12): replaces `modelDoc` in place — upload the
+  // renamed-parts .glb (triggering GlbOptimizationService the exact same
+  // way any other .glb upload does, via confirmUpload's own extension
+  // check), then delete the OLD document so exactly one .glb stays
+  // attached (no ambiguity for "Деталі (3D)"/the next "Переглянути" about
+  // which one is current). Closes the dialog afterward rather than
+  // swapping `modelDoc` to the new row in place — `modelDoc` is a plain
+  // snapshot (id/urls), not a live reference, so continuing to edit
+  // against it post-replace would still point at the now-deleted file.
+  async function handleSaveRenamedModel(glb: ArrayBuffer) {
+    if (!modelDoc) return;
+    const file = new File([glb], modelDoc.originalName, { type: 'model/gltf-binary' });
+    await uploadFile(file, { domain, entityType, entityId });
+    await deleteFile(modelDoc.id);
+    setModelDoc(null);
+    qc.invalidateQueries({ queryKey: ['files', entityType, entityId] });
+    qc.invalidateQueries({ queryKey: ['files-batch', entityType] });
   }
 
   function handleView(file: FileAssetWithUrl) {
@@ -286,6 +318,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 onAddToBom={onAddToBom}
                 onCreateProduct={onCreateProduct}
                 onActivateAr={onActivateAr}
+                onSaveModel={!readOnly && isGlbFile(modelDoc.originalName) ? handleSaveRenamedModel : undefined}
               />
             )}
           </div>

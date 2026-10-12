@@ -467,7 +467,7 @@ export function ProductForm({
             <CardTitle className="text-base">{tf('documents')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <EntityDocumentsField domain="PRODUCT_DOCUMENT" entityType="Product" entityId={product.id} />
+            <EntityDocumentsField domain="PRODUCT_DOCUMENT" entityType="Product" entityId={product.id} readOnly={readOnly} />
           </CardContent>
         </Card>
       )}
