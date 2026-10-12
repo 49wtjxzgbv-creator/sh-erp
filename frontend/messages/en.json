@@ -1397,6 +1397,7 @@
     "download": "Download",
     "view": "View",
     "loadingModel": "Loading 3D modelâ¦ Large files can take several minutes.",
+    "view3d": "View 3D",
     "modelLoadError": "Failed to load 3D model",
     "loadingDrawing": "Loading drawingâ¦",
     "drawingLoadError": "Failed to load drawing",

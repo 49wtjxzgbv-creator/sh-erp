@@ -12,6 +12,8 @@ import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { formatEur } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
+import { is3DModelFile } from '@/components/domain/files/entity-documents-field';
+import { View3DButton } from '@/components/domain/files/view-3d-button';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { ColumnVisibilityMenu } from '@/components/domain/data-table/column-visibility-menu';
 import { AssemblyListPrint } from '@/components/domain/bom/assembly-list-print';
@@ -88,6 +90,11 @@ export default function BomPage() {
 
   const assemblyIds = useMemo(() => data?.items.map((a) => a.id) ?? [], [data]);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
+  // "додай в специфікації бум до кожної позиції кнопку переглянути 3д"
+  // (2026-10-12) — same batch-fetch-per-row pattern as the photo above,
+  // just for ASSEMBLY_DOCUMENT (catalog/page.tsx's own `modelsByProduct`
+  // already does the equivalent for products).
+  const { data: modelsByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_DOCUMENT');
   // Full BOM-derived cost (materials + labor + packaging + delivery +
   // other), the same computation the Собівартість tab and every price
   // estimate elsewhere in the app already use — not a stored column, so
@@ -107,7 +114,15 @@ export default function BomPage() {
       {
         id: 'photo',
         header: '',
-        cell: ({ row }) => <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="xl" />,
+        cell: ({ row }) => {
+          const modelDoc = (modelsByAssembly?.[row.original.id] ?? []).find((f) => is3DModelFile(f.originalName));
+          return (
+            <div className="flex flex-col items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Avatar src={photosByAssembly?.[row.original.id]?.[0]?.downloadUrl} size="xl" />
+              {modelDoc && <View3DButton file={modelDoc} className="px-1.5 py-0.5 text-[10px]" />}
+            </div>
+          );
+        },
       },
       { accessorKey: 'article', header: t('article'), cell: ({ getValue }) => (getValue() as string) ?? '—' },
       { accessorKey: 'name', header: t('name') },
@@ -144,7 +159,7 @@ export default function BomPage() {
         },
       },
     ],
-    [t, photosByAssembly, supplierById, itemCosts],
+    [t, photosByAssembly, modelsByAssembly, supplierById, itemCosts],
   );
 
   return (

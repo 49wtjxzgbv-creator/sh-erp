@@ -11,6 +11,7 @@ import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
 import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { ArViewButton } from '@/components/domain/files/ar-view-button';
+import { View3DButton } from '@/components/domain/files/view-3d-button';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { SuppliersCell } from '@/components/domain/procurement/suppliers-cell';
@@ -249,10 +250,13 @@ export default function CatalogPage() {
         id: 'photo',
         header: '',
         cell: ({ row }) => {
-          const glbUrl = resolveArGlbUrl(modelsByProduct?.[row.original.id] ?? []);
+          const files = modelsByProduct?.[row.original.id] ?? [];
+          const modelDoc = files.find((f) => is3DModelFile(f.originalName));
+          const glbUrl = resolveArGlbUrl(files);
           return (
             <div className="flex flex-col items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <Avatar src={photosByProduct?.[row.original.id]?.[0]?.downloadUrl} size="xl" />
+              {modelDoc && <View3DButton file={modelDoc} className="px-1.5 py-0.5 text-[10px]" />}
               {glbUrl && <ArViewButton getGlbUrl={() => Promise.resolve(glbUrl)} className="px-1.5 py-0.5 text-[10px]" />}
             </div>
           );
