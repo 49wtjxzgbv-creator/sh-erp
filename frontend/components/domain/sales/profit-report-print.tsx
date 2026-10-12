@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useProfitReport } from '@/lib/hooks/use-sales';
-import { useCustomerOrderFinanceExpenses } from '@/lib/hooks/use-finance';
+import { useCustomerOrderFinanceExpenses, useCustomerOrderFinanceDocuments } from '@/lib/hooks/use-finance';
 import { formatEur } from '@/lib/utils';
 import { formatMoney } from '@/lib/finance-format';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
@@ -16,6 +16,12 @@ import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/c
  * figures plus the raw additional-expense lines, same numbers the on-screen
  * ProfitReportWidget shows — printed from the same useProfitReport query so
  * the two can never drift apart.
+ *
+ * "і в друкувати пдф і перегляд також має бути" (2026-10-12): the finance
+ * documents section ProfitReportWidget's own on-screen DocumentsPanel just
+ * gained needs the same print/preview treatment as the expenses lines
+ * right below it — same `useCustomerOrderFinanceDocuments` query
+ * DocumentsPanel itself reads, same optional-column gating as `expenses`.
  *
  * MUST use `usePrintOptions`/`printAreaId`, not a plain `PrintButton` — this
  * order page already hosts several other `<PrintArea>`s (CustomerOrderPrint,
@@ -35,8 +41,12 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
   const tp = useTranslations('print');
   const { data: report } = useProfitReport(orderId);
   const { data: expenses } = useCustomerOrderFinanceExpenses(orderId);
+  const { data: documents } = useCustomerOrderFinanceDocuments(orderId);
 
-  const columns: PrintColumnOption[] = [{ id: 'expenses', label: tf('directExpenses') }];
+  const columns: PrintColumnOption[] = [
+    { id: 'expenses', label: tf('directExpenses') },
+    { id: 'documents', label: tf('directDocuments') },
+  ];
   const printOptions = usePrintOptions({ columns, id: 'profit-report-print' });
 
   if (!report) return null;
@@ -95,6 +105,38 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
                     <td>{tf(`expenseCategory${exp.category}`)}</td>
                     <td>{exp.description || '—'}</td>
                     <td>{formatMoney(Number(exp.amount), exp.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {printOptions.isColumnVisible('documents') && documents && documents.length > 0 && (
+          <div className="mt-4">
+            <h3 className="mb-1 font-semibold">{tf('directDocuments')}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>{tf('counterparty')}</th>
+                  <th>{tf('documentType')}</th>
+                  <th>{tf('amount')}</th>
+                  <th>{tf('filterByPaymentStatus')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>{doc.counterparty?.name ?? '—'}</td>
+                    <td>
+                      {tf(`documentType${doc.documentType}`)}
+                      {doc.documentNumber && ` · ${doc.documentNumber}`}
+                      {doc.documentDate && ` · ${new Date(doc.documentDate).toLocaleDateString()}`}
+                    </td>
+                    <td>{doc.amount ? formatMoney(Number(doc.amount), doc.currency) : '—'}</td>
+                    <td>
+                      {doc.paymentStatus === 'NO_AMOUNT' ? tf('documentPaymentStatusNO_AMOUNT') : tf(`paymentStatus${doc.paymentStatus}`)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
