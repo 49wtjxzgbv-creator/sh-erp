@@ -1185,9 +1185,43 @@ function mountScene(
 
   function setExploded(enabled: boolean) {
     if (!explodeTargets) {
-      explodeTargets = group.children.map((object) => {
+      // "зараз у glb коли натискаю розібрати збірку не розбирається"
+      // (2026-10-12): `group.children` is the WHOLE scene's own top-level
+      // nodes, which some converters (confirmed on the same 452042/
+      // Innerscene file behind the `isWatertight` fixes above) wrap in a
+      // chain of single-child nodes 8 levels deep before any real
+      // branching happens — exploding `group.children` there just moves
+      // ONE node (the whole model) outward, with nothing to visually
+      // separate from. Skips through any such single-child wrapper chain
+      // first, so explode targets are whatever level actually branches
+      // into multiple parts — a no-op for a file that already branches
+      // at the top (`group.children.length !== 1` immediately exits the
+      // loop on the very first check).
+      let branchPoint: THREE.Object3D = group;
+      while (branchPoint.children.length === 1) branchPoint = branchPoint.children[0];
+      const explodeRoots = branchPoint.children.length > 0 ? branchPoint.children : group.children;
+      // Same file's explode ROOTS all sit at local position (0,0,0) too —
+      // their spread is baked into each one's own mesh vertex coordinates,
+      // not a node transform offset (confirmed: 10 real "bodyNNN" targets
+      // here, every one's `.position` exactly zero, yet their own world
+      // bounding-box centers are genuinely spread across the frame).
+      // `.position` alone would make every target fall back to the same
+      // default (0,1,0) direction — not an explode, just a uniform shove.
+      // Prefers the real signal (this target's own bbox center minus the
+      // whole model's) and only falls back to `.position`, then a bare
+      // default, when that's degenerate too (a target sitting exactly on
+      // the model's own center, like a diagonal brace spanning its middle).
+      const overallCenter = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
+      explodeTargets = explodeRoots.map((object) => {
         const assembled = object.position.clone();
-        const dir = assembled.lengthSq() > 1e-9 ? assembled.clone().normalize() : new THREE.Vector3(0, 1, 0);
+        const objectCenter = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+        const centerDir = objectCenter.clone().sub(overallCenter);
+        const dir =
+          centerDir.lengthSq() > 1e-9
+            ? centerDir.normalize()
+            : assembled.lengthSq() > 1e-9
+              ? assembled.clone().normalize()
+              : new THREE.Vector3(0, 1, 0);
         return { object, assembled, exploded: assembled.clone().addScaledVector(dir, maxDim * EXPLODE_DISTANCE_FACTOR) };
       });
     }
