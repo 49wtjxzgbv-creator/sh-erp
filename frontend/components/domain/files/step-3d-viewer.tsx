@@ -1276,6 +1276,32 @@ function mountScene(
     applyIsolation(enabled ? currentTarget : null);
   }
 
+  /**
+   * "так тобто теперя коли натискатиму то обератиметься ціла деталь?"
+   * (2026-10-12): some converters (confirmed on the same 452042/Innerscene
+   * assembly behind the `isWatertight` fix above) split one real physical
+   * part across dozens of per-face leaf meshes, each on its own, with no
+   * thickness of its own — a raycast hit always lands on whichever single
+   * face happens to be nearest the cursor, so without this a click could
+   * only ever select/rename one face at a time. Climbs from the hit leaf
+   * up through its ancestors until `meshesUnder` that ancestor forms a
+   * closed (or seam-noise-only) surface — i.e. a real whole part, not a
+   * fragment of one — and stops there. A no-op for every file where the
+   * clicked leaf is ALREADY a whole closed part (the normal case
+   * elsewhere in this app, including the "434924_195" rail this same
+   * `isWatertight` threshold was tuned against): `isWatertight` is true
+   * on the very first check, so the loop exits immediately without
+   * climbing past the leaf the user actually clicked.
+   */
+  function resolvePickTarget(leaf: THREE.Object3D): THREE.Object3D {
+    let candidate: THREE.Object3D = leaf;
+    while (!isWatertight(meshesUnder(candidate))) {
+      if (!candidate.parent || candidate.parent === group) break;
+      candidate = candidate.parent;
+    }
+    return candidate;
+  }
+
   function onClick(e: MouseEvent) {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1283,7 +1309,17 @@ function mountScene(
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObject(group, true);
     const hit = hits[0];
-    onPick(hit ? ((hit.object.userData.__treeNodeId as string | undefined) ?? null) : null, hit?.instanceId);
+    if (!hit) {
+      onPick(null, undefined);
+      return;
+    }
+    // GPU-instanced hits already point at one whole repeated part (see
+    // `focusCameraOn`'s own header comment on `instanceId`) — climbing
+    // ancestors there would escalate to the shared InstancedMesh's OWN
+    // parent grouping, not a bigger instance of the same part, so this
+    // only applies to plain (non-instanced) hits.
+    const target = hit.instanceId == null ? resolvePickTarget(hit.object) : hit.object;
+    onPick((target.userData.__treeNodeId as string | undefined) ?? null, hit.instanceId);
   }
   renderer.domElement.addEventListener('click', onClick);
 
@@ -1473,6 +1509,69 @@ function signedMeshVolume(meshes: THREE.Mesh[]): number {
   return volume;
 }
 
+/**
+ * "воно неправильно порахувало її розміри та вагу" (2026-10-12): the
+ * divergence-theorem trick `signedMeshVolume` relies on only gives a
+ * MEANINGFUL volume for a CLOSED (watertight) surface — for an OPEN one
+ * (a flat sheet, a reference/annotation plane, anything with a boundary
+ * edge) it instead returns the signed volume of the "cone" from the
+ * world origin to that surface, a number with no physical meaning that
+ * can be arbitrarily large depending on how far the geometry sits from
+ * the origin. Confirmed live on a real renamed part from a Innerscene-
+ * converted assembly (452042): a perfectly flat mesh (every vertex
+ * shares one X coordinate — zero actual thickness) sitting ~15 units
+ * from the origin came back as a "0.179 m³" exact volume → 1405.825 kg
+ * at steel density, even though the part has no volume at all. Detects
+ * "closed" the standard way — every triangle edge of a proper closed
+ * manifold is shared by an even number of triangles (a boundary edge,
+ * shared by just one, means the surface has a hole/edge and isn't
+ * closed); a flat sheet's own interior edges are shared twice like any
+ * closed mesh's, but its outer perimeter edges are each shared only
+ * once, which is exactly what flags it here.
+ *
+ * Uses a RATIO, not "zero boundary edges allowed" — real CAD-converted
+ * solids (confirmed on that same 452042 assembly) are made of dozens of
+ * separately-tessellated per-face meshes that don't line up to the exact
+ * floating-point ULP at their shared seams, so even a genuinely closed
+ * body ends up with a small residual fraction of "boundary" edges from
+ * that seam noise (measured on a real 196-face body here: ~1.1%). A
+ * truly open single-face mesh, by contrast, has its entire outer
+ * perimeter as boundary edges — measured on the real flat mesh that
+ * caused this bug: ~41%; on one of its thin-strip siblings: ~55%. 10%
+ * sits well clear of both real measurements.
+ */
+function isWatertight(meshes: THREE.Mesh[]): boolean {
+  const edgeCounts = new Map<string, number>();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const keyOf = (v: THREE.Vector3) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+  for (const mesh of meshes) {
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.attributes.position;
+    const index = mesh.geometry.index;
+    const triCount = index ? index.count / 3 : position.count / 3;
+    for (let i = 0; i < triCount; i++) {
+      const ia = index ? index.getX(i * 3) : i * 3;
+      const ib = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+      const ic = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+      a.fromBufferAttribute(position, ia).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, ib).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, ic).applyMatrix4(mesh.matrixWorld);
+      for (const [p, q] of [[a, b] as const, [b, c] as const, [c, a] as const]) {
+        const key = [keyOf(p), keyOf(q)].sort().join('|');
+        edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  if (edgeCounts.size === 0) return false;
+  let boundaryEdges = 0;
+  for (const count of edgeCounts.values()) {
+    if (count % 2 !== 0) boundaryEdges++;
+  }
+  return boundaryEdges / edgeCounts.size < 0.1;
+}
+
 function convexHullVolume(points: THREE.Vector3[]): number {
   let hull: THREE.BufferGeometry;
   try {
@@ -1525,6 +1624,12 @@ function convexHullVolume(points: THREE.Vector3[]): number {
  * at least 1% of the hull's — real cancellation residue is floating-point
  * noise, orders of magnitude smaller than that), and only fall back to
  * the hull's known-overestimate for the genuine duplicated-face case.
+ *
+ * Also requires `isWatertight` (see its own header comment) before
+ * trusting the exact value at all — an open/non-closed surface can
+ * produce an exact "volume" that's neither near-zero noise nor a real
+ * measurement, so the usual 1%-of-hull check can't catch it; the hull of
+ * a genuinely flat/open point set collapses to its own honest ~0 instead.
  */
 function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): number {
   const meshes = meshesUnder(object);
@@ -1540,7 +1645,8 @@ function computeMeshVolume(object: THREE.Object3D, unitScaleToMm3: number): numb
 
   const hullVolume = convexHullVolume(points);
   const exactVolume = Math.abs(signedMeshVolume(meshes));
-  const volume = exactVolume > hullVolume * 0.01 ? exactVolume : hullVolume;
+  const trustExact = isWatertight(meshes) && exactVolume > hullVolume * 0.01;
+  const volume = trustExact ? exactVolume : hullVolume;
   return volume * unitScaleToMm3;
 }
 
