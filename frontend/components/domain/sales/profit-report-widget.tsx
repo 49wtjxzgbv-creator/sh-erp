@@ -6,6 +6,7 @@ import { useHasPermission } from '@/lib/hooks/use-roles';
 import { formatEur } from '@/lib/utils';
 import { CollapsibleCard } from '@/components/domain/sales/collapsible-card';
 import { ExpensesPanel } from '@/components/domain/finance/expenses-panel';
+import { DocumentsPanel } from '@/components/domain/finance/documents-panel';
 import { ProfitReportPrint } from '@/components/domain/sales/profit-report-print';
 import { useIsPrintPreview } from '@/components/domain/print/print-area';
 
@@ -20,6 +21,14 @@ import { useIsPrintPreview } from '@/components/domain/print/print-area';
  * Embeds the existing ExpensesPanel (kind="customer-order", the same one
  * Finance's own order page uses) so "додаткові витрати" can be entered right
  * here — deliberately not a second, parallel expense-entry form.
+ *
+ * "у прибуток по замовленню нижче витрати замовлення додай також документи
+ * замовлення" (2026-10-12): same reasoning for DocumentsPanel (the finance
+ * source documents — invoices/acts with an amount and payment status, NOT
+ * the generic file-upload list the order detail page already has its own
+ * separate "Документи" card for) — Finance's own order page already shows
+ * this; embedding it here too just saves the trip there whenever expense
+ * review already has you looking at this card's numbers.
  *
  * `useIsPrintPreview()` forces this card open on preview mode — same real
  * bug as PayrollFundWidget's own header comment describes
@@ -63,6 +72,7 @@ export function ProfitReportWidget({ orderId, orderLabel }: { orderId: string; o
       </div>
 
       <ExpensesPanel kind="customer-order" ownerId={orderId} canManage={canManageFinance} title={tf('directExpenses')} />
+      <DocumentsPanel kind="customer-order" ownerId={orderId} canManage={canManageFinance} title={tf('directDocuments')} />
     </CollapsibleCard>
   );
 }
