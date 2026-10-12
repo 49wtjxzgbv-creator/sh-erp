@@ -1398,6 +1398,8 @@
     "view": "View",
     "loadingModel": "Loading 3D modelâ¦ Large files can take several minutes.",
     "view3d": "3D ansehen",
+    "convertEdrawings": "eDrawings konvertieren",
+    "convertEdrawingsHint": "Externes kostenloses Tool (innerscene.com) — konvertiert .easm/.eprt/.edrw direkt im Browser in .glb, ohne die Datei hochzuladen. Nach dem Export die erzeugte .glb über \"Dokument hinzufügen\" anhängen.",
     "modelLoadError": "Failed to load 3D model",
     "loadingDrawing": "Loading drawingâ¦",
     "drawingLoadError": "Failed to load drawing",

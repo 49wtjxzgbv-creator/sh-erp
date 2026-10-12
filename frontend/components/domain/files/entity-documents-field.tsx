@@ -9,6 +9,7 @@ import { uploadFile, deleteFile, type FileDomain, type FileAssetWithUrl } from '
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Button } from '@/components/ui/button';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
+import { EdrawingsConverterButton } from './edrawings-converter-button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 
 const Step3DViewer = dynamic(() => import('./step-3d-viewer').then((m) => m.Step3DViewer), {
@@ -274,10 +275,13 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
         </ul>
       )}
 
-      <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
-        <Upload className="mr-2 h-4 w-4" />
-        {t('addDocument')}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => inputRef.current?.click()}>
+          <Upload className="mr-2 h-4 w-4" />
+          {t('addDocument')}
+        </Button>
+        <EdrawingsConverterButton />
+      </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       {lightboxSrc && <PhotoLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
