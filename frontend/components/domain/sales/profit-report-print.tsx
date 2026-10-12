@@ -23,6 +23,13 @@ import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/c
  * right below it — same `useCustomerOrderFinanceDocuments` query
  * DocumentsPanel itself reads, same optional-column gating as `expenses`.
  *
+ * "зроби щоб можна було забирати статус оплати" (2026-10-13): a second,
+ * independent toggle just for the payment-status column WITHIN the
+ * documents table — some orders print this PDF for an external recipient
+ * (the customer themselves) who has no reason to see internal payment
+ * tracking, while the rest of the documents table (counterparty/amount)
+ * still matters to them.
+ *
  * MUST use `usePrintOptions`/`printAreaId`, not a plain `PrintButton` — this
  * order page already hosts several other `<PrintArea>`s (CustomerOrderPrint,
  * ProductionProgressPrint, OrderPayrollPrint), every one of which
@@ -46,6 +53,7 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
   const columns: PrintColumnOption[] = [
     { id: 'expenses', label: tf('directExpenses') },
     { id: 'documents', label: tf('directDocuments') },
+    { id: 'documentsPaymentStatus', label: tf('filterByPaymentStatus') },
   ];
   const printOptions = usePrintOptions({ columns, id: 'profit-report-print' });
 
@@ -121,7 +129,7 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
                   <th>{tf('counterparty')}</th>
                   <th>{tf('documentType')}</th>
                   <th>{tf('amount')}</th>
-                  <th>{tf('filterByPaymentStatus')}</th>
+                  {printOptions.isColumnVisible('documentsPaymentStatus') && <th>{tf('filterByPaymentStatus')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -134,9 +142,9 @@ export function ProfitReportPrint({ orderId, orderLabel }: { orderId: string; or
                       {doc.documentDate && ` · ${new Date(doc.documentDate).toLocaleDateString()}`}
                     </td>
                     <td>{doc.amount ? formatMoney(Number(doc.amount), doc.currency) : '—'}</td>
-                    <td>
-                      {doc.paymentStatus === 'NO_AMOUNT' ? tf('documentPaymentStatusNO_AMOUNT') : tf(`paymentStatus${doc.paymentStatus}`)}
-                    </td>
+                    {printOptions.isColumnVisible('documentsPaymentStatus') && (
+                      <td>{doc.paymentStatus === 'NO_AMOUNT' ? tf('documentPaymentStatusNO_AMOUNT') : tf(`paymentStatus${doc.paymentStatus}`)}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
