@@ -1802,11 +1802,32 @@ export interface GlbPartAnalysis {
    * article ("437908_46") turned out to have 184 CHILDREN of its own —
    * not one screw, but a CAD-export selection-group bundling dozens of
    * unrelated fasteners under one (largely accidental) name. `1` is the
-   * overwhelming common case (a real single part); the caller uses
-   * `> 1` to split these into their own "Складові вузли" section instead
-   * of offering "Створити товар" on something that isn't a simple part.
+   * overwhelming common case (a real single part); the caller used to
+   * just split on `> 1` — see `isMultiPartBundle` below for why that
+   * alone isn't enough anymore.
    */
   meshCount: number;
+  /**
+   * "у деталях 3д воно зявляється у складові вузли підвироби" (2026-10-12):
+   * `meshCount > 1` alone can't tell "this node bundles several DISTINCT
+   * real parts" (184 individually-complete screws under one accidental
+   * CAD-export group — the `437908_46` case above) apart from "this is
+   * ONE real part, just split across many per-FACE fragment meshes"
+   * (confirmed on a real renamed node from the 452042/Innerscene
+   * assembly: 196 child meshes, but one steel part, not 196 — see
+   * `isWatertight`'s own header comment). The distinguishing signal is
+   * the same closed-surface check: a genuine bundle's children are each
+   * already a complete, independently closed solid on their own (every
+   * screw is whole without its siblings); a single part's per-face
+   * fragments are each open on their own and only the whole union
+   * closes up. `true` only when at least TWO immediate children are
+   * independently watertight — not just one: a node can have exactly one
+   * child that's already the whole closed part (confirmed on a real
+   * `body219` → `body219sub0` pair on the same 452042 assembly — just a
+   * redundant single-child wrapper, not a bundle), and counting that as
+   * "a bundle" would wrongly flag the wrapper too.
+   */
+  isMultiPartBundle: boolean;
 }
 
 /**
@@ -1987,7 +2008,9 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
       const meshCount = target ? meshesUnder(target).length : 0;
       const dimensionsMm = target ? computeMeshDimensionsMm(target, linearScaleToMm) : null;
       const surfaceAreaMm2 = target ? computeMeshSurfaceAreaMm2(target, areaScaleToMm2) : 0;
-      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2 };
+      const isMultiPartBundle =
+        meshCount > 1 && !!target && target.children.filter((child) => isWatertight(meshesUnder(child))).length >= 2;
+      return { nodeId: part.nodeId, article: part.article, name: part.name, qty: part.qty, photoDataUrl, volumeMm3, meshCount, dimensionsMm, surfaceAreaMm2, isMultiPartBundle };
     })
     .sort((a, b) => a.article.localeCompare(b.article));
 

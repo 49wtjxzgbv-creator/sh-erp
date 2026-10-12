@@ -140,9 +140,11 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
   // "показується не весь виріб а по одній деталі" (2026-10-10): prefers
   // the de-instanced AR variant once GlbOptimizationService's
   // fire-and-forget pass finishes — see that service's header comment.
-  // These parts are all single-mesh (`meshCount <= 1`, this grid's own
-  // filter) so there's nothing to de-instance in practice; the fallback
-  // exists purely for whenever that stops being true.
+  // These parts are not a multi-part bundle (`!isMultiPartBundle`, this
+  // grid's own filter — see that field's header comment on why
+  // `meshCount` alone stopped being the right test) so there's nothing
+  // to de-instance in practice; the fallback exists purely for whenever
+  // that stops being true.
   function getAttachedGlbUrl(productId: string | undefined): string | undefined {
     if (!productId) return undefined;
     const doc = (productDocsByEntity?.[productId] ?? []).find((f) => isGlbFile(f.originalName));
@@ -310,8 +312,8 @@ export function AssemblyPartsCheckViewer({ assemblyId, glbUrl, readOnly }: Assem
     p.name.toLowerCase().includes(normalizedQuery);
   const filteredParts = parts.filter(matchesQuery);
 
-  const simpleParts = filteredParts.filter((p) => p.meshCount <= 1);
-  const multiPieceParts = filteredParts.filter((p) => p.meshCount > 1);
+  const simpleParts = filteredParts.filter((p) => !p.isMultiPartBundle);
+  const multiPieceParts = filteredParts.filter((p) => p.isMultiPartBundle);
   const inCatalog = simpleParts.filter((p) => p.product);
   const notInCatalog = simpleParts.filter((p) => !p.product);
 
