@@ -246,7 +246,21 @@ export class CustomerOrdersService {
   async query(user: RequestUser, query: QueryCustomerOrdersDto) {
     const where: Prisma.CustomerOrderWhereInput = {};
     if (query.status) where.status = query.status as any;
-    if (query.search) where.clientName = { contains: query.search, mode: 'insensitive' };
+    // "просто нам треба вміти робити зведення по зарплаті не тільки по
+    // датах а й по замовленнях" (2026-10-13): found live while testing
+    // the new payroll-summary order filter — CustomerOrderPicker (and
+    // every other caller of this same search) could never find an order
+    // by its own number, only by client name, even though every user
+    // reference to an order throughout this app is by number ("440172",
+    // not "STURTZ"). `orderNumber` is nullable, hence the `mode:
+    // 'insensitive'` OR-branch guard isn't needed the way `clientName`'s
+    // is — Prisma just never matches a null column against `contains`.
+    if (query.search) {
+      where.OR = [
+        { clientName: { contains: query.search, mode: 'insensitive' } },
+        { orderNumber: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
 
     const take = query.limit ?? 50;
     const skip = query.offset ?? 0;
