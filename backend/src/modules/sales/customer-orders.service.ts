@@ -63,6 +63,21 @@ export interface PayrollByEmployeeLine {
   employeeName: string;
   totalEarned: number;
   byArticle: PayrollArticleLine[];
+  /**
+   * "коли я хочу подати зарплату по цьому замовленню то там не вказано
+   * аванс і відповідно не можу подати бо там сума без авансу" (2026-10-13):
+   * every ADVANCE entry (negative-signed, Phase 1 §3.5) ever recorded for
+   * this employee, summed with NO date range or order scoping — purely
+   * informational, deliberately NOT folded into `totalEarned` above, same
+   * "ADVANCE has no order association anywhere in the data model"
+   * reasoning `getOrderPayrollByEmployee`'s own header comment already
+   * documents for why this view has no net/signed total the way the
+   * company-wide payroll summary does. Lets whoever is deciding what to
+   * actually hand this employee for THIS order's work see, right next to
+   * that figure, that part of it may already be covered by an advance —
+   * without pretending this order "owns" any specific slice of it.
+   */
+  outstandingAdvance: number;
 }
 
 @Injectable()
@@ -917,6 +932,7 @@ export class CustomerOrdersService {
           employeeName: employeeById.get(employeeId)?.fullName ?? employeeId,
           totalEarned: 0,
           byArticle: [],
+          outstandingAdvance: 0,
         });
         articlesByEmployee.set(employeeId, new Map());
       }
@@ -936,8 +952,18 @@ export class CustomerOrdersService {
       articleLine.amount += amount;
     }
 
+    const advanceEntries = await this.prisma.tenant.payrollEntry.findMany({
+      where: { type: 'ADVANCE', employeeId: { in: Array.from(linesByEmployee.keys()) } },
+      select: { employeeId: true, amount: true },
+    });
+    const advanceByEmployee = new Map<string, number>();
+    for (const advance of advanceEntries as any[]) {
+      advanceByEmployee.set(advance.employeeId, (advanceByEmployee.get(advance.employeeId) ?? 0) + Number(advance.amount));
+    }
+
     for (const [employeeId, line] of linesByEmployee) {
       line.totalEarned = round2(line.totalEarned);
+      line.outstandingAdvance = round2(advanceByEmployee.get(employeeId) ?? 0);
       line.byArticle = Array.from(articlesByEmployee.get(employeeId)!.values())
         .map((a) => ({ ...a, unitsProduced: round2(a.unitsProduced), amount: round2(a.amount) }))
         .sort((a, b) => {

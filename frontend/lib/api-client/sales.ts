@@ -297,6 +297,8 @@ export interface PayrollByEmployeeLine {
   employeeName: string;
   totalEarned: number;
   byArticle: PayrollFundArticleLine[];
+  /** All-time, order-independent sum of this employee's ADVANCE entries (negative-signed) — informational only, not part of `totalEarned`. See the backend's own header comment on this field for why. */
+  outstandingAdvance: number;
 }
 
 export function getOrderPayrollByEmployee(orderId: string): Promise<PayrollByEmployeeLine[]> {

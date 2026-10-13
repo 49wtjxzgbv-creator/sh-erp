@@ -49,6 +49,18 @@ function activateOnlyPrintArea(id: string) {
  * field here — `EmployeePayrollPrintBlock` is deliberately EUR-only (see
  * its own header comment), so there's nothing for a rate to affect on this
  * specific print.
+ *
+ * "коли я хочу подати зарплату по цьому замовленню то там не вказано
+ * аванс і відповідно не можу подати бо там сума без авансу" (2026-10-13):
+ * `line.outstandingAdvance` — every ADVANCE entry ever recorded for this
+ * employee, all-time, no order scoping (see the backend field's own
+ * header comment for why it can't be order-scoped) — shown as a small
+ * note under their total, purely so whoever's about to pay them for this
+ * order's work sees it right there instead of having to go check the
+ * company-wide payroll summary first. Deliberately NOT subtracted from
+ * `totalEarned`/`grandTotal` — this order didn't "cause" that advance,
+ * and netting it in here would silently double-count it everywhere else
+ * that happens to also net it in (the general summary's own `netTotal`).
  */
 export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: string; orderLabel?: string }) {
   const t = useTranslations('sales');
@@ -122,7 +134,14 @@ export function OrderPayrollByEmployee({ orderId, orderLabel }: { orderId: strin
                       {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                     </TableCell>
                     <TableCell>{line.employeeName}</TableCell>
-                    <TableCell className="font-medium">{formatEur(line.totalEarned)}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatEur(line.totalEarned)}
+                      {line.outstandingAdvance !== 0 && (
+                        <p className="text-xs font-normal text-muted-foreground">
+                          {th('entryTypeADVANCE')}: {formatEur(line.outstandingAdvance)}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Button
                         type="button"

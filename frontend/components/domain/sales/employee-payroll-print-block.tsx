@@ -17,6 +17,13 @@ import type { PayrollByEmployeeLine } from '@/lib/api-client/sales';
  * `OrderPayrollPrint`'s own flat "по працівниках" summary table is where
  * hryvnia appears instead, see that file's own header comment for the full
  * per-section UAH-vs-EUR split.
+ *
+ * "коли я хочу подати зарплату по цьому замовленню то там не вказано
+ * аванс" (2026-10-13) — `line.outstandingAdvance` printed right under the
+ * total too, same reasoning as `OrderPayrollByEmployee`'s own on-screen
+ * note (see its header comment): this is literally the sheet someone
+ * hands off to actually pay the employee, so it needs to be here, not
+ * just on screen.
  */
 export function EmployeePayrollPrintBlock({
   line,
@@ -26,12 +33,20 @@ export function EmployeePayrollPrintBlock({
   photosByAssembly: Record<string, { downloadUrl: string }[]> | undefined;
 }) {
   const t = useTranslations('sales');
+  const th = useTranslations('hr');
 
   return (
     <div className="break-inside-avoid border-b border-gray-300 pb-2">
       <div className="mb-1 flex items-baseline justify-between">
         <p className="text-sm font-bold">{line.employeeName}</p>
-        <p className="text-sm font-semibold">{formatEur(line.totalEarned)}</p>
+        <div className="text-right">
+          <p className="text-sm font-semibold">{formatEur(line.totalEarned)}</p>
+          {line.outstandingAdvance !== 0 && (
+            <p className="text-xs text-gray-600">
+              {th('entryTypeADVANCE')}: {formatEur(line.outstandingAdvance)}
+            </p>
+          )}
+        </div>
       </div>
       {line.byArticle.length > 0 && (
         <table className="text-xs">
