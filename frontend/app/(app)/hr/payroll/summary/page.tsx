@@ -391,43 +391,52 @@ export default function PayrollSummaryPage() {
       {data && data.length > 0 && (
         <PrintArea printAreaId={summaryPrintAreaId}>
           <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
-          {/* "саму верхню колонку зароблено працівниками в євро" (2026-10-13)
-              — same top plain-EUR line OrderPayrollPrint has above its own
-              per-employee table (`payrollFundEarned`/`fund.earnedActual`);
-              here that's `totals.piecework` — gross earned, before the
-              advance/bonus/penalty netting the table below already does. */}
-          <table className="mb-4">
-            <tbody>
-              <tr>
-                <td>{ts('payrollFundEarned')}</td>
-                <td className="font-bold">{formatEur(totals.piecework)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <table className="mb-6 w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-black text-left">
-                <th className="py-1 font-semibold">{t('employee')}</th>
-                <th className="py-1 text-right font-semibold">{t('netTotal')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((line) => (
-                <tr key={line.employeeId} className="border-b border-gray-300">
-                  <td className="py-1">{line.employeeName}</td>
-                  <td className="py-1 text-right font-medium tabular-nums">{formatUah(line.netTotal, eurUahRate)}</td>
+          {/* "щоб після загального списку по працівниках вже починалося з
+              нової сторінки" (2026-10-13) — same `print-page-break`
+              (page-break-after) wrapper OrderPayrollPrint's own flat
+              summary table already uses, so the per-employee detail
+              blocks below always start on a fresh sheet. */}
+          <div className="print-page-break">
+            {/* "саму верхню колонку зароблено працівниками в євро"
+                (2026-10-13) — same top plain-EUR line OrderPayrollPrint
+                has above its own per-employee table
+                (`payrollFundEarned`/`fund.earnedActual`); here that's
+                `totals.piecework` — gross earned, before the
+                advance/bonus/penalty netting the table below already
+                does. */}
+            <table className="mb-4">
+              <tbody>
+                <tr>
+                  <td>{ts('payrollFundEarned')}</td>
+                  <td className="font-bold">{formatEur(totals.piecework)}</td>
                 </tr>
-              ))}
-              <tr className="border-t-2 border-black font-bold">
-                <td className="py-1">{t('grandTotal')}</td>
-                <td className="py-1 text-right tabular-nums">
-                  {eurUahRate && eurUahRate > 0
-                    ? `${data.reduce((sum, l) => sum + (uahRoundUp(l.netTotal, eurUahRate) ?? 0), 0)} ₴`
-                    : formatEur(totals.netTotal)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+            <table className="mb-6 w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-black text-left">
+                  <th className="py-1 font-semibold">{t('employee')}</th>
+                  <th className="py-1 text-right font-semibold">{t('netTotal')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((line) => (
+                  <tr key={line.employeeId} className="border-b border-gray-300">
+                    <td className="py-1">{line.employeeName}</td>
+                    <td className="py-1 text-right font-medium tabular-nums">{formatUah(line.netTotal, eurUahRate)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-black font-bold">
+                  <td className="py-1">{t('grandTotal')}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {eurUahRate && eurUahRate > 0
+                      ? `${data.reduce((sum, l) => sum + (uahRoundUp(l.netTotal, eurUahRate) ?? 0), 0)} ₴`
+                      : formatEur(totals.netTotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div className="space-y-5">
             {data.map((line) => (
               <PayrollEmployeePrintBlock key={line.employeeId} line={line} t={t} />
@@ -463,6 +472,18 @@ function PayrollEmployeePrintBlock({
       </div>
       {line.byArticle.length > 0 && (
         <table className="mb-1.5 w-full text-xs">
+          {/* "ширину кількості зроби вузчою щоб влазило більше назви"
+              (2026-10-13) — no explicit widths before this, so a long
+              article/task name never had room to breathe against the
+              browser's own auto column sizing. `Кількість` only ever
+              holds a short number, same narrow-fixed-column treatment
+              `EmployeePayrollPrintBlock`'s own colgroup already uses for
+              its equivalent columns. */}
+          <colgroup>
+            <col />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '20%' }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-gray-300 text-left">
               <th className="py-1 font-medium">{t('article')}</th>
