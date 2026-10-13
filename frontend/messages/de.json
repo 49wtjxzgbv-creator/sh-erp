@@ -881,6 +881,7 @@
     "telegramUnlinkConfirmTitle": "Unlink Telegram?",
     "telegramUnlinkConfirmDescription": "The employee will no longer be able to submit work via the bot until you generate a new code.",
     "payrollSummary": "Payroll summary",
+    "payrollSummaryOrderFilter": "Auftrag (optional)",
     "recordEntry": "Record manual entry",
     "employee": "Employee",
     "entryType": "Type",

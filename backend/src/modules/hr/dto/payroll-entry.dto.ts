@@ -98,4 +98,19 @@ export class PayrollSummaryQueryDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  /**
+   * "просто нам треба вміти робити зведення по зарплаті не тільки по
+   * датах а й по замовленнях" (2026-10-13): when set, PIECEWORK entries
+   * are scoped to this CustomerOrder's own batches (top-level AND
+   * sub-assembly, any depth) same as `getOrderPayrollByEmployee`'s own
+   * scoping — ADVANCE/BONUS/PENALTY stay date-filtered only (see
+   * PayrollSummaryLine's own header comment on why: they have no order
+   * association anywhere in the data model), and only employees who have
+   * at least one PIECEWORK entry on this order are included at all.
+   */
+  @ApiPropertyOptional({ description: 'When set, scopes PIECEWORK rows to this CustomerOrder (ADVANCE/BONUS/PENALTY stay date-only, and only employees with PIECEWORK on this order appear).' })
+  @IsOptional()
+  @IsUUID()
+  customerOrderId?: string;
 }

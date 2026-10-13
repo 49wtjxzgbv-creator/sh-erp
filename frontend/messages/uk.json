@@ -978,6 +978,7 @@
     "telegramUnlinkConfirmTitle": "Відв'язати Telegram?",
     "telegramUnlinkConfirmDescription": "Співробітник більше не зможе подавати роботу через бота, доки ви не згенеруєте новий код.",
     "payrollSummary": "Зведення по зарплаті",
+    "payrollSummaryOrderFilter": "Замовлення (необовʼязково)",
     "recordEntry": "Зафіксувати ручний запис",
     "employee": "Співробітник",
     "entryType": "Тип",

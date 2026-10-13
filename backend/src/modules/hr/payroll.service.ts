@@ -208,8 +208,55 @@ export class PayrollService {
       if (query.to) entryWhere.entryDate.lte = endOfUtcDay(query.to);
     }
 
-    const [entries, employees, workerAssignments, finishedGoods, reworkChecks] = await Promise.all([
-      this.prisma.tenant.payrollEntry.findMany({ where: entryWhere }),
+    let entries: any[];
+    if (query.customerOrderId) {
+      // Same "this order's own batches, top-level AND sub-assembly, any
+      // depth" + "general-work PIECEWORK via WorkTaskItem" scoping
+      // `CustomerOrdersService#getOrderPayrollByEmployee`/
+      // `#getGeneralWorkPayrollEntries` already use — duplicated here
+      // rather than injecting CustomerOrdersService (no existing
+      // hr<->sales module dependency to piggyback on, and this is the
+      // same "small, self-contained, order-scoped query" this codebase
+      // already accepts a little duplication for elsewhere).
+      const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: query.customerOrderId }, include: { items: true } });
+      if (!order) return [];
+      const itemIds = (order.items as any[]).map((i) => i.id);
+      const batches = itemIds.length
+        ? await this.prisma.tenant.productionOrder.findMany({
+            where: { OR: [{ customerOrderItemId: { in: itemIds } }, { subAssemblyForItemId: { in: itemIds } }] },
+            select: { id: true },
+          })
+        : [];
+      const orderProductionOrderIds = (batches as any[]).map((b) => b.id);
+      const workTaskItems = itemIds.length
+        ? await this.prisma.tenant.workTaskItem.findMany({ where: { customerOrderItemId: { in: itemIds } }, select: { workTaskId: true } })
+        : [];
+      const orderWorkTaskIds = Array.from(new Set((workTaskItems as any[]).map((w) => w.workTaskId)));
+
+      const [pieceworkOnOrder, pieceworkOnGeneralWork] = await Promise.all([
+        orderProductionOrderIds.length
+          ? this.prisma.tenant.payrollEntry.findMany({ where: { ...entryWhere, type: 'PIECEWORK', productionOrderId: { in: orderProductionOrderIds } } })
+          : Promise.resolve([]),
+        orderWorkTaskIds.length
+          ? this.prisma.tenant.payrollEntry.findMany({
+              where: { ...entryWhere, type: 'PIECEWORK', sourceAllocation: { execution: { workTaskId: { in: orderWorkTaskIds } } } },
+            })
+          : Promise.resolve([]),
+      ]);
+      const pieceworkEntries = [...pieceworkOnOrder, ...pieceworkOnGeneralWork];
+      const employeeIdsOnOrder = new Set((pieceworkEntries as any[]).map((e) => e.employeeId));
+
+      const manualEntries = employeeIdsOnOrder.size
+        ? await this.prisma.tenant.payrollEntry.findMany({
+            where: { ...entryWhere, type: { in: ['ADVANCE', 'BONUS', 'PENALTY'] }, employeeId: { in: Array.from(employeeIdsOnOrder) } },
+          })
+        : [];
+      entries = [...pieceworkEntries, ...manualEntries];
+    } else {
+      entries = await this.prisma.tenant.payrollEntry.findMany({ where: entryWhere });
+    }
+
+    const [employees, workerAssignments, finishedGoods, reworkChecks] = await Promise.all([
       this.prisma.tenant.employee.findMany(),
       this.prisma.tenant.productionOrderWorker.findMany(),
       this.prisma.tenant.finishedGood.findMany(), // productionOrderId is a required field on this model — every row has one

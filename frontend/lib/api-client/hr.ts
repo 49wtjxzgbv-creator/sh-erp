@@ -186,6 +186,8 @@ export interface PayrollSummaryLine {
 export interface PayrollSummaryQuery {
   from?: string;
   to?: string;
+  /** "зведення по зарплаті не тільки по датах а й по замовленнях" (2026-10-13) — scopes PIECEWORK rows to this CustomerOrder (ADVANCE/BONUS/PENALTY stay date-only, and only employees with PIECEWORK on this order appear at all). See the backend DTO's own header comment. */
+  customerOrderId?: string;
 }
 
 /** Per-employee totals by type, plus a QC-defect count cross-referenced through assigned production orders (Phase 1 §6.5). */

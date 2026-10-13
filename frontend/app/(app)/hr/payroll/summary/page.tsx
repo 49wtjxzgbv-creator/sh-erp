@@ -77,8 +77,19 @@ export default function PayrollSummaryPage() {
   // documents from 2026-08-31.
   const [payrollOrderId, setPayrollOrderId] = useState<string | undefined>(undefined);
   const [payrollOrderLabel, setPayrollOrderLabel] = useState<string | undefined>(undefined);
+  // "просто нам треба вміти робити зведення по зарплаті не тільки по
+  // датах а й по замовленнях" (2026-10-13): a SEPARATE filter from
+  // `payrollOrderId` above — that one drives the dedicated "Зарплата по
+  // замовленню" section further down (PayrollFundWidget/
+  // OrderPayrollByEmployee, PIECEWORK-only, no advance/bonus/penalty
+  // columns at all). This one scopes the MAIN summary table instead — same
+  // piecework/advances/bonuses/penalties/netTotal columns as the
+  // unfiltered view, just with PIECEWORK narrowed to one order (see the
+  // backend query's own header comment on why advance/bonus/penalty stay
+  // date-only even when this is set).
+  const [summaryOrderId, setSummaryOrderId] = useState<string | undefined>(undefined);
 
-  const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined });
+  const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined, customerOrderId: summaryOrderId });
 
   function toggleExpanded(employeeId: string) {
     setExpanded((prev) => {
@@ -148,6 +159,10 @@ export default function PayrollSummaryPage() {
             <div className="space-y-1.5">
               <Label htmlFor="to">{t('toDate')}</Label>
               <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="w-fit min-w-[280px] space-y-1.5">
+              <Label htmlFor="summaryOrder">{t('payrollSummaryOrderFilter')}</Label>
+              <CustomerOrderPicker value={summaryOrderId} onChange={(id) => setSummaryOrderId(id)} />
             </div>
           </CardContent>
         </Card>
