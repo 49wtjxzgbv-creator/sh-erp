@@ -279,6 +279,30 @@ export class PayrollService {
       : [];
     const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
 
+    // "там не розписані загальні роботи" (2026-10-13): a PIECEWORK entry
+    // with no `productionOrderId` (WorkTask-based general labor) used to
+    // get dumped into ONE shared `GENERAL_WORK_KEY` bucket below, losing
+    // which actual task it was — every "Загальна робота" row merged
+    // together regardless of source. Same `sourceAllocation.execution.
+    // workTaskId` -> `WorkTask.title` resolution
+    // `CustomerOrdersService#getGeneralWorkPayrollEntries` already does for
+    // the order-scoped view, applied here so the two read the same.
+    const generalWorkEntryIds = (entries as any[]).filter((e) => e.type === 'PIECEWORK' && !e.productionOrderId).map((e) => e.id);
+    const generalWorkAllocations = generalWorkEntryIds.length
+      ? await this.prisma.tenant.payrollEntry.findMany({
+          where: { id: { in: generalWorkEntryIds } },
+          select: { id: true, sourceAllocation: { select: { execution: { select: { workTaskId: true } } } } },
+        })
+      : [];
+    const workTaskIdByEntryId = new Map(
+      (generalWorkAllocations as any[]).map((e) => [e.id, e.sourceAllocation?.execution?.workTaskId ?? null]),
+    );
+    const generalWorkTaskIds = Array.from(new Set(Array.from(workTaskIdByEntryId.values()).filter((id): id is string => Boolean(id))));
+    const generalWorkTasks = generalWorkTaskIds.length
+      ? await this.prisma.tenant.workTask.findMany({ where: { id: { in: generalWorkTaskIds } }, select: { id: true, title: true } })
+      : [];
+    const generalWorkTitleByTaskId = new Map((generalWorkTasks as any[]).map((t) => [t.id, t.title as string]));
+
     const reworkFinishedGoodIds = new Set((reworkChecks as any[]).map((c) => c.finishedGoodId));
 
     // productionOrderId -> count of that order's finished goods with a REWORK check
@@ -324,18 +348,18 @@ export class PayrollService {
     };
 
     const GENERAL_WORK_KEY = '__general__';
-    const ensureArticleLine = (employeeId: string, assemblyId: string | null): PayrollArticleLine => {
+    const ensureArticleLine = (employeeId: string, assemblyId: string | null, generalWorkTaskId: string | null): PayrollArticleLine => {
       let byArticle = articlesByEmployee.get(employeeId);
       if (!byArticle) {
         byArticle = new Map();
         articlesByEmployee.set(employeeId, byArticle);
       }
-      const key = assemblyId ?? GENERAL_WORK_KEY;
+      const key = assemblyId ?? (generalWorkTaskId ? `wt:${generalWorkTaskId}` : GENERAL_WORK_KEY);
       if (!byArticle.has(key)) {
         const assembly = assemblyId ? assemblyById.get(assemblyId) : null;
         byArticle.set(key, {
           assemblyId,
-          assemblyName: assembly?.name ?? null,
+          assemblyName: assembly?.name ?? (generalWorkTaskId ? (generalWorkTitleByTaskId.get(generalWorkTaskId) ?? null) : null),
           article: assembly?.article ?? null,
           unitsProduced: 0,
           amount: 0,
@@ -350,7 +374,8 @@ export class PayrollService {
       if (entry.type === 'PIECEWORK') {
         line.piecework += amount;
         const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
-        const articleLine = ensureArticleLine(entry.employeeId, assemblyId);
+        const generalWorkTaskId = assemblyId ? null : (workTaskIdByEntryId.get(entry.id) ?? null);
+        const articleLine = ensureArticleLine(entry.employeeId, assemblyId, generalWorkTaskId);
         articleLine.unitsProduced += Number(entry.unitsProduced ?? 0);
         articleLine.amount += amount;
       } else if (entry.type === 'ADVANCE') line.advances += amount;

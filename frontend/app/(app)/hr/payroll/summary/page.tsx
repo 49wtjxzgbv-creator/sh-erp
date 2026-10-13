@@ -5,7 +5,9 @@ import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { usePayrollSummary, usePayrollEntries } from '@/lib/hooks/use-hr';
 import type { PayrollEntryType, PayrollSummaryLine } from '@/lib/api-client/hr';
-import { formatEur } from '@/lib/utils';
+import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { formatEur, formatUah, uahRoundUp } from '@/lib/utils';
+import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +45,7 @@ export default function PayrollSummaryPage() {
   const t = useTranslations('hr');
   const tc = useTranslations('common');
   const tp = useTranslations('print');
+  const ts = useTranslations('sales');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -88,6 +91,14 @@ export default function PayrollSummaryPage() {
   // backend query's own header comment on why advance/bonus/penalty stay
   // date-only even when this is set).
   const [summaryOrderId, setSummaryOrderId] = useState<string | undefined>(undefined);
+  const [summaryOrderLabel, setSummaryOrderLabel] = useState<string | undefined>(undefined);
+  // "конвертер курсу як в зарплата по замовленню і саму верхню колонку
+  // зароблено працівниками в євро" (2026-10-13) — same shared
+  // (localStorage-persisted) rate + top "Зароблено працівниками" EUR line
+  // OrderPayrollPrint already has, now also on the main summary's own
+  // print — see that component's own header comment for the UAH-rounding
+  // convention this mirrors exactly.
+  const [eurUahRate, setEurUahRate] = useEurUahRate();
 
   const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined, customerOrderId: summaryOrderId });
 
@@ -121,7 +132,16 @@ export default function PayrollSummaryPage() {
     }, 50);
   }
 
-  const periodSubtitle = from || to ? `${from ? new Date(from).toLocaleDateString() : '…'} – ${to ? new Date(to).toLocaleDateString() : '…'}` : undefined;
+  // "щоб в друці пдф вказувалось це замовлення" (2026-10-13) — appended
+  // onto the existing date-range subtitle rather than replacing it: a
+  // filtered print still has a `from`/`to` range too, both are real scope
+  // information worth keeping on the printed page.
+  const periodSubtitle = [
+    from || to ? `${from ? new Date(from).toLocaleDateString() : '…'} – ${to ? new Date(to).toLocaleDateString() : '…'}` : null,
+    summaryOrderLabel ?? null,
+  ]
+    .filter(Boolean)
+    .join(' · ') || undefined;
 
   // Grand total across every employee (2026-09-07 user request) — a plain
   // reduce over the same lines already fetched, not a separate backend
@@ -146,6 +166,7 @@ export default function PayrollSummaryPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">{t('payrollSummary')}</h2>
           <div className="flex items-center gap-2">
+            <EurUahRateField rate={eurUahRate} onChange={setEurUahRate} />
             <PrintButton label={tp('printAction')} />
             <PreviewButton />
           </div>
@@ -162,7 +183,13 @@ export default function PayrollSummaryPage() {
             </div>
             <div className="w-fit min-w-[280px] space-y-1.5">
               <Label htmlFor="summaryOrder">{t('payrollSummaryOrderFilter')}</Label>
-              <CustomerOrderPicker value={summaryOrderId} onChange={(id) => setSummaryOrderId(id)} />
+              <CustomerOrderPicker
+                value={summaryOrderId}
+                onChange={(id, label) => {
+                  setSummaryOrderId(id);
+                  setSummaryOrderLabel(label);
+                }}
+              />
             </div>
           </CardContent>
         </Card>
@@ -364,6 +391,19 @@ export default function PayrollSummaryPage() {
       {data && data.length > 0 && (
         <PrintArea printAreaId={summaryPrintAreaId}>
           <PrintDocumentHeader title={t('payrollSummary')} subtitle={periodSubtitle} />
+          {/* "саму верхню колонку зароблено працівниками в євро" (2026-10-13)
+              — same top plain-EUR line OrderPayrollPrint has above its own
+              per-employee table (`payrollFundEarned`/`fund.earnedActual`);
+              here that's `totals.piecework` — gross earned, before the
+              advance/bonus/penalty netting the table below already does. */}
+          <table className="mb-4">
+            <tbody>
+              <tr>
+                <td>{ts('payrollFundEarned')}</td>
+                <td className="font-bold">{formatEur(totals.piecework)}</td>
+              </tr>
+            </tbody>
+          </table>
           <table className="mb-6 w-full text-sm">
             <thead>
               <tr className="border-b-2 border-black text-left">
@@ -375,12 +415,16 @@ export default function PayrollSummaryPage() {
               {data.map((line) => (
                 <tr key={line.employeeId} className="border-b border-gray-300">
                   <td className="py-1">{line.employeeName}</td>
-                  <td className="py-1 text-right font-medium tabular-nums">{formatEur(line.netTotal)}</td>
+                  <td className="py-1 text-right font-medium tabular-nums">{formatUah(line.netTotal, eurUahRate)}</td>
                 </tr>
               ))}
               <tr className="border-t-2 border-black font-bold">
                 <td className="py-1">{t('grandTotal')}</td>
-                <td className="py-1 text-right tabular-nums">{formatEur(totals.netTotal)}</td>
+                <td className="py-1 text-right tabular-nums">
+                  {eurUahRate && eurUahRate > 0
+                    ? `${data.reduce((sum, l) => sum + (uahRoundUp(l.netTotal, eurUahRate) ?? 0), 0)} ₴`
+                    : formatEur(totals.netTotal)}
+                </td>
               </tr>
             </tbody>
           </table>
