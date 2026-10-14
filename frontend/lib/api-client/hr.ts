@@ -130,6 +130,10 @@ export interface PayrollEntry {
   customerOrderId: string | null;
   /** Resolved "clientName — № orderNumber" label, null unless `customerOrderId` is set. */
   customerOrderLabel: string | null;
+  /** "не можу змінити чи редагувати чи видалити запис" (2026-10-14) — set ONLY on a compensating entry itself, pointing at the original it voids. Null on every normal entry. */
+  voidsEntryId: string | null;
+  /** True when some OTHER entry already voids this one — computed server-side, not a real stored flag. */
+  isVoided: boolean;
 }
 
 export interface RecordPayrollEntryInput {
@@ -165,6 +169,10 @@ export function recordPayrollEntry(dto: RecordPayrollEntryInput): Promise<Payrol
 }
 export function queryPayrollEntries(query: QueryPayrollEntriesInput = {}): Promise<PaginatedPayrollEntries> {
   return apiClient.get<PaginatedPayrollEntries>('payroll/entries', { query: query as Record<string, string | number> });
+}
+/** "не можу змінити чи редагувати чи видалити запис" (2026-10-14) — the table has no UPDATE/DELETE grants at all, so this is the only way to correct a manual entry: a compensating opposite-signed entry, never an edit. */
+export function voidPayrollEntry(id: string, note?: string): Promise<PayrollEntry> {
+  return apiClient.post<PayrollEntry>(`payroll/entries/${id}/void`, { note });
 }
 
 /** One (employee, article) bucket of PIECEWORK output for the period. `assemblyId: null` is the real "no article" bucket — general labor never linked to a ProductionOrder/Assembly. */

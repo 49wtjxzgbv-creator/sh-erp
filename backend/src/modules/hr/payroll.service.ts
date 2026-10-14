@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CodedBadRequestException } from '../../common/api-exceptions';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -67,6 +67,10 @@ export interface PayrollEntryWithArticle {
   customerOrderId: string | null;
   /** Resolved "clientName — № orderNumber" label, null unless `customerOrderId` is set — same shape CustomerOrderPicker's own onSelect composes. */
   customerOrderLabel: string | null;
+  /** Set ONLY on a compensating entry itself, pointing at the original it voids (see PayrollEntry.voidsEntryId's own schema comment). Null on every normal entry. */
+  voidsEntryId: string | null;
+  /** True when some OTHER entry already voids this one — computed, not a real column (see `withArticles`'s own header comment on why this needs its own query rather than scanning the current page). */
+  isVoided: boolean;
 }
 
 export interface PayrollSummaryLine {
@@ -135,6 +139,67 @@ export class PayrollService {
     return entry;
   }
 
+  /**
+   * "коли вписую аванс чи штраф не можу змінити чи редагувати чи видалити
+   * запис" (2026-10-14): `app_service`'s own DB grants on this table are
+   * INSERT+SELECT only (confirmed live — no UPDATE/DELETE at all), so a
+   * real edit/delete could never work regardless of what the API/UI
+   * offered. "Скасувати" instead creates a new, opposite-signed entry
+   * (same employee/type/order, `amount` negated) that nets the original
+   * down to zero — the exact same "void = a new offsetting ledger row,
+   * never an edit" convention `ProductionExecutionsService#void_` already
+   * uses for PIECEWORK. PIECEWORK itself is explicitly out of scope here
+   * — those are voided through that other, execution-aware flow instead,
+   * which also un-stamps FinishedGood confirmation and reverses
+   * unitsProduced; a manual entry has none of that to undo.
+   */
+  async voidManualEntry(user: RequestUser, id: string, note?: string) {
+    const entry = await this.prisma.tenant.payrollEntry.findUnique({ where: { id } });
+    if (!entry) {
+      throw new CodedNotFoundException('PAYROLL_ENTRY_NOT_FOUND', 'Entry not found.');
+    }
+    if (entry.type === 'PIECEWORK') {
+      throw new CodedConflictException(
+        'PAYROLL_ENTRY_NOT_MANUAL',
+        'PIECEWORK entries are voided through ProductionExecutionsService#void_, not this endpoint.',
+      );
+    }
+    if (entry.voidsEntryId) {
+      throw new CodedConflictException('PAYROLL_ENTRY_IS_A_VOID', 'This entry is itself a void — it cannot be voided again.');
+    }
+    const existingVoid = await this.prisma.tenant.payrollEntry.findUnique({ where: { voidsEntryId: id } });
+    if (existingVoid) {
+      throw new CodedConflictException('PAYROLL_ENTRY_ALREADY_VOIDED', 'This entry has already been voided.');
+    }
+    await this.payrollPeriodsService.assertDateNotClosed(entry.entryDate);
+    const now = new Date();
+    await this.payrollPeriodsService.assertDateNotClosed(now);
+
+    const voidEntry = await this.prisma.tenant.payrollEntry.create({
+      data: {
+        employeeId: entry.employeeId,
+        type: entry.type,
+        amount: -Number(entry.amount),
+        entryDate: now,
+        comment: note || undefined,
+        customerOrderId: entry.customerOrderId,
+        voidsEntryId: entry.id,
+        createdById: user.userId,
+      } as any,
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: `payroll.${entry.type.toLowerCase()}_voided`,
+      entityType: 'PayrollEntry',
+      entityId: voidEntry.id,
+      before: entry,
+      after: voidEntry,
+    });
+    return voidEntry;
+  }
+
   async query(user: RequestUser, query: QueryPayrollEntriesDto) {
     const where: Record<string, any> = {};
     if (query.employeeId) where.employeeId = query.employeeId;
@@ -181,6 +246,19 @@ export class PayrollService {
         ? this.prisma.tenant.customerOrder.findMany({ where: { id: { in: customerOrderIds } }, select: { id: true, clientName: true, orderNumber: true } })
         : Promise.resolve([]),
     ]);
+    // "не можу змінити чи редагувати чи видалити запис" (2026-10-14): a
+    // SEPARATE query, not just scanning the current page for a matching
+    // `voidsEntryId` — the compensating void entry could easily land on a
+    // different page (it's created later, with its own `entryDate`/
+    // `createdAt`, and this list is paginated+sorted independently of
+    // "which original it voids"). Without this, an already-voided entry
+    // could still show its "Скасувати" button on a page that happens not
+    // to also contain its own void.
+    const entryIds = entries.map((e) => e.id);
+    const voidsOfThesEntries = entryIds.length
+      ? await this.prisma.tenant.payrollEntry.findMany({ where: { voidsEntryId: { in: entryIds } }, select: { voidsEntryId: true } })
+      : [];
+    const voidedEntryIds = new Set((voidsOfThesEntries as any[]).map((v) => v.voidsEntryId as string));
     const assemblyIdByOrderId = new Map((productionOrders as any[]).map((o) => [o.id, o.assemblyId]));
     const assemblyIds = Array.from(new Set((productionOrders as any[]).map((o) => o.assemblyId)));
     const assemblies = assemblyIds.length
@@ -202,6 +280,7 @@ export class PayrollService {
         assemblyName: assembly?.name ?? null,
         article: assembly?.article ?? null,
         customerOrderLabel: entry.customerOrderId ? (customerOrderLabelById.get(entry.customerOrderId) ?? null) : null,
+        isVoided: voidedEntryIds.has(entry.id),
       };
     });
   }

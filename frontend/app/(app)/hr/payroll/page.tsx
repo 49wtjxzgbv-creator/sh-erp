@@ -3,18 +3,20 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { useRecordPayrollEntry, usePayrollEntries } from '@/lib/hooks/use-hr';
+import { useRecordPayrollEntry, useVoidPayrollEntry, usePayrollEntries } from '@/lib/hooks/use-hr';
 import { EmployeePicker } from '@/components/domain/hr/employee-picker';
 import { CustomerOrderPicker } from '@/components/domain/sales/customer-order-picker';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import type { ManualPayrollEntryType, PayrollEntryType } from '@/lib/api-client/hr';
+import type { ManualPayrollEntryType, PayrollEntryType, PayrollEntry } from '@/lib/api-client/hr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 
 const PAGE_SIZE = 50;
 
@@ -23,6 +25,14 @@ export default function PayrollPage() {
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const recordEntry = useRecordPayrollEntry();
+  const voidEntry = useVoidPayrollEntry();
+  // "не можу змінити чи редагувати чи видалити запис" (2026-10-14) — the
+  // table has no UPDATE/DELETE grants at all, so "Скасувати" is a
+  // compensating entry, not an edit; same voidTarget/voidNote dialog
+  // shape production-executions-panel.tsx's own void flow already uses.
+  const [voidTarget, setVoidTarget] = useState<PayrollEntry | null>(null);
+  const [voidNote, setVoidNote] = useState('');
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   const [employeeId, setEmployeeId] = useState<string | undefined>(undefined);
   const [type, setType] = useState<ManualPayrollEntryType>('ADVANCE');
@@ -64,6 +74,18 @@ export default function PayrollPage() {
       setSuccess(true);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleVoid() {
+    if (!voidTarget) return;
+    setVoidError(null);
+    try {
+      await voidEntry.mutateAsync({ id: voidTarget.id, note: voidNote || undefined });
+      setVoidTarget(null);
+      setVoidNote('');
+    } catch (err) {
+      setVoidError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -155,29 +177,50 @@ export default function PayrollPage() {
                 <TableHead>{t('entryDate')}</TableHead>
                 <TableHead>{t('payrollSummaryOrderFilter')}</TableHead>
                 <TableHead>{t('comment')}</TableHead>
+                <TableHead>{tc('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                     {tc('loading')}
                   </TableCell>
                 </TableRow>
               ) : !data || data.items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
               ) : (
                 data.items.map((entry) => (
                   <TableRow key={entry.id}>
-                    <TableCell>{t(`entryType${entry.type}`)}</TableCell>
+                    <TableCell>
+                      {t(`entryType${entry.type}`)}
+                      {entry.voidsEntryId && <span className="ml-1 text-xs text-muted-foreground">({t('voidEntryLabel')})</span>}
+                    </TableCell>
                     <TableCell>{entry.amount}</TableCell>
                     <TableCell>{new Date(entry.entryDate).toLocaleDateString()}</TableCell>
                     <TableCell className="max-w-[180px] truncate" title={entry.customerOrderLabel ?? ''}>{entry.customerOrderLabel ?? '—'}</TableCell>
                     <TableCell className="max-w-[220px] truncate" title={entry.comment ?? ''}>{entry.comment ?? '—'}</TableCell>
+                    <TableCell>
+                      {/* "не можу змінити чи редагувати чи видалити запис"
+                          (2026-10-14): only a manual (non-PIECEWORK) entry
+                          that isn't itself a void and hasn't already been
+                          voided can be voided — matches the backend's own
+                          `voidManualEntry` guard rails exactly. */}
+                      {entry.isVoided ? (
+                        <Badge variant="secondary">{t('voidedBadge')}</Badge>
+                      ) : (
+                        entry.type !== 'PIECEWORK' &&
+                        !entry.voidsEntryId && (
+                          <Button size="sm" variant="ghost" onClick={() => setVoidTarget(entry)}>
+                            {t('voidEntry')}
+                          </Button>
+                        )
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -185,6 +228,28 @@ export default function PayrollPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(voidTarget)} onOpenChange={(o) => { if (!o) { setVoidTarget(null); setVoidNote(''); setVoidError(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('voidEntryConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('voidEntryConfirmDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="void-note">{t('voidNoteLabel')}</Label>
+            <Textarea id="void-note" value={voidNote} onChange={(e) => setVoidNote(e.target.value)} rows={2} />
+          </div>
+          {voidError && <p className="text-sm text-destructive">{voidError}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{tc('cancel')}</Button>
+            </DialogClose>
+            <Button variant="destructive" loading={voidEntry.isPending} onClick={handleVoid}>
+              {t('voidEntry')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

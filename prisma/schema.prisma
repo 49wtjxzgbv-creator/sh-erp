@@ -2843,6 +2843,20 @@ model PayrollEntry {
   // ADVANCE/BONUS/PENALTY entries, which never had one.
   sourceAllocationId String? @unique @db.Uuid // single-column FK — see header §cross-tenant (optional relation) — @unique: at most one PayrollEntry per allocation
 
+  // "не можу змінити чи редагувати чи видалити запис" (2026-10-14):
+  // `app_service`'s own DB grants on this table are INSERT+SELECT only
+  // (confirmed live — no UPDATE/DELETE at all, matching the "immutable
+  // ledger" convention documented above), so an edit/delete UI could
+  // never actually work even if built. Same self-referential "void = a
+  // new, opposite-signed entry pointing back at the original"
+  // ProductionExecution.supersedesId already uses for the identical
+  // need. Set ONLY on the COMPENSATING entry a void creates, pointing at
+  // the ADVANCE/BONUS/PENALTY entry it cancels out — never set on a
+  // normal entry, and never on a PIECEWORK one (those are voided through
+  // ProductionExecutionsService#void_ instead, which already has its own
+  // compensating-entry mechanism). @unique: at most one void per entry.
+  voidsEntryId String? @unique @db.Uuid
+
   legacyId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -2853,6 +2867,8 @@ model PayrollEntry {
   productionOrder  ProductionOrder?               @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
   sourceAllocation ProductionExecutionAllocation? @relation(fields: [sourceAllocationId], references: [id], onDelete: SetNull)
   customerOrder    CustomerOrder?                 @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  voids            PayrollEntry?                  @relation("PayrollEntryVoid", fields: [voidsEntryId], references: [id])
+  voidedBy         PayrollEntry?                  @relation("PayrollEntryVoid")
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, employeeId])

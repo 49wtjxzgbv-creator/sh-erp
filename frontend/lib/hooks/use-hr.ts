@@ -11,6 +11,7 @@ import {
   generateTelegramPairingCode,
   unlinkTelegram,
   recordPayrollEntry,
+  voidPayrollEntry,
   queryPayrollEntries,
   getPayrollSummary,
   queryTeams,
@@ -126,6 +127,18 @@ export function useRecordPayrollEntry() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dto: RecordPayrollEntryInput) => recordPayrollEntry(dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payroll-entries'] });
+      qc.invalidateQueries({ queryKey: ['payroll-summary'] });
+    },
+  });
+}
+
+/** "не можу змінити чи редагувати чи видалити запис" (2026-10-14) — creates a compensating entry, never edits/deletes the original (the table has no grants for that). */
+export function useVoidPayrollEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => voidPayrollEntry(id, note),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payroll-entries'] });
       qc.invalidateQueries({ queryKey: ['payroll-summary'] });

@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { PayrollSummaryQueryDto, QueryPayrollEntriesDto, RecordPayrollEntryDto } from './dto/payroll-entry.dto';
+import { PayrollSummaryQueryDto, QueryPayrollEntriesDto, RecordPayrollEntryDto, VoidPayrollEntryDto } from './dto/payroll-entry.dto';
 import { PayrollService } from './payroll.service';
 
 @ApiTags('hr')
@@ -15,6 +15,18 @@ export class PayrollController {
   @ApiOperation({ summary: 'Record a manual advance/bonus/penalty entry. Piecework entries are system-generated only, via ProductionExecutionsService#confirm.' })
   async recordManualEntry(@CurrentUser() user: RequestUser, @Body() dto: RecordPayrollEntryDto) {
     return this.payrollService.recordManualEntry(user, dto);
+  }
+
+  @Post('entries/:id/void')
+  @RequirePermissions('payroll:manage')
+  @ApiOperation({
+    summary:
+      'Void a manual advance/bonus/penalty entry with a compensating opposite-signed entry — the table has no ' +
+      'UPDATE/DELETE grants at all, so this is the only way to correct one. PIECEWORK entries are voided through ' +
+      'ProductionExecutionsService#void_ instead.',
+  })
+  async voidManualEntry(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: VoidPayrollEntryDto) {
+    return this.payrollService.voidManualEntry(user, id, dto.note);
   }
 
   @Get('entries')

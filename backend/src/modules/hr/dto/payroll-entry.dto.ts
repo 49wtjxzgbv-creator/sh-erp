@@ -62,6 +62,14 @@ export class RecordPayrollEntryDto {
   customerOrderId?: string;
 }
 
+/** "не можу змінити чи редагувати чи видалити запис" (2026-10-14) — same shape VoidProductionExecutionDto already uses. */
+export class VoidPayrollEntryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
 export class QueryPayrollEntriesDto {
   @ApiPropertyOptional()
   @IsOptional()
