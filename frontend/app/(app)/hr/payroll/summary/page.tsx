@@ -400,15 +400,24 @@ export default function PayrollSummaryPage() {
             {/* "саму верхню колонку зароблено працівниками в євро"
                 (2026-10-13) — same top plain-EUR line OrderPayrollPrint
                 has above its own per-employee table
-                (`payrollFundEarned`/`fund.earnedActual`); here that's
-                `totals.piecework` — gross earned, before the
-                advance/bonus/penalty netting the table below already
-                does. */}
+                (`payrollFundEarned`/`fund.earnedActual`).
+                "аванси би ж мали бути бо по факту це зароблені гроші за
+                вироби" (2026-10-14 follow-up): started as plain
+                `totals.piecework` (gross, before any netting) — changed
+                to `piecework + advances` (advances already negative-
+                signed) so this reads as "still owed for the pieces
+                actually made" (what was earned for the work, minus
+                whatever's already been advanced against it), not a raw
+                gross figure nobody's about to actually hand someone.
+                Deliberately still excludes bonuses/penalties — those
+                aren't "for the products" the way an advance against
+                piecework is; they only show up in "Загалом по всіх"
+                below. */}
             <table className="mb-4">
               <tbody>
                 <tr>
                   <td>{ts('payrollFundEarned')}</td>
-                  <td className="font-bold">{formatEur(totals.piecework)}</td>
+                  <td className="font-bold">{formatEur(totals.piecework + totals.advances)}</td>
                 </tr>
               </tbody>
             </table>
