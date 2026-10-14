@@ -126,6 +126,10 @@ export interface PayrollEntry {
   assemblyId: string | null;
   assemblyName: string | null;
   article: string | null;
+  /** "аванс і премія можна давати щоб воно підтягувало до конкретного замовлення" (2026-10-14) — raw FK, null unless this was recorded with an order picked. */
+  customerOrderId: string | null;
+  /** Resolved "clientName — № orderNumber" label, null unless `customerOrderId` is set. */
+  customerOrderLabel: string | null;
 }
 
 export interface RecordPayrollEntryInput {
@@ -135,6 +139,8 @@ export interface RecordPayrollEntryInput {
   amount: number;
   entryDate?: string;
   comment?: string;
+  /** "аванс і премія можна давати щоб воно підтягувало до конкретного замовлення" (2026-10-14) — optional; when set, order-scoped payroll views (summary/order filter) attribute this entry to that order instead of only ever inferring it from who worked there. */
+  customerOrderId?: string;
 }
 
 export interface QueryPayrollEntriesInput {

@@ -63,6 +63,10 @@ export interface PayrollEntryWithArticle {
   assemblyId: string | null;
   assemblyName: string | null;
   article: string | null;
+  /** Raw FK, null unless this was a manual entry recorded with an order picked (see RecordPayrollEntryDto's own header comment). */
+  customerOrderId: string | null;
+  /** Resolved "clientName — № orderNumber" label, null unless `customerOrderId` is set — same shape CustomerOrderPicker's own onSelect composes. */
+  customerOrderLabel: string | null;
 }
 
 export interface PayrollSummaryLine {
@@ -115,6 +119,7 @@ export class PayrollService {
         amount: signedAmount,
         entryDate: dto.entryDate,
         comment: dto.comment,
+        customerOrderId: dto.customerOrderId,
         createdById: user.userId,
       } as any,
     });
@@ -160,11 +165,21 @@ export class PayrollService {
    */
   private async withArticles(entries: any[]): Promise<PayrollEntryWithArticle[]> {
     const productionOrderIds = Array.from(new Set(entries.map((e) => e.productionOrderId).filter((id): id is string => Boolean(id))));
-    const [productionOrders, employees] = await Promise.all([
+    const customerOrderIds = Array.from(new Set(entries.map((e) => e.customerOrderId).filter((id): id is string => Boolean(id))));
+    const [productionOrders, employees, customerOrders] = await Promise.all([
       productionOrderIds.length
         ? this.prisma.tenant.productionOrder.findMany({ where: { id: { in: productionOrderIds } }, select: { id: true, assemblyId: true } })
         : Promise.resolve([]),
       this.prisma.tenant.employee.findMany({ select: { id: true, fullName: true } }),
+      // "аванс і премія можна давати щоб воно підтягувало до конкретного
+      // замовлення" (2026-10-14): resolves a manual entry's own
+      // customerOrderId -> a human label, same "clientName — № orderNumber"
+      // shape CustomerOrderPicker's own onSelect already composes, so the
+      // ledger list can show which order it's tagged to without a second
+      // round trip.
+      customerOrderIds.length
+        ? this.prisma.tenant.customerOrder.findMany({ where: { id: { in: customerOrderIds } }, select: { id: true, clientName: true, orderNumber: true } })
+        : Promise.resolve([]),
     ]);
     const assemblyIdByOrderId = new Map((productionOrders as any[]).map((o) => [o.id, o.assemblyId]));
     const assemblyIds = Array.from(new Set((productionOrders as any[]).map((o) => o.assemblyId)));
@@ -173,6 +188,9 @@ export class PayrollService {
       : [];
     const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
     const employeeNameById = new Map((employees as any[]).map((e) => [e.id, e.fullName]));
+    const customerOrderLabelById = new Map(
+      (customerOrders as any[]).map((o) => [o.id, o.orderNumber ? `${o.clientName} — № ${o.orderNumber}` : o.clientName]),
+    );
 
     return entries.map((entry) => {
       const assemblyId = entry.productionOrderId ? (assemblyIdByOrderId.get(entry.productionOrderId) ?? null) : null;
@@ -183,6 +201,7 @@ export class PayrollService {
         assemblyId,
         assemblyName: assembly?.name ?? null,
         article: assembly?.article ?? null,
+        customerOrderLabel: entry.customerOrderId ? (customerOrderLabelById.get(entry.customerOrderId) ?? null) : null,
       };
     });
   }
@@ -246,11 +265,30 @@ export class PayrollService {
       const pieceworkEntries = [...pieceworkOnOrder, ...pieceworkOnGeneralWork];
       const employeeIdsOnOrder = new Set((pieceworkEntries as any[]).map((e) => e.employeeId));
 
-      const manualEntries = employeeIdsOnOrder.size
-        ? await this.prisma.tenant.payrollEntry.findMany({
-            where: { ...entryWhere, type: { in: ['ADVANCE', 'BONUS', 'PENALTY'] }, employeeId: { in: Array.from(employeeIdsOnOrder) } },
-          })
-        : [];
+      // "аванс і премія можна давати щоб воно підтягувало до конкретного
+      // замовлення" (2026-10-14): two ways a manual entry ends up under
+      // this order —
+      //  1. explicitly tagged with THIS order's own customerOrderId (now
+      //     that recording one lets the user pick an order), regardless
+      //     of whether that employee has any PIECEWORK here at all;
+      //  2. (the older fallback from before tagging existed) UNTAGGED
+      //     (`customerOrderId: null`) and belonging to an employee who
+      //     has PIECEWORK here, so an old/untagged advance for someone
+      //     actively working this order doesn't just vanish.
+      // An entry tagged to a DIFFERENT order deliberately matches
+      // neither branch — once a human has said "this one's for order B",
+      // it shouldn't also leak into order A's view just because the same
+      // employee happens to have PIECEWORK on both.
+      const manualEntries = await this.prisma.tenant.payrollEntry.findMany({
+        where: {
+          ...entryWhere,
+          type: { in: ['ADVANCE', 'BONUS', 'PENALTY'] },
+          OR: [
+            { customerOrderId: query.customerOrderId },
+            ...(employeeIdsOnOrder.size ? [{ customerOrderId: null, employeeId: { in: Array.from(employeeIdsOnOrder) } }] : []),
+          ],
+        },
+      });
       entries = [...pieceworkEntries, ...manualEntries];
     } else {
       entries = await this.prisma.tenant.payrollEntry.findMany({ where: entryWhere });

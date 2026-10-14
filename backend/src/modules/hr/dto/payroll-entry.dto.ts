@@ -46,6 +46,20 @@ export class RecordPayrollEntryDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  /**
+   * "аванс і премія можна давати щоб воно підтягувало до конкретного
+   * замовлення" (2026-10-14): optional — when set, this ADVANCE/BONUS/
+   * PENALTY entry is explicitly attributed to a CustomerOrder, so order-
+   * scoped payroll views (getPayrollSummaryReport/
+   * getOrderPayrollByEmployee's own `customerOrderId` filter) can show it
+   * under that order instead of only ever inferring "any employee who
+   * worked there" the way they already did before this existed.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerOrderId?: string;
 }
 
 export class QueryPayrollEntriesDto {

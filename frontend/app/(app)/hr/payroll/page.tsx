@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useRecordPayrollEntry, usePayrollEntries } from '@/lib/hooks/use-hr';
 import { EmployeePicker } from '@/components/domain/hr/employee-picker';
+import { CustomerOrderPicker } from '@/components/domain/sales/customer-order-picker';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { ManualPayrollEntryType, PayrollEntryType } from '@/lib/api-client/hr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +29,10 @@ export default function PayrollPage() {
   const [amount, setAmount] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [comment, setComment] = useState('');
+  // "аванс і премія можна давати щоб воно підтягувало до конкретного
+  // замовлення" (2026-10-14) — optional, cleared after a successful save
+  // same as the other fields below.
+  const [recordOrderId, setRecordOrderId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -51,9 +56,11 @@ export default function PayrollPage() {
         amount: amountNum,
         entryDate: entryDate || undefined,
         comment: comment || undefined,
+        customerOrderId: recordOrderId,
       });
       setAmount('');
       setComment('');
+      setRecordOrderId(undefined);
       setSuccess(true);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
@@ -100,6 +107,10 @@ export default function PayrollPage() {
               <Label htmlFor="entryDate">{t('entryDate')}</Label>
               <Input id="entryDate" type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recordOrder">{t('payrollSummaryOrderFilter')}</Label>
+              <CustomerOrderPicker value={recordOrderId} onChange={(id) => setRecordOrderId(id)} />
+            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="comment">{t('comment')}</Label>
               <Textarea id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -142,19 +153,20 @@ export default function PayrollPage() {
                 <TableHead>{t('entryType')}</TableHead>
                 <TableHead>{t('amount')}</TableHead>
                 <TableHead>{t('entryDate')}</TableHead>
+                <TableHead>{t('payrollSummaryOrderFilter')}</TableHead>
                 <TableHead>{t('comment')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                     {tc('loading')}
                   </TableCell>
                 </TableRow>
               ) : !data || data.items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
@@ -164,6 +176,7 @@ export default function PayrollPage() {
                     <TableCell>{t(`entryType${entry.type}`)}</TableCell>
                     <TableCell>{entry.amount}</TableCell>
                     <TableCell>{new Date(entry.entryDate).toLocaleDateString()}</TableCell>
+                    <TableCell className="max-w-[180px] truncate" title={entry.customerOrderLabel ?? ''}>{entry.customerOrderLabel ?? '—'}</TableCell>
                     <TableCell className="max-w-[220px] truncate" title={entry.comment ?? ''}>{entry.comment ?? '—'}</TableCell>
                   </TableRow>
                 ))

@@ -2132,6 +2132,7 @@ model CustomerOrder {
   financeDocuments        CustomerOrderDocument[] // Finance module (2026-08-24) — direct cost documents on this order, alongside the automatic rollup of linked purchaseOrders' own Finance data
   financeExpenses         CustomerOrderExpense[] // Finance module (2026-08-24)
   subAssemblyReservations SubAssemblyReservation[] // "Зі складу" claims from the "Підвироби" dialog (2026-08-27) — see SubAssemblyReservation's own comment
+  payrollEntries          PayrollEntry[] // manual ADVANCE/BONUS/PENALTY entries explicitly linked to this order (see PayrollEntry.customerOrderId's own comment) — PIECEWORK entries reach this order only indirectly, via ProductionOrder batches, never this relation
 
   @@unique([companyId, id]) // composite-FK target for CustomerOrderItem.customerOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2816,6 +2817,19 @@ model PayrollEntry {
   employeeId        String           @db.Uuid
   type              PayrollEntryType
   productionOrderId String?          @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  // "аванс і премія можна давати щоб воно підтягувало до конкретного
+  // замовлення" (2026-10-14): optional — only ever set when the user
+  // explicitly picks an order while recording a manual ADVANCE/BONUS/
+  // PENALTY entry (`recordManualEntry`). Deliberately a SEPARATE field
+  // from `productionOrderId` above, not a reuse of it: that one points at
+  // a ProductionOrder (an internal production BATCH — the unit PIECEWORK
+  // is actually earned against), which isn't what a human means by "this
+  // advance is for order 440172" — they mean the CustomerOrder itself,
+  // which can span several batches/sub-assemblies. Null for every
+  // PIECEWORK entry (those already carry their own real scoping via
+  // `productionOrderId`) and for any manual entry recorded without
+  // picking an order.
+  customerOrderId   String?          @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   unitsProduced     Decimal?         @db.Decimal(14, 3)
   amount            Decimal          @db.Decimal(14, 2) // signed: advances/penalties negative, bonuses/piecework positive (Phase 1 §2 convention, preserved)
   entryDate         DateTime         @default(now()) @db.Timestamptz(3)
@@ -2838,9 +2852,11 @@ model PayrollEntry {
   employee         Employee                       @relation(fields: [companyId, employeeId], references: [companyId, id]) // composite — kept Restrict (default): a payroll ledger entry must always trace back to a real employee
   productionOrder  ProductionOrder?               @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
   sourceAllocation ProductionExecutionAllocation? @relation(fields: [sourceAllocationId], references: [id], onDelete: SetNull)
+  customerOrder    CustomerOrder?                 @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, employeeId])
+  @@index([companyId, customerOrderId])
   @@map("payroll_entries")
 }
 

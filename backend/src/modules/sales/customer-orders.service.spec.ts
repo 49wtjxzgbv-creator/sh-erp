@@ -552,11 +552,14 @@ describe('CustomerOrdersService', () => {
         { id: 'po1', customerOrderItemId: 'item1', subAssemblyForItemId: null, assemblyId: 'a1' },
         { id: 'po2', customerOrderItemId: null, subAssemblyForItemId: 'item1', assemblyId: 'sub1' },
       ]);
-      prisma.tenant.payrollEntry.findMany.mockResolvedValue([
-        { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
-        { employeeId: 'e2', type: 'PIECEWORK', amount: 20, unitsProduced: 2, productionOrderId: 'po1' },
-        { employeeId: 'e1', type: 'PIECEWORK', amount: 30, unitsProduced: 1, productionOrderId: 'po2' },
-      ]);
+      prisma.tenant.payrollEntry.findMany.mockImplementation(({ where }: any) => {
+        if (where?.type === 'ADVANCE') return Promise.resolve([]);
+        return Promise.resolve([
+          { employeeId: 'e1', type: 'PIECEWORK', amount: 100, unitsProduced: 4, productionOrderId: 'po1' },
+          { employeeId: 'e2', type: 'PIECEWORK', amount: 20, unitsProduced: 2, productionOrderId: 'po1' },
+          { employeeId: 'e1', type: 'PIECEWORK', amount: 30, unitsProduced: 1, productionOrderId: 'po2' },
+        ]);
+      });
       prisma.tenant.employee.findMany.mockResolvedValue([
         { id: 'e1', fullName: 'Іван Іванов' },
         { id: 'e2', fullName: 'Петро Петров' },
@@ -573,6 +576,7 @@ describe('CustomerOrdersService', () => {
           employeeId: 'e1',
           employeeName: 'Іван Іванов',
           totalEarned: 130,
+          outstandingAdvance: 0,
           byArticle: [
             { assemblyId: 'sub1', assemblyName: 'Sub', article: 'S-1', unitsProduced: 1, amount: 30 },
             { assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 4, amount: 100 },
@@ -582,6 +586,7 @@ describe('CustomerOrdersService', () => {
           employeeId: 'e2',
           employeeName: 'Петро Петров',
           totalEarned: 20,
+          outstandingAdvance: 0,
           byArticle: [{ assemblyId: 'a1', assemblyName: 'Widget', article: 'W-1', unitsProduced: 2, amount: 20 }],
         },
       ]);
@@ -609,6 +614,7 @@ describe('CustomerOrdersService', () => {
           employeeId: 'e1',
           employeeName: 'Іван Іванов',
           totalEarned: 0.3,
+          outstandingAdvance: 0,
           byArticle: [{ assemblyId: null, assemblyName: 'Прибирання складу', article: null, unitsProduced: 0.3, amount: 0.3 }],
         },
       ]);
