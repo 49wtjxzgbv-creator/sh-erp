@@ -402,22 +402,22 @@ export default function PayrollSummaryPage() {
                 has above its own per-employee table
                 (`payrollFundEarned`/`fund.earnedActual`).
                 "аванси би ж мали бути бо по факту це зароблені гроші за
-                вироби" (2026-10-14 follow-up): started as plain
-                `totals.piecework` (gross, before any netting) — changed
-                to `piecework + advances` (advances already negative-
-                signed) so this reads as "still owed for the pieces
-                actually made" (what was earned for the work, minus
-                whatever's already been advanced against it), not a raw
-                gross figure nobody's about to actually hand someone.
-                Deliberately still excludes bonuses/penalties — those
-                aren't "for the products" the way an advance against
-                piecework is; they only show up in "Загалом по всіх"
-                below. */}
+                вироби" + "та хай і премію враховує" (2026-10-14
+                follow-ups): started as plain `totals.piecework` (gross,
+                before any netting), then grew to also net out advances,
+                then bonuses too — piecework + advances (already
+                negative-signed) + bonuses. Deliberately still excludes
+                penalties: unlike an advance/bonus (both tied to this
+                order's own work), a penalty is never anything resembling
+                "earned", so folding it in here would make a disciplinary
+                deduction look like it reduced what was actually earned
+                rather than what's actually paid out — penalties only
+                show up in "Загалом по всіх" below. */}
             <table className="mb-4">
               <tbody>
                 <tr>
                   <td>{ts('payrollFundEarned')}</td>
-                  <td className="font-bold">{formatEur(totals.piecework + totals.advances)}</td>
+                  <td className="font-bold">{formatEur(totals.piecework + totals.advances + totals.bonuses)}</td>
                 </tr>
               </tbody>
             </table>
