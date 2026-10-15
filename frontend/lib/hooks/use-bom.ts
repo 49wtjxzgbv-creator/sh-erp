@@ -18,6 +18,7 @@ import {
   getAssemblyVersion,
   calculateAssemblyCost,
   calculateAssemblyWeight,
+  calculateAssemblyGermanPrice,
   checkAssemblyAvailability,
   getSubAssembliesNeeded,
   produceAssembly,
@@ -39,6 +40,7 @@ const versionsKey = (id: string) => ['assemblies', id, 'versions'] as const;
 const versionKey = (id: string, versionId: string) => ['assemblies', id, 'versions', versionId] as const;
 const costKey = (id: string) => ['assemblies', id, 'cost'] as const;
 const weightKey = (id: string) => ['assemblies', id, 'weight'] as const;
+const germanPriceKey = (id: string) => ['assemblies', id, 'german-price'] as const;
 
 export function useAssemblies(query: QueryAssembliesInput) {
   return useQuery({ queryKey: assembliesKey(query), queryFn: () => queryAssemblies(query) });
@@ -165,6 +167,15 @@ export function useAssemblyWeight(assemblyId: string | undefined) {
   return useQuery({
     queryKey: weightKey(assemblyId ?? ''),
     queryFn: () => calculateAssemblyWeight(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+/** "додай можливість рахувати у специфікаціях ціна виробу в німеччмні з склад бум" (2026-10-15) — a suggestion only, never auto-applied; see assembly-form.tsx's own "Застосувати" button for how it's offered to the user. */
+export function useAssemblyGermanPrice(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: germanPriceKey(assemblyId ?? ''),
+    queryFn: () => calculateAssemblyGermanPrice(assemblyId as string),
     enabled: Boolean(assemblyId),
   });
 }

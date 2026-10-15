@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { useTranslations } from 'next-intl';
 import type { Assembly, CreateAssemblyInput } from '@/lib/api-client/bom';
 import { toNumber } from '@/lib/api-client/decimal';
-import { useAssemblyBomArticles, useAssemblyBomActions } from '@/lib/hooks/use-bom';
+import { formatEur } from '@/lib/utils';
+import { useAssemblyBomArticles, useAssemblyBomActions, useAssemblyGermanPrice } from '@/lib/hooks/use-bom';
 import { queryProducts } from '@/lib/api-client/catalog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -167,6 +168,7 @@ export function AssemblyForm({
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<AssemblyFormValues>({
     resolver: zodResolver(assemblySchema),
@@ -311,6 +313,9 @@ export function AssemblyForm({
             <Label htmlFor="germanPriceEur">{t('germanPriceEur')}</Label>
             <Input id="germanPriceEur" type="number" step="any" {...register('germanPriceEur')} />
             <p className="text-xs text-muted-foreground">{t('germanPriceEurHint')}</p>
+            {assembly && !readOnly && (
+              <GermanPriceFromBomCalculator assemblyId={assembly.id} onApply={(value) => setValue('germanPriceEur', value)} />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -323,5 +328,42 @@ export function AssemblyForm({
       )}
       <CreateProductDialog {...createProductDialogProps} />
     </form>
+  );
+}
+
+/**
+ * "додай можливість рахувати у специфікаціях ціна виробу в німеччмні з
+ * склад бум товарів в яких вказана Ціна (DE, з ПДВ) або підвиробів в яких
+ * вказана Ціна виробу в Німеччині, €" (2026-10-15) — same "calculate →
+ * show → one-click apply, field stays hand-editable afterward" pattern as
+ * product-form.tsx's own MaterialWeightPicker/ModelWeightCalculator for
+ * weightPerUnitKg, reused here rather than inventing a new convention.
+ * Only rendered once a real `assembly.id` exists (components live on an
+ * already-saved assembly) — never during create, same gating as
+ * `useAssemblyBomArticles`/`useAssemblyBomActions` above. Nothing is
+ * auto-applied; the user always presses "Застосувати" by hand.
+ */
+function GermanPriceFromBomCalculator({ assemblyId, onApply }: { assemblyId: string; onApply: (value: number) => void }) {
+  const t = useTranslations('bom');
+  const { data, isLoading } = useAssemblyGermanPrice(assemblyId);
+
+  if (isLoading || !data || data.breakdown.length === 0) return null;
+
+  return (
+    <div className="space-y-1 rounded-md border border-dashed border-border p-2 text-xs">
+      <p className="text-muted-foreground">
+        {t('germanPriceFromBom')}: <span className="font-medium text-foreground">{formatEur(data.germanPricePerUnit)}</span>
+      </p>
+      {!data.complete && <p className="text-amber-600 dark:text-amber-500">{t('germanPriceFromBomIncomplete')}</p>}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-6 px-2 text-xs"
+        onClick={() => onApply(Number(data.germanPricePerUnit.toFixed(2)))}
+      >
+        {t('germanPriceFromBomApply')}
+      </Button>
+    </div>
   );
 }

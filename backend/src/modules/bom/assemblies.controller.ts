@@ -132,6 +132,16 @@ export class AssembliesController {
     return this.assembliesService.calculateWeight(user, id);
   }
 
+  @Get(':id/german-price')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({
+    summary:
+      'German-price-equivalent suggestion, summed from this assembly\'s DIRECT BOM lines only (Product.germanPriceInclVat for PRODUCT lines, the sub-assembly\'s own germanPriceEur for ASSEMBLY lines) — one level deep, not recursive like /cost or /weight. `complete=false` means at least one direct line has no German price set.',
+  })
+  async calculateGermanPrice(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.assembliesService.calculateGermanPriceFromBom(user, id);
+  }
+
   @Get(':id/sub-assemblies-needed')
   @RequirePermissions('assemblies:read')
   @ApiOperation({

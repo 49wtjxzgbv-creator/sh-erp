@@ -261,6 +261,74 @@ describe('AssembliesService', () => {
     });
   });
 
+  describe('calculateGermanPriceFromBom — one level deep, not recursive (2026-10-15 user request)', () => {
+    it('sums PRODUCT component German prices from Product.germanPriceInclVat × qtyPerUnit', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 3 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ germanPriceInclVat: 5, germanPriceExclVat: 999, sellPriceEur: 999 });
+
+      const result = await service.calculateGermanPriceFromBom(user, 'a1');
+
+      expect(result.germanPricePerUnit).toBe(15);
+      expect(result.complete).toBe(true);
+    });
+
+    it('for an ASSEMBLY component, reads the sub-assembly\'s OWN germanPriceEur directly — does NOT recurse into its components', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({
+          id: 'parent',
+          components: [{ componentType: 'ASSEMBLY', subAssemblyId: 'child', qtyPerUnit: 2 }],
+        })
+        .mockResolvedValueOnce({
+          id: 'child',
+          germanPriceEur: 100,
+          // If this were recursive (like calculateCost/calculateWeight), the
+          // child's own PRODUCT component below would matter — it must not,
+          // since only child.germanPriceEur itself is read.
+          components: [{ componentType: 'PRODUCT', productId: 'p-deep', qtyPerUnit: 999 }],
+        });
+
+      const result = await service.calculateGermanPriceFromBom(user, 'parent');
+
+      expect(result.germanPricePerUnit).toBe(200); // 100 * 2, never touching the child's own BOM
+      expect(result.complete).toBe(true);
+      expect(prisma.tenant.product.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('flags complete=false and contributes 0 when a PRODUCT has no germanPriceInclVat set', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 3 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ germanPriceInclVat: null });
+
+      const result = await service.calculateGermanPriceFromBom(user, 'a1');
+
+      expect(result.germanPricePerUnit).toBe(0);
+      expect(result.complete).toBe(false);
+    });
+
+    it('flags complete=false when a sub-assembly has no germanPriceEur set, while still summing known lines', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({
+          id: 'parent',
+          components: [
+            { componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 },
+            { componentType: 'ASSEMBLY', subAssemblyId: 'child', qtyPerUnit: 1 },
+          ],
+        })
+        .mockResolvedValueOnce({ id: 'child', germanPriceEur: null, components: [] });
+      prisma.tenant.product.findUnique.mockResolvedValue({ germanPriceInclVat: 50 });
+
+      const result = await service.calculateGermanPriceFromBom(user, 'parent');
+
+      expect(result.germanPricePerUnit).toBe(50);
+      expect(result.complete).toBe(false);
+    });
+  });
+
   describe('checkAvailability / produce', () => {
     beforeEach(() => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });

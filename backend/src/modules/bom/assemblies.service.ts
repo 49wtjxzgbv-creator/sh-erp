@@ -47,6 +47,25 @@ export interface AssemblyWeightResult {
   breakdown: WeightBreakdownLine[];
 }
 
+export interface GermanPriceBreakdownLine {
+  componentType: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** PRODUCT line: Product.germanPriceInclVat as-is. ASSEMBLY line: the sub-assembly's OWN manually-entered germanPriceEur, read directly — NOT a further recursive rollup of ITS components (see calcAssemblyGermanPriceFromBom's own header comment for why one level is correct here, unlike cost/weight). `null` = not set, not a confirmed zero. */
+  unitGermanPrice: number | null;
+  lineGermanPrice: number;
+  complete: boolean;
+}
+
+/** Sum of this assembly's DIRECT BOM lines' own German prices — see calcAssemblyGermanPriceFromBom's header comment for why this is one level deep, unlike the recursive cost/weight calculations above. Missing values contribute 0, with `complete: false` flagging the gap. */
+export interface AssemblyGermanPriceResult {
+  assemblyId: string;
+  germanPricePerUnit: number;
+  complete: boolean;
+  breakdown: GermanPriceBreakdownLine[];
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;
@@ -705,6 +724,79 @@ export class AssembliesService {
 
     visited.delete(assemblyId);
     return { assemblyId, weightPerUnitKg: weightPerUnit, complete, breakdown };
+  }
+
+  // ============================================================
+  // German-price-from-BOM calculation (2026-10-15 user request:
+  // "додай можливість рахувати у специфікаціях ціна виробу в німеччмні з
+  // склад бум товарів в яких вказана Ціна (DE, з ПДВ) або підвиробів в
+  // яких вказана Ціна виробу в Німеччині, €") — unlike the cost/weight
+  // calculations above, this is deliberately ONE LEVEL DEEP, not a full
+  // recursive rollup: for an ASSEMBLY-type BOM line, it reads the
+  // sub-assembly's own already-curated germanPriceEur value as-is, rather
+  // than recursing into THAT sub-assembly's own components. Both
+  // germanPriceInclVat and germanPriceEur are manually-entered, human-
+  // verified benchmark prices (real German retail/market prices someone
+  // looked up), not cost-basis numbers — re-deriving a sub-assembly's
+  // figure from its own components would silently discard that human
+  // verification and compound estimation error at every level, which cost/
+  // weight don't risk (sellPriceEur/weightPerUnitKg are themselves already
+  // leaf-level Product facts, not independently-curated judgments at every
+  // tier). So: sum of (this assembly's direct components' own German
+  // price × qtyPerUnit) only — no `visited` cycle guard needed either,
+  // since there is no recursion into sub-assemblies to begin with.
+  // ============================================================
+
+  async calculateGermanPriceFromBom(user: RequestUser, assemblyId: string): Promise<AssemblyGermanPriceResult> {
+    const assembly = await this.prisma.tenant.assembly.findUnique({
+      where: { id: assemblyId },
+      include: { components: true },
+    });
+    if (!assembly) {
+      throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
+    }
+
+    let germanPricePerUnit = 0;
+    let complete = true;
+    const breakdown: GermanPriceBreakdownLine[] = [];
+
+    for (const line of assembly.components) {
+      const qtyPerUnit = Number(line.qtyPerUnit);
+
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
+        if (!product) throw new CodedNotFoundException('BOM_COMPONENT_PRODUCT_NOT_FOUND', `Component product ${line.productId} not found.`);
+        const unitGermanPrice = product.germanPriceInclVat != null ? Number(product.germanPriceInclVat) : null;
+        const lineGermanPrice = (unitGermanPrice ?? 0) * qtyPerUnit;
+        germanPricePerUnit += lineGermanPrice;
+        if (unitGermanPrice == null) complete = false;
+        breakdown.push({
+          componentType: 'PRODUCT',
+          productId: line.productId,
+          qtyPerUnit,
+          unitGermanPrice,
+          lineGermanPrice,
+          complete: unitGermanPrice != null,
+        });
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const sub = await this.prisma.tenant.assembly.findUnique({ where: { id: line.subAssemblyId } });
+        if (!sub) throw new CodedNotFoundException('BOM_COMPONENT_ASSEMBLY_NOT_FOUND', `Component sub-assembly ${line.subAssemblyId} not found.`);
+        const unitGermanPrice = sub.germanPriceEur != null ? Number(sub.germanPriceEur) : null;
+        const lineGermanPrice = (unitGermanPrice ?? 0) * qtyPerUnit;
+        germanPricePerUnit += lineGermanPrice;
+        if (unitGermanPrice == null) complete = false;
+        breakdown.push({
+          componentType: 'ASSEMBLY',
+          subAssemblyId: line.subAssemblyId,
+          qtyPerUnit,
+          unitGermanPrice,
+          lineGermanPrice,
+          complete: unitGermanPrice != null,
+        });
+      }
+    }
+
+    return { assemblyId, germanPricePerUnit, complete, breakdown };
   }
 
   // ============================================================

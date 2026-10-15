@@ -217,6 +217,29 @@ export function calculateAssemblyWeight(assemblyId: string): Promise<AssemblyWei
   return apiClient.get<AssemblyWeightResult>(`assemblies/${assemblyId}/weight`);
 }
 
+export interface GermanPriceBreakdownLine {
+  componentType: ComponentType;
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** PRODUCT line: Product.germanPriceInclVat. ASSEMBLY line: the sub-assembly's own germanPriceEur, read directly (NOT a further recursive rollup — see the backend's own header comment on calculateGermanPriceFromBom for why). `null` = not set, not a confirmed zero. */
+  unitGermanPrice: number | null;
+  lineGermanPrice: number;
+  complete: boolean;
+}
+
+/** "додай можливість рахувати у специфікаціях ціна виробу в німеччмні з склад бум" (2026-10-15) — sum of this assembly's DIRECT BOM lines' own German prices only, one level deep (not recursive like cost/weight). Missing values contribute 0, with `complete: false` flagging the gap. A suggestion the user applies by hand into `germanPriceEur` — never written automatically. */
+export interface AssemblyGermanPriceResult {
+  assemblyId: string;
+  germanPricePerUnit: number;
+  complete: boolean;
+  breakdown: GermanPriceBreakdownLine[];
+}
+
+export function calculateAssemblyGermanPrice(assemblyId: string): Promise<AssemblyGermanPriceResult> {
+  return apiClient.get<AssemblyGermanPriceResult>(`assemblies/${assemblyId}/german-price`);
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;
