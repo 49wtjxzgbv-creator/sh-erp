@@ -13,7 +13,7 @@ export function Faq({ faq }: { faq: FlatLandingPageContent['faq'] }) {
     <section id="faq" className="border-t border-border py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{faq.heading}</h2>
+          <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{faq.heading}</h2>
         </Reveal>
 
         <div className="mx-auto mt-14 max-w-2xl divide-y divide-border">

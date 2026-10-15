@@ -17,7 +17,7 @@ export function ModulesGrid({ modules }: { modules: FlatLandingPageContent['modu
     <section id="modules" className="py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{modules.heading}</h2>
+          <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{modules.heading}</h2>
           <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{modules.subheading}</p>
         </Reveal>
 
@@ -34,7 +34,7 @@ export function ModulesGrid({ modules }: { modules: FlatLandingPageContent['modu
                   <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
                     <Icon className="h-6 w-6" />
                   </div>
-                  <h3 className="text-xl font-semibold tracking-tight">{module.title}</h3>
+                  <h3 className="font-display text-xl font-semibold tracking-tight">{module.title}</h3>
                   <p className="mt-3 max-w-md leading-relaxed text-muted-foreground">{module.description}</p>
                 </div>
               </Reveal>
@@ -66,7 +66,7 @@ export function ModulesGrid({ modules }: { modules: FlatLandingPageContent['modu
                   <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-accent-foreground transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <h3 className="font-semibold tracking-tight">{module.title}</h3>
+                  <h3 className="font-display font-semibold tracking-tight">{module.title}</h3>
                   <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">{module.description}</p>
                 </div>
               </Reveal>

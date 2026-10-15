@@ -43,9 +43,12 @@
     "footerCompanyColumn": "Company",
     "footerRegister": "Sign up",
     "footerRights": "All rights reserved",
-    "heroFactModules": "8 real modules",
+    "heroFactModules": "9 real modules",
     "heroFactLocales": "4 interface languages",
-    "heroFactRls": "PostgreSQL Row-Level Security"
+    "heroFactRls": "PostgreSQL Row-Level Security",
+    "heroFlowBom": "Specification",
+    "heroFlowProduction": "Production",
+    "heroFlowPayroll": "Payroll"
   },
   "nav": {
     "dashboard": "Dashboard",

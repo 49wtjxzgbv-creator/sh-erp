@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Golos_Text } from 'next/font/google';
 import { MarketingHeader } from '@/components/domain/marketing/marketing-header';
 import { Hero } from '@/components/domain/marketing/hero';
 import { ModulesGrid } from '@/components/domain/marketing/modules-grid';
@@ -34,6 +35,24 @@ import { landingMediaUrl } from '@/lib/landing-page/media-url';
  * same module-per-file convention the rest of this app already follows.
  */
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sh-erp.com';
+
+/**
+ * "лендинг якось по бідному виглядає" (2026-10-15) — the single biggest
+ * generic-SaaS-template tell on this page was Inter used for EVERYTHING,
+ * headlines included (Inter/Space Grotesk-only is the most common "safe"
+ * default, which is exactly what reads as templated). Loaded HERE, not in
+ * the root layout — scoped to this one route only, so the authenticated
+ * app (every page under (app)/) keeps plain Inter untouched; only
+ * `font-display` (tailwind.config.ts) opts a marketing section heading
+ * into this face. Golos Text specifically for its cyrillic/cyrillic-ext +
+ * latin-ext subset coverage (uk and pl headlines need both) at the same
+ * weight range Inter already offers.
+ */
+const golosText = Golos_Text({
+  subsets: ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext'],
+  variable: '--font-display',
+  display: 'swap',
+});
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = resolveLocale();
@@ -145,7 +164,7 @@ export default async function LandingPage() {
   const jsonLd = buildJsonLd(c, plans);
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className={`flex min-h-screen flex-col ${golosText.variable}`}>
       {/* `<` escaped so Super-Admin-edited copy (e.g. an FAQ answer) can never contain a literal "</script>" and break out of this tag. */}
       {/* eslint-disable-next-line react/no-danger */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />

@@ -4,6 +4,7 @@ import { ArrowRight, MessageCircle, Boxes, Globe, ShieldCheck } from 'lucide-rea
 import { buttonVariants } from '@/components/ui/button';
 import { Reveal } from '@/components/domain/marketing/reveal';
 import { HeroScreenshot } from '@/components/domain/marketing/hero-screenshot';
+import { HeroFlowDiagram } from '@/components/domain/marketing/hero-flow-diagram';
 import { landingMediaUrl } from '@/lib/landing-page/media-url';
 import type { FlatLandingPageContent } from '@/lib/landing-page/flatten-content';
 
@@ -47,7 +48,7 @@ export function Hero({ content }: { content: FlatLandingPageContent['hero'] }) {
           </div>
 
           {/* Solid brand-purple on the highlighted span, not a two-color gradient — a gradient text treatment reads as template-y for a premium B2B product. */}
-          <h1 className="text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-[4.5rem]">
+          <h1 className="font-display text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-[4.5rem]">
             {content.headline}
           </h1>
 
@@ -85,12 +86,16 @@ export function Hero({ content }: { content: FlatLandingPageContent['hero'] }) {
           </div>
         </Reveal>
 
-        {/* No fabricated mockup here even while heroImageId is unset (Phase 3 — real screenshots — is a separate, disclosed follow-up): honest absence over a fake dashboard. */}
-        {imageUrl && (
-          <Reveal delayMs={150} className="mt-20 sm:mt-24">
-            <HeroScreenshot src={imageUrl} alt={content.headline} />
-          </Reveal>
-        )}
+        {/* Real screenshot once a Super Admin sets one (Phase 3) — never a
+            fabricated mockup. Falls back to an honest flow diagram instead
+            of nothing: a bare text hero with no visual anchor at all was
+            the single biggest "cheap/unfinished" tell on the whole page
+            (see HeroFlowDiagram's own header comment for why a real
+            screenshot isn't a safe fallback here either — the only ones on
+            hand are from an empty demo sandbox). */}
+        <Reveal delayMs={150} className="mt-20 sm:mt-24">
+          {imageUrl ? <HeroScreenshot src={imageUrl} alt={content.headline} /> : <HeroFlowDiagram />}
+        </Reveal>
       </div>
     </section>
   );

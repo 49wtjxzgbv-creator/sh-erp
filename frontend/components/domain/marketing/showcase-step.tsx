@@ -41,7 +41,7 @@ export function ShowcaseStep({
     <Reveal className={cn('grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-20', reverse && 'lg:[direction:rtl]')}>
       <div className={cn(reverse && 'lg:[direction:ltr]')}>
         <span className="text-sm font-semibold tracking-wide text-primary">{String(index).padStart(2, '0')}</span>
-        <h3 className="mt-3 text-2xl font-semibold tracking-tight sm:text-[1.75rem]">{title}</h3>
+        <h3 className="font-display mt-3 text-2xl font-semibold tracking-tight sm:text-[1.75rem]">{title}</h3>
         <p className="mt-3.5 max-w-md text-balance leading-relaxed text-muted-foreground">{description}</p>
       </div>
 

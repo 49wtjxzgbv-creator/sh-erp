@@ -43,9 +43,12 @@
     "footerCompanyColumn": "Компанія",
     "footerRegister": "Реєстрація",
     "footerRights": "Усі права захищено",
-    "heroFactModules": "8 реальних модулів",
+    "heroFactModules": "9 реальних модулів",
     "heroFactLocales": "4 мови інтерфейсу",
-    "heroFactRls": "PostgreSQL Row-Level Security"
+    "heroFactRls": "PostgreSQL Row-Level Security",
+    "heroFlowBom": "Специфікація",
+    "heroFlowProduction": "Виробництво",
+    "heroFlowPayroll": "Зарплата"
   },
   "nav": {
     "dashboard": "Дашборд",

@@ -8,7 +8,7 @@ export function Benefits({ content }: { content: FlatLandingPageContent['benefit
     <section className="border-y border-border bg-secondary/30 py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{content.heading}</h2>
+          <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{content.heading}</h2>
           <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{content.subheading}</p>
         </Reveal>
 
@@ -23,7 +23,7 @@ export function Benefits({ content }: { content: FlatLandingPageContent['benefit
                     <Icon className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="font-semibold tracking-tight">{benefit.title}</h3>
+                    <h3 className="font-display font-semibold tracking-tight">{benefit.title}</h3>
                     <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">{benefit.description}</p>
                   </div>
                 </div>

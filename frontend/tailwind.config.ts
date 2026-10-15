@@ -19,6 +19,14 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Marketing-page-only headline face (Golos Text, loaded in
+        // app/page.tsx, NOT the root layout) — the authenticated app keeps
+        // plain Inter throughout; `font-display` is only ever applied to
+        // section headings inside components/domain/marketing/*. Falls back
+        // to --font-inter (not a generic system stack) so a marketing
+        // component rendered somewhere this variable isn't in scope never
+        // silently drops to Times/Arial.
+        display: ['var(--font-display)', 'var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: 'hsl(var(--border))',

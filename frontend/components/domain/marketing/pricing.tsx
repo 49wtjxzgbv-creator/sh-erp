@@ -20,7 +20,7 @@ export function Pricing({ content, plans }: { content: FlatLandingPageContent['p
     <section id="pricing" className="py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{content.heading}</h2>
+          <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{content.heading}</h2>
           <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{content.subheading}</p>
         </Reveal>
 
@@ -42,7 +42,7 @@ export function Pricing({ content, plans }: { content: FlatLandingPageContent['p
                       Популярний вибір
                     </span>
                   )}
-                  <h3 className="text-lg font-semibold tracking-tight">{plan.name}</h3>
+                  <h3 className="font-display text-lg font-semibold tracking-tight">{plan.name}</h3>
                   {override && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{override.description}</p>}
                   <div className="mt-7 flex items-baseline gap-1">
                     <span className="text-[2.75rem] font-semibold leading-none tracking-tight">€{price}</span>

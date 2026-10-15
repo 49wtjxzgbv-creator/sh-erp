@@ -19,7 +19,7 @@ export function ShowcaseScenario({ showcase }: { showcase: FlatLandingPageConten
     <section id="how-it-works" className="border-y border-border bg-secondary/20 py-24 sm:py-32">
       <div className="container">
         <Reveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{showcase.heading}</h2>
+          <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.75rem]">{showcase.heading}</h2>
           <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{showcase.subheading}</p>
         </Reveal>
 

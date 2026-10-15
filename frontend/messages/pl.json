@@ -43,9 +43,12 @@
     "footerCompanyColumn": "Firma",
     "footerRegister": "Rejestracja",
     "footerRights": "Wszelkie prawa zastrzeÅ¼one",
-    "heroFactModules": "8 rzeczywistych moduÅÃ³w",
-    "heroFactLocales": "4 jÄzyki interfejsu",
-    "heroFactRls": "PostgreSQL Row-Level Security"
+    "heroFactModules": "9 rzeczywistych modułów",
+    "heroFactLocales": "4 języki interfejsu",
+    "heroFactRls": "PostgreSQL Row-Level Security",
+    "heroFlowBom": "Specyfikacja",
+    "heroFlowProduction": "Produkcja",
+    "heroFlowPayroll": "Wynagrodzenie"
   },
   "nav": {
     "dashboard": "Panel",

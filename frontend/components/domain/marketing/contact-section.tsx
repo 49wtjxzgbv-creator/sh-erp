@@ -34,7 +34,7 @@ export function ContactSection({ content }: { content: FlatLandingPageContent['c
       <div className="container">
         <div className="mx-auto grid max-w-4xl grid-cols-1 gap-14 lg:grid-cols-2">
           <Reveal>
-            <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{content.heading}</h2>
+            <h2 className="font-display text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{content.heading}</h2>
             <p className="mt-5 text-balance text-lg leading-relaxed text-muted-foreground">{content.subheading}</p>
 
             <div className="mt-9 space-y-4">
