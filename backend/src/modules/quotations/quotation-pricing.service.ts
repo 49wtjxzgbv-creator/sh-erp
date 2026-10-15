@@ -15,7 +15,7 @@ export interface ComputeItemPricingInput {
   pricingPercent: number | null;
   /** The manually-entered price for CUSTOM. */
   customUnitPrice: number | null;
-  /** Assembly.germanPriceEur — required only for GERMAN_PRICE_INCL_VAT. Taken verbatim as unitPrice (already VAT-inclusive per explicit user instruction) — see QuotationVersion.vatRatePercent's schema comment for how the VAT portion gets split back out for display. */
+  /** Product.germanPriceInclVat — required only for GERMAN_PRICE_INCL_VAT (PRODUCT lines only). Taken verbatim as unitPrice (already VAT-inclusive, per that field's own "з ПДВ" label) — see QuotationVersion.vatRatePercent's schema comment for how the VAT portion gets split back out for display. */
   germanPriceInclVat: number | null;
   discountPercent: number;
   /** Explicit absolute override — when set, wins over discountPercent (supports an "enter €X off" workflow alongside "enter Y% off"; the resolved number is what's stored either way, see QuotationVersionItem.discountAmount's own schema comment). */
@@ -46,7 +46,7 @@ export interface ComputedItemPricing {
  *   LABOR_MARKUP_PERCENT:    unitPrice = laborCost × (1 + p/100)       — same formula as MARKUP_PERCENT, labor cost only
  *   LABOR_COST_PLUS_MARGIN:  unitPrice = laborCost / (1 - p/100)       — same formula as COST_PLUS_MARGIN, labor cost only
  *   CUSTOM:                  unitPrice = customUnitPrice, as entered
- *   GERMAN_PRICE_INCL_VAT:   unitPrice = germanPriceInclVat, unchanged — Assembly.germanPriceEur taken as-is, already VAT-inclusive
+ *   GERMAN_PRICE_INCL_VAT:   unitPrice = germanPriceInclVat, unchanged — Product.germanPriceInclVat taken as-is, already VAT-inclusive
  *
  * MARKUP_PERCENT and COST_PLUS_MARGIN are NOT interchangeable — a markup
  * multiplies cost up; a margin target divides cost by the fraction of
@@ -136,7 +136,7 @@ export class QuotationPricingService {
         if (input.germanPriceInclVat === null) {
           throw new CodedBadRequestException(
             'QUOTATION_ITEM_NO_GERMAN_PRICE',
-            'This assembly has no German price set — set it on the assembly card, or choose a different pricing method.',
+            'This product has no "Ціна (DE, з ПДВ)" set — set it on the product card, or choose a different pricing method.',
           );
         }
         return round2(input.germanPriceInclVat);

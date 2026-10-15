@@ -41,8 +41,8 @@ export interface QuotationItemDraft {
 const ITEM_KINDS: QuotationItemKind[] = ['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'];
 
 function allowedSourcesForKind(kind: QuotationItemKind): PricingSource[] {
-  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT'];
-  if (kind === 'PRODUCT') return ['MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM'];
+  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'];
+  if (kind === 'PRODUCT') return ['MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT'];
   return ['CUSTOM'];
 }
 
@@ -79,7 +79,10 @@ export function QuotationItemRow({
   const cost = item.kind === 'ASSEMBLY' ? assemblyCost?.costPerUnit ?? null : item.kind === 'PRODUCT' ? toNumber(product?.sellPriceEur) : null;
   const basePrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.baseSalePriceEur ?? null) : null;
   const laborCost = item.kind === 'ASSEMBLY' ? toNumber(assembly?.laborCostPerUnit ?? null) : null;
-  const germanPrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.germanPriceEur ?? null) : null;
+  // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
+  // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
+  // field actually labeled "з ПДВ"; PRODUCT lines only.
+  const germanPrice = item.kind === 'PRODUCT' ? toNumber(product?.germanPriceInclVat ?? null) : null;
   // Existence of the id (not the display label) is what actually matters —
   // `entityLabel` is only ever populated by the picker's own onChange, so an
   // ASSEMBLY/PRODUCT line hydrated fresh from a saved quotation would show
@@ -222,6 +225,7 @@ export function QuotationItemRow({
                 disabled={!editable}
                 allowedSources={allowedSourcesForKind(item.kind)}
                 assemblyId={item.kind === 'ASSEMBLY' ? item.assemblyId : undefined}
+                productId={item.kind === 'PRODUCT' ? item.productId : undefined}
                 onChange={onChange}
               />
               <p className="text-sm font-semibold">

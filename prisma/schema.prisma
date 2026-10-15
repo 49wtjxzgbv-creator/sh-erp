@@ -3543,11 +3543,15 @@ model QuotationVersion {
   // country/legal-entity concept at all). Used ONLY to split a VAT amount
   // out of items priced via PricingSource.GERMAN_PRICE_INCL_VAT for
   // display on the printed totals — those items' unitPrice is ALWAYS
-  // Assembly.germanPriceEur taken verbatim (already VAT-inclusive per
-  // explicit user instruction: "рахуємо по тих цінах де написано німецька
-  // ціна з пдв" — no excl/incl split exists on Assembly, so this rate is
-  // what lets that single gross figure be broken back down for the
-  // document). Null means "not set" — the VAT line is simply omitted from
+  // Product.germanPriceInclVat taken verbatim (already VAT-inclusive per
+  // explicit user instruction, and per that field's own "з ПДВ" label — see
+  // PricingSource.GERMAN_PRICE_INCL_VAT's own comment). Product also has a
+  // germanPriceExclVat sibling, but this rate (not that field) is
+  // deliberately what splits the VAT portion out, so every German-VAT line
+  // on a given document is consistently explained by ONE rate the user
+  // actually typed in, rather than silently drifting per-product with
+  // whatever exclVat/inclVat gap happens to be in the catalogue. Null means
+  // "not set" — the VAT line is simply omitted from
   // the printed totals in that case, even if GERMAN_PRICE_INCL_VAT lines
   // exist.
   vatRatePercent Decimal? @db.Decimal(5, 2)
@@ -3667,13 +3671,15 @@ enum PricingSource {
   LABOR_MARKUP_PERCENT
   LABOR_COST_PLUS_MARGIN
   CUSTOM
-  // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) —
-  // unitPrice = Assembly.germanPriceEur verbatim, treated as already
-  // VAT-inclusive (gross); see QuotationVersion.vatRatePercent's own
-  // comment for how the VAT portion gets displayed. ASSEMBLY items only —
-  // same restriction as BASE_PRICE, since this reads an Assembly-only
-  // field (Product has its own, separate germanPriceInclVat field, not
-  // wired to this pricing source — out of scope for now, see
-  // QuotationPricingService's own header comment).
+  // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15,
+  // corrected same day: "з специфікацій це ціна виробу в німеччині а в
+  // товарах Ціна (DE, з ПДВ)") — unitPrice = Product.germanPriceInclVat
+  // verbatim, treated as already VAT-inclusive (gross); see
+  // QuotationVersion.vatRatePercent's own comment for how the VAT portion
+  // gets displayed. PRODUCT items only — Product.germanPriceInclVat is the
+  // one field in this whole schema actually LABELED "з ПДВ"; the
+  // similarly-named Assembly.germanPriceEur has no excl/incl split and its
+  // own label never mentions VAT at all, so it was deliberately NOT wired
+  // to this pricing source despite the first draft doing exactly that.
   GERMAN_PRICE_INCL_VAT
 }

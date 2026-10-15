@@ -67,6 +67,8 @@ export interface PricingMethodFieldProps {
   allowedSources: PricingSource[];
   /** Only present for kind=ASSEMBLY — lets the "no base price set" warning link straight to where a manager can actually go set it, instead of just naming the problem. */
   assemblyId?: string;
+  /** Only present for kind=PRODUCT — same purpose as assemblyId above, for the "no German price set" warning (GERMAN_PRICE_INCL_VAT). */
+  productId?: string;
   onChange: (patch: { pricingSource?: PricingSource; pricingPercent?: number; customUnitPrice?: number }) => void;
 }
 
@@ -93,6 +95,7 @@ export function PricingMethodField({
   disabled,
   allowedSources,
   assemblyId,
+  productId,
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
@@ -136,8 +139,8 @@ export function PricingMethodField({
         ) : (
           <div className="space-y-0.5">
             <p className="text-xs text-destructive">{t('noGermanPriceWarning')}</p>
-            {assemblyId && (
-              <Link href={`/bom/${assemblyId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+            {productId && (
+              <Link href={`/catalog/${productId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
                 {t('setGermanPriceLink')}
               </Link>
             )}

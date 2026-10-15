@@ -291,7 +291,6 @@ export class QuotationsService {
       nameSnapshot = nameSnapshot ?? assembly.name;
       basePrice = assembly.baseSalePriceEur !== null ? Number(assembly.baseSalePriceEur) : null;
       laborCost = Number(assembly.laborCostPerUnit);
-      germanPriceInclVat = assembly.germanPriceEur !== null ? Number(assembly.germanPriceEur) : null;
       const costResult = await this.assembliesService.calculateCost(user, dto.assemblyId);
       cost = costResult.costPerUnit;
     } else if (dto.kind === 'PRODUCT') {
@@ -300,6 +299,13 @@ export class QuotationsService {
       if (!product) throw new CodedNotFoundException('QUOTATION_ITEM_PRODUCT_NOT_FOUND', 'Product not found.');
       nameSnapshot = nameSnapshot ?? product.name;
       cost = product.sellPriceEur !== null ? Number(product.sellPriceEur) : null;
+      // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
+      // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
+      // field actually LABELED "з ПДВ"; Assembly.germanPriceEur's own label
+      // never says VAT at all, so GERMAN_PRICE_INCL_VAT reads from here,
+      // PRODUCT lines only (see PricingSource.GERMAN_PRICE_INCL_VAT's own
+      // schema comment for the full history).
+      germanPriceInclVat = product.germanPriceInclVat !== null ? Number(product.germanPriceInclVat) : null;
     } else if (!nameSnapshot) {
       throw new CodedBadRequestException('QUOTATION_ITEM_NAME_REQUIRED', `nameSnapshot is required for kind=${dto.kind}.`);
     }

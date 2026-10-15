@@ -337,7 +337,7 @@
     "baseSalePriceEur": "Cena bazowa sprzedaÅ¼y, â¬",
     "baseSalePriceEurHint": "UÅ¼ywana jako cena wyjÅciowa przy wyborze metody âCena bazowaâ w ofertach handlowych. To NIE jest koszt â osobne pole dla ceny sprzedaÅ¼y.",
     "germanPriceEur": "Cena wyrobu w Niemczech, â¬",
-    "germanPriceEurHint": "Do porównania naszego kosztu z ceną rynkową w Niemczech, a także jako cena (zawierająca VAT) dla metody wyceny \"Cena niemiecka (z VAT)\" w ofertach — nie wpływa na żadne inne obliczenia kosztu czy ceny.",
+    "germanPriceEurHint": "Tylko do porównania naszego kosztu z ceną rynkową w Niemczech — nie wpływa na żadne obliczenia kosztu czy ceny.",
     "germanPriceDiff": "RÃ³Å¼nica wzglÄdem kosztu",
     "supplier": "Supplier",
     "createdAt": "Date",
@@ -1890,9 +1890,9 @@
     "pricingSourceLABOR_MARKUP_PERCENTExplanation": "Ta sama zasada co âNarzut na kosztâ, ale podstawÄ jest tylko koszt pracy za jednostkÄ (z karty wyrobu), bez materiaÅÃ³w, pakowania, dostawy itd. Cena = koszt pracy Ã (1 + % / 100).",
     "pricingSourceLABOR_COST_PLUS_MARGINExplanation": "Ta sama zasada co âKoszt + marÅ¼aâ, ale podstawÄ jest tylko koszt pracy za jednostkÄ. Cena jest obliczana tak, aby koszt pracy stanowiÅ dokÅadnie (100 â %) ceny.",
     "pricingSourceCUSTOMExplanation": "Cena jest wprowadzana rÄcznie, niezaleÅ¼nie od kosztu czy ceny bazowej.",
-    "pricingSourceGERMAN_PRICE_INCL_VATExplanation": "Cena jest pobierana bezpośrednio z pola \"Cena wyrobu w Niemczech\" tego wyrobu, bez zmian — zakłada się, że VAT jest już wliczony. Kwota VAT jest pokazywana jako osobna pozycja w podsumowaniu, według stawki wpisanej w polu \"Stawka VAT\" powyżej.",
+    "pricingSourceGERMAN_PRICE_INCL_VATExplanation": "Cena jest pobierana bezpośrednio z pola \"Cena (DE, z VAT)\" tego towaru, bez zmian. Kwota VAT jest pokazywana jako osobna pozycja w podsumowaniu, według stawki wpisanej w polu \"Stawka VAT\" powyżej.",
     "setBasePriceLink": "Ustaw cenÄ bazowÄ w karcie wyrobu â",
-    "setGermanPriceLink": "Ustaw cenę niemiecką w karcie wyrobu →",
+    "setGermanPriceLink": "Ustaw cenę (DE, z VAT) w karcie towaru →",
     "basePriceIs": "Cena bazowa",
     "germanPriceIs": "Cena niemiecka (z VAT)",
     "costLabel": "Koszt",
@@ -1900,7 +1900,7 @@
     "costHiddenNote": "(koszt ukryty)",
     "noCostWarning": "Koszt nieznany â wybierz innÄ metodÄ wyceny.",
     "noBasePriceWarning": "Dla tego wyrobu nie ustawiono ceny bazowej â wybierz innÄ metodÄ wyceny.",
-    "noGermanPriceWarning": "Dla tego wyrobu nie ustawiono ceny niemieckiej — wybierz inną metodę wyceny.",
+    "noGermanPriceWarning": "Dla tego towaru nie ustawiono ceny (DE, z VAT) — wybierz inną metodę wyceny.",
     "resultingPrice": "Cena",
     "lineTotal": "Suma pozycji",
     "belowCostWarning": "Cena poniÅ¼ej kosztu",
