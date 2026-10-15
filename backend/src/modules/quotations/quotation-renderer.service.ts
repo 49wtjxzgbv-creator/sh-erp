@@ -24,6 +24,7 @@ const LABELS: Record<QuotationLocale, Record<string, string>> = {
     quotationNumber: 'Комерційна пропозиція №',
     date: 'Дата:',
     validUntil: 'Дійсна до:',
+    vatIncluded: 'у т.ч. ПДВ',
   },
   en: {
     paymentTerms: 'Payment terms',
@@ -41,6 +42,7 @@ const LABELS: Record<QuotationLocale, Record<string, string>> = {
     quotationNumber: 'Quotation No.',
     date: 'Date:',
     validUntil: 'Valid until:',
+    vatIncluded: 'incl. VAT',
   },
   de: {
     paymentTerms: 'Zahlungsbedingungen',
@@ -58,6 +60,7 @@ const LABELS: Record<QuotationLocale, Record<string, string>> = {
     quotationNumber: 'Angebot Nr.',
     date: 'Datum:',
     validUntil: 'Gültig bis:',
+    vatIncluded: 'inkl. MwSt.',
   },
   pl: {
     paymentTerms: 'Warunki płatności',
@@ -75,6 +78,7 @@ const LABELS: Record<QuotationLocale, Record<string, string>> = {
     quotationNumber: 'Oferta nr',
     date: 'Data:',
     validUntil: 'Ważna do:',
+    vatIncluded: 'w tym VAT',
   },
 };
 
@@ -105,6 +109,12 @@ export interface QuotationRenderData {
   subtotal: number;
   discountAmount: number;
   total: number;
+  /** "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) — null when the version has no vatRatePercent set, in which case the VAT line is omitted entirely regardless of germanVatInclTotal. */
+  vatRatePercent: number | null;
+  /** Sum of `total` across this version's GERMAN_PRICE_INCL_VAT lines only (already included in `total` above — this is a breakdown, not an addition). Zero when no such line exists. */
+  germanVatInclTotal: number;
+  /** germanVatInclTotal's VAT portion, backed out via vatRatePercent (germanVatInclTotal is already gross) — see QuotationVersion.vatRatePercent's schema comment. */
+  germanVatAmount: number;
   paymentTerms: string | null;
   deliveryTerms: string | null;
   installationTerms: string | null;
@@ -234,6 +244,7 @@ export class QuotationRendererService {
   .totals { width: 260px; margin-left: auto; margin-top: 10px; font-size: 11.5px; }
   .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
   .totals .row.grand { border-top: 2px solid ${accent}; margin-top: 4px; padding-top: 8px; font-size: 13.5px; font-weight: 700; }
+  .totals .row-vat { color: #888888; font-size: 10.5px; }
   .terms { margin-top: 22px; }
   .term-block { margin-bottom: 10px; }
   .term-block h4 { margin: 0 0 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #888888; font-weight: 600; }
@@ -289,6 +300,7 @@ export class QuotationRendererService {
     <div class="row"><span>${l.subtotalBeforeDiscount}</span><span>${money(data.subtotal)}</span></div>
     ${data.discountAmount > 0 ? `<div class="row"><span>${l.discount}</span><span>-${money(data.discountAmount)}</span></div>` : ''}
     <div class="row grand"><span>${l.totalDue}</span><span>${money(data.total)}</span></div>
+    ${data.vatRatePercent !== null && data.germanVatInclTotal > 0 ? `<div class="row row-vat"><span>${l.vatIncluded} ${formatQty(data.vatRatePercent)}%</span><span>${money(data.germanVatAmount)}</span></div>` : ''}
   </div>
 
   ${termsBlocks ? `<div class="terms">${termsBlocks}</div>` : ''}

@@ -19,7 +19,14 @@ import { locales, type Locale } from '@/lib/i18n-locales';
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED';
 export type QuotationItemKind = 'ASSEMBLY' | 'PRODUCT' | 'SERVICE' | 'DELIVERY' | 'INSTALLATION' | 'CUSTOM';
-export type PricingSource = 'BASE_PRICE' | 'MARKUP_PERCENT' | 'COST_PLUS_MARGIN' | 'LABOR_MARKUP_PERCENT' | 'LABOR_COST_PLUS_MARGIN' | 'CUSTOM';
+export type PricingSource =
+  | 'BASE_PRICE'
+  | 'MARKUP_PERCENT'
+  | 'COST_PLUS_MARGIN'
+  | 'LABOR_MARKUP_PERCENT'
+  | 'LABOR_COST_PLUS_MARGIN'
+  | 'CUSTOM'
+  | 'GERMAN_PRICE_INCL_VAT';
 /** Same 4-locale set as the app's own next-intl config (lib/i18n-locales.ts) — see quotation-renderer.service.ts's QUOTATION_LOCALES. */
 export type QuotationLocale = Locale;
 export const QUOTATION_LOCALES: readonly QuotationLocale[] = locales;
@@ -76,6 +83,8 @@ export interface QuotationVersion {
   deliveryTerms: string | null;
   installationTerms: string | null;
   notes: string | null;
+  /** "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) — manually entered, used only to split a VAT amount out of GERMAN_PRICE_INCL_VAT items for the printed totals. Null = not set, VAT line omitted even if such items exist. */
+  vatRatePercent: DecimalString | null;
   subtotal: DecimalString;
   discountAmount: DecimalString;
   total: DecimalString;
@@ -131,6 +140,7 @@ export interface CreateQuotationInput {
   installationTerms?: string;
   notes?: string;
   templateId?: string;
+  vatRatePercent?: number;
 }
 
 export type UpdateQuotationVersionInput = Partial<CreateQuotationInput>;

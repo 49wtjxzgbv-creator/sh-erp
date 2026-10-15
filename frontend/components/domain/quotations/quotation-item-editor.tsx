@@ -39,7 +39,16 @@ export function newDraftItem(defaultUnit: string): QuotationItemDraft {
  * dedupes these against whatever each QuotationItemRow already fetched
  * for itself, so this is cache reuse, not a second round of requests.
  */
-export function QuotationLiveTotals({ items, currency }: { items: QuotationItemDraft[]; currency: string }) {
+export function QuotationLiveTotals({
+  items,
+  currency,
+  vatRatePercent,
+}: {
+  items: QuotationItemDraft[];
+  currency: string;
+  /** "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) — the version's manually-entered rate, used ONLY to split a VAT amount out of GERMAN_PRICE_INCL_VAT lines for display here, same arithmetic as QuotationsService#renderVersionHtml. undefined/null → the VAT line is simply omitted, same as the printed document. */
+  vatRatePercent?: number;
+}) {
   const t = useTranslations('quotations');
   const assemblyIds = items.filter((i) => i.kind === 'ASSEMBLY' && i.assemblyId).map((i) => i.assemblyId as string);
   const productIds = items.filter((i) => i.kind === 'PRODUCT' && i.productId).map((i) => i.productId as string);
@@ -50,6 +59,7 @@ export function QuotationLiveTotals({ items, currency }: { items: QuotationItemD
   let subtotal = 0;
   let discountAmount = 0;
   let total = 0;
+  let germanVatInclTotal = 0;
   items.forEach((item, index) => {
     const cost =
       item.kind === 'ASSEMBLY'
@@ -59,14 +69,18 @@ export function QuotationLiveTotals({ items, currency }: { items: QuotationItemD
           : null;
     const basePrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.baseSalePriceEur ?? null) : null;
     const laborCost = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.laborCostPerUnit ?? null) : null;
-    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost);
+    const germanPrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.germanPriceEur ?? null) : null;
+    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPrice);
     if (unitPrice === null) return;
     const lineSubtotal = unitPrice * item.quantity;
     const lineDiscount = lineSubtotal * ((item.discountPercent ?? 0) / 100);
+    const lineTotal = lineSubtotal - lineDiscount;
     subtotal += lineSubtotal;
     discountAmount += lineDiscount;
-    total += lineSubtotal - lineDiscount;
+    total += lineTotal;
+    if (item.pricingSource === 'GERMAN_PRICE_INCL_VAT') germanVatInclTotal += lineTotal;
   });
+  const germanVatAmount = vatRatePercent && germanVatInclTotal > 0 ? (germanVatInclTotal * vatRatePercent) / (100 + vatRatePercent) : 0;
 
   return (
     <div className="ml-auto w-full max-w-xs space-y-1 rounded-md border bg-muted/30 p-3 text-sm">
@@ -84,6 +98,12 @@ export function QuotationLiveTotals({ items, currency }: { items: QuotationItemD
         <span>{t('total')}</span>
         <span>{formatMoney(total, currency)}</span>
       </div>
+      {vatRatePercent !== undefined && germanVatInclTotal > 0 && (
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{t('vatIncluded')} {vatRatePercent}%</span>
+          <span>{formatMoney(germanVatAmount, currency)}</span>
+        </div>
+      )}
     </div>
   );
 }

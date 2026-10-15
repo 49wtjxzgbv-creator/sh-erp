@@ -11,6 +11,7 @@ describe('QuotationPricingService', () => {
     laborCost: null,
     pricingPercent: null,
     customUnitPrice: 100,
+    germanPriceInclVat: null,
     discountPercent: 0,
     discountAmountOverride: null,
     ...overrides,
@@ -108,6 +109,17 @@ describe('QuotationPricingService', () => {
 
     it('throws when CUSTOM is selected but nothing was entered', () => {
       expect(() => service.computeItemPricing(base({ pricingSource: 'CUSTOM', customUnitPrice: null }))).toThrow();
+    });
+  });
+
+  describe('GERMAN_PRICE_INCL_VAT — Assembly.germanPriceEur taken as-is, already VAT-inclusive', () => {
+    it('uses germanPriceInclVat as-is, with no VAT math applied here (the split happens only in the renderer, for display)', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE_INCL_VAT', germanPriceInclVat: 238.1 }));
+      expect(result.unitPrice).toBe(238.1);
+    });
+
+    it('throws when the assembly has no German price set', () => {
+      expect(() => service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE_INCL_VAT', germanPriceInclVat: null }))).toThrow();
     });
   });
 

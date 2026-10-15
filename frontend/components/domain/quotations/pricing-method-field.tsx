@@ -25,10 +25,13 @@ export function computeLivePrice(
   pricingPercent: number | undefined,
   customUnitPrice: number | undefined,
   laborCost: number | null = null,
+  germanPrice: number | null = null,
 ): number | null {
   switch (pricingSource) {
     case 'BASE_PRICE':
       return basePrice ?? null;
+    case 'GERMAN_PRICE_INCL_VAT':
+      return germanPrice ?? null;
     case 'MARKUP_PERCENT':
       return cost !== null && pricingPercent !== undefined ? round2(cost * (1 + pricingPercent / 100)) : null;
     case 'COST_PLUS_MARGIN':
@@ -55,6 +58,8 @@ export interface PricingMethodFieldProps {
   basePrice: number | null;
   /** Assembly.laborCostPerUnit — the basis for LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN. Unlike `cost`, never "unknown" for a real ASSEMBLY item (defaults to 0); null means "not applicable" (non-ASSEMBLY kind). */
   laborCost: number | null;
+  /** Assembly.germanPriceEur — the basis for GERMAN_PRICE_INCL_VAT, taken as-is (already VAT-inclusive). null means "not set" (ASSEMBLY with no German price) or "not applicable" (non-ASSEMBLY kind) — same two-reasons-for-null shape as basePrice. */
+  germanPrice: number | null;
   currency: string;
   canViewMargin: boolean;
   disabled?: boolean;
@@ -72,6 +77,7 @@ const ALL_SOURCES: PricingSource[] = [
   'LABOR_MARKUP_PERCENT',
   'LABOR_COST_PLUS_MARGIN',
   'CUSTOM',
+  'GERMAN_PRICE_INCL_VAT',
 ];
 
 export function PricingMethodField({
@@ -81,6 +87,7 @@ export function PricingMethodField({
   cost,
   basePrice,
   laborCost,
+  germanPrice,
   currency,
   canViewMargin,
   disabled,
@@ -89,7 +96,7 @@ export function PricingMethodField({
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
-  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost);
+  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost, germanPrice);
   const isBelowCost = canViewMargin && cost !== null && livePrice !== null && livePrice < cost;
 
   return (
@@ -117,6 +124,21 @@ export function PricingMethodField({
             {assemblyId && (
               <Link href={`/bom/${assemblyId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
                 {t('setBasePriceLink')}
+              </Link>
+            )}
+          </div>
+        )
+      )}
+
+      {pricingSource === 'GERMAN_PRICE_INCL_VAT' && (
+        germanPrice !== null ? (
+          <p className="text-xs text-muted-foreground">{t('germanPriceIs')}: {formatMoney(germanPrice, currency)}</p>
+        ) : (
+          <div className="space-y-0.5">
+            <p className="text-xs text-destructive">{t('noGermanPriceWarning')}</p>
+            {assemblyId && (
+              <Link href={`/bom/${assemblyId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                {t('setGermanPriceLink')}
               </Link>
             )}
           </div>

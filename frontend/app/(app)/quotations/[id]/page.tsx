@@ -130,6 +130,7 @@ export default function QuotationDetailPage() {
   const [validUntil, setValidUntil] = useState('');
   const [currency, setCurrency] = useState('EUR');
   const [templateId, setTemplateId] = useState<string | undefined>(undefined);
+  const [vatRatePercent, setVatRatePercent] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('');
   const [deliveryTerms, setDeliveryTerms] = useState('');
   const [installationTerms, setInstallationTerms] = useState('');
@@ -150,6 +151,7 @@ export default function QuotationDetailPage() {
     setValidUntil(currentVersion.validUntil ? currentVersion.validUntil.slice(0, 10) : '');
     setCurrency(currentVersion.currency);
     setTemplateId(currentVersion.templateId ?? undefined);
+    setVatRatePercent(currentVersion.vatRatePercent !== null ? String(Number(currentVersion.vatRatePercent)) : '');
     setPaymentTerms(currentVersion.paymentTerms ?? '');
     setDeliveryTerms(currentVersion.deliveryTerms ?? '');
     setInstallationTerms(currentVersion.installationTerms ?? '');
@@ -172,6 +174,7 @@ export default function QuotationDetailPage() {
           deliveryTerms: deliveryTerms || undefined,
           installationTerms: installationTerms || undefined,
           notes: notes || undefined,
+          vatRatePercent: vatRatePercent === '' ? undefined : Number(vatRatePercent),
         });
         setTermsDirty(false);
       }
@@ -329,6 +332,23 @@ export default function QuotationDetailPage() {
               }}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="vatRatePercent">{t('vatRatePercent')}</Label>
+            <Input
+              id="vatRatePercent"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={vatRatePercent}
+              disabled={!editable}
+              onChange={(e) => {
+                setVatRatePercent(e.target.value);
+                setTermsDirty(true);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">{t('vatRatePercentHint')}</p>
+          </div>
           {templates && templates.length > 0 && (
             <div className="space-y-1.5 sm:col-span-2">
               <Label>{t('template')}</Label>
@@ -423,7 +443,7 @@ export default function QuotationDetailPage() {
             onApproveBelowCost={handleApproveBelowCost}
             approvingItemId={approvingItemId}
           />
-          <QuotationLiveTotals items={items} currency={currency} />
+          <QuotationLiveTotals items={items} currency={currency} vatRatePercent={vatRatePercent === '' ? undefined : Number(vatRatePercent)} />
         </CardContent>
       </Card>
 

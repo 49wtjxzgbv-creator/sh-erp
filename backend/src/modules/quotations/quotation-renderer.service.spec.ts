@@ -27,6 +27,9 @@ describe('QuotationRendererService', () => {
     subtotal: 10000,
     discountAmount: 500,
     total: 9500,
+    vatRatePercent: null,
+    germanVatInclTotal: 0,
+    germanVatAmount: 0,
     paymentTerms: '50% передоплата',
     deliveryTerms: null,
     installationTerms: null,
@@ -109,6 +112,18 @@ describe('QuotationRendererService', () => {
 
     const hiddenNotes = service.renderHtml(baseData({ notes: 'Термінове замовлення', visibleBlocks: { notes: false } }));
     expect(hiddenNotes).not.toContain('Термінове замовлення');
+  });
+
+  it('renders the "у т.ч. ПДВ" line only when vatRatePercent is set AND a GERMAN_PRICE_INCL_VAT line contributed to the total', () => {
+    const withVat = service.renderHtml(baseData({ vatRatePercent: 19, germanVatInclTotal: 238.1, germanVatAmount: 38.02 }));
+    expect(withVat).toContain('у т.ч. ПДВ 19%');
+    expect(withVat).toContain('38.02 EUR');
+
+    const noRate = service.renderHtml(baseData({ vatRatePercent: null, germanVatInclTotal: 238.1, germanVatAmount: 0 }));
+    expect(noRate).not.toContain('у т.ч. ПДВ');
+
+    const noGermanItems = service.renderHtml(baseData({ vatRatePercent: 19, germanVatInclTotal: 0, germanVatAmount: 0 }));
+    expect(noGermanItems).not.toContain('у т.ч. ПДВ');
   });
 
   it('falls back to a safe default accent color when accentColor is not a valid hex value', () => {

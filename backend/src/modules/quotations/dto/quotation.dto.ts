@@ -44,6 +44,17 @@ export class CreateQuotationDto {
   @IsOptional()
   @IsUUID()
   templateId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'VAT rate used to split a VAT amount out of any GERMAN_PRICE_INCL_VAT item on this version, for display on the printed totals — manually entered, never defaulted (CompanySettings.vatRatePercent is unused dead weight, see its own schema comment).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatRatePercent?: number;
 }
 
 /** Header-only update of the CURRENT version's terms — items are saved separately via SaveQuotationItemsDto. Only valid while the current version is still DRAFT (not sentAt). */
@@ -86,9 +97,9 @@ export class QuotationItemInputDto {
   unit?: string;
 
   @ApiProperty({
-    enum: ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'],
+    enum: ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT'],
   })
-  @IsIn(['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'])
+  @IsIn(['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT'])
   pricingSource!: string;
 
   @ApiPropertyOptional({ description: 'Required for MARKUP_PERCENT/COST_PLUS_MARGIN/LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN.' })

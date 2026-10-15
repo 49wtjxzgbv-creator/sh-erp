@@ -69,6 +69,7 @@ export class QuotationsService {
         installationTerms: dto.installationTerms,
         notes: dto.notes,
         templateId: dto.templateId,
+        vatRatePercent: dto.vatRatePercent ?? null,
         subtotal: 0,
         discountAmount: 0,
         total: 0,
@@ -219,6 +220,7 @@ export class QuotationsService {
         installationTerms: dto.installationTerms,
         notes: dto.notes,
         templateId: dto.templateId,
+        vatRatePercent: dto.vatRatePercent,
       } as any,
     });
     await this.auditService.record({
@@ -280,6 +282,7 @@ export class QuotationsService {
     let cost: number | null = null;
     let basePrice: number | null = null;
     let laborCost: number | null = null;
+    let germanPriceInclVat: number | null = null;
 
     if (dto.kind === 'ASSEMBLY') {
       if (!dto.assemblyId) throw new CodedBadRequestException('QUOTATION_ITEM_ASSEMBLY_ID_REQUIRED', 'assemblyId is required for kind=ASSEMBLY.');
@@ -288,6 +291,7 @@ export class QuotationsService {
       nameSnapshot = nameSnapshot ?? assembly.name;
       basePrice = assembly.baseSalePriceEur !== null ? Number(assembly.baseSalePriceEur) : null;
       laborCost = Number(assembly.laborCostPerUnit);
+      germanPriceInclVat = assembly.germanPriceEur !== null ? Number(assembly.germanPriceEur) : null;
       const costResult = await this.assembliesService.calculateCost(user, dto.assemblyId);
       cost = costResult.costPerUnit;
     } else if (dto.kind === 'PRODUCT') {
@@ -308,6 +312,7 @@ export class QuotationsService {
       laborCost,
       pricingPercent: dto.pricingPercent ?? null,
       customUnitPrice: dto.customUnitPrice ?? null,
+      germanPriceInclVat,
       discountPercent: dto.discountPercent ?? 0,
       discountAmountOverride: dto.discountAmountOverride ?? null,
     });
@@ -457,6 +462,7 @@ export class QuotationsService {
       installationTerms: string | null;
       notes: string | null;
       templateId: string | null;
+      vatRatePercent: unknown;
     },
     items: Array<{
       kind: string;
@@ -470,6 +476,7 @@ export class QuotationsService {
       discountPercent: unknown;
       discountAmount: unknown;
       total: unknown;
+      pricingSource: string;
     }>,
   ) {
     const customer = await this.prisma.tenant.customer.findUnique({ where: { id: quotation.customerId } });
@@ -542,12 +549,25 @@ export class QuotationsService {
       }),
     );
 
+    // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) —
+    // sum of already-frozen `total` across GERMAN_PRICE_INCL_VAT lines only
+    // (never the whole version, since this pricing source is opt-in
+    // per-line and can sit alongside ordinary-priced lines in the same
+    // document); null/omitted vatRatePercent means the line is simply left
+    // out of the printed totals, same as if no such item existed.
+    const germanVatInclTotal = round2(items.filter((i) => i.pricingSource === 'GERMAN_PRICE_INCL_VAT').reduce((sum, i) => sum + Number(i.total), 0));
+    const vatRatePercent = version.vatRatePercent !== null ? Number(version.vatRatePercent) : null;
+    const germanVatAmount = vatRatePercent !== null && germanVatInclTotal > 0 ? round2((germanVatInclTotal * vatRatePercent) / (100 + vatRatePercent)) : 0;
+
     const html = this.rendererService.renderHtml({
       number: quotation.number,
       createdAt: version.createdAt,
       validUntil: version.validUntil,
       currency: version.currency,
       locale: version.locale as any,
+      vatRatePercent,
+      germanVatInclTotal,
+      germanVatAmount,
       customer: {
         name: customer?.name ?? '',
         contactPerson: customer?.contactPerson ?? null,
@@ -608,6 +628,7 @@ export class QuotationsService {
         installationTerms: current.installationTerms,
         notes: current.notes,
         templateId: current.templateId,
+        vatRatePercent: current.vatRatePercent,
         subtotal: current.subtotal,
         discountAmount: current.discountAmount,
         total: current.total,
@@ -681,6 +702,7 @@ export class QuotationsService {
         installationTerms: translated.installationTerms,
         notes: translated.notes,
         templateId: current.templateId,
+        vatRatePercent: current.vatRatePercent,
         subtotal: current.subtotal,
         discountAmount: current.discountAmount,
         total: current.total,
@@ -733,6 +755,7 @@ export class QuotationsService {
         installationTerms: sourceVersion.installationTerms,
         notes: sourceVersion.notes,
         templateId: sourceVersion.templateId,
+        vatRatePercent: sourceVersion.vatRatePercent,
         subtotal: sourceVersion.subtotal,
         discountAmount: sourceVersion.discountAmount,
         total: sourceVersion.total,

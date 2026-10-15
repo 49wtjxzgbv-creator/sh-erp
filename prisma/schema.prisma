@@ -3536,6 +3536,22 @@ model QuotationVersion {
   installationTerms String?
   notes             String?
 
+  // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) —
+  // manually entered per version (never defaulted off CompanySettings.
+  // vatRatePercent, which is a dead/unused field — see that model's own
+  // comment — and never guessed from a country, since this schema has no
+  // country/legal-entity concept at all). Used ONLY to split a VAT amount
+  // out of items priced via PricingSource.GERMAN_PRICE_INCL_VAT for
+  // display on the printed totals — those items' unitPrice is ALWAYS
+  // Assembly.germanPriceEur taken verbatim (already VAT-inclusive per
+  // explicit user instruction: "рахуємо по тих цінах де написано німецька
+  // ціна з пдв" — no excl/incl split exists on Assembly, so this rate is
+  // what lets that single gross figure be broken back down for the
+  // document). Null means "not set" — the VAT line is simply omitted from
+  // the printed totals in that case, even if GERMAN_PRICE_INCL_VAT lines
+  // exist.
+  vatRatePercent Decimal? @db.Decimal(5, 2)
+
   // Computed once, at the moment this version is fixed (send, or "create
   // new version" save) — never re-derived from live item data afterward,
   // same "locked at this moment" philosophy as
@@ -3651,4 +3667,13 @@ enum PricingSource {
   LABOR_MARKUP_PERCENT
   LABOR_COST_PLUS_MARGIN
   CUSTOM
+  // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) —
+  // unitPrice = Assembly.germanPriceEur verbatim, treated as already
+  // VAT-inclusive (gross); see QuotationVersion.vatRatePercent's own
+  // comment for how the VAT portion gets displayed. ASSEMBLY items only —
+  // same restriction as BASE_PRICE, since this reads an Assembly-only
+  // field (Product has its own, separate germanPriceInclVat field, not
+  // wired to this pricing source — out of scope for now, see
+  // QuotationPricingService's own header comment).
+  GERMAN_PRICE_INCL_VAT
 }
