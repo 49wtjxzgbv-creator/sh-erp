@@ -72,8 +72,12 @@ export function QuotationLiveTotals({
     // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
     // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
     // field actually labeled "з ПДВ"; PRODUCT lines only.
-    const germanPrice = item.kind === 'PRODUCT' && item.productId ? toNumber(productsById?.get(item.productId)?.germanPriceInclVat ?? null) : null;
-    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPrice);
+    const germanPriceInclVat = item.kind === 'PRODUCT' && item.productId ? toNumber(productsById?.get(item.productId)?.germanPriceInclVat ?? null) : null;
+    // "коли в комерційку додаю виріб то має бути можливість обрати ціна
+    // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math;
+    // ASSEMBLY lines only, never contributes to germanVatInclTotal below.
+    const germanPrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.germanPriceEur ?? null) : null;
+    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
     if (unitPrice === null) return;
     const lineSubtotal = unitPrice * item.quantity;
     const lineDiscount = lineSubtotal * ((item.discountPercent ?? 0) / 100);

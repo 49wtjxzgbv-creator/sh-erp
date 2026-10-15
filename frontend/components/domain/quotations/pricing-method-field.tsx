@@ -25,12 +25,15 @@ export function computeLivePrice(
   pricingPercent: number | undefined,
   customUnitPrice: number | undefined,
   laborCost: number | null = null,
+  germanPriceInclVat: number | null = null,
   germanPrice: number | null = null,
 ): number | null {
   switch (pricingSource) {
     case 'BASE_PRICE':
       return basePrice ?? null;
     case 'GERMAN_PRICE_INCL_VAT':
+      return germanPriceInclVat ?? null;
+    case 'GERMAN_PRICE':
       return germanPrice ?? null;
     case 'MARKUP_PERCENT':
       return cost !== null && pricingPercent !== undefined ? round2(cost * (1 + pricingPercent / 100)) : null;
@@ -58,14 +61,16 @@ export interface PricingMethodFieldProps {
   basePrice: number | null;
   /** Assembly.laborCostPerUnit — the basis for LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN. Unlike `cost`, never "unknown" for a real ASSEMBLY item (defaults to 0); null means "not applicable" (non-ASSEMBLY kind). */
   laborCost: number | null;
-  /** Assembly.germanPriceEur — the basis for GERMAN_PRICE_INCL_VAT, taken as-is (already VAT-inclusive). null means "not set" (ASSEMBLY with no German price) or "not applicable" (non-ASSEMBLY kind) — same two-reasons-for-null shape as basePrice. */
+  /** Product.germanPriceInclVat — the basis for GERMAN_PRICE_INCL_VAT, taken as-is (already VAT-inclusive, per that field's own "з ПДВ" label). null means "not set" (PRODUCT with no German price) or "not applicable" (non-PRODUCT kind). */
+  germanPriceInclVat: number | null;
+  /** Assembly.germanPriceEur — the basis for GERMAN_PRICE, taken as-is, plain (no VAT claim at all, unlike germanPriceInclVat above). null means "not set" (ASSEMBLY with no German price) or "not applicable" (non-ASSEMBLY kind). */
   germanPrice: number | null;
   currency: string;
   canViewMargin: boolean;
   disabled?: boolean;
   /** Which methods make sense for this item's kind — BASE_PRICE only exists for ASSEMBLY (Assembly.baseSalePriceEur), MARKUP_PERCENT/COST_PLUS_MARGIN need a cost basis (ASSEMBLY/PRODUCT only) — see this file's own header comment. */
   allowedSources: PricingSource[];
-  /** Only present for kind=ASSEMBLY — lets the "no base price set" warning link straight to where a manager can actually go set it, instead of just naming the problem. */
+  /** Only present for kind=ASSEMBLY — lets the "no base price set"/"no German price set" (GERMAN_PRICE) warnings link straight to where a manager can actually go set it. */
   assemblyId?: string;
   /** Only present for kind=PRODUCT — same purpose as assemblyId above, for the "no German price set" warning (GERMAN_PRICE_INCL_VAT). */
   productId?: string;
@@ -80,6 +85,7 @@ const ALL_SOURCES: PricingSource[] = [
   'LABOR_COST_PLUS_MARGIN',
   'CUSTOM',
   'GERMAN_PRICE_INCL_VAT',
+  'GERMAN_PRICE',
 ];
 
 export function PricingMethodField({
@@ -89,6 +95,7 @@ export function PricingMethodField({
   cost,
   basePrice,
   laborCost,
+  germanPriceInclVat,
   germanPrice,
   currency,
   canViewMargin,
@@ -99,7 +106,7 @@ export function PricingMethodField({
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
-  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost, germanPrice);
+  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
   const isBelowCost = canViewMargin && cost !== null && livePrice !== null && livePrice < cost;
 
   return (
@@ -134,14 +141,29 @@ export function PricingMethodField({
       )}
 
       {pricingSource === 'GERMAN_PRICE_INCL_VAT' && (
-        germanPrice !== null ? (
-          <p className="text-xs text-muted-foreground">{t('germanPriceIs')}: {formatMoney(germanPrice, currency)}</p>
+        germanPriceInclVat !== null ? (
+          <p className="text-xs text-muted-foreground">{t('germanPriceIs')}: {formatMoney(germanPriceInclVat, currency)}</p>
         ) : (
           <div className="space-y-0.5">
             <p className="text-xs text-destructive">{t('noGermanPriceWarning')}</p>
             {productId && (
               <Link href={`/catalog/${productId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
                 {t('setGermanPriceLink')}
+              </Link>
+            )}
+          </div>
+        )
+      )}
+
+      {pricingSource === 'GERMAN_PRICE' && (
+        germanPrice !== null ? (
+          <p className="text-xs text-muted-foreground">{t('germanPriceAssemblyIs')}: {formatMoney(germanPrice, currency)}</p>
+        ) : (
+          <div className="space-y-0.5">
+            <p className="text-xs text-destructive">{t('noGermanPriceAssemblyWarning')}</p>
+            {assemblyId && (
+              <Link href={`/bom/${assemblyId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                {t('setGermanPriceAssemblyLink')}
               </Link>
             )}
           </div>

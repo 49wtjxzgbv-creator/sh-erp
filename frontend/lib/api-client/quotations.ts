@@ -26,7 +26,8 @@ export type PricingSource =
   | 'LABOR_MARKUP_PERCENT'
   | 'LABOR_COST_PLUS_MARGIN'
   | 'CUSTOM'
-  | 'GERMAN_PRICE_INCL_VAT';
+  | 'GERMAN_PRICE_INCL_VAT'
+  | 'GERMAN_PRICE';
 /** Same 4-locale set as the app's own next-intl config (lib/i18n-locales.ts) — see quotation-renderer.service.ts's QUOTATION_LOCALES. */
 export type QuotationLocale = Locale;
 export const QUOTATION_LOCALES: readonly QuotationLocale[] = locales;

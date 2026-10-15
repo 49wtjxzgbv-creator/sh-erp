@@ -41,7 +41,7 @@ export interface QuotationItemDraft {
 const ITEM_KINDS: QuotationItemKind[] = ['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'];
 
 function allowedSourcesForKind(kind: QuotationItemKind): PricingSource[] {
-  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM'];
+  if (kind === 'ASSEMBLY') return ['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE'];
   if (kind === 'PRODUCT') return ['MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT'];
   return ['CUSTOM'];
 }
@@ -82,14 +82,18 @@ export function QuotationItemRow({
   // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
   // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
   // field actually labeled "з ПДВ"; PRODUCT lines only.
-  const germanPrice = item.kind === 'PRODUCT' ? toNumber(product?.germanPriceInclVat ?? null) : null;
+  const germanPriceInclVat = item.kind === 'PRODUCT' ? toNumber(product?.germanPriceInclVat ?? null) : null;
+  // "коли в комерційку додаю виріб то має бути можливість обрати ціна
+  // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math;
+  // ASSEMBLY lines only.
+  const germanPrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.germanPriceEur ?? null) : null;
   // Existence of the id (not the display label) is what actually matters —
   // `entityLabel` is only ever populated by the picker's own onChange, so an
   // ASSEMBLY/PRODUCT line hydrated fresh from a saved quotation would show
   // a false "name required" warning if this checked the label instead.
   const hasTarget = item.kind === 'ASSEMBLY' ? Boolean(item.assemblyId) : item.kind === 'PRODUCT' ? Boolean(item.productId) : Boolean(item.nameSnapshot);
 
-  const livePrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPrice);
+  const livePrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
   const subtotal = livePrice !== null ? livePrice * item.quantity : null;
   const discountAmount = subtotal !== null ? subtotal * ((item.discountPercent ?? 0) / 100) : null;
   const lineTotal = subtotal !== null && discountAmount !== null ? subtotal - discountAmount : null;
@@ -219,6 +223,7 @@ export function QuotationItemRow({
                 cost={cost}
                 basePrice={basePrice}
                 laborCost={laborCost}
+                germanPriceInclVat={germanPriceInclVat}
                 germanPrice={germanPrice}
                 currency={currency}
                 canViewMargin={canViewMargin}

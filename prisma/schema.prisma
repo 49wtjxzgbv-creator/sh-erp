@@ -3682,4 +3682,15 @@ enum PricingSource {
   // own label never mentions VAT at all, so it was deliberately NOT wired
   // to this pricing source despite the first draft doing exactly that.
   GERMAN_PRICE_INCL_VAT
+  // "коли в комерційку додаю виріб то має бути можливість обрати ціна
+  // виробу в німеччині" (2026-10-15, same day) — unitPrice =
+  // Assembly.germanPriceEur verbatim, ASSEMBLY items only. Deliberately
+  // NOT VAT-aware (explicit user answer: "просто ціна, без ПДВ") — unlike
+  // GERMAN_PRICE_INCL_VAT above, this source never contributes to the
+  // printed "у т.ч. ПДВ" breakdown, same as BASE_PRICE/CUSTOM. Two
+  // separate sources rather than one shared one because the two fields
+  // mean genuinely different things: Assembly.germanPriceEur is a plain
+  // benchmark price with no VAT claim at all, Product.germanPriceInclVat
+  // is explicitly labeled "з ПДВ".
+  GERMAN_PRICE
 }

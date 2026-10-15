@@ -283,6 +283,7 @@ export class QuotationsService {
     let basePrice: number | null = null;
     let laborCost: number | null = null;
     let germanPriceInclVat: number | null = null;
+    let germanPrice: number | null = null;
 
     if (dto.kind === 'ASSEMBLY') {
       if (!dto.assemblyId) throw new CodedBadRequestException('QUOTATION_ITEM_ASSEMBLY_ID_REQUIRED', 'assemblyId is required for kind=ASSEMBLY.');
@@ -291,6 +292,10 @@ export class QuotationsService {
       nameSnapshot = nameSnapshot ?? assembly.name;
       basePrice = assembly.baseSalePriceEur !== null ? Number(assembly.baseSalePriceEur) : null;
       laborCost = Number(assembly.laborCostPerUnit);
+      // "коли в комерційку додаю виріб то має бути можливість обрати ціна
+      // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math
+      // (see PricingSource.GERMAN_PRICE's own schema comment).
+      germanPrice = assembly.germanPriceEur !== null ? Number(assembly.germanPriceEur) : null;
       const costResult = await this.assembliesService.calculateCost(user, dto.assemblyId);
       cost = costResult.costPerUnit;
     } else if (dto.kind === 'PRODUCT') {
@@ -319,6 +324,7 @@ export class QuotationsService {
       pricingPercent: dto.pricingPercent ?? null,
       customUnitPrice: dto.customUnitPrice ?? null,
       germanPriceInclVat,
+      germanPrice,
       discountPercent: dto.discountPercent ?? 0,
       discountAmountOverride: dto.discountAmountOverride ?? null,
     });
