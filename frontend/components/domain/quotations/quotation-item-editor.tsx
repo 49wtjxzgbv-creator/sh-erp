@@ -77,7 +77,17 @@ export function QuotationLiveTotals({
     // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math;
     // ASSEMBLY lines only, never contributes to germanVatInclTotal below.
     const germanPrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.germanPriceEur ?? null) : null;
-    const unitPrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
+    const unitPrice = computeLivePrice(
+      item.pricingSource,
+      cost,
+      basePrice,
+      item.pricingPercent,
+      item.customUnitPrice,
+      laborCost,
+      germanPriceInclVat,
+      germanPrice,
+      item.germanPriceMarkupAmount,
+    );
     if (unitPrice === null) return;
     const lineSubtotal = unitPrice * item.quantity;
     const lineDiscount = lineSubtotal * ((item.discountPercent ?? 0) / 100);

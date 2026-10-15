@@ -1902,6 +1902,7 @@
     "basePriceIs": "Base price",
     "germanPriceIs": "German price (incl. VAT)",
     "germanPriceAssemblyIs": "German price",
+    "germanPriceMarkupHint": "markup (optional)",
     "costLabel": "Cost",
     "laborCostLabel": "Labor cost",
     "costHiddenNote": "(cost hidden)",

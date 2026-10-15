@@ -33,6 +33,8 @@ export interface QuotationItemDraft {
   unit: string;
   pricingSource: PricingSource;
   pricingPercent?: number;
+  /** GERMAN_PRICE only — optional fixed €-amount markup on top of germanPrice, wins over pricingPercent when both set. */
+  germanPriceMarkupAmount?: number;
   customUnitPrice?: number;
   discountPercent?: number;
   belowCostApproved: boolean;
@@ -93,7 +95,17 @@ export function QuotationItemRow({
   // a false "name required" warning if this checked the label instead.
   const hasTarget = item.kind === 'ASSEMBLY' ? Boolean(item.assemblyId) : item.kind === 'PRODUCT' ? Boolean(item.productId) : Boolean(item.nameSnapshot);
 
-  const livePrice = computeLivePrice(item.pricingSource, cost, basePrice, item.pricingPercent, item.customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
+  const livePrice = computeLivePrice(
+    item.pricingSource,
+    cost,
+    basePrice,
+    item.pricingPercent,
+    item.customUnitPrice,
+    laborCost,
+    germanPriceInclVat,
+    germanPrice,
+    item.germanPriceMarkupAmount,
+  );
   const subtotal = livePrice !== null ? livePrice * item.quantity : null;
   const discountAmount = subtotal !== null ? subtotal * ((item.discountPercent ?? 0) / 100) : null;
   const lineTotal = subtotal !== null && discountAmount !== null ? subtotal - discountAmount : null;
@@ -225,6 +237,7 @@ export function QuotationItemRow({
                 laborCost={laborCost}
                 germanPriceInclVat={germanPriceInclVat}
                 germanPrice={germanPrice}
+                germanPriceMarkupAmount={item.germanPriceMarkupAmount}
                 currency={currency}
                 canViewMargin={canViewMargin}
                 disabled={!editable}

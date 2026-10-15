@@ -106,7 +106,7 @@ export class QuotationsService {
     // holder. Only the figures that reveal the company's cost basis are
     // gated behind quotations:view-margin.
     if (!(await this.userHasPermission(user, 'quotations:view-margin'))) {
-      const strip = (v: any) => ({ ...v, items: v.items.map((i: any) => ({ ...i, costSnapshot: null, basePriceSnapshot: null, pricingPercent: null })) });
+      const strip = (v: any) => ({ ...v, items: v.items.map((i: any) => ({ ...i, costSnapshot: null, basePriceSnapshot: null, pricingPercent: null, germanPriceMarkupAmount: null })) });
       return {
         ...quotation,
         currentVersion: currentVersion ? strip(currentVersion) : currentVersion,
@@ -325,6 +325,7 @@ export class QuotationsService {
       customUnitPrice: dto.customUnitPrice ?? null,
       germanPriceInclVat,
       germanPrice,
+      germanPriceMarkupAmount: dto.germanPriceMarkupAmount ?? null,
       discountPercent: dto.discountPercent ?? 0,
       discountAmountOverride: dto.discountAmountOverride ?? null,
     });
@@ -343,6 +344,7 @@ export class QuotationsService {
       basePriceSnapshot: basePrice,
       laborCostSnapshot: laborCost,
       pricingPercent: dto.pricingPercent ?? null,
+      germanPriceMarkupAmount: dto.germanPriceMarkupAmount ?? null,
       unitPrice: pricing.unitPrice,
       currency,
       discountPercent: dto.discountPercent ?? 0,

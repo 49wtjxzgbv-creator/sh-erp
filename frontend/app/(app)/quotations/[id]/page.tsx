@@ -71,6 +71,7 @@ function itemToDraft(item: QuotationVersionItem): QuotationItemDraft {
     unit: item.unit,
     pricingSource: item.pricingSource,
     pricingPercent: item.pricingPercent !== null ? Number(item.pricingPercent) : undefined,
+    germanPriceMarkupAmount: item.germanPriceMarkupAmount !== null ? Number(item.germanPriceMarkupAmount) : undefined,
     customUnitPrice: item.pricingSource === 'CUSTOM' ? Number(item.unitPrice) : undefined,
     discountPercent: Number(item.discountPercent) || undefined,
     belowCostApproved: item.belowCostApproved,
@@ -87,7 +88,16 @@ function draftToInput(item: QuotationItemDraft): QuotationItemInput {
     quantity: item.quantity,
     unit: item.unit,
     pricingSource: item.pricingSource,
-    pricingPercent: item.pricingSource === 'MARKUP_PERCENT' || item.pricingSource === 'COST_PLUS_MARGIN' ? item.pricingPercent : undefined,
+    // Forwarded whenever present, not gated to a specific pricingSource
+    // allowlist — the backend's own resolveUnitPrice already disambiguates
+    // by pricingSource and simply ignores whichever of these two fields a
+    // given source doesn't use, same as customUnitPrice below already does
+    // for every non-CUSTOM source. (Was previously gated to MARKUP_PERCENT/
+    // COST_PLUS_MARGIN only, which silently broke saving LABOR_MARKUP_PERCENT/
+    // LABOR_COST_PLUS_MARGIN lines — fixed in passing while wiring GERMAN_PRICE's
+    // own markup, 2026-10-15.)
+    pricingPercent: item.pricingPercent,
+    germanPriceMarkupAmount: item.germanPriceMarkupAmount,
     customUnitPrice: item.pricingSource === 'CUSTOM' ? item.customUnitPrice : undefined,
     discountPercent: item.discountPercent,
   };

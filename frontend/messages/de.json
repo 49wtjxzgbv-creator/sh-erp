@@ -1902,6 +1902,7 @@
     "basePriceIs": "Basispreis",
     "germanPriceIs": "Deutscher Preis (inkl. MwSt.)",
     "germanPriceAssemblyIs": "Deutscher Preis",
+    "germanPriceMarkupHint": "Aufschlag (optional)",
     "costLabel": "Kosten",
     "laborCostLabel": "Arbeitskosten",
     "costHiddenNote": "(Kosten ausgeblendet)",

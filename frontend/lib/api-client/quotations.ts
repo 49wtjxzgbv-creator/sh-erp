@@ -49,6 +49,8 @@ export interface QuotationVersionItem {
   costSnapshot: DecimalString | null;
   basePriceSnapshot: DecimalString | null;
   pricingPercent: DecimalString | null;
+  /** GERMAN_PRICE only — optional fixed €-amount markup on top of germanPrice, wins over pricingPercent when both set. Same hide-for-non-view-margin treatment as pricingPercent/costSnapshot/basePriceSnapshot above. */
+  germanPriceMarkupAmount: DecimalString | null;
   unitPrice: DecimalString;
   currency: string;
   discountPercent: DecimalString;
@@ -156,6 +158,8 @@ export interface QuotationItemInput {
   unit?: string;
   pricingSource: PricingSource;
   pricingPercent?: number;
+  /** GERMAN_PRICE only — optional fixed €-amount markup on top of germanPrice, wins over pricingPercent when both set. */
+  germanPriceMarkupAmount?: number;
   customUnitPrice?: number;
   discountPercent?: number;
   discountAmountOverride?: number;

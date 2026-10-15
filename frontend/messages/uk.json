@@ -2075,6 +2075,7 @@
     "basePriceIs": "Базова ціна",
     "germanPriceIs": "Німецька ціна (з ПДВ)",
     "germanPriceAssemblyIs": "Німецька ціна",
+    "germanPriceMarkupHint": "націнка (необов'язково)",
     "noGermanPriceWarning": "Для цього товару не встановлена ціна (DE, з ПДВ) — оберіть інший спосіб ціноутворення.",
     "noGermanPriceAssemblyWarning": "Для цього виробу не встановлена ціна в Німеччині — оберіть інший спосіб ціноутворення.",
     "costLabel": "Собівартість",

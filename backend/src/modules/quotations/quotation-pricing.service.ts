@@ -17,8 +17,10 @@ export interface ComputeItemPricingInput {
   customUnitPrice: number | null;
   /** Product.germanPriceInclVat — required only for GERMAN_PRICE_INCL_VAT (PRODUCT lines only). Taken verbatim as unitPrice (already VAT-inclusive, per that field's own "з ПДВ" label) — see QuotationVersion.vatRatePercent's schema comment for how the VAT portion gets split back out for display. */
   germanPriceInclVat: number | null;
-  /** Assembly.germanPriceEur — required only for GERMAN_PRICE (ASSEMBLY lines only). Taken verbatim as unitPrice, plain, with NO VAT math — that field has no excl/incl split and never claims to include VAT, unlike germanPriceInclVat above. */
+  /** Assembly.germanPriceEur — required only for GERMAN_PRICE (ASSEMBLY lines only). Taken verbatim as unitPrice, plain, with NO VAT math — that field has no excl/incl split and never claims to include VAT, unlike germanPriceInclVat above. An optional markup can still be layered on top via `germanPriceMarkupAmount`/`pricingPercent` below. */
   germanPrice: number | null;
+  /** GERMAN_PRICE only — an optional, explicit €-amount markup added on top of germanPrice. When set, wins over `pricingPercent` (same "explicit absolute override wins" precedence as discountAmountOverride/discountPercent) — see QuotationVersionItem.germanPriceMarkupAmount's own schema comment. */
+  germanPriceMarkupAmount: number | null;
   discountPercent: number;
   /** Explicit absolute override — when set, wins over discountPercent (supports an "enter €X off" workflow alongside "enter Y% off"; the resolved number is what's stored either way, see QuotationVersionItem.discountAmount's own schema comment). */
   discountAmountOverride: number | null;
@@ -49,7 +51,7 @@ export interface ComputedItemPricing {
  *   LABOR_COST_PLUS_MARGIN:  unitPrice = laborCost / (1 - p/100)       — same formula as COST_PLUS_MARGIN, labor cost only
  *   CUSTOM:                  unitPrice = customUnitPrice, as entered
  *   GERMAN_PRICE_INCL_VAT:   unitPrice = germanPriceInclVat, unchanged — Product.germanPriceInclVat taken as-is, already VAT-inclusive
- *   GERMAN_PRICE:            unitPrice = germanPrice, unchanged — Assembly.germanPriceEur taken as-is, plain, no VAT math (added 2026-10-15, same day as GERMAN_PRICE_INCL_VAT)
+ *   GERMAN_PRICE:            unitPrice = germanPrice, optionally marked up — Assembly.germanPriceEur taken as-is, plain, no VAT math (added 2026-10-15, same day as GERMAN_PRICE_INCL_VAT); an optional markup on top: germanPrice + germanPriceMarkupAmount (if set) else germanPrice × (1 + p/100) (if pricingPercent set) else germanPrice verbatim (added later same day)
  *
  * MARKUP_PERCENT and COST_PLUS_MARGIN are NOT interchangeable — a markup
  * multiplies cost up; a margin target divides cost by the fraction of
@@ -150,6 +152,17 @@ export class QuotationPricingService {
             'QUOTATION_ITEM_NO_GERMAN_PRICE',
             'This assembly has no "Ціна виробу в Німеччині" set — set it on the assembly card, or choose a different pricing method.',
           );
+        }
+        // "додай можливість у комерційній пропозиції також давати націнку
+        // на Ціна виробу в Німеччині, € чи відсотками чи конкретною сумою"
+        // (2026-10-15) — both optional; an explicit €-amount wins over a
+        // percent (same precedence as discountAmountOverride/discountPercent
+        // below), neither set means no markup at all.
+        if (input.germanPriceMarkupAmount !== null) {
+          return round2(input.germanPrice + input.germanPriceMarkupAmount);
+        }
+        if (input.pricingPercent !== null) {
+          return round2(input.germanPrice * (1 + input.pricingPercent / 100));
         }
         return round2(input.germanPrice);
       }

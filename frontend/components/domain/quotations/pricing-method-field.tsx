@@ -27,14 +27,23 @@ export function computeLivePrice(
   laborCost: number | null = null,
   germanPriceInclVat: number | null = null,
   germanPrice: number | null = null,
+  germanPriceMarkupAmount: number | undefined = undefined,
 ): number | null {
   switch (pricingSource) {
     case 'BASE_PRICE':
       return basePrice ?? null;
     case 'GERMAN_PRICE_INCL_VAT':
       return germanPriceInclVat ?? null;
-    case 'GERMAN_PRICE':
-      return germanPrice ?? null;
+    case 'GERMAN_PRICE': {
+      if (germanPrice === null) return null;
+      // "додай можливість у комерційній пропозиції також давати націнку на
+      // Ціна виробу в Німеччині, € чи відсотками чи конкретною сумою"
+      // (2026-10-15) — mirrors the backend's own precedence exactly (see
+      // quotation-pricing.service.ts's GERMAN_PRICE case).
+      if (germanPriceMarkupAmount !== undefined) return round2(germanPrice + germanPriceMarkupAmount);
+      if (pricingPercent !== undefined) return round2(germanPrice * (1 + pricingPercent / 100));
+      return germanPrice;
+    }
     case 'MARKUP_PERCENT':
       return cost !== null && pricingPercent !== undefined ? round2(cost * (1 + pricingPercent / 100)) : null;
     case 'COST_PLUS_MARGIN':
@@ -65,6 +74,8 @@ export interface PricingMethodFieldProps {
   germanPriceInclVat: number | null;
   /** Assembly.germanPriceEur — the basis for GERMAN_PRICE, taken as-is, plain (no VAT claim at all, unlike germanPriceInclVat above). null means "not set" (ASSEMBLY with no German price) or "not applicable" (non-ASSEMBLY kind). */
   germanPrice: number | null;
+  /** GERMAN_PRICE only — optional fixed €-amount markup on top of germanPrice, wins over pricingPercent when both are set (same "explicit override wins" precedence as discount's own percent/amount pair). undefined = not using the amount mode (may still be using pricingPercent, or no markup at all). */
+  germanPriceMarkupAmount: number | undefined;
   currency: string;
   canViewMargin: boolean;
   disabled?: boolean;
@@ -74,7 +85,7 @@ export interface PricingMethodFieldProps {
   assemblyId?: string;
   /** Only present for kind=PRODUCT — same purpose as assemblyId above, for the "no German price set" warning (GERMAN_PRICE_INCL_VAT). */
   productId?: string;
-  onChange: (patch: { pricingSource?: PricingSource; pricingPercent?: number; customUnitPrice?: number }) => void;
+  onChange: (patch: { pricingSource?: PricingSource; pricingPercent?: number; germanPriceMarkupAmount?: number; customUnitPrice?: number }) => void;
 }
 
 const ALL_SOURCES: PricingSource[] = [
@@ -97,6 +108,7 @@ export function PricingMethodField({
   laborCost,
   germanPriceInclVat,
   germanPrice,
+  germanPriceMarkupAmount,
   currency,
   canViewMargin,
   disabled,
@@ -106,7 +118,18 @@ export function PricingMethodField({
   onChange,
 }: PricingMethodFieldProps) {
   const t = useTranslations('quotations');
-  const livePrice = computeLivePrice(pricingSource, cost, basePrice, pricingPercent, customUnitPrice, laborCost, germanPriceInclVat, germanPrice);
+  const livePrice = computeLivePrice(
+    pricingSource,
+    cost,
+    basePrice,
+    pricingPercent,
+    customUnitPrice,
+    laborCost,
+    germanPriceInclVat,
+    germanPrice,
+    germanPriceMarkupAmount,
+  );
+  const markupMode: 'percent' | 'amount' = germanPriceMarkupAmount !== undefined ? 'amount' : 'percent';
   const isBelowCost = canViewMargin && cost !== null && livePrice !== null && livePrice < cost;
 
   return (
@@ -157,7 +180,47 @@ export function PricingMethodField({
 
       {pricingSource === 'GERMAN_PRICE' && (
         germanPrice !== null ? (
-          <p className="text-xs text-muted-foreground">{t('germanPriceAssemblyIs')}: {formatMoney(germanPrice, currency)}</p>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">{t('germanPriceAssemblyIs')}: {formatMoney(germanPrice, currency)}</p>
+            {/* "додай можливість у комерційній пропозиції також давати
+                націнку на Ціна виробу в Німеччині, € чи відсотками чи
+                конкретною сумою" (2026-10-15) — optional, neither mode
+                required; switching modes clears the other field so a
+                stale value never silently re-activates. */}
+            <div className="flex items-center gap-1.5">
+              <div className="inline-flex overflow-hidden rounded-md border border-input text-xs">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className={`px-2 py-1 ${markupMode === 'percent' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                  onClick={() => onChange({ germanPriceMarkupAmount: undefined })}
+                >
+                  %
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className={`border-l border-input px-2 py-1 ${markupMode === 'amount' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                  onClick={() => onChange({ germanPriceMarkupAmount: germanPriceMarkupAmount ?? 0, pricingPercent: undefined })}
+                >
+                  {currency}
+                </button>
+              </div>
+              <Input
+                type="number"
+                step={markupMode === 'percent' ? '0.1' : '0.01'}
+                className="h-8 w-24 text-xs"
+                value={(markupMode === 'percent' ? pricingPercent : germanPriceMarkupAmount) ?? ''}
+                disabled={disabled}
+                onChange={(e) => {
+                  const v = e.target.value === '' ? undefined : Number(e.target.value);
+                  if (markupMode === 'percent') onChange({ pricingPercent: v });
+                  else onChange({ germanPriceMarkupAmount: v });
+                }}
+              />
+              <span className="text-xs text-muted-foreground">{t('germanPriceMarkupHint')}</span>
+            </div>
+          </div>
         ) : (
           <div className="space-y-0.5">
             <p className="text-xs text-destructive">{t('noGermanPriceAssemblyWarning')}</p>

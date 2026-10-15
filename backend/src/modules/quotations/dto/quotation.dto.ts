@@ -102,11 +102,17 @@ export class QuotationItemInputDto {
   @IsIn(['BASE_PRICE', 'MARKUP_PERCENT', 'COST_PLUS_MARGIN', 'LABOR_MARKUP_PERCENT', 'LABOR_COST_PLUS_MARGIN', 'CUSTOM', 'GERMAN_PRICE_INCL_VAT', 'GERMAN_PRICE'])
   pricingSource!: string;
 
-  @ApiPropertyOptional({ description: 'Required for MARKUP_PERCENT/COST_PLUS_MARGIN/LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN.' })
+  @ApiPropertyOptional({ description: 'Required for MARKUP_PERCENT/COST_PLUS_MARGIN/LABOR_MARKUP_PERCENT/LABOR_COST_PLUS_MARGIN. Optional for GERMAN_PRICE (a percent markup on top — see germanPriceMarkupAmount for the fixed-amount alternative).' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   pricingPercent?: number;
+
+  @ApiPropertyOptional({ description: 'GERMAN_PRICE only — optional fixed €-amount markup added on top of Assembly.germanPriceEur. Wins over pricingPercent when both are set.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  germanPriceMarkupAmount?: number;
 
   @ApiPropertyOptional({ description: 'Required for CUSTOM.' })
   @IsOptional()

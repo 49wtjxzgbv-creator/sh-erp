@@ -13,6 +13,7 @@ describe('QuotationPricingService', () => {
     customUnitPrice: 100,
     germanPriceInclVat: null,
     germanPrice: null,
+    germanPriceMarkupAmount: null,
     discountPercent: 0,
     discountAmountOverride: null,
     ...overrides,
@@ -132,6 +133,28 @@ describe('QuotationPricingService', () => {
 
     it('throws when the assembly has no German price set', () => {
       expect(() => service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE', germanPrice: null }))).toThrow();
+    });
+
+    it('applies a percent markup on top when pricingPercent is set', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE', germanPrice: 200, pricingPercent: 10 }));
+      expect(result.unitPrice).toBe(220);
+    });
+
+    it('applies a fixed-amount markup on top when germanPriceMarkupAmount is set', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE', germanPrice: 200, germanPriceMarkupAmount: 15 }));
+      expect(result.unitPrice).toBe(215);
+    });
+
+    it('an explicit germanPriceMarkupAmount wins over pricingPercent when both are set', () => {
+      const result = service.computeItemPricing(
+        base({ pricingSource: 'GERMAN_PRICE', germanPrice: 200, pricingPercent: 50, germanPriceMarkupAmount: 15 }),
+      );
+      expect(result.unitPrice).toBe(215);
+    });
+
+    it('no markup at all when neither pricingPercent nor germanPriceMarkupAmount is set', () => {
+      const result = service.computeItemPricing(base({ pricingSource: 'GERMAN_PRICE', germanPrice: 200 }));
+      expect(result.unitPrice).toBe(200);
     });
   });
 

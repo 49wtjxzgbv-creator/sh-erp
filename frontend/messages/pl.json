@@ -1902,6 +1902,7 @@
     "basePriceIs": "Cena bazowa",
     "germanPriceIs": "Cena niemiecka (z VAT)",
     "germanPriceAssemblyIs": "Cena niemiecka",
+    "germanPriceMarkupHint": "marża (opcjonalnie)",
     "costLabel": "Koszt",
     "laborCostLabel": "Koszt pracy",
     "costHiddenNote": "(koszt ukryty)",
