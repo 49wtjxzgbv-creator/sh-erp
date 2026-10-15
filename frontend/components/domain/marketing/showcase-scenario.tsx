@@ -27,6 +27,7 @@ export function ShowcaseScenario({ showcase }: { showcase: FlatLandingPageConten
           {showcase.steps.map((step, i) => (
             <ShowcaseStep
               key={step.id}
+              id={step.id}
               index={i + 1}
               title={step.title}
               description={step.description}

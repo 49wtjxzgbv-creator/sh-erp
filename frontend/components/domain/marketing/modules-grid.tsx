@@ -45,9 +45,24 @@ export function ModulesGrid({ modules }: { modules: FlatLandingPageContent['modu
         <div className={cn('mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2', rest.length >= 3 && 'lg:grid-cols-3')}>
           {rest.map((module, i) => {
             const Icon = getLandingIcon(module.icon);
+            const isLast = i === rest.length - 1;
+            // The module list is admin-editable (an admin can add/hide/reorder
+            // items any time — this grid just broke for real the day a 9th
+            // module was added, leaving one card alone on its own row). Rather
+            // than hardcode for today's count, detect a genuine remainder at
+            // each breakpoint's own column count and let only a REAL orphan
+            // span the full row, centered — an evenly-divisible count (e.g. 6
+            // or 8) is left completely untouched.
+            const spansSm = isLast && rest.length % 2 === 1;
+            const spansLg = isLast && rest.length >= 3 && rest.length % 3 === 1;
             return (
-              <Reveal key={module.id} delayMs={i * 60}>
-                <div className="group h-full rounded-2xl border border-border bg-card p-7 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/[0.05]">
+              <Reveal key={module.id} delayMs={i * 60} className={cn(spansSm && 'sm:col-span-2', spansLg && 'lg:col-span-3')}>
+                <div
+                  className={cn(
+                    'group h-full rounded-2xl border border-border bg-card p-7 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/[0.05]',
+                    (spansSm || spansLg) && 'sm:mx-auto sm:max-w-sm lg:max-w-md',
+                  )}
+                >
                   <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-accent-foreground transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
                     <Icon className="h-5 w-5" />
                   </div>
