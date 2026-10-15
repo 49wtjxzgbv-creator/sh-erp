@@ -401,23 +401,23 @@ export default function PayrollSummaryPage() {
                 (2026-10-13) — same top plain-EUR line OrderPayrollPrint
                 has above its own per-employee table
                 (`payrollFundEarned`/`fund.earnedActual`).
-                "аванси би ж мали бути бо по факту це зароблені гроші за
-                вироби" + "та хай і премію враховує" (2026-10-14
-                follow-ups): started as plain `totals.piecework` (gross,
-                before any netting), then grew to also net out advances,
-                then bonuses too — piecework + advances (already
-                negative-signed) + bonuses. Deliberately still excludes
-                penalties: unlike an advance/bonus (both tied to this
-                order's own work), a penalty is never anything resembling
-                "earned", so folding it in here would make a disciplinary
-                deduction look like it reduced what was actually earned
-                rather than what's actually paid out — penalties only
-                show up in "Загалом по всіх" below. */}
+                Went through two false starts on 2026-10-14 (net out
+                advances, then also add bonuses back) before landing on
+                the actual house rule: "аванси це те що ми давали з цього
+                заробітку просто раніше" — an advance is just an early
+                payout of money already earned, not a separate deduction,
+                so it never belongs in an "earned" figure at all. Earned =
+                piecework + bonuses (bonus IS earned, same as piecework).
+                Penalties stay excluded too, for the same reason as
+                before: a disciplinary deduction isn't "earned" either, in
+                either direction — it only shows up in "Загалом по всіх"
+                below, which nets everything (piecework+advances+bonuses+
+                penalties) to reflect what's actually left to pay out. */}
             <table className="mb-4">
               <tbody>
                 <tr>
                   <td>{ts('payrollFundEarned')}</td>
-                  <td className="font-bold">{formatEur(totals.piecework + totals.advances + totals.bonuses)}</td>
+                  <td className="font-bold">{formatEur(totals.piecework + totals.bonuses)}</td>
                 </tr>
               </tbody>
             </table>
