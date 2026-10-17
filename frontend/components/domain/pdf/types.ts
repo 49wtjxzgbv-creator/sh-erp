@@ -18,6 +18,9 @@ export interface WorkingPage {
 
 export type AnnotationTool = 'select' | 'highlight' | 'note' | 'draw' | 'text' | 'edit';
 
+/** The two Cyrillic-capable fonts embedded at export time — see scripts/copy-pdf-font.js's own header comment for why only these two (not pdf-lib's built-in StandardFonts) are usable at all for this app's userbase. */
+export type TextFontFamily = 'sans' | 'serif';
+
 /** Every coordinate is in the page's OWN intrinsic PDF point space (origin bottom-left, Y up) — the same space pdf-lib's draw* methods use natively, and what pdfjs's PageViewport#convertToPdfPoint/convertToViewportPoint round-trip to/from screen pixels. Storing here (not normalized screen fractions) is what keeps an annotation correctly placed across zoom AND rotation changes — see pdf-page-canvas.tsx's own header comment. */
 export type Annotation =
   | { id: string; pageKey: string; type: 'highlight'; x: number; y: number; width: number; height: number }
@@ -29,7 +32,7 @@ export type Annotation =
   // it visually matches the original closely but is never byte-identical to an embedded
   // subset font. That tradeoff is the whole reason 'edit' exists instead of true
   // content-stream text rewriting — see pdf-page-canvas.tsx's header comment.
-  | { id: string; pageKey: string; type: 'text'; x: number; y: number; width: number; fontSize: number; text: string }
+  | { id: string; pageKey: string; type: 'text'; x: number; y: number; width: number; fontSize: number; fontFamily: TextFontFamily; color: string; text: string }
   // An opaque white cover drawn over a region of the ORIGINAL page content — this is how
   // "editing" or "moving" existing text/an image actually works: the real glyphs/pixels in
   // the source PDF can't be surgically removed from its content stream, so a redact sits
@@ -58,6 +61,17 @@ export interface ExistingImageRegion {
   y: number;
   width: number;
   height: number;
+}
+
+/** '#rrggbb' -> {r,g,b} in pdf-lib's 0-1 range, for `rgb()` at export time. */
+export function hexToRgb01(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex) ?? [];
+  const [, rHex, gHex, bHex] = m;
+  return {
+    r: parseInt(rHex ?? '11', 16) / 255,
+    g: parseInt(gHex ?? '18', 16) / 255,
+    b: parseInt(bHex ?? '27', 16) / 255,
+  };
 }
 
 export function newId(): string {

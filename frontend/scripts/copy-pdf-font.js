@@ -11,24 +11,33 @@
 // situation scripts/copy-occt-wasm.js and scripts/copy-pdfjs-worker.js
 // already document for other binary assets.
 //
-// `roboto-fontface` ships one non-subsetted .woff per weight (unlike
+// `roboto-fontface` ships one non-subsetted .woff per weight/family (unlike
 // @fontsource's per-unicode-range-subsetted files, which would need
-// stitching multiple fonts together for one drawText call) — Roboto
-// Regular alone covers Latin + Cyrillic, which is all this feature needs.
+// stitching multiple fonts together for one drawText call) — each Regular
+// weight alone covers Latin + Cyrillic. Two families (sans/serif) are copied
+// so the "Текст"/"Редагувати" tools can offer a real font choice, not just
+// one typeface.
 
 const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const src = path.join(root, 'node_modules', 'roboto-fontface', 'fonts', 'roboto', 'Roboto-Regular.woff');
 const destDir = path.join(root, 'public', 'fonts');
-const dest = path.join(destDir, 'pdf-editor-cyrillic.woff');
 
-if (!fs.existsSync(src)) {
-  console.log('postinstall: roboto-fontface not installed, skipping font copy.');
-  process.exit(0);
-}
+const files = [
+  { src: ['node_modules', 'roboto-fontface', 'fonts', 'roboto', 'Roboto-Regular.woff'], dest: 'pdf-editor-sans.woff' },
+  { src: ['node_modules', 'roboto-fontface', 'fonts', 'roboto-slab', 'Roboto-Slab-Regular.woff'], dest: 'pdf-editor-serif.woff' },
+];
 
 fs.mkdirSync(destDir, { recursive: true });
-fs.copyFileSync(src, dest);
-console.log(`postinstall: copied ${path.relative(root, src)} -> ${path.relative(root, dest)}`);
+
+for (const { src, dest } of files) {
+  const srcPath = path.join(root, ...src);
+  const destPath = path.join(destDir, dest);
+  if (!fs.existsSync(srcPath)) {
+    console.log(`postinstall: ${path.join(...src)} not found (roboto-fontface not installed?), skipping.`);
+    continue;
+  }
+  fs.copyFileSync(srcPath, destPath);
+  console.log(`postinstall: copied ${path.relative(root, srcPath)} -> ${path.relative(root, destPath)}`);
+}

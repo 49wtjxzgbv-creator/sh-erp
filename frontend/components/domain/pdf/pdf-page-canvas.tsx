@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { OPS, type PageViewport } from 'pdfjs-dist';
 import { cn } from '@/lib/utils';
-import { newId, type Annotation, type AnnotationTool, type ExistingImageRegion, type ExistingTextRun, type PdfSource, type WorkingPage } from './types';
+import { newId, type Annotation, type AnnotationTool, type ExistingImageRegion, type ExistingTextRun, type PdfSource, type TextFontFamily, type WorkingPage } from './types';
+
+/** On-screen approximation only — the exported PDF always uses the real embedded Roboto/Roboto Slab files (see scripts/copy-pdf-font.js), regardless of whether those exact faces happen to be installed on the viewer's system. */
+const PREVIEW_FONT_STACK: Record<TextFontFamily, string> = {
+  sans: 'Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: '"Roboto Slab", Georgia, "Times New Roman", serif',
+};
+
+const DEFAULT_TEXT_COLOR = '#111827';
 
 /**
  * Recovers where each image XObject is actually drawn by walking the content
@@ -101,11 +109,14 @@ interface PendingTextEditor {
   y: number;
   width: number;
   fontSize: number;
+  fontFamily: TextFontFamily;
+  color: string;
   text: string;
   /** Set only when this editor is replacing an existing run (the 'edit' tool) — committed alongside the new 'text' annotation so the original glyphs are hidden. Absent for a brand-new text block (the 'text' tool) or when re-editing an already-committed text annotation. */
   redactOriginal?: { x: number; y: number; width: number; height: number };
-  /** The run's original string, to skip committing anything at all if the user opened an existing run and closed it unchanged. */
+  /** The run's original string/size, to skip committing anything at all if the user opened an existing run and closed it with no actual change (text, font, size, or color). */
   originalText?: string;
+  originalFontSize?: number;
   /** Set when re-editing an already-committed 'text' annotation (double-click) — commits via onUpdateAnnotation instead of creating a new one. */
   editingAnnotationId?: string;
 }
@@ -159,6 +170,7 @@ export function PdfPageCanvas({
   const [dragPreview, setDragPreview] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const dragging = useRef(false);
   const shapeDragOrigin = useRef<{ x: number; y: number } | null>(null);
+  const pendingTextPopupRef = useRef<HTMLDivElement>(null);
   const editDrag = useRef<{ target: EditTarget; startX: number; startY: number; curX: number; curY: number; moved: boolean } | null>(null);
 
   useEffect(() => {
@@ -260,20 +272,28 @@ export function PdfPageCanvas({
 
     if (pt.editingAnnotationId) {
       if (text) {
-        onUpdateAnnotation(pt.editingAnnotationId, { text } as Partial<Annotation>);
+        onUpdateAnnotation(pt.editingAnnotationId, { text, fontSize: pt.fontSize, fontFamily: pt.fontFamily, color: pt.color } as Partial<Annotation>);
       } else {
         onDeleteAnnotation(pt.editingAnnotationId);
       }
       return;
     }
 
-    if (pt.redactOriginal && text === (pt.originalText ?? '').trim()) return; // opened an existing run, closed it unchanged — nothing to do
+    if (
+      pt.redactOriginal &&
+      text === (pt.originalText ?? '').trim() &&
+      pt.fontFamily === 'sans' &&
+      pt.color === DEFAULT_TEXT_COLOR &&
+      pt.fontSize === pt.originalFontSize
+    ) {
+      return; // opened an existing run, closed it with no actual change — nothing to do
+    }
 
     if (!text) return;
     if (pt.redactOriginal) {
       onAddAnnotation({ id: newId(), pageKey: page.key, type: 'redact', ...pt.redactOriginal });
     }
-    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'text', x: pt.x, y: pt.y, width: pt.width, fontSize: pt.fontSize, text });
+    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'text', x: pt.x, y: pt.y, width: pt.width, fontSize: pt.fontSize, fontFamily: pt.fontFamily, color: pt.color, text });
   }
 
   function startDragShape(e: React.PointerEvent, ann: Annotation) {
@@ -313,7 +333,7 @@ export function PdfPageCanvas({
     } else if (tool === 'note') {
       setPendingNote({ x, y, text: '' });
     } else if (tool === 'text') {
-      openTextEditor({ x, y, width: 180, fontSize: 14, text: '' });
+      openTextEditor({ x, y, width: 180, fontSize: 14, fontFamily: 'sans', color: DEFAULT_TEXT_COLOR, text: '' });
     } else if (tool === 'edit') {
       const target = findEditTargetAt(x, y);
       if (target) {
@@ -419,6 +439,8 @@ export function PdfPageCanvas({
           y: run.y + dy,
           width: run.width,
           fontSize: run.fontSize,
+          fontFamily: 'sans',
+          color: DEFAULT_TEXT_COLOR,
           text: run.str,
         });
       } else {
@@ -427,9 +449,12 @@ export function PdfPageCanvas({
           y: run.y,
           width: Math.max(run.width, 120),
           fontSize: run.fontSize,
+          fontFamily: 'sans',
+          color: DEFAULT_TEXT_COLOR,
           text: run.str,
           redactOriginal: runRedactBox(run),
           originalText: run.str,
+          originalFontSize: run.fontSize,
         });
       }
       return;
@@ -559,14 +584,23 @@ export function PdfPageCanvas({
                     onPointerDown={(e) => startDragShape(e, ann)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      openTextEditor({ x: effective.x, y: effective.y, width: effective.width, fontSize: effective.fontSize, text: effective.text, editingAnnotationId: ann.id });
+                      openTextEditor({
+                        x: effective.x,
+                        y: effective.y,
+                        width: effective.width,
+                        fontSize: effective.fontSize,
+                        fontFamily: effective.fontFamily,
+                        color: effective.color,
+                        text: effective.text,
+                        editingAnnotationId: ann.id,
+                      });
                     }}
                   >
                     {selected && <rect x={bbox.left} y={bbox.top} width={bbox.width} height={bbox.height} fill="none" stroke="#2563eb" strokeDasharray="4 2" />}
                     {lines.map((line, i) => {
                       const [lx, ly] = viewport.convertToViewportPoint(effective.x, effective.y - i * lineHeight);
                       return (
-                        <text key={i} x={lx} y={ly} fontSize={effective.fontSize * zoom} fontFamily="Helvetica, Arial, sans-serif" fill={selected ? '#2563eb' : '#111827'}>
+                        <text key={i} x={lx} y={ly} fontSize={effective.fontSize * zoom} fontFamily={PREVIEW_FONT_STACK[effective.fontFamily]} fill={selected ? '#2563eb' : effective.color}>
                           {line}
                         </text>
                       );
@@ -675,22 +709,67 @@ export function PdfPageCanvas({
 
         {viewport && pendingText && (() => {
           const [left, top] = viewport.convertToViewportPoint(pendingText.x, pendingText.y - pendingText.fontSize * TEXT_LINE_HEIGHT * 0.2);
+          // Clicking a toolbar control (font/size/color) shifts DOM focus away from the textarea, which would
+          // otherwise fire its onBlur and close the editor mid-edit — only commit once focus leaves the WHOLE
+          // popup, not just the textarea within it.
+          function handlePopupBlur(e: React.FocusEvent) {
+            if (pendingTextPopupRef.current?.contains(e.relatedTarget as Node)) return;
+            commitPendingText();
+          }
           return (
             <div
-              className="pointer-events-auto absolute z-10 border border-primary bg-white/95 shadow-lg"
-              style={{ left, top, width: Math.max(pendingText.width * zoom, 90) }}
+              ref={pendingTextPopupRef}
+              className="pointer-events-auto absolute z-10 border border-primary bg-white shadow-lg"
+              style={{ left, top, width: Math.max(pendingText.width * zoom, 160) }}
             >
+              <div className="flex items-center gap-1 border-b border-border bg-secondary/40 px-1 py-1">
+                <div className="flex overflow-hidden rounded border border-input">
+                  {(['sans', 'serif'] as const).map((family) => (
+                    <button
+                      key={family}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setPendingText({ ...pendingText, fontFamily: family })}
+                      className={cn(
+                        'px-1.5 py-0.5 text-xs',
+                        pendingText.fontFamily === family ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground hover:bg-secondary',
+                      )}
+                      style={{ fontFamily: PREVIEW_FONT_STACK[family] }}
+                      title={family === 'sans' ? 'Roboto' : 'Roboto Slab'}
+                    >
+                      Aa
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min={6}
+                  max={96}
+                  value={pendingText.fontSize}
+                  onChange={(e) => setPendingText({ ...pendingText, fontSize: Math.max(6, Math.min(96, Number(e.target.value) || pendingText.fontSize)) })}
+                  onBlur={handlePopupBlur}
+                  className="h-6 w-12 rounded border border-input bg-background px-1 text-xs tabular-nums outline-none"
+                />
+                <input
+                  type="color"
+                  value={pendingText.color}
+                  onChange={(e) => setPendingText({ ...pendingText, color: e.target.value })}
+                  onBlur={handlePopupBlur}
+                  className="h-6 w-6 cursor-pointer rounded border border-input bg-background p-0.5"
+                  title="Колір тексту"
+                />
+              </div>
               <textarea
                 autoFocus
                 className="block w-full resize-none border-none bg-transparent p-0.5 outline-none"
-                style={{ fontSize: pendingText.fontSize * zoom, lineHeight: TEXT_LINE_HEIGHT, fontFamily: 'Helvetica, Arial, sans-serif', color: '#111827' }}
+                style={{ fontSize: pendingText.fontSize * zoom, lineHeight: TEXT_LINE_HEIGHT, fontFamily: PREVIEW_FONT_STACK[pendingText.fontFamily], color: pendingText.color }}
                 rows={Math.max(1, pendingText.text.split('\n').length)}
                 value={pendingText.text}
                 onChange={(e) => setPendingText({ ...pendingText, text: e.target.value })}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setPendingText(null);
                 }}
-                onBlur={commitPendingText}
+                onBlur={handlePopupBlur}
               />
             </div>
           );

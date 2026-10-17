@@ -43,7 +43,13 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
 import { PdfPageCanvas } from '@/components/domain/pdf/pdf-page-canvas';
 import { PdfPageThumbnail } from '@/components/domain/pdf/pdf-page-thumbnail';
-import { newId, type Annotation, type AnnotationTool, type PdfSource, type WorkingPage } from '@/components/domain/pdf/types';
+import { hexToRgb01, newId, type Annotation, type AnnotationTool, type PdfSource, type TextFontFamily, type WorkingPage } from '@/components/domain/pdf/types';
+
+/** See scripts/copy-pdf-font.js's own header comment for why these two specific files (not a pdf-lib StandardFont). */
+const TEXT_FONT_FILES: Record<TextFontFamily, string> = {
+  sans: '/fonts/pdf-editor-sans.woff',
+  serif: '/fonts/pdf-editor-serif.woff',
+};
 
 /**
  * "створи пдф редактор і переглядач такий як едобе акробат" (2026-10-17) —
@@ -79,8 +85,8 @@ export default function PdfEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const initialized = useRef(false);
-  /** Fetched once and reused across every export — see copy-pdf-font.js's own header comment for why a StandardFont can't be used here at all (Cyrillic). */
-  const fontBytesRef = useRef<ArrayBuffer | null>(null);
+  /** Fetched once per family and reused across every export — see copy-pdf-font.js's own header comment for why a StandardFont can't be used here at all (Cyrillic). */
+  const fontBytesRef = useRef<Partial<Record<TextFontFamily, ArrayBuffer>>>({});
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -249,10 +255,22 @@ export default function PdfEditorPage() {
   async function exportDocument(): Promise<Uint8Array<ArrayBuffer>> {
     const output = await PDFDocument.create();
     output.registerFontkit(fontkit);
-    if (!fontBytesRef.current) {
-      fontBytesRef.current = await fetch('/fonts/pdf-editor-cyrillic.woff').then((r) => r.arrayBuffer());
+
+    // Embedded lazily, only for families actually used on this export — most documents never touch "serif".
+    const embeddedFonts: Partial<Record<TextFontFamily, Awaited<ReturnType<typeof output.embedFont>>>> = {};
+    async function getFont(family: TextFontFamily) {
+      const cached = embeddedFonts[family];
+      if (cached) return cached;
+      let bytes = fontBytesRef.current[family];
+      if (!bytes) {
+        bytes = await fetch(TEXT_FONT_FILES[family]).then((r) => r.arrayBuffer());
+        fontBytesRef.current[family] = bytes;
+      }
+      const font = await output.embedFont(bytes as ArrayBuffer);
+      embeddedFonts[family] = font;
+      return font;
     }
-    const font = await output.embedFont(fontBytesRef.current as ArrayBuffer);
+
     for (const wp of pages) {
       const source = sources[wp.sourceId];
       const [copied] = await output.copyPages(source.pdfLibDoc, [wp.sourceIndex]);
@@ -268,6 +286,7 @@ export default function PdfEditorPage() {
             copied.drawLine({ start: ann.points[i], end: ann.points[i + 1], thickness: 2.5, color: rgb(0.94, 0.27, 0.27) });
           }
         } else if (ann.type === 'note') {
+          const font = await getFont('sans');
           const lines = ann.text.split('\n');
           const lineHeight = 11;
           const boxHeight = lines.length * lineHeight + 8;
@@ -289,9 +308,11 @@ export default function PdfEditorPage() {
           // this component's own header comment and types.ts's comment on this variant).
           copied.drawRectangle({ x: ann.x, y: ann.y, width: ann.width, height: ann.height, color: rgb(1, 1, 1) });
         } else if (ann.type === 'text') {
+          const font = await getFont(ann.fontFamily);
+          const { r, g, b } = hexToRgb01(ann.color);
           const lineHeight = ann.fontSize * 1.2;
           ann.text.split('\n').forEach((line, i) => {
-            copied.drawText(line, { x: ann.x, y: ann.y - i * lineHeight, size: ann.fontSize, font, color: rgb(0.07, 0.09, 0.15) });
+            copied.drawText(line, { x: ann.x, y: ann.y - i * lineHeight, size: ann.fontSize, font, color: rgb(r, g, b) });
           });
         } else if (ann.type === 'image') {
           const embedded = await output.embedPng(ann.dataUrl);
