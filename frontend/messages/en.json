@@ -1978,6 +1978,9 @@
     "download": "Download",
     "unsavedChanges": "Unsaved changes",
     "savedJustNow": "Saved",
-    "cannotDeleteLastPage": "Can't delete the last page of a document"
+    "cannotDeleteLastPage": "Can't delete the last page of a document",
+    "toolText": "Text",
+    "toolEdit": "Edit",
+    "editToolHint": "Click existing text to retype it, or drag it to move it. Drag over an image or any other area to cut and move it."
   }
 }

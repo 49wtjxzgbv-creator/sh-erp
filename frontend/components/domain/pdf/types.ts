@@ -16,13 +16,41 @@ export interface WorkingPage {
   rotation: number;
 }
 
-export type AnnotationTool = 'select' | 'highlight' | 'note' | 'draw';
+export type AnnotationTool = 'select' | 'highlight' | 'note' | 'draw' | 'text' | 'edit';
 
 /** Every coordinate is in the page's OWN intrinsic PDF point space (origin bottom-left, Y up) — the same space pdf-lib's draw* methods use natively, and what pdfjs's PageViewport#convertToPdfPoint/convertToViewportPoint round-trip to/from screen pixels. Storing here (not normalized screen fractions) is what keeps an annotation correctly placed across zoom AND rotation changes — see pdf-page-canvas.tsx's own header comment. */
 export type Annotation =
   | { id: string; pageKey: string; type: 'highlight'; x: number; y: number; width: number; height: number }
   | { id: string; pageKey: string; type: 'note'; x: number; y: number; text: string }
-  | { id: string; pageKey: string; type: 'draw'; points: { x: number; y: number }[] };
+  | { id: string; pageKey: string; type: 'draw'; points: { x: number; y: number }[] }
+  // A brand-new text block (the "Текст" tool) OR the replacement half of an edited/moved
+  // existing text run (the "Редагувати" tool always pairs one of these with a 'redact' —
+  // see that type's own comment) — pdf-lib bakes this with a standard font (Helvetica), so
+  // it visually matches the original closely but is never byte-identical to an embedded
+  // subset font. That tradeoff is the whole reason 'edit' exists instead of true
+  // content-stream text rewriting — see pdf-page-canvas.tsx's header comment.
+  | { id: string; pageKey: string; type: 'text'; x: number; y: number; width: number; fontSize: number; text: string }
+  // An opaque white cover drawn over a region of the ORIGINAL page content — this is how
+  // "editing" or "moving" existing text/an image actually works: the real glyphs/pixels in
+  // the source PDF can't be surgically removed from its content stream, so a redact sits
+  // UNDER the replacement 'text' or 'image' annotation and visually hides the original.
+  | { id: string; pageKey: string; type: 'redact'; x: number; y: number; width: number; height: number }
+  // A bitmap captured straight off the rendered <canvas> (not a parsed PDF image object —
+  // extracting/replacing an actual image XObject from the content stream has the same
+  // infeasibility problem true text-rewriting does) — this is what lets the "Редагувати"
+  // tool "move" an existing picture: cut its pixels, cover the original with a 'redact',
+  // drop the cut bitmap at a new position as a normal draggable/resizable annotation.
+  | { id: string; pageKey: string; type: 'image'; x: number; y: number; width: number; height: number; dataUrl: string };
+
+/** One run from pdfjs's own `getTextContent()` — already in the page's intrinsic PDF-space coordinates (pdfjs calls this "device space" in its own types, but it's the same unrotated/unscaled space as everything else here), so no conversion is needed before treating it exactly like any other Annotation-space rectangle. */
+export interface ExistingTextRun {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+}
 
 export function newId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;

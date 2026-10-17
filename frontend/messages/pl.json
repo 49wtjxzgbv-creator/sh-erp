@@ -1978,6 +1978,9 @@
     "download": "Pobierz",
     "unsavedChanges": "Niezapisane zmiany",
     "savedJustNow": "Zapisano",
-    "cannotDeleteLastPage": "Nie można usunąć ostatniej strony dokumentu"
+    "cannotDeleteLastPage": "Nie można usunąć ostatniej strony dokumentu",
+    "toolText": "Tekst",
+    "toolEdit": "Edytuj",
+    "editToolHint": "Kliknij istniejący tekst, aby go przepisać, albo przeciągnij, aby go przenieść. Przeciągnij po obrazie lub innym obszarze, aby go wyciąć i przenieść."
   }
 }

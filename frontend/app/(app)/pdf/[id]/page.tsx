@@ -15,6 +15,8 @@ import {
   Highlighter,
   StickyNote,
   Pencil,
+  Type,
+  Edit3,
   RotateCw,
   Trash2,
   FilePlus2,
@@ -106,6 +108,11 @@ export default function PdfEditorPage() {
     setDirty(true);
   }
 
+  function handleUpdateAnnotation(annotationId: string, patch: Partial<Annotation>) {
+    setAnnotations((prev) => prev.map((a) => (a.id === annotationId ? ({ ...a, ...patch } as Annotation) : a)));
+    setDirty(true);
+  }
+
   function handleDeleteAnnotation(annotationId: string) {
     setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
     setSelectedAnnotationId(null);
@@ -194,7 +201,7 @@ export default function PdfEditorPage() {
           for (let i = 0; i < ann.points.length - 1; i++) {
             copied.drawLine({ start: ann.points[i], end: ann.points[i + 1], thickness: 2.5, color: rgb(0.94, 0.27, 0.27) });
           }
-        } else {
+        } else if (ann.type === 'note') {
           const lines = ann.text.split('\n');
           const lineHeight = 11;
           const boxHeight = lines.length * lineHeight + 8;
@@ -210,6 +217,19 @@ export default function PdfEditorPage() {
           lines.forEach((line, i) => {
             copied.drawText(line, { x: ann.x + 4, y: ann.y - (i + 1) * lineHeight, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
           });
+        } else if (ann.type === 'redact') {
+          // Opaque cover over the ORIGINAL content stream's glyphs/pixels — this is what makes
+          // "editing" existing text/images possible at all without rewriting that stream (see
+          // this component's own header comment and types.ts's comment on this variant).
+          copied.drawRectangle({ x: ann.x, y: ann.y, width: ann.width, height: ann.height, color: rgb(1, 1, 1) });
+        } else if (ann.type === 'text') {
+          const lineHeight = ann.fontSize * 1.2;
+          ann.text.split('\n').forEach((line, i) => {
+            copied.drawText(line, { x: ann.x, y: ann.y - i * lineHeight, size: ann.fontSize, font, color: rgb(0.07, 0.09, 0.15) });
+          });
+        } else if (ann.type === 'image') {
+          const embedded = await output.embedPng(ann.dataUrl);
+          copied.drawImage(embedded, { x: ann.x, y: ann.y, width: ann.width, height: ann.height });
         }
       }
     }
@@ -252,6 +272,8 @@ export default function PdfEditorPage() {
 
   const toolButtons: { tool: AnnotationTool; icon: typeof MousePointer2; labelKey: string }[] = [
     { tool: 'select', icon: MousePointer2, labelKey: 'toolSelect' },
+    { tool: 'text', icon: Type, labelKey: 'toolText' },
+    { tool: 'edit', icon: Edit3, labelKey: 'toolEdit' },
     { tool: 'highlight', icon: Highlighter, labelKey: 'toolHighlight' },
     { tool: 'note', icon: StickyNote, labelKey: 'toolNote' },
     { tool: 'draw', icon: Pencil, labelKey: 'toolDraw' },
@@ -289,6 +311,7 @@ export default function PdfEditorPage() {
       </div>
 
       {error && <p className="px-1 py-2 text-sm text-destructive">{error}</p>}
+      {tool === 'edit' && <p className="px-1 pt-2 text-xs text-muted-foreground">{t('editToolHint')}</p>}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-1 py-2">
         <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
@@ -347,6 +370,7 @@ export default function PdfEditorPage() {
                 annotations={annotations}
                 selectedAnnotationId={selectedAnnotationId}
                 onAddAnnotation={handleAddAnnotation}
+                onUpdateAnnotation={handleUpdateAnnotation}
                 onSelectAnnotation={setSelectedAnnotationId}
                 onDeleteAnnotation={handleDeleteAnnotation}
               />
