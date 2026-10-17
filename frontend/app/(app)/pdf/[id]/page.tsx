@@ -228,6 +228,7 @@ export default function PdfEditorPage() {
       setDirty(false);
       setSavedAt(Date.now());
     } catch (err) {
+      console.error('PDF save failed', err);
       setError(apiErrorMessage(err, tc('error')));
     }
   }
@@ -244,6 +245,7 @@ export default function PdfEditorPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
+      console.error('PDF download failed', err);
       setError(apiErrorMessage(err, tc('error')));
     }
   }
