@@ -107,7 +107,14 @@ export function PdfPageCanvas({
     }
     const [x, y] = screenToPdf(e.clientX, e.clientY);
     dragging.current = true;
-    overlayRef.current?.setPointerCapture(e.pointerId);
+    // Capture is a nice-to-have (keeps drag tracking working if the cursor leaves the overlay mid-gesture) — it can
+    // throw NotFoundError for a pointer the browser doesn't consider "active" (observed with a fast click-no-move
+    // gesture), which must never abort annotation creation below.
+    try {
+      overlayRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // Not fatal — see comment above.
+    }
     if (tool === 'highlight') {
       setDraftRect({ x0: x, y0: y, x1: x, y1: y });
     } else if (tool === 'draw') {
@@ -129,7 +136,11 @@ export function PdfPageCanvas({
 
   function handlePointerUp(e: React.PointerEvent) {
     dragging.current = false;
-    overlayRef.current?.releasePointerCapture(e.pointerId);
+    try {
+      overlayRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      // Nothing to release if capture was never acquired — see handlePointerDown's comment.
+    }
     if (tool === 'highlight' && draftRect) {
       const x = Math.min(draftRect.x0, draftRect.x1);
       const y = Math.min(draftRect.y0, draftRect.y1);
