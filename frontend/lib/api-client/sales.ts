@@ -174,6 +174,19 @@ export function deleteCustomerOrder(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`customer-orders/${id}`);
 }
 
+/** Adds a line to an existing order — rebuilds this order's material reservations server-side afterward. */
+export function addCustomerOrderItem(orderId: string, dto: CustomerOrderItemInput): Promise<CustomerOrder> {
+  return apiClient.post<CustomerOrder>(`customer-orders/${orderId}/items`, dto);
+}
+/** Quantity-only — 409 if the new qty drops below what's already been given to production for this line. */
+export function updateCustomerOrderItemQty(orderId: string, itemId: string, qty: number): Promise<CustomerOrder> {
+  return apiClient.patch<CustomerOrder>(`customer-orders/${orderId}/items/${itemId}`, { qty });
+}
+/** 409 once the line has any production batch or attributed WorkTaskItem — cancel those first. */
+export function deleteCustomerOrderItem(orderId: string, itemId: string): Promise<CustomerOrder> {
+  return apiClient.delete<CustomerOrder>(`customer-orders/${orderId}/items/${itemId}`);
+}
+
 export interface GiveItemToProductionInput {
   /** This batch's quantity. Defaults to the line's full remaining (not-yet-given) qty if omitted. */
   unitsPlanned?: number;

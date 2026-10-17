@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -11,7 +11,13 @@ import { ProductionOrdersService } from '../production/production-orders.service
 import { PayrollArticleLine } from '../hr/payroll.service';
 import { FinanceService } from '../finance/finance.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
-import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
+import {
+  AddCustomerOrderItemDto,
+  CreateCustomerOrderDto,
+  QueryCustomerOrdersDto,
+  UpdateCustomerOrderDto,
+  UpdateCustomerOrderItemDto,
+} from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
 
 /**
@@ -510,6 +516,148 @@ export class CustomerOrdersService {
       entityId: id,
       before: order,
     });
+  }
+
+  /**
+   * The order-status guard shared by add/update/delete-item below — same
+   * terminal-state check `cancel()`/`complete()` already use.
+   */
+  private assertOrderIsEditable(order: { status: string }) {
+    if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
+      throw new CodedBadRequestException('CUSTOMER_ORDER_CANNOT_EDIT_ITEMS_TERMINAL', `Cannot change line items on a ${order.status} order.`);
+    }
+  }
+
+  /**
+   * Release every order-level reservation (same two calls `cancel()`/
+   * `remove()` already make) and rebuild from the CURRENT item list
+   * (`ensureRequirementsAndAutoReserve` always recomputes its pool fresh
+   * from `order.items` — see that method's own header comment). This is
+   * deliberately a full release+rebuild rather than a delta/"shrink" —
+   * there's no existing partial-release entry point, and release+rebuild
+   * reuses two already-proven paths instead of inventing new reservation
+   * math. Known tradeoff: this resets any staff-made manual "Забронювати зі
+   * складу" decision (saveReservationDecisions) back to the automatic
+   * default, same as a freshly-created order would get — acceptable since
+   * it only happens when an item is actually added/edited/removed.
+   */
+  private async rebuildReservations(user: RequestUser, orderId: string): Promise<void> {
+    await this.stockReservationService.releaseAllForOrder(user, orderId);
+    await this.subAssemblyReservationService.releaseAllForOrder(user, orderId);
+    await this.shortageService.ensureRequirementsAndAutoReserve(user, orderId);
+  }
+
+  /** Adding a line to an existing order — same per-item shape `create()` uses, just against an order that already exists. */
+  async addItem(user: RequestUser, orderId: string, dto: AddCustomerOrderItemDto) {
+    const before = await this.findOne(user, orderId);
+    this.assertOrderIsEditable(before);
+
+    const item = await this.prisma.tenant.customerOrderItem.create({
+      data: {
+        customerOrderId: orderId,
+        assemblyId: dto.assemblyId,
+        qty: dto.qty,
+        plannedStartAt: dto.plannedStartAt,
+        plannedEndAt: dto.plannedEndAt,
+        itemDeadline: dto.itemDeadline,
+        plannedSubAssemblies: dto.subAssembliesToProduce && dto.subAssembliesToProduce.length > 0 ? (dto.subAssembliesToProduce as any) : undefined,
+        plannedSubAssembliesFromStock: dto.subAssembliesFromStock && dto.subAssembliesFromStock.length > 0 ? (dto.subAssembliesFromStock as any) : undefined,
+      } as any,
+    });
+
+    await this.rebuildReservations(user, orderId);
+
+    const after = await this.findOne(user, orderId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'customer_order_item.added',
+      entityType: 'CustomerOrderItem',
+      entityId: item.id,
+      after: item,
+    });
+    return after;
+  }
+
+  /**
+   * Quantity-only edit on an existing line. Blocked below what's already
+   * been given to production (`quantitySummary.inProduction`) — same guard
+   * `giveItemToProduction` applies in the other direction
+   * (CUSTOMER_ORDER_ITEM_BATCH_EXCEEDS_REMAINING) — since there's no stored
+   * counter to adjust, only a live-computed `remaining`, letting qty drop
+   * below `inProduction` would silently hide over-allocation rather than
+   * reject it.
+   */
+  async updateItemQty(user: RequestUser, orderId: string, itemId: string, dto: UpdateCustomerOrderItemDto) {
+    const before = await this.findOne(user, orderId);
+    this.assertOrderIsEditable(before);
+    const item = (before.items as any[]).find((i) => i.id === itemId);
+    if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
+
+    if (dto.qty < item.quantitySummary.inProduction - 1e-6) {
+      throw new CodedConflictException(
+        'CUSTOMER_ORDER_ITEM_QTY_BELOW_PRODUCTION',
+        `New quantity (${dto.qty}) is below what's already been given to production (${item.quantitySummary.inProduction}).`,
+      );
+    }
+
+    await this.prisma.tenant.customerOrderItem.update({ where: { id: itemId }, data: { qty: dto.qty } });
+    await this.rebuildReservations(user, orderId);
+
+    const after = await this.findOne(user, orderId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'customer_order_item.qty_updated',
+      entityType: 'CustomerOrderItem',
+      entityId: itemId,
+      before: item,
+      after: (after.items as any[]).find((i) => i.id === itemId),
+    });
+    return after;
+  }
+
+  /**
+   * Deleting a line is blocked once anything real points at it — a
+   * non-cancelled ProductionOrder batch (either as its main line,
+   * `customerOrderItemId`, or as a sub-assembly batch planned FOR it,
+   * `subAssemblyForItemId`) or a WorkTaskItem tag (general-work payroll
+   * attribution, see that model's own schema comment) — same
+   * "count dependents, throw before the destructive op" pattern
+   * `PurchaseOrdersService#remove` already uses for PO documents/expenses.
+   * Letting the delete cascade/SetNull through instead would silently
+   * orphan real batches or lose payroll attribution.
+   */
+  async removeItem(user: RequestUser, orderId: string, itemId: string) {
+    const before = await this.findOne(user, orderId);
+    this.assertOrderIsEditable(before);
+    const item = (before.items as any[]).find((i) => i.id === itemId);
+    if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
+
+    const [batchCount, subAssemblyBatchCount, workTaskCount] = await Promise.all([
+      this.prisma.tenant.productionOrder.count({ where: { customerOrderItemId: itemId, status: { not: 'CANCELLED' } } }),
+      this.prisma.tenant.productionOrder.count({ where: { subAssemblyForItemId: itemId, status: { not: 'CANCELLED' } } }),
+      this.prisma.tenant.workTaskItem.count({ where: { customerOrderItemId: itemId } }),
+    ]);
+    if (batchCount > 0 || subAssemblyBatchCount > 0 || workTaskCount > 0) {
+      throw new CodedConflictException(
+        'CUSTOMER_ORDER_ITEM_HAS_PRODUCTION_DATA',
+        'Cannot delete: this line already has production batches or attributed labor. Cancel those first.',
+      );
+    }
+
+    await this.prisma.tenant.customerOrderItem.delete({ where: { id: itemId } });
+    await this.rebuildReservations(user, orderId);
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'customer_order_item.removed',
+      entityType: 'CustomerOrderItem',
+      entityId: itemId,
+      before: item,
+    });
+    return this.findOne(user, orderId);
   }
 
   /**

@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Pencil, Trash2, Check, X } from 'lucide-react';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useCustomerOrder,
   useCancelCustomerOrder,
   useCompleteCustomerOrder,
   useDeleteCustomerOrder,
+  useUpdateCustomerOrderItemQty,
+  useDeleteCustomerOrderItem,
   useGiveItemToProduction,
   useGiveAllToProduction,
 } from '@/lib/hooks/use-sales';
@@ -40,6 +43,7 @@ import {
 import { CustomerOrderPrint } from '@/components/domain/sales/customer-order-print';
 import { OrderShipmentDialog } from '@/components/domain/sales/order-shipment-dialog';
 import { EditCustomerOrderDialog } from '@/components/domain/sales/edit-customer-order-dialog';
+import { AddCustomerOrderItemDialog } from '@/components/domain/sales/add-customer-order-item-dialog';
 import { ProductionProgressTree } from '@/components/domain/sales/production-progress-tree';
 import { ProductionProgressPrint } from '@/components/domain/sales/production-progress-print';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
@@ -266,6 +270,83 @@ function ItemBatchesCell({ item }: { item: CustomerOrderItem }) {
   );
 }
 
+/**
+ * Inline edit-qty cell — click the pencil to switch to a controlled
+ * `<Input>`, Check/X to save/cancel. Mutation ownership stays at the page
+ * level (passed in as `onSave`), same convention as `handleGiveItem` —
+ * this component only owns its own local editing/draft-value state, never
+ * the mutation itself.
+ */
+function ItemQtyCell({
+  item,
+  canEdit,
+  onSave,
+  pending,
+}: {
+  item: CustomerOrderItem;
+  canEdit: boolean;
+  onSave: (itemId: string, qty: number) => Promise<void>;
+  pending: boolean;
+}) {
+  const t = useTranslations('sales');
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(item.qty));
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  if (!canEdit || !editing) {
+    return (
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <span>{item.qty}</span>
+          {canEdit && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={() => {
+                setValue(String(item.qty));
+                setLocalError(null);
+                setEditing(true);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    );
+  }
+
+  async function handleSave() {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setLocalError(t('invalidQty'));
+      return;
+    }
+    try {
+      await onSave(item.id, parsed);
+      setEditing(false);
+    } catch {
+      // error already surfaced at page level — keep the field open to retry/cancel
+    }
+  }
+
+  return (
+    <TableCell>
+      <div className="flex items-center gap-1">
+        <Input type="number" step="any" min={0.001} className="h-7 w-20" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+        <Button size="icon" variant="ghost" className="h-6 w-6" loading={pending} onClick={handleSave}>
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditing(false)}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {localError && <p className="text-xs text-destructive">{localError}</p>}
+    </TableCell>
+  );
+}
+
 export default function CustomerOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -278,6 +359,8 @@ export default function CustomerOrderDetailPage() {
   const cancelOrder = useCancelCustomerOrder(params.id);
   const completeOrder = useCompleteCustomerOrder(params.id);
   const deleteOrder = useDeleteCustomerOrder();
+  const updateItemQty = useUpdateCustomerOrderItemQty(params.id);
+  const deleteItem = useDeleteCustomerOrderItem(params.id);
   const giveItem = useGiveItemToProduction(params.id);
   const giveAll = useGiveAllToProduction(params.id);
   const canManage = useHasPermission('customer-orders:manage');
@@ -285,6 +368,8 @@ export default function CustomerOrderDetailPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
 
   if (isLoading || !order) {
     return <LoadingBlock />;
@@ -329,6 +414,27 @@ export default function CustomerOrderDetailPage() {
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
       throw err;
+    }
+  }
+
+  async function handleUpdateItemQty(itemId: string, qty: number) {
+    setError(null);
+    try {
+      await updateItemQty.mutateAsync({ itemId, qty });
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+      throw err;
+    }
+  }
+
+  async function handleDeleteItem() {
+    if (!deleteItemId) return;
+    setError(null);
+    try {
+      await deleteItem.mutateAsync({ itemId: deleteItemId });
+      setDeleteItemId(null);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
     }
   }
 
@@ -517,6 +623,11 @@ export default function CustomerOrderDetailPage() {
           <CardTitle className="text-base">{t('items')}</CardTitle>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {order.items && order.items.length > 0 && <OrderPriceTotals order={order} items={order.items} />}
+            {canManage && (
+              <Button size="sm" variant="outline" onClick={() => setAddItemOpen(true)}>
+                {t('addItem')}
+              </Button>
+            )}
             {hasUngivenLines && canManage && (
               <Button size="sm" variant="outline" loading={giveAll.isPending} onClick={handleGiveAll}>
                 {t('giveAllToProduction')}
@@ -540,17 +651,25 @@ export default function CustomerOrderDetailPage() {
               {(order.items ?? []).map((item) => {
                 const batchIds = item.quantitySummary?.batches.map((b) => b.id) ?? [];
                 const remaining = item.quantitySummary?.remaining ?? 0;
+                const canDeleteItem = canManage && (item.quantitySummary?.inProduction ?? 0) === 0;
                 return (
                   <TableRow key={item.id}>
                     <TableCell><AssemblyCell assemblyId={item.assemblyId} /></TableCell>
-                    <TableCell>{item.qty}</TableCell>
+                    <ItemQtyCell item={item} canEdit={canManage} onSave={handleUpdateItemQty} pending={updateItemQty.isPending} />
                     <EstimatedPriceCell assemblyId={item.assemblyId} qty={Number(item.qty)} />
                     <ActualPriceCell batchIds={batchIds} />
                     <ItemBatchesCell item={item} />
                     <TableCell>
-                      {remaining > 0 && canManage && (
-                        <GiveToProductionDialog itemId={item.id} remaining={remaining} onSubmit={handleGiveItem} pending={giveItem.isPending} />
-                      )}
+                      <div className="flex items-center gap-1">
+                        {remaining > 0 && canManage && (
+                          <GiveToProductionDialog itemId={item.id} remaining={remaining} onSubmit={handleGiveItem} pending={giveItem.isPending} />
+                        )}
+                        {canDeleteItem && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => setDeleteItemId(item.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -580,6 +699,23 @@ export default function CustomerOrderDetailPage() {
       </CollapsibleCard>
 
       <EditCustomerOrderDialog open={editOpen} onOpenChange={setEditOpen} order={order} />
+      <AddCustomerOrderItemDialog orderId={order.id} open={addItemOpen} onOpenChange={setAddItemOpen} />
+      <Dialog open={deleteItemId != null} onOpenChange={(v) => { if (!v) setDeleteItemId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteItemConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('deleteItemConfirmDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{tc('cancel')}</Button>
+            </DialogClose>
+            <Button variant="destructive" loading={deleteItem.isPending} onClick={handleDeleteItem}>
+              {tc('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

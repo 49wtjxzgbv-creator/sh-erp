@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CustomerOrdersService } from './customer-orders.service';
 
 describe('CustomerOrdersService', () => {
@@ -58,11 +58,11 @@ describe('CustomerOrdersService', () => {
     prisma = {
       tenant: {
         customerOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        customerOrderItem: { create: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-        productionOrder: { findMany: jest.fn() },
+        customerOrderItem: { create: jest.fn(), update: jest.fn(), delete: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+        productionOrder: { findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         finishedGood: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]) },
         payrollEntry: { findMany: jest.fn().mockResolvedValue([]) },
-        workTaskItem: { findMany: jest.fn().mockResolvedValue([]) },
+        workTaskItem: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
         workTask: { findMany: jest.fn().mockResolvedValue([]) },
         assembly: { findMany: jest.fn().mockResolvedValue([]) },
         employee: { findMany: jest.fn().mockResolvedValue([]) },
@@ -218,6 +218,86 @@ describe('CustomerOrdersService', () => {
       expect(subAssemblyReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
       expect(prisma.tenant.customerOrder.delete).toHaveBeenCalledWith({ where: { id: 'co1' } });
       expect(releaseCallOrder).toBeLessThan(deleteCallOrder);
+    });
+  });
+
+  describe('addItem / updateItemQty / removeItem — editable line items', () => {
+    it.each(['COMPLETED', 'CANCELLED'])('addItem rejects a %s order', async (status) => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status });
+      await expect(service.addItem(user, 'co1', { assemblyId: 'a3', qty: 1 })).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.customerOrderItem.create).not.toHaveBeenCalled();
+    });
+
+    it('addItem creates the line, then releases+rebuilds this order\'s reservations from the new item list', async () => {
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item3', assemblyId: 'a3', qty: 1 });
+
+      await service.addItem(user, 'co1', { assemblyId: 'a3', qty: 1 });
+
+      expect(prisma.tenant.customerOrderItem.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ customerOrderId: 'co1', assemblyId: 'a3', qty: 1 }),
+      });
+      expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'customer_order_item.added' }));
+    });
+
+    it('updateItemQty rejects an item that does not belong to this order', async () => {
+      await expect(service.updateItemQty(user, 'co1', 'not-an-item', { qty: 5 })).rejects.toThrow(NotFoundException);
+    });
+
+    it('updateItemQty allows increasing/decreasing a line that has nothing in production yet (item1, inProduction=0)', async () => {
+      await service.updateItemQty(user, 'co1', 'item1', { qty: 1 });
+      expect(prisma.tenant.customerOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { qty: 1 } });
+      expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+    });
+
+    it('updateItemQty rejects dropping below what\'s already in production (item2 has a batch of 2)', async () => {
+      await expect(service.updateItemQty(user, 'co1', 'item2', { qty: 1 })).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.customerOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    it('updateItemQty allows raising a line that already has a batch, as long as it stays at/above inProduction', async () => {
+      await service.updateItemQty(user, 'co1', 'item2', { qty: 5 });
+      expect(prisma.tenant.customerOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item2' }, data: { qty: 5 } });
+    });
+
+    it.each(['COMPLETED', 'CANCELLED'])('updateItemQty rejects a %s order', async (status) => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status });
+      await expect(service.updateItemQty(user, 'co1', 'item1', { qty: 1 })).rejects.toThrow(BadRequestException);
+    });
+
+    it('removeItem rejects an item that does not belong to this order', async () => {
+      await expect(service.removeItem(user, 'co1', 'not-an-item')).rejects.toThrow(NotFoundException);
+    });
+
+    it('removeItem deletes a line with no production batches or attributed labor, then releases+rebuilds reservations', async () => {
+      await service.removeItem(user, 'co1', 'item1');
+
+      expect(prisma.tenant.customerOrderItem.delete).toHaveBeenCalledWith({ where: { id: 'item1' } });
+      expect(stockReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(subAssemblyReservationService.releaseAllForOrder).toHaveBeenCalledWith(user, 'co1');
+      expect(shortageService.ensureRequirementsAndAutoReserve).toHaveBeenCalledWith(user, 'co1');
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'customer_order_item.removed' }));
+    });
+
+    it('removeItem rejects a line that already has a non-cancelled ProductionOrder batch (item2)', async () => {
+      prisma.tenant.productionOrder.count.mockImplementation(({ where }: any) => Promise.resolve(where.customerOrderItemId === 'item2' ? 1 : 0));
+      await expect(service.removeItem(user, 'co1', 'item2')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.customerOrderItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('removeItem rejects a line that still has an attributed WorkTaskItem', async () => {
+      prisma.tenant.workTaskItem.count.mockResolvedValue(1);
+      await expect(service.removeItem(user, 'co1', 'item1')).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.customerOrderItem.delete).not.toHaveBeenCalled();
+    });
+
+    it.each(['COMPLETED', 'CANCELLED'])('removeItem rejects a %s order', async (status) => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ ...order, status });
+      await expect(service.removeItem(user, 'co1', 'item1')).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.customerOrderItem.delete).not.toHaveBeenCalled();
     });
   });
 

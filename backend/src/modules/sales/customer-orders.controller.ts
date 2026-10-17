@@ -6,7 +6,13 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import { CustomerOrdersService } from './customer-orders.service';
 import { SupplierRequestDocumentsPdfService } from './supplier-request-documents-pdf.service';
-import { CreateCustomerOrderDto, QueryCustomerOrdersDto, UpdateCustomerOrderDto } from './dto/customer-order.dto';
+import {
+  AddCustomerOrderItemDto,
+  CreateCustomerOrderDto,
+  QueryCustomerOrdersDto,
+  UpdateCustomerOrderDto,
+  UpdateCustomerOrderItemDto,
+} from './dto/customer-order.dto';
 import { GiveItemToProductionDto, GiveSubAssemblyToProductionDto } from './dto/give-to-production.dto';
 import { CreatePurchaseOrdersFromGroupsDto, SaveReservationDecisionsDto } from './dto/shortage-analysis.dto';
 import { GenerateSupplierRequestDocumentsPdfDto } from './dto/supplier-request-documents-pdf.dto';
@@ -68,6 +74,32 @@ export class CustomerOrdersController {
   @ApiOperation({ summary: 'Mark the order COMPLETED (manual staff action).' })
   async complete(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.customerOrdersService.complete(user, id);
+  }
+
+  @Post(':id/items')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({ summary: 'Add a new line to an existing order — rebuilds this order\'s material reservations afterward.' })
+  async addItem(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: AddCustomerOrderItemDto) {
+    return this.customerOrdersService.addItem(user, id, dto);
+  }
+
+  @Patch(':id/items/:itemId')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({ summary: 'Change a line\'s quantity — blocked below what has already been given to production.' })
+  async updateItemQty(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateCustomerOrderItemDto,
+  ) {
+    return this.customerOrdersService.updateItemQty(user, id, itemId, dto);
+  }
+
+  @Delete(':id/items/:itemId')
+  @RequirePermissions('customer-orders:manage')
+  @ApiOperation({ summary: 'Delete a line — blocked once it has production batches or attributed labor.' })
+  async removeItem(@CurrentUser() user: RequestUser, @Param('id') id: string, @Param('itemId') itemId: string) {
+    return this.customerOrdersService.removeItem(user, id, itemId);
   }
 
   @Post(':id/items/:itemId/give-to-production')

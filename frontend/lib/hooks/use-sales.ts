@@ -9,6 +9,9 @@ import {
   cancelCustomerOrder,
   completeCustomerOrder,
   deleteCustomerOrder,
+  addCustomerOrderItem,
+  updateCustomerOrderItemQty,
+  deleteCustomerOrderItem,
   giveItemToProduction,
   giveSubAssemblyToProduction,
   getItemProductionTree,
@@ -29,6 +32,7 @@ import {
   type QueryCustomerOrdersInput,
   type CreateCustomerOrderInput,
   type UpdateCustomerOrderInput,
+  type CustomerOrderItemInput,
   type GiveItemToProductionInput,
   type GiveSubAssemblyToProductionInput,
   type PurchaseOrderGroupInput,
@@ -102,6 +106,39 @@ export function useDeleteCustomerOrder() {
   return useMutation({
     mutationFn: (id: string) => deleteCustomerOrder(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customer-orders'] }),
+  });
+}
+
+export function useAddCustomerOrderItem(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CustomerOrderItemInput) => addCustomerOrderItem(orderId, dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-orders'] });
+      qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
+    },
+  });
+}
+
+export function useUpdateCustomerOrderItemQty(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, qty }: { itemId: string; qty: number }) => updateCustomerOrderItemQty(orderId, itemId, qty),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-orders'] });
+      qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
+    },
+  });
+}
+
+export function useDeleteCustomerOrderItem(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId }: { itemId: string }) => deleteCustomerOrderItem(orderId, itemId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customer-orders'] });
+      qc.invalidateQueries({ queryKey: customerOrderKey(orderId) });
+    },
   });
 }
 

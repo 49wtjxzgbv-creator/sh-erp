@@ -291,6 +291,18 @@ export class CustomerOrderHeaderDto extends ExtraCostsDto {
 /** Header-only update — item lines are immutable once created (mirrors AssemblyComponent/ProductionOrder's "no partial-edit" convention); cancel and recreate for a genuine line change. */
 export class UpdateCustomerOrderDto extends PartialType(CustomerOrderHeaderDto) {}
 
+/** Same shape as a line inside CreateCustomerOrderDto.items — adding a line to an existing order. */
+export class AddCustomerOrderItemDto extends CustomerOrderItemDto {}
+
+/** Quantity-only — see CustomerOrdersService#updateItemQty for why qty is the only mutable field on an existing line. */
+export class UpdateCustomerOrderItemDto {
+  @ApiProperty()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  qty!: number;
+}
+
 export class QueryCustomerOrdersDto {
   @ApiPropertyOptional({ enum: ['NEW', 'IN_PRODUCTION', 'COMPLETED', 'CANCELLED'] })
   @IsOptional()
