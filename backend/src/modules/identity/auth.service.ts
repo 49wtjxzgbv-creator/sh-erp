@@ -42,7 +42,7 @@ export class AuthService {
    * forced reset, no user-visible difference, per the owner's explicit
    * Phase 0 choice.
    */
-  async login(dto: LoginDto, ip?: string, device?: string): Promise<TokenPair & { userId: string; companyId: string }> {
+  async login(dto: LoginDto, ip?: string, device?: string, latitude?: number, longitude?: number): Promise<TokenPair & { userId: string; companyId: string }> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.active) {
       throw new CodedUnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password.');
@@ -72,7 +72,7 @@ export class AuthService {
       throw new CodedUnauthorizedException('AUTH_NO_COMPANY_ACCESS', 'You do not have access to this company.');
     }
 
-    const tokens = await this.issueTokenPair(user.id, company.id, user.email, membership.roleId, undefined, undefined, ip, device);
+    const tokens = await this.issueTokenPair(user.id, company.id, user.email, membership.roleId, undefined, undefined, ip, device, latitude, longitude);
     return { ...tokens, userId: user.id, companyId: company.id };
   }
 
@@ -256,6 +256,8 @@ export class AuthService {
     impersonation?: { impersonatedBy: string; absoluteExpiresAt: Date },
     ip?: string,
     device?: string,
+    latitude?: number,
+    longitude?: number,
   ): Promise<TokenPair> {
     const accessTtl = process.env.JWT_ACCESS_TTL ?? '15m';
     const accessToken = this.jwt.sign(
@@ -286,6 +288,8 @@ export class AuthService {
         // an unauthenticated endpoint (login), no legitimate browser sends
         // anywhere near this long.
         device: device?.slice(0, 500),
+        latitude,
+        longitude,
       },
     });
 

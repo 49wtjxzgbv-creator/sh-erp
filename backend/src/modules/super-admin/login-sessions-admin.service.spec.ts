@@ -82,6 +82,22 @@ describe('LoginSessionsAdminService', () => {
     expect(result.items[0].impersonatedBySuperAdminId).toBe('super-admin-1');
   });
 
+  it('passes through browser-reported latitude/longitude as numbers, null when absent (2026-10-17 — "геопозицію яку визначає браузер")', async () => {
+    prisma.refreshToken.findMany.mockResolvedValue([
+      row({ id: 'r1', familyId: 'fam1', createdAt: new Date(), latitude: 48.654062, longitude: 26.597517 }),
+      row({ id: 'r2', familyId: 'fam2', createdAt: new Date() }), // no GPS — e.g. denied by the browser
+    ]);
+
+    const result = await service.list(50, 0);
+
+    const withGps = result.items.find((i) => i.id === 'r1')!;
+    const withoutGps = result.items.find((i) => i.id === 'r2')!;
+    expect(withGps.latitude).toBe(48.654062);
+    expect(withGps.longitude).toBe(26.597517);
+    expect(withoutGps.latitude).toBeNull();
+    expect(withoutGps.longitude).toBeNull();
+  });
+
   it('only geolocates the current page of results, not the whole recent-history window', async () => {
     const now = new Date();
     prisma.refreshToken.findMany.mockResolvedValue([

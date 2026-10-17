@@ -89,4 +89,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'Quotation',
   'QuotationVersion',
   'QuotationVersionItem',
+  // PDF editor/library (2026-10-17)
+  'PdfDocument',
 ]);

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsLatitude, IsLongitude, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({ example: 'owner@example.com' })
@@ -20,4 +20,14 @@ export class LoginDto {
   })
   @IsString()
   companySlug!: string;
+
+  @ApiPropertyOptional({ description: 'Browser-reported GPS at login time (navigator.geolocation), best-effort — omitted entirely if denied/unavailable/timed out. Never required.' })
+  @IsOptional()
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ description: 'See latitude.' })
+  @IsOptional()
+  @IsLongitude()
+  longitude?: number;
 }

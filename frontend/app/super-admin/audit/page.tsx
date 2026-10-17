@@ -34,6 +34,8 @@ interface LoginSessionRow {
   device: string;
   city: string | null;
   country: string | null;
+  latitude: number | null;
+  longitude: number | null;
   impersonatedBySuperAdminId: string | null;
 }
 
@@ -84,7 +86,23 @@ export default function SuperAdminAuditPage() {
                   <TableCell className="text-slate-400">{s.companyName}</TableCell>
                   <TableCell className="text-slate-400">{s.ipAddress ?? '—'}</TableCell>
                   <TableCell className="text-slate-400">{s.device}</TableCell>
-                  <TableCell className="text-slate-400">{s.city || s.country ? `${s.city ?? ''}${s.city && s.country ? ', ' : ''}${s.country ?? ''}` : '—'}</TableCell>
+                  <TableCell className="text-slate-400">
+                    {s.city || s.country ? `${s.city ?? ''}${s.city && s.country ? ', ' : ''}${s.country ?? ''}` : '—'}
+                    {s.latitude != null && s.longitude != null && (
+                      <>
+                        {' · '}
+                        <a
+                          href={`https://www.google.com/maps?q=${s.latitude},${s.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                          title={t('loginGpsHint')}
+                        >
+                          {t('loginGps')}
+                        </a>
+                      </>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {loginSessions.length === 0 && (

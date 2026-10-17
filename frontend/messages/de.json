@@ -88,7 +88,8 @@
     "logout": "Abmelden",
     "sessionExpired": "Sitzung abgelaufen. Bitte erneut anmelden.",
     "tabCompany": "Unternehmen",
-    "tabSupplier": "Lieferantenportal"
+    "tabSupplier": "Lieferantenportal",
+    "locationHint": "Ihr Browser fragt möglicherweise nach dem Standortzugriff — das ist für das Anmeldeprotokoll; die Anmeldung funktioniert auch ohne."
   },
   "dashboard": {
     "welcome": "Willkommen",
@@ -1427,7 +1428,9 @@
     "removeMemberConfirm": "Remove {email} from this company? The user account itself stays â only access to this company is revoked.",
     "removeMemberFailed": "Failed to remove member.",
     "cannotRemoveLast": "Cannot remove the last remaining member of a company.",
-    "noMembers": "No members."
+    "noMembers": "No members.",
+    "loginGps": "GPS",
+    "loginGpsHint": "Genauer, vom Browser gemeldeter Standort zum Anmeldezeitpunkt"
   },
   "files": {
     "documents": "Documents",

@@ -377,6 +377,18 @@ model RefreshToken {
   impersonatedBy    String?   @db.Uuid
   absoluteExpiresAt DateTime? @db.Timestamptz(3)
 
+  // Browser-reported GPS (2026-10-17 — "просто також додай ще геопозицію
+  // туди яку визначає браузер", /super-admin/audit's login-sessions view).
+  // Set ONLY by an actual interactive login() — never by refresh() (a
+  // silent background rotation has no user-gesture context to prompt from)
+  // or issueImpersonationSession() (ip/device there are already documented
+  // as the ACTING SUPER ADMIN's own, not the impersonated user's; same
+  // reasoning applies here). Always optional — the browser's own permission
+  // prompt is the only consent gate, and login must never be blocked or
+  // delayed waiting on it, so a denial/timeout just leaves these null.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id]) // User is global — no composite FK

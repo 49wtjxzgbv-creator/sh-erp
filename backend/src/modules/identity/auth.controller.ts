@@ -19,7 +19,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials, or no access to that company.' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const { ip, device } = getClientMeta(req);
-    return this.authService.login(dto, ip, device);
+    return this.authService.login(dto, ip, device, dto.latitude, dto.longitude);
   }
 
   @Public()

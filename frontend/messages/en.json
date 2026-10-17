@@ -88,7 +88,8 @@
     "logout": "Sign out",
     "sessionExpired": "Session expired. Please sign in again.",
     "tabCompany": "Company",
-    "tabSupplier": "Supplier portal"
+    "tabSupplier": "Supplier portal",
+    "locationHint": "Your browser may ask for location access — this is for the login journal; signing in works fine without it."
   },
   "dashboard": {
     "welcome": "Welcome",
@@ -1427,7 +1428,9 @@
     "removeMemberConfirm": "Remove {email} from this company? The user account itself stays â only access to this company is revoked.",
     "removeMemberFailed": "Failed to remove member.",
     "cannotRemoveLast": "Cannot remove the last remaining member of a company.",
-    "noMembers": "No members."
+    "noMembers": "No members.",
+    "loginGps": "GPS",
+    "loginGpsHint": "Precise browser-reported location at login time"
   },
   "files": {
     "documents": "Documents",

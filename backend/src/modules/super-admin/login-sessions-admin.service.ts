@@ -41,6 +41,9 @@ export interface LoginSessionRow {
   device: string;
   city: string | null;
   country: string | null;
+  /** Browser-reported GPS at login (navigator.geolocation) — see the RefreshToken field's own schema.prisma comment. Null whenever the browser denied/couldn't provide it (always true for impersonation and, structurally, for every row that ISN'T the login() that started this session). Far more precise than city/country above when present, but not always available — show both, never assume one implies the other. */
+  latitude: number | null;
+  longitude: number | null;
   /** Set only when this session was minted by a Super Admin's "Увійти як" — ip/device above are then the ADMIN's own, not the impersonated user's (see AuthService#issueImpersonationSession). */
   impersonatedBySuperAdminId: string | null;
 }
@@ -65,6 +68,8 @@ export class LoginSessionsAdminService {
         ipAddress: true,
         device: true,
         impersonatedBy: true,
+        latitude: true,
+        longitude: true,
         user: { select: { email: true, fullName: true } },
       },
     });
@@ -114,6 +119,8 @@ export class LoginSessionsAdminService {
         device: parseUserAgent(r.device),
         city: g?.city ?? null,
         country: g?.country ?? null,
+        latitude: r.latitude ? Number(r.latitude) : null,
+        longitude: r.longitude ? Number(r.longitude) : null,
         impersonatedBySuperAdminId: r.impersonatedBy,
       };
     });

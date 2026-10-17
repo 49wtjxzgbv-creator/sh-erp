@@ -17,7 +17,7 @@ import { forwardClientMetaHeaders } from '@/lib/auth/forward-client-meta';
 const API_BASE = (process.env.INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
 export async function POST(request: NextRequest) {
-  let body: { companySlug?: string; email?: string; password?: string };
+  let body: { companySlug?: string; email?: string; password?: string; latitude?: number; longitude?: number };
   try {
     body = await request.json();
   } catch {

@@ -38,11 +38,41 @@ async function parseOrThrow(res: Response): Promise<SessionResponse> {
  * the data immediately rather than leaving stale data on screen while a
  * background refetch runs.
  */
+/**
+ * Best-effort browser GPS for the login-sessions security journal (2026-10-17
+ * — "просто також додай ще геопозицію туди яку визначає браузер",
+ * /super-admin/audit). Races the browser's own prompt against a short
+ * timeout so a slow/undecided permission dialog can never stall the actual
+ * login — denial, timeout, or an unsupported browser all just resolve to
+ * `null`, identical to "the user chose not to share it".
+ */
+function tryGetBrowserLocation(): Promise<{ latitude: number; longitude: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+      resolve(null);
+      return;
+    }
+    const timer = setTimeout(() => resolve(null), 4000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timer);
+        resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 300000 },
+    );
+  });
+}
+
 export async function login(companySlug: string, email: string, password: string): Promise<SessionResponse> {
+  const location = await tryGetBrowserLocation();
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ companySlug, email, password }),
+    body: JSON.stringify({ companySlug, email, password, ...(location ?? {}) }),
     credentials: 'include',
   });
   const session = await parseOrThrow(res);

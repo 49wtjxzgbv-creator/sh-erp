@@ -85,6 +85,7 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" loading={isSubmitting}>
               {t('loginButton')}
             </Button>
+            <p className="text-center text-xs text-muted-foreground">{t('locationHint')}</p>
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
             {t('noAccount')}{' '}

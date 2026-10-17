@@ -88,7 +88,8 @@
     "logout": "Wyloguj siÄ",
     "sessionExpired": "Sesja wygasÅa. Zaloguj siÄ ponownie.",
     "tabCompany": "Firma",
-    "tabSupplier": "Portal dostawcy"
+    "tabSupplier": "Portal dostawcy",
+    "locationHint": "Przeglądarka może zapytać o dostęp do lokalizacji — to do dziennika logowań; logowanie działa też bez tego."
   },
   "dashboard": {
     "welcome": "Witamy",
@@ -1427,7 +1428,9 @@
     "removeMemberConfirm": "Remove {email} from this company? The user account itself stays â only access to this company is revoked.",
     "removeMemberFailed": "Failed to remove member.",
     "cannotRemoveLast": "Cannot remove the last remaining member of a company.",
-    "noMembers": "No members."
+    "noMembers": "No members.",
+    "loginGps": "GPS",
+    "loginGpsHint": "Dokładna lokalizacja zgłoszona przez przeglądarkę w momencie logowania"
   },
   "files": {
     "documents": "Documents",
