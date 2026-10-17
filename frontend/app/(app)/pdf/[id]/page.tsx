@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getDocument } from 'pdfjs-dist';
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
+import { PDFDocument, rgb, degrees } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import {
@@ -67,6 +68,8 @@ export default function PdfEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const initialized = useRef(false);
+  /** Fetched once and reused across every export — see copy-pdf-font.js's own header comment for why a StandardFont can't be used here at all (Cyrillic). */
+  const fontBytesRef = useRef<ArrayBuffer | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -186,7 +189,11 @@ export default function PdfEditorPage() {
   /** Builds the final document from the working page order/rotation plus baked annotations — the single pipeline behind both Save and Download, so they can never silently diverge. */
   async function exportDocument(): Promise<Uint8Array<ArrayBuffer>> {
     const output = await PDFDocument.create();
-    const font = await output.embedFont(StandardFonts.Helvetica);
+    output.registerFontkit(fontkit);
+    if (!fontBytesRef.current) {
+      fontBytesRef.current = await fetch('/fonts/pdf-editor-cyrillic.woff').then((r) => r.arrayBuffer());
+    }
+    const font = await output.embedFont(fontBytesRef.current as ArrayBuffer);
     for (const wp of pages) {
       const source = sources[wp.sourceId];
       const [copied] = await output.copyPages(source.pdfLibDoc, [wp.sourceIndex]);
