@@ -687,6 +687,7 @@ export function PdfPageCanvas({
           <div
             className="pointer-events-auto absolute z-10 w-48 rounded-md border border-border bg-popover p-2 shadow-lg"
             style={{ left: viewport.convertToViewportPoint(pendingNote.x, pendingNote.y)[0], top: viewport.convertToViewportPoint(pendingNote.x, pendingNote.y)[1] }}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <textarea
               autoFocus
@@ -721,6 +722,7 @@ export function PdfPageCanvas({
               ref={pendingTextPopupRef}
               className="pointer-events-auto absolute z-10 border border-primary bg-white shadow-lg"
               style={{ left, top, width: Math.max(pendingText.width * zoom, 160) }}
+              onPointerDown={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-1 border-b border-border bg-secondary/40 px-1 py-1">
                 <div className="flex overflow-hidden rounded border border-input">
