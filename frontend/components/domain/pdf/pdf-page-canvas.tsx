@@ -1,9 +1,63 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PageViewport } from 'pdfjs-dist';
+import { OPS, type PageViewport } from 'pdfjs-dist';
 import { cn } from '@/lib/utils';
-import { newId, type Annotation, type AnnotationTool, type ExistingTextRun, type PdfSource, type WorkingPage } from './types';
+import { newId, type Annotation, type AnnotationTool, type ExistingImageRegion, type ExistingTextRun, type PdfSource, type WorkingPage } from './types';
+
+/**
+ * Recovers where each image XObject is actually drawn by walking the content
+ * stream's save/transform(cm)/restore stack to the CTM in effect at each
+ * `paintImageXObject`, then projecting the unit square (images are always
+ * painted into (0,0)-(1,1) under the CTM, by PDF convention) through it — the
+ * same "exact structural lookup, not a guessed rectangle" approach
+ * getTextContent() gives for free for text. Verified by hand against
+ * pdf-lib's own emitted operator list for `drawImage({x,y,width,height})`.
+ */
+function detectImageRegions(opList: { fnArray: number[]; argsArray: unknown[] }): ExistingImageRegion[] {
+  function multiply(m1: number[], m2: number[]): number[] {
+    return [
+      m1[0] * m2[0] + m1[1] * m2[2],
+      m1[0] * m2[1] + m1[1] * m2[3],
+      m1[2] * m2[0] + m1[3] * m2[2],
+      m1[2] * m2[1] + m1[3] * m2[3],
+      m1[4] * m2[0] + m1[5] * m2[2] + m2[4],
+      m1[4] * m2[1] + m1[5] * m2[3] + m2[5],
+    ];
+  }
+
+  const regions: ExistingImageRegion[] = [];
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack: number[][] = [];
+
+  for (let i = 0; i < opList.fnArray.length; i++) {
+    const fn = opList.fnArray[i];
+    if (fn === OPS.save) {
+      stack.push(ctm);
+    } else if (fn === OPS.restore) {
+      ctm = stack.pop() ?? ctm;
+    } else if (fn === OPS.transform) {
+      ctm = multiply(opList.argsArray[i] as number[], ctm);
+    } else if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) {
+      const corners = [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ].map(([ux, uy]) => [ux * ctm[0] + uy * ctm[2] + ctm[4], ux * ctm[1] + uy * ctm[3] + ctm[5]]);
+      const xs = corners.map((c) => c[0]);
+      const ys = corners.map((c) => c[1]);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      const width = Math.max(...xs) - x;
+      const height = Math.max(...ys) - y;
+      if (width > 2 && height > 2) regions.push({ x, y, width, height });
+    }
+  }
+  return regions;
+}
+
+type EditTarget = { kind: 'text'; run: ExistingTextRun } | { kind: 'image'; region: ExistingImageRegion };
 
 interface PdfPageCanvasProps {
   page: WorkingPage;
@@ -94,17 +148,18 @@ export function PdfPageCanvas({
   const overlayRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<PageViewport | null>(null);
   const textRunsRef = useRef<ExistingTextRun[]>([]);
+  const imageRegionsRef = useRef<ExistingImageRegion[]>([]);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   const [draftRect, setDraftRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [draftPath, setDraftPath] = useState<{ x: number; y: number }[] | null>(null);
   const [pendingNote, setPendingNote] = useState<{ x: number; y: number; text: string } | null>(null);
   const [pendingText, setPendingText] = useState<PendingTextEditor | null>(null);
-  const [hoverRun, setHoverRun] = useState<ExistingTextRun | null>(null);
+  const [hoverTarget, setHoverTarget] = useState<EditTarget | null>(null);
   const [dragPreview, setDragPreview] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const dragging = useRef(false);
   const shapeDragOrigin = useRef<{ x: number; y: number } | null>(null);
-  const editRunDrag = useRef<{ run: ExistingTextRun; startX: number; startY: number; curX: number; curY: number; moved: boolean } | null>(null);
+  const editDrag = useRef<{ target: EditTarget; startX: number; startY: number; curX: number; curY: number; moved: boolean } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +195,17 @@ export function PdfPageCanvas({
           runs.push({ str: item.str, x: t[4], y: t[5], width: item.width, height: item.height || fontSize, fontSize });
         }
         if (!cancelled) textRunsRef.current = runs;
-      } catch {
+      } catch (err) {
         // Text layer is a nice-to-have for the 'edit' tool — a page this fails on just can't have its existing text edited, everything else still works.
+        console.error('PDF text layer extraction failed (existing-text editing unavailable on this page)', err);
+      }
+
+      try {
+        const opList = await pdfPage.getOperatorList();
+        if (!cancelled) imageRegionsRef.current = detectImageRegions(opList);
+      } catch (err) {
+        // Same nice-to-have reasoning as the text layer above — a page this fails on just can't have its existing images auto-detected for moving.
+        console.error('PDF image region detection failed (existing-image auto-move unavailable on this page)', err);
       }
     })();
 
@@ -164,6 +228,23 @@ export function PdfPageCanvas({
       const r = runs[i];
       if (x >= r.x && x <= r.x + r.width && y >= r.y - r.height * 0.3 && y <= r.y + r.height * 1.1) return r;
     }
+    return null;
+  }
+
+  function findImageRegionAt(x: number, y: number): ExistingImageRegion | null {
+    const regions = imageRegionsRef.current;
+    for (let i = regions.length - 1; i >= 0; i--) {
+      const r = regions[i];
+      if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) return r;
+    }
+    return null;
+  }
+
+  function findEditTargetAt(x: number, y: number): EditTarget | null {
+    const run = findTextRunAt(x, y);
+    if (run) return { kind: 'text', run };
+    const region = findImageRegionAt(x, y);
+    if (region) return { kind: 'image', region };
     return null;
   }
 
@@ -234,10 +315,10 @@ export function PdfPageCanvas({
     } else if (tool === 'text') {
       openTextEditor({ x, y, width: 180, fontSize: 14, text: '' });
     } else if (tool === 'edit') {
-      const run = findTextRunAt(x, y);
-      if (run) {
+      const target = findEditTargetAt(x, y);
+      if (target) {
         dragging.current = true;
-        editRunDrag.current = { run, startX: x, startY: y, curX: x, curY: y, moved: false };
+        editDrag.current = { target, startX: x, startY: y, curX: x, curY: y, moved: false };
       } else {
         dragging.current = true;
         setDraftRect({ x0: x, y0: y, x1: x, y1: y });
@@ -254,13 +335,13 @@ export function PdfPageCanvas({
 
     if (tool === 'edit' && !dragging.current) {
       const [x, y] = screenToPdf(e.clientX, e.clientY);
-      setHoverRun(findTextRunAt(x, y));
+      setHoverTarget(findEditTargetAt(x, y));
     }
 
     if (!dragging.current) return;
     const [x, y] = screenToPdf(e.clientX, e.clientY);
-    if (editRunDrag.current) {
-      const d = editRunDrag.current;
+    if (editDrag.current) {
+      const d = editDrag.current;
       d.curX = x;
       d.curY = y;
       if (!d.moved && Math.hypot(x - d.startX, y - d.startY) > DRAG_THRESHOLD) d.moved = true;
@@ -274,11 +355,12 @@ export function PdfPageCanvas({
     }
   }
 
-  function captureRegionAsImage(x: number, y: number, width: number, height: number) {
+  /** Cuts the given PDF-space region's CURRENT pixels off the canvas, covers the original with a 'redact', and drops the cut bitmap at (region.x+dx, region.y+dy) as a new movable 'image' annotation. The one pipeline behind both the auto-detected-image drag (dx/dy = the drag delta) and the manual freehand fallback (dx=dy=0 — appears in place, move it afterward via "Вибір"). */
+  function captureAndPlaceImage(region: { x: number; y: number; width: number; height: number }, dx: number, dy: number) {
     const canvas = canvasRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !viewport || width < 4 || height < 4) return;
-    const r = rectToScreen({ x, y, width, height }, viewport);
+    if (!canvas || !viewport || region.width < 4 || region.height < 4) return;
+    const r = rectToScreen(region, viewport);
     if (r.width < 4 || r.height < 4) return;
     const temp = document.createElement('canvas');
     temp.width = Math.round(r.width);
@@ -287,8 +369,8 @@ export function PdfPageCanvas({
     if (!ctx) return;
     ctx.drawImage(canvas, r.left, r.top, r.width, r.height, 0, 0, temp.width, temp.height);
     const dataUrl = temp.toDataURL('image/png');
-    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'redact', x, y, width, height });
-    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'image', x, y, width, height, dataUrl });
+    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'redact', ...region });
+    onAddAnnotation({ id: newId(), pageKey: page.key, type: 'image', x: region.x + dx, y: region.y + dy, width: region.width, height: region.height, dataUrl });
   }
 
   function handlePointerUp(e: React.PointerEvent) {
@@ -314,32 +396,40 @@ export function PdfPageCanvas({
       // Nothing to release if capture was never acquired — see handlePointerDown's own comment.
     }
 
-    if (editRunDrag.current) {
-      const d = editRunDrag.current;
-      editRunDrag.current = null;
+    if (editDrag.current) {
+      const d = editDrag.current;
+      editDrag.current = null;
+      const dx = d.curX - d.startX;
+      const dy = d.curY - d.startY;
+
+      if (d.target.kind === 'image') {
+        if (d.moved) captureAndPlaceImage(d.target.region, dx, dy);
+        // A plain click on an existing image (no drag) is a no-op — there's no "retype" equivalent for a picture, so don't clutter the page with an unwanted cut.
+        return;
+      }
+
+      const run = d.target.run;
       if (d.moved) {
-        const dx = d.curX - d.startX;
-        const dy = d.curY - d.startY;
-        onAddAnnotation({ id: newId(), pageKey: page.key, type: 'redact', ...runRedactBox(d.run) });
+        onAddAnnotation({ id: newId(), pageKey: page.key, type: 'redact', ...runRedactBox(run) });
         onAddAnnotation({
           id: newId(),
           pageKey: page.key,
           type: 'text',
-          x: d.run.x + dx,
-          y: d.run.y + dy,
-          width: d.run.width,
-          fontSize: d.run.fontSize,
-          text: d.run.str,
+          x: run.x + dx,
+          y: run.y + dy,
+          width: run.width,
+          fontSize: run.fontSize,
+          text: run.str,
         });
       } else {
         openTextEditor({
-          x: d.run.x,
-          y: d.run.y,
-          width: Math.max(d.run.width, 120),
-          fontSize: d.run.fontSize,
-          text: d.run.str,
-          redactOriginal: runRedactBox(d.run),
-          originalText: d.run.str,
+          x: run.x,
+          y: run.y,
+          width: Math.max(run.width, 120),
+          fontSize: run.fontSize,
+          text: run.str,
+          redactOriginal: runRedactBox(run),
+          originalText: run.str,
         });
       }
       return;
@@ -360,7 +450,7 @@ export function PdfPageCanvas({
       const width = Math.abs(draftRect.x1 - draftRect.x0);
       const height = Math.abs(draftRect.y1 - draftRect.y0);
       setDraftRect(null);
-      captureRegionAsImage(x, y, width, height);
+      captureAndPlaceImage({ x, y, width, height }, 0, 0);
     } else if (tool === 'draw' && draftPath) {
       const path = draftPath;
       setDraftPath(null);
@@ -384,7 +474,7 @@ export function PdfPageCanvas({
           (tool === 'highlight' || tool === 'draw') && 'cursor-crosshair',
           tool === 'note' && 'cursor-copy',
           tool === 'text' && 'cursor-text',
-          tool === 'edit' && (hoverRun ? 'cursor-text' : 'cursor-crosshair'),
+          tool === 'edit' && (hoverTarget ? 'cursor-move' : 'cursor-crosshair'),
         )}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -392,8 +482,9 @@ export function PdfPageCanvas({
       >
         {viewport && (
           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={size.width} height={size.height}>
-            {tool === 'edit' && hoverRun && !editRunDrag.current && (() => {
-              const r = rectToScreen(runRedactBox(hoverRun), viewport);
+            {tool === 'edit' && hoverTarget && !editDrag.current && (() => {
+              const box = hoverTarget.kind === 'text' ? runRedactBox(hoverTarget.run) : hoverTarget.region;
+              const r = rectToScreen(box, viewport);
               return <rect x={r.left} y={r.top} width={r.width} height={r.height} fill="rgba(37, 99, 235, 0.12)" stroke="#2563eb" strokeDasharray="3 2" />;
             })()}
 
@@ -518,10 +609,13 @@ export function PdfPageCanvas({
                 strokeLinejoin="round"
               />
             )}
-            {editRunDrag.current?.moved && (() => {
-              const d = editRunDrag.current;
+            {editDrag.current?.moved && (() => {
+              const d = editDrag.current;
               if (!d) return null;
-              const r = rectToScreen({ ...runRedactBox(d.run), x: d.run.x + (d.curX - d.startX), y: d.run.y + (d.curY - d.startY) }, viewport);
+              const box = d.target.kind === 'text' ? runRedactBox(d.target.run) : d.target.region;
+              const dx = d.curX - d.startX;
+              const dy = d.curY - d.startY;
+              const r = rectToScreen({ ...box, x: box.x + dx, y: box.y + dy }, viewport);
               return <rect x={r.left} y={r.top} width={r.width} height={r.height} fill="rgba(37, 99, 235, 0.2)" stroke="#2563eb" strokeDasharray="3 2" />;
             })()}
           </svg>

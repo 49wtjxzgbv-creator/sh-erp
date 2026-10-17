@@ -52,6 +52,14 @@ export interface ExistingTextRun {
   fontSize: number;
 }
 
+/** One image XObject's placement, recovered by walking `getOperatorList()`'s save/transform/restore stack to the CTM at each `paintImageXObject` call and projecting the unit square through it — see pdf-page-canvas.tsx's own loader for why this (not a user-dragged rectangle) is how the "Редагувати" tool finds pictures to move. Already in the page's intrinsic PDF-space coordinates, same as ExistingTextRun. */
+export interface ExistingImageRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export function newId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;
 }

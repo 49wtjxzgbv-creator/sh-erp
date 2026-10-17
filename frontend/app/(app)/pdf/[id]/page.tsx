@@ -6,6 +6,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getDocument } from 'pdfjs-dist';
+
+/**
+ * Without these, pdfjs's getTextContent() — the "Редагувати" tool's entire hit-testing
+ * mechanism — silently returns an EMPTY text layer for a page whose font isn't embedded
+ * (e.g. a plain pdf-lib-generated PDF using a StandardFont) or that needs a non-Latin
+ * encoding map, rather than throwing — see scripts/copy-pdfjs-worker.js's own header
+ * comment for the full story and the real reproduction case this was found from.
+ */
+const PDFJS_LOAD_OPTIONS = { cMapUrl: '/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: '/pdfjs/standard_fonts/' };
 import { PDFDocument, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -18,6 +27,7 @@ import {
   Pencil,
   Type,
   Edit3,
+  ImagePlus,
   RotateCw,
   Trash2,
   FilePlus2,
@@ -50,6 +60,7 @@ export default function PdfEditorPage() {
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const mergeInputRef = useRef<HTMLInputElement>(null);
+  const addImageInputRef = useRef<HTMLInputElement>(null);
 
   const { data: documents } = usePdfDocuments();
   const { data: content, isLoading: contentLoading } = usePdfDocumentContent(id);
@@ -79,7 +90,7 @@ export default function PdfEditorPage() {
     (async () => {
       try {
         const bytes = new Uint8Array(content);
-        const pdfjsDoc = await getDocument({ data: bytes.slice() }).promise;
+        const pdfjsDoc = await getDocument({ data: bytes.slice(), ...PDFJS_LOAD_OPTIONS }).promise;
         const pdfLibDoc = await PDFDocument.load(bytes.slice());
         const sourceId = 'main';
         setSources({ [sourceId]: { id: sourceId, pdfjsDoc, pdfLibDoc } });
@@ -181,6 +192,54 @@ export default function PdfEditorPage() {
       }));
       setPages((prev) => [...prev, ...newPages]);
       setDirty(true);
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  /** Places a user-picked photo on the active page as a normal draggable/resizable 'image' annotation — the exact same data shape the "Редагувати" tool's cut-and-move produces, so there's nothing special about an inserted-vs-cut image downstream (export, drag, delete all already handle it). */
+  async function handleAddImageFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activePage || !activeSource) return;
+    setError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error('File read failed'));
+        reader.readAsDataURL(file);
+      });
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Image failed to load'));
+        el.src = dataUrl;
+      });
+
+      // Normalize to PNG via a canvas round-trip — pdf-lib needs to know up front whether to
+      // embedPng or embedJpg, and this handles any browser-supported source format uniformly
+      // (same normalization the "Редагувати" tool's cut-and-move already does for captured pixels).
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
+      ctx.drawImage(img, 0, 0);
+      const pngDataUrl = canvas.toDataURL('image/png');
+
+      const pdfPage = await activeSource.pdfjsDoc.getPage(activePage.sourceIndex + 1);
+      const [, , pageWidth, pageHeight] = pdfPage.view;
+      const scale = Math.min(1, (pageWidth * 0.5) / img.naturalWidth, (pageHeight * 0.5) / img.naturalHeight);
+      const width = img.naturalWidth * scale;
+      const height = img.naturalHeight * scale;
+      const x = (pageWidth - width) / 2;
+      const y = (pageHeight - height) / 2;
+
+      const annotationId = newId();
+      handleAddAnnotation({ id: annotationId, pageKey: activePage.key, type: 'image', x, y, width, height, dataUrl: pngDataUrl });
+      setSelectedAnnotationId(annotationId);
+      setTool('select');
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
@@ -359,6 +418,12 @@ export default function PdfEditorPage() {
           {t('mergeFile')}
         </Button>
         <input ref={mergeInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleMergeFileSelected} />
+
+        <Button variant="outline" size="sm" onClick={() => addImageInputRef.current?.click()} disabled={!activePageKey}>
+          <ImagePlus className="mr-2 h-4 w-4" />
+          {t('toolAddImage')}
+        </Button>
+        <input ref={addImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleAddImageFileSelected} />
 
         <span className="ml-auto text-xs tabular-nums text-muted-foreground">
           {activePageIndex + 1} / {pages.length}

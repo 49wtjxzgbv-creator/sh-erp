@@ -1981,6 +1981,7 @@
     "cannotDeleteLastPage": "Nie można usunąć ostatniej strony dokumentu",
     "toolText": "Tekst",
     "toolEdit": "Edytuj",
-    "editToolHint": "Kliknij istniejący tekst, aby go przepisać, albo przeciągnij, aby go przenieść. Przeciągnij po obrazie lub innym obszarze, aby go wyciąć i przenieść."
+    "editToolHint": "Kliknij istniejący tekst lub obraz, aby go przepisać albo przeciągnąć w inne miejsce. Dla innej zawartości przeciągnij prostokąt, aby ją wyciąć.",
+    "toolAddImage": "Dodaj zdjęcie"
   }
 }
