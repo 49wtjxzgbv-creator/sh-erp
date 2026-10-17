@@ -260,7 +260,20 @@
     "newPassword": "Новий пароль",
     "importFromLegacy": "Джерела імпорту",
     "importFromLegacyDescription": "Підключіть Google Таблицю через SH ERP Import Connector — універсальний конектор для будь-якої сумісної таблиці.",
-    "openWizard": "Керувати джерелами"
+    "openWizard": "Керувати джерелами",
+    "myLocation": "Моя геопозиція",
+    "myLocationDescription": "Визначити ваше точне місцезнаходження через браузер. Браузер запитає дозвіл — без вашого підтвердження нічого не визначається, і дані нікуди не надсилаються та не зберігаються.",
+    "getLocationButton": "Визначити моє місцезнаходження",
+    "latitude": "Широта",
+    "longitude": "Довгота",
+    "accuracy": "Точність",
+    "capturedAt": "Визначено",
+    "openInMaps": "Відкрити в Google Maps",
+    "metersUnit": "м",
+    "locationPermissionDenied": "Доступ до геопозиції відхилено в браузері.",
+    "locationTimeout": "Не вдалося визначити місцезнаходження — перевищено час очікування.",
+    "locationUnavailable": "Не вдалося визначити місцезнаходження.",
+    "locationUnsupported": "Цей браузер не підтримує визначення геопозиції."
   },
   "inventory": {
     "title": "Склад",

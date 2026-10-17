@@ -259,7 +259,20 @@
     "newPassword": "New password",
     "importFromLegacy": "Import sources",
     "importFromLegacyDescription": "Connect a Google Sheet via the SH ERP Import Connector â a universal connector for any compatible spreadsheet.",
-    "openWizard": "Manage sources"
+    "openWizard": "Manage sources",
+    "myLocation": "My location",
+    "myLocationDescription": "Get your precise location through the browser. The browser will ask for permission — nothing is determined without your consent, and the data is never sent anywhere or stored.",
+    "getLocationButton": "Get my location",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "accuracy": "Accuracy",
+    "capturedAt": "Captured",
+    "openInMaps": "Open in Google Maps",
+    "metersUnit": "m",
+    "locationPermissionDenied": "Location access was denied in the browser.",
+    "locationTimeout": "Couldn't determine location — timed out.",
+    "locationUnavailable": "Couldn't determine location.",
+    "locationUnsupported": "This browser doesn't support geolocation."
   },
   "inventory": {
     "title": "Inventory",

@@ -259,7 +259,20 @@
     "newPassword": "New password",
     "importFromLegacy": "Å¹rÃ³dÅa importu",
     "importFromLegacyDescription": "PoÅÄcz arkusz Google przez SH ERP Import Connector â uniwersalny konektor dla dowolnego zgodnego arkusza.",
-    "openWizard": "ZarzÄdzaj ÅºrÃ³dÅami"
+    "openWizard": "ZarzÄdzaj ÅºrÃ³dÅami",
+    "myLocation": "Moja lokalizacja",
+    "myLocationDescription": "Określ swoją dokładną lokalizację przez przeglądarkę. Przeglądarka poprosi o zgodę — bez Twojej zgody nic nie zostanie określone, a dane nigdzie nie są wysyłane ani zapisywane.",
+    "getLocationButton": "Określ moją lokalizację",
+    "latitude": "Szerokość geograficzna",
+    "longitude": "Długość geograficzna",
+    "accuracy": "Dokładność",
+    "capturedAt": "Określono",
+    "openInMaps": "Otwórz w Google Maps",
+    "metersUnit": "m",
+    "locationPermissionDenied": "Dostęp do lokalizacji został odrzucony w przeglądarce.",
+    "locationTimeout": "Nie udało się określić lokalizacji — przekroczono czas oczekiwania.",
+    "locationUnavailable": "Nie udało się określić lokalizacji.",
+    "locationUnsupported": "Ta przeglądarka nie obsługuje geolokalizacji."
   },
   "inventory": {
     "title": "Inventory",

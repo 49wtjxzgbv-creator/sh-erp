@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, MapPin, ExternalLink } from 'lucide-react';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import {
@@ -38,6 +38,7 @@ export default function SettingsPage() {
       {canManageSettings && companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
       {canManageSettings && <RequisitesCard t={t} tc={tc} />}
       {canManageImport && <LegacyImportCard t={t} />}
+      <MyLocationCard t={t} />
       <ChangePasswordCard t={t} tc={tc} />
     </div>
   );
@@ -57,6 +58,91 @@ function LegacyImportCard({ t }: { t: ReturnType<typeof useTranslations> }) {
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * "отримувати точну геопозицію користувачів" (curiosity, single-user usage —
+ * not tied to any tracking/attendance/delivery workflow) — the browser's own
+ * Geolocation API, which is the privacy-respecting choice BY CONSTRUCTION:
+ * the browser itself shows a one-time native permission prompt per origin,
+ * so this can never silently read a location the user didn't just explicitly
+ * approve. Deliberately does NOT send the result anywhere — no backend
+ * endpoint, no persistence — since there's no stated purpose that would
+ * justify storing it; add that only once a real use case needs it.
+ */
+function MyLocationCard({ t }: { t: ReturnType<typeof useTranslations> }) {
+  const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number; capturedAt: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleLocate() {
+    if (!('geolocation' in navigator)) {
+      setError(t('locationUnsupported'));
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLoading(false);
+        setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, capturedAt: pos.timestamp });
+      },
+      (err) => {
+        setLoading(false);
+        if (err.code === err.PERMISSION_DENIED) setError(t('locationPermissionDenied'));
+        else if (err.code === err.TIMEOUT) setError(t('locationTimeout'));
+        else setError(t('locationUnavailable'));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('myLocation')}</CardTitle>
+        <CardDescription>{t('myLocationDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button type="button" variant="outline" onClick={handleLocate} loading={loading}>
+          <MapPin className="mr-2 h-4 w-4" />
+          {t('getLocationButton')}
+        </Button>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {location && (
+          <div className="max-w-sm space-y-1.5 rounded-md border border-border bg-secondary/30 p-3 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{t('latitude')}</span>
+              <span className="tabular-nums">{location.latitude.toFixed(6)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{t('longitude')}</span>
+              <span className="tabular-nums">{location.longitude.toFixed(6)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{t('accuracy')}</span>
+              <span className="tabular-nums">
+                ±{Math.round(location.accuracy)} {t('metersUnit')}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{t('capturedAt')}</span>
+              <span className="tabular-nums">{new Date(location.capturedAt).toLocaleString()}</span>
+            </div>
+            <a
+              href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 pt-1 text-primary hover:underline"
+            >
+              {t('openInMaps')}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
