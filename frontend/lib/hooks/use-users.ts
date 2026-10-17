@@ -12,6 +12,7 @@ import {
   unlinkMyTelegram,
   generateTelegramPairingCodeForUser,
   unlinkTelegramForUser,
+  getMyIpLocation,
   type InviteUserInput,
   type ChangePasswordInput,
 } from '@/lib/api-client/users';
@@ -62,6 +63,11 @@ export function useDeactivateUser() {
 
 export function useChangeOwnPassword() {
   return useMutation({ mutationFn: (dto: ChangePasswordInput) => changeOwnPassword(dto) });
+}
+
+/** "а додай ще по айпі" (2026-10-17) — lazy, click-triggered like the browser-Geolocation card next to it, even though no permission prompt is actually needed server-side (keeps the two cards' UX consistent). */
+export function useMyIpLocation() {
+  return useMutation({ mutationFn: () => getMyIpLocation() });
 }
 
 /** "Сповіщення керівнику в Telegram" (2026-10-01) — self-service, no special permission required; invalidates useMyProfile so the /notifications page's paired badge refreshes right away. */

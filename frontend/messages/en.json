@@ -272,7 +272,15 @@
     "locationPermissionDenied": "Location access was denied in the browser.",
     "locationTimeout": "Couldn't determine location — timed out.",
     "locationUnavailable": "Couldn't determine location.",
-    "locationUnsupported": "This browser doesn't support geolocation."
+    "locationUnsupported": "This browser doesn't support geolocation.",
+    "ipLocation": "By IP address",
+    "ipLocationDescription": "Approximate (city-level) location from your current IP address — resolved server-side from a local database, no browser permission prompt and no third-party service call.",
+    "getIpLocationButton": "Look up by IP",
+    "ipLocationNotFound": "Couldn't determine a location for this IP address.",
+    "ipAddress": "IP address",
+    "city": "City",
+    "region": "Region",
+    "country": "Country"
   },
   "inventory": {
     "title": "Inventory",

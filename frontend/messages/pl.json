@@ -272,7 +272,15 @@
     "locationPermissionDenied": "Dostęp do lokalizacji został odrzucony w przeglądarce.",
     "locationTimeout": "Nie udało się określić lokalizacji — przekroczono czas oczekiwania.",
     "locationUnavailable": "Nie udało się określić lokalizacji.",
-    "locationUnsupported": "Ta przeglądarka nie obsługuje geolokalizacji."
+    "locationUnsupported": "Ta przeglądarka nie obsługuje geolokalizacji.",
+    "ipLocation": "Według adresu IP",
+    "ipLocationDescription": "Przybliżona (na poziomie miasta) lokalizacja na podstawie Twojego bieżącego adresu IP — określana po stronie serwera z lokalnej bazy danych, bez pytania o zgodę w przeglądarce i bez wywołania usługi zewnętrznej.",
+    "getIpLocationButton": "Sprawdź po IP",
+    "ipLocationNotFound": "Nie udało się określić lokalizacji dla tego adresu IP.",
+    "ipAddress": "Adres IP",
+    "city": "Miasto",
+    "region": "Region",
+    "country": "Kraj"
   },
   "inventory": {
     "title": "Inventory",

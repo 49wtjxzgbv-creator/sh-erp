@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { getClientMeta } from '../../common/request-client-meta';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -47,6 +49,12 @@ export class UsersController {
   @ApiOperation({ summary: 'Your own profile (id/fullName/email) — no special permission required beyond being authenticated.' })
   async me(@CurrentUser() user: RequestUser) {
     return this.usersService.me(user);
+  }
+
+  @Get('me/ip-location')
+  @ApiOperation({ summary: 'Approximate (city-level) location derived from your current request IP via a local GeoLite2 lookup — no external service call, no permission prompt. No special permission required beyond being authenticated.' })
+  async myIpLocation(@Req() req: Request) {
+    return this.usersService.ipLocation(getClientMeta(req).ip);
   }
 
   @Patch('me/password')

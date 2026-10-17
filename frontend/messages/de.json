@@ -272,7 +272,15 @@
     "locationPermissionDenied": "Der Standortzugriff wurde im Browser verweigert.",
     "locationTimeout": "Standort konnte nicht ermittelt werden — Zeitüberschreitung.",
     "locationUnavailable": "Standort konnte nicht ermittelt werden.",
-    "locationUnsupported": "Dieser Browser unterstützt keine Standortbestimmung."
+    "locationUnsupported": "Dieser Browser unterstützt keine Standortbestimmung.",
+    "ipLocation": "Nach IP-Adresse",
+    "ipLocationDescription": "Ungefährer Standort (auf Stadtebene) anhand Ihrer aktuellen IP-Adresse — serverseitig aus einer lokalen Datenbank ermittelt, ohne Browser-Berechtigungsabfrage und ohne Aufruf eines Drittanbieterdienstes.",
+    "getIpLocationButton": "Nach IP ermitteln",
+    "ipLocationNotFound": "Für diese IP-Adresse konnte kein Standort ermittelt werden.",
+    "ipAddress": "IP-Adresse",
+    "city": "Stadt",
+    "region": "Region",
+    "country": "Land"
   },
   "inventory": {
     "title": "Inventory",

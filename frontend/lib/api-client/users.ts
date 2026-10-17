@@ -86,6 +86,22 @@ export function changeOwnPassword(dto: ChangePasswordInput): Promise<{ changed: 
   return apiClient.patch<{ changed: boolean }>('users/me/password', dto);
 }
 
+/** "а додай ще по айпі" (2026-10-17) — a local GeoLite2 lookup against the request's own IP, no permission prompt, no third-party call. City-level at best; the companion to the browser Geolocation card, not a replacement for it. */
+export interface MyIpLocation {
+  ip: string | null;
+  found: boolean;
+  country?: string | null;
+  region?: string | null;
+  city?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  timezone?: string | null;
+}
+
+export function getMyIpLocation(): Promise<MyIpLocation> {
+  return apiClient.get<MyIpLocation>('users/me/ip-location');
+}
+
 /** Self-service Telegram notification opt-in (2026-10-01) — any authenticated user may pair, no special permission required; whether notifications actually arrive is re-checked live against production-executions:confirm at send time. */
 export interface TelegramPairingCode {
   pairingCode: string;

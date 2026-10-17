@@ -14,7 +14,7 @@ import {
   useCompanyRequisites,
   useUpdateCompanyRequisites,
 } from '@/lib/hooks/use-settings';
-import { useChangeOwnPassword } from '@/lib/hooks/use-users';
+import { useChangeOwnPassword, useMyIpLocation } from '@/lib/hooks/use-users';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,7 +38,7 @@ export default function SettingsPage() {
       {canManageSettings && companyId && <BrandingCard t={t} tc={tc} companyId={companyId} />}
       {canManageSettings && <RequisitesCard t={t} tc={tc} />}
       {canManageImport && <LegacyImportCard t={t} />}
-      <MyLocationCard t={t} />
+      <MyLocationCard t={t} tc={tc} />
       <ChangePasswordCard t={t} tc={tc} />
     </div>
   );
@@ -73,10 +73,12 @@ function LegacyImportCard({ t }: { t: ReturnType<typeof useTranslations> }) {
  * endpoint, no persistence — since there's no stated purpose that would
  * justify storing it; add that only once a real use case needs it.
  */
-function MyLocationCard({ t }: { t: ReturnType<typeof useTranslations> }) {
+function MyLocationCard({ t, tc }: { t: ReturnType<typeof useTranslations>; tc: ReturnType<typeof useTranslations> }) {
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number; capturedAt: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const apiErrorMessage = useApiErrorMessage();
+  const ipLocation = useMyIpLocation();
 
   function handleLocate() {
     if (!('geolocation' in navigator)) {
@@ -143,6 +145,54 @@ function MyLocationCard({ t }: { t: ReturnType<typeof useTranslations> }) {
             </a>
           </div>
         )}
+
+        <div className="border-t border-border pt-4">
+          <p className="mb-2 text-sm font-medium">{t('ipLocation')}</p>
+          <p className="mb-3 text-xs text-muted-foreground">{t('ipLocationDescription')}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            loading={ipLocation.isPending}
+            onClick={() => ipLocation.mutate()}
+          >
+            <MapPin className="mr-2 h-4 w-4" />
+            {t('getIpLocationButton')}
+          </Button>
+          {ipLocation.isError && <p className="mt-2 text-sm text-destructive">{apiErrorMessage(ipLocation.error, tc('error'))}</p>}
+          {ipLocation.data && !ipLocation.data.found && <p className="mt-2 text-sm text-muted-foreground">{t('ipLocationNotFound')}</p>}
+          {ipLocation.data?.found && (
+            <div className="mt-3 max-w-sm space-y-1.5 rounded-md border border-border bg-secondary/30 p-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">{t('ipAddress')}</span>
+                <span className="tabular-nums">{ipLocation.data.ip}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">{t('city')}</span>
+                <span>{ipLocation.data.city || '—'}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">{t('region')}</span>
+                <span>{ipLocation.data.region || '—'}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">{t('country')}</span>
+                <span>{ipLocation.data.country || '—'}</span>
+              </div>
+              {ipLocation.data.latitude != null && ipLocation.data.longitude != null && (
+                <a
+                  href={`https://www.google.com/maps?q=${ipLocation.data.latitude},${ipLocation.data.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 pt-1 text-primary hover:underline"
+                >
+                  {t('openInMaps')}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

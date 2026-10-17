@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
+import geoip from 'geoip-lite';
 import { randomBytes, randomInt } from 'node:crypto';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -221,6 +222,32 @@ export class UsersService {
     const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
     if (!dbUser) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
     return { id: dbUser.id, fullName: dbUser.fullName, email: dbUser.email, telegramPaired: Boolean(dbUser.telegramChatId) };
+  }
+
+  /**
+   * "а чому браузер запитує" / "а додай ще по айпі" (2026-10-17) — a second,
+   * no-permission-prompt-needed location source alongside the frontend's own
+   * browser Geolocation card: a local MaxMind GeoLite2 lookup (the
+   * `geoip-lite` package ships its own data file, no network call, no
+   * third-party service ever sees this IP) against whatever IP the current
+   * request actually arrived from. City-level at best — this is NOT a
+   * substitute for the GPS-based card, just the honest "here's what your IP
+   * alone reveals, without asking" counterpart to it.
+   */
+  ipLocation(ip: string | undefined) {
+    const clean = ip?.replace(/^::ffff:/, '');
+    const result = clean ? geoip.lookup(clean) : null;
+    if (!result) return { ip: clean ?? null, found: false as const };
+    return {
+      ip: clean ?? null,
+      found: true as const,
+      country: result.country || null,
+      region: result.region || null,
+      city: result.city || null,
+      latitude: result.ll?.[0] ?? null,
+      longitude: result.ll?.[1] ?? null,
+      timezone: result.timezone || null,
+    };
   }
 
   async changeOwnPassword(user: RequestUser, dto: ChangePasswordDto) {
