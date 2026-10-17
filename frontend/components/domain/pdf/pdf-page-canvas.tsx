@@ -127,8 +127,9 @@ export function PdfPageCanvas({
     }
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(e: React.PointerEvent) {
     dragging.current = false;
+    overlayRef.current?.releasePointerCapture(e.pointerId);
     if (tool === 'highlight' && draftRect) {
       const x = Math.min(draftRect.x0, draftRect.x1);
       const y = Math.min(draftRect.y0, draftRect.y1);
