@@ -329,6 +329,107 @@ describe('AssembliesService', () => {
     });
   });
 
+  describe('compareCostToGermanPrice — line-by-line cost vs German price comparison (2026-10-17 user request)', () => {
+    it('computes lineDelta per PRODUCT line; own labor/packaging/delivery/other cost counts only on the cost side', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        laborCostPerUnit: 10,
+        packagingCostPerUnit: 0,
+        deliveryCostPerUnit: 0,
+        otherCostPerUnit: 0,
+        germanPriceEur: 50,
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 2 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 5, germanPriceInclVat: 8 });
+
+      const result = await service.compareCostToGermanPrice(user, 'a1');
+
+      expect(result.costPerUnit).toBe(20); // 10 own labor + 2*5 product
+      expect(result.freshGermanPricePerUnit).toBe(16); // 2*8 — no labor equivalent at all
+      expect(result.ownLaborCost).toBe(10);
+      expect(result.lines[0]).toMatchObject({ unitCost: 5, unitGermanPrice: 8, lineCost: 10, lineGermanPrice: 16, lineDelta: 6, germanPriceMissing: false });
+      expect(result.storedGermanPriceEur).toBe(50);
+      expect(result.isStoredGermanPriceStale).toBe(true); // saved 50 no longer matches a fresh 16
+    });
+
+    it('for an ASSEMBLY line, uses the sub-assembly\'s FULL recursive cost but its own one-level germanPriceEur (never derived from the sub\'s own components)', async () => {
+      prisma.tenant.assembly.findUnique.mockImplementation(({ where }: any) => {
+        if (where.id === 'parent') {
+          return Promise.resolve({
+            id: 'parent',
+            laborCostPerUnit: 0,
+            packagingCostPerUnit: 0,
+            deliveryCostPerUnit: 0,
+            otherCostPerUnit: 0,
+            germanPriceEur: null,
+            components: [{ componentType: 'ASSEMBLY', subAssemblyId: 'child', qtyPerUnit: 2 }],
+          });
+        }
+        if (where.id === 'child') {
+          return Promise.resolve({
+            id: 'child',
+            laborCostPerUnit: 1,
+            packagingCostPerUnit: 0,
+            deliveryCostPerUnit: 0,
+            otherCostPerUnit: 0,
+            germanPriceEur: 7,
+            components: [{ componentType: 'PRODUCT', productId: 'deep', qtyPerUnit: 1 }],
+          });
+        }
+        return Promise.resolve(null);
+      });
+      // germanPriceInclVat: 999 must be IGNORED — the ASSEMBLY line's own
+      // German price comes from child.germanPriceEur (7), never re-derived
+      // from this deep product.
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 3, germanPriceInclVat: 999 });
+
+      const result = await service.compareCostToGermanPrice(user, 'parent');
+
+      // child cost = 1 (own labor) + 3 (product) = 4; parent cost = 2 * 4 = 8
+      expect(result.costPerUnit).toBe(8);
+      expect(result.lines[0].unitCost).toBe(4);
+      expect(result.lines[0].unitGermanPrice).toBe(7);
+      expect(result.freshGermanPricePerUnit).toBe(14); // 2 * 7
+    });
+
+    it('flags germanPriceMissing per line and leaves isStoredGermanPriceStale=false when nothing is saved yet', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        laborCostPerUnit: 0,
+        packagingCostPerUnit: 0,
+        deliveryCostPerUnit: 0,
+        otherCostPerUnit: 0,
+        germanPriceEur: null,
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 5, germanPriceInclVat: null });
+
+      const result = await service.compareCostToGermanPrice(user, 'a1');
+
+      expect(result.lines[0].germanPriceMissing).toBe(true);
+      expect(result.freshGermanPriceComplete).toBe(false);
+      expect(result.storedGermanPriceEur).toBeNull();
+      expect(result.isStoredGermanPriceStale).toBe(false); // nothing stored, so nothing to call stale
+    });
+
+    it('does not flag staleness for a cent of rounding drift', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        laborCostPerUnit: 0,
+        packagingCostPerUnit: 0,
+        deliveryCostPerUnit: 0,
+        otherCostPerUnit: 0,
+        germanPriceEur: 16.005,
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 5, germanPriceInclVat: 16 });
+
+      const result = await service.compareCostToGermanPrice(user, 'a1');
+
+      expect(result.isStoredGermanPriceStale).toBe(false);
+    });
+  });
+
   describe('checkAvailability / produce', () => {
     beforeEach(() => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1', components: [] });

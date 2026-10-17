@@ -66,6 +66,48 @@ export interface AssemblyGermanPriceResult {
   breakdown: GermanPriceBreakdownLine[];
 }
 
+export interface CostVsGermanPriceLine {
+  componentType: 'PRODUCT' | 'ASSEMBLY';
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** PRODUCT: Product.sellPriceEur. ASSEMBLY: that sub-assembly's own FULL recursive cost (calculateCost), not a one-level read — see compareCostToGermanPrice's own header comment for why cost stays deep while German price stays shallow. */
+  unitCost: number;
+  /** PRODUCT: Product.germanPriceInclVat. ASSEMBLY: the sub-assembly's own stored germanPriceEur, read directly, never recursed into. `null` = not set, not a confirmed zero. */
+  unitGermanPrice: number | null;
+  lineCost: number;
+  lineGermanPrice: number;
+  /** lineGermanPrice − lineCost — positive means this line's German reference is above what it actually costs us; negative means the opposite (a real signal worth investigating, not just rounding noise). */
+  lineDelta: number;
+  germanPriceMissing: boolean;
+}
+
+/**
+ * "додай можливість робити такий звіт у будь якій специфікації" (2026-10-17)
+ * — the line-by-line cost-vs-German-price breakdown worked out by hand for
+ * article 279785, now available for any assembly. See
+ * compareCostToGermanPrice's own header comment for the full reasoning
+ * (deep cost + shallow German read, staleness detection).
+ */
+export interface AssemblyCostVsGermanPriceResult {
+  assemblyId: string;
+  /** Full recursive cost — identical to AssemblyCostResult.costPerUnit for the same assembly. */
+  costPerUnit: number;
+  /** This assembly's OWN labor/packaging/delivery/other costs — included in costPerUnit above, but with no German-price equivalent at all (no "labor cost in Germany" concept exists), so shown separately to explain part of any gap structurally rather than leaving it a mystery. */
+  ownLaborCost: number;
+  ownPackagingCost: number;
+  ownDeliveryCost: number;
+  ownOtherCost: number;
+  /** Assembly.germanPriceEur as currently saved — whatever the cost/German-price summary cards actually display today. `null` if never set. */
+  storedGermanPriceEur: number | null;
+  /** What calculateGermanPriceFromBom would produce RIGHT NOW, one level deep, summed from `lines` below. */
+  freshGermanPricePerUnit: number;
+  freshGermanPriceComplete: boolean;
+  /** True when storedGermanPriceEur no longer matches a fresh recalculation (beyond rounding) — the saved figure silently went stale after a component price or a sub-assembly's own German price changed, and nobody re-applied the calculator since. */
+  isStoredGermanPriceStale: boolean;
+  lines: CostVsGermanPriceLine[];
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;
@@ -800,6 +842,127 @@ export class AssembliesService {
   }
 
   // ============================================================
+  // Cost-vs-German-price comparison report (2026-10-17 user request —
+  // real worked example: article 279785, 305.93 € cost vs a STALE 314.25 €
+  // stored German price, walked line-by-line by hand to find the 7
+  // products actually driving the gap plus a stale sub-assembly figure —
+  // "додай можливість робити такий звіт у будь якій специфікації").
+  //
+  // Combines calculateCost's full recursive cost (every ASSEMBLY line
+  // recurses all the way down, same as /cost) with the ONE-LEVEL German
+  // read calculateGermanPriceFromBom also uses (a PRODUCT line reads
+  // germanPriceInclVat, an ASSEMBLY line reads the sub-assembly's own
+  // already-curated germanPriceEur verbatim, never recursing into the
+  // sub's own components — see that method's own header comment for why).
+  // Also flags `isStoredGermanPriceStale`: whether Assembly.germanPriceEur
+  // (the saved value the cost/German-price cards actually display) still
+  // matches what a fresh one-level calc would produce RIGHT NOW — nothing
+  // keeps that stored field in sync automatically (see
+  // QuotationVersion.germanPriceMarkupAmount's own schema comment on the
+  // same "snapshot, not live" pattern elsewhere in this codebase), so after
+  // editing a component's price or a sub-assembly's own German price, the
+  // parent's stored figure silently goes stale until someone reapplies the
+  // calculator — exactly what happened in the real example above.
+  // ============================================================
+
+  async compareCostToGermanPrice(user: RequestUser, assemblyId: string): Promise<AssemblyCostVsGermanPriceResult> {
+    const assembly = await this.prisma.tenant.assembly.findUnique({
+      where: { id: assemblyId },
+      include: { components: true },
+    });
+    if (!assembly) {
+      throw new CodedNotFoundException('PRODUCTION_ASSEMBLY_NOT_FOUND', `Assembly ${assemblyId} not found.`);
+    }
+
+    const ownLaborCost = Number(assembly.laborCostPerUnit);
+    const ownPackagingCost = Number(assembly.packagingCostPerUnit);
+    const ownDeliveryCost = Number(assembly.deliveryCostPerUnit);
+    const ownOtherCost = Number(assembly.otherCostPerUnit);
+
+    let costPerUnit = ownLaborCost + ownPackagingCost + ownDeliveryCost + ownOtherCost;
+    let freshGermanPricePerUnit = 0;
+    let freshGermanPriceComplete = true;
+    const lines: CostVsGermanPriceLine[] = [];
+
+    for (const line of assembly.components) {
+      const qtyPerUnit = Number(line.qtyPerUnit);
+
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
+        if (!product) throw new CodedNotFoundException('BOM_COMPONENT_PRODUCT_NOT_FOUND', `Component product ${line.productId} not found.`);
+        const unitCost = Number(product.sellPriceEur ?? 0);
+        const unitGermanPrice = product.germanPriceInclVat != null ? Number(product.germanPriceInclVat) : null;
+        const lineCost = round2(unitCost * qtyPerUnit);
+        const lineGermanPrice = round2((unitGermanPrice ?? 0) * qtyPerUnit);
+        costPerUnit += lineCost;
+        freshGermanPricePerUnit += lineGermanPrice;
+        if (unitGermanPrice == null) freshGermanPriceComplete = false;
+        lines.push({
+          componentType: 'PRODUCT',
+          productId: line.productId,
+          qtyPerUnit,
+          unitCost,
+          unitGermanPrice,
+          lineCost,
+          lineGermanPrice,
+          lineDelta: round2(lineGermanPrice - lineCost),
+          germanPriceMissing: unitGermanPrice == null,
+        });
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const subAssembly = await this.prisma.tenant.assembly.findUnique({ where: { id: line.subAssemblyId } });
+        if (!subAssembly) throw new CodedNotFoundException('BOM_COMPONENT_ASSEMBLY_NOT_FOUND', `Component sub-assembly ${line.subAssemblyId} not found.`);
+        // Full recursive cost (calculateCost already walks arbitrarily deep,
+        // cycle-protected on its own) — but the German side stays ONE level,
+        // reading the sub-assembly's own stored germanPriceEur verbatim, same
+        // as calculateGermanPriceFromBom. Mixing a deep cost with a shallow
+        // German read is deliberate, not an oversight — see that method's own
+        // comment on why a sub-assembly's human-curated German price is never
+        // re-derived from its own components.
+        const subCost = await this.calculateCost(user, line.subAssemblyId);
+        const unitCost = subCost.costPerUnit;
+        const unitGermanPrice = subAssembly.germanPriceEur != null ? Number(subAssembly.germanPriceEur) : null;
+        const lineCost = round2(unitCost * qtyPerUnit);
+        const lineGermanPrice = round2((unitGermanPrice ?? 0) * qtyPerUnit);
+        costPerUnit += lineCost;
+        freshGermanPricePerUnit += lineGermanPrice;
+        if (unitGermanPrice == null) freshGermanPriceComplete = false;
+        lines.push({
+          componentType: 'ASSEMBLY',
+          subAssemblyId: line.subAssemblyId,
+          qtyPerUnit,
+          unitCost,
+          unitGermanPrice,
+          lineCost,
+          lineGermanPrice,
+          lineDelta: round2(lineGermanPrice - lineCost),
+          germanPriceMissing: unitGermanPrice == null,
+        });
+      }
+    }
+
+    const storedGermanPriceEur = assembly.germanPriceEur != null ? Number(assembly.germanPriceEur) : null;
+    const roundedFreshGermanPrice = round2(freshGermanPricePerUnit);
+    // A couple of cents of rounding drift across dozens of lines is normal
+    // (every lineCost/lineGermanPrice above is independently rounded) — only
+    // flag genuine staleness, not rounding noise.
+    const isStoredGermanPriceStale = storedGermanPriceEur !== null && Math.abs(storedGermanPriceEur - roundedFreshGermanPrice) >= 0.01;
+
+    return {
+      assemblyId,
+      costPerUnit: round2(costPerUnit),
+      ownLaborCost,
+      ownPackagingCost,
+      ownDeliveryCost,
+      ownOtherCost,
+      storedGermanPriceEur,
+      freshGermanPricePerUnit: roundedFreshGermanPrice,
+      freshGermanPriceComplete,
+      isStoredGermanPriceStale,
+      lines,
+    };
+  }
+
+  // ============================================================
   // Availability + produce (Assemblies.produceAssembly port)
   // ============================================================
 
@@ -1139,4 +1302,9 @@ export class AssembliesService {
     }
     return warehouse.id;
   }
+}
+
+/** Money is Decimal(14,2) end to end — round consistently at every arithmetic step rather than letting floating-point drift accumulate (same convention as quotation-pricing.service.ts's own round2). */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

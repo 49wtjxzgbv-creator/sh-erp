@@ -142,6 +142,16 @@ export class AssembliesController {
     return this.assembliesService.calculateGermanPriceFromBom(user, id);
   }
 
+  @Get(':id/cost-vs-german-price')
+  @RequirePermissions('assemblies:read')
+  @ApiOperation({
+    summary:
+      'Line-by-line cost-vs-German-price comparison: full recursive cost (/cost) alongside the one-level German read (/german-price), per BOM line, plus whether the SAVED germanPriceEur has gone stale relative to a fresh recalculation right now.',
+  })
+  async compareCostToGermanPrice(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.assembliesService.compareCostToGermanPrice(user, id);
+  }
+
   @Get(':id/sub-assemblies-needed')
   @RequirePermissions('assemblies:read')
   @ApiOperation({

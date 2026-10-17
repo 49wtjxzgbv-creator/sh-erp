@@ -240,6 +240,42 @@ export function calculateAssemblyGermanPrice(assemblyId: string): Promise<Assemb
   return apiClient.get<AssemblyGermanPriceResult>(`assemblies/${assemblyId}/german-price`);
 }
 
+export interface CostVsGermanPriceLine {
+  componentType: ComponentType;
+  productId?: string;
+  subAssemblyId?: string;
+  qtyPerUnit: number;
+  /** PRODUCT: Product.sellPriceEur. ASSEMBLY: that sub-assembly's own FULL recursive cost — not a one-level read. */
+  unitCost: number;
+  /** PRODUCT: Product.germanPriceInclVat. ASSEMBLY: the sub-assembly's own stored germanPriceEur, never re-derived from its own components. `null` = not set. */
+  unitGermanPrice: number | null;
+  lineCost: number;
+  lineGermanPrice: number;
+  /** lineGermanPrice − lineCost. */
+  lineDelta: number;
+  germanPriceMissing: boolean;
+}
+
+/** "додай можливість робити такий звіт у будь якій специфікації" (2026-10-17) — the exact cost-vs-German-price line-by-line breakdown worked out by hand for article 279785, available for any assembly. See the backend's own header comment on compareCostToGermanPrice for why cost stays fully recursive while the German side stays one level deep, and for the staleness-detection reasoning. */
+export interface AssemblyCostVsGermanPriceResult {
+  assemblyId: string;
+  costPerUnit: number;
+  ownLaborCost: number;
+  ownPackagingCost: number;
+  ownDeliveryCost: number;
+  ownOtherCost: number;
+  storedGermanPriceEur: number | null;
+  freshGermanPricePerUnit: number;
+  freshGermanPriceComplete: boolean;
+  /** True when the saved germanPriceEur no longer matches a fresh one-level recalculation — a component price or a sub-assembly's own German price changed since it was last applied. */
+  isStoredGermanPriceStale: boolean;
+  lines: CostVsGermanPriceLine[];
+}
+
+export function compareAssemblyCostToGermanPrice(assemblyId: string): Promise<AssemblyCostVsGermanPriceResult> {
+  return apiClient.get<AssemblyCostVsGermanPriceResult>(`assemblies/${assemblyId}/cost-vs-german-price`);
+}
+
 export interface AvailabilityResult {
   assemblyId: string;
   qty: number;

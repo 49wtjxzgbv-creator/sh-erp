@@ -19,6 +19,7 @@ import {
   calculateAssemblyCost,
   calculateAssemblyWeight,
   calculateAssemblyGermanPrice,
+  compareAssemblyCostToGermanPrice,
   checkAssemblyAvailability,
   getSubAssembliesNeeded,
   produceAssembly,
@@ -41,6 +42,7 @@ const versionKey = (id: string, versionId: string) => ['assemblies', id, 'versio
 const costKey = (id: string) => ['assemblies', id, 'cost'] as const;
 const weightKey = (id: string) => ['assemblies', id, 'weight'] as const;
 const germanPriceKey = (id: string) => ['assemblies', id, 'german-price'] as const;
+const costVsGermanPriceKey = (id: string) => ['assemblies', id, 'cost-vs-german-price'] as const;
 
 export function useAssemblies(query: QueryAssembliesInput) {
   return useQuery({ queryKey: assembliesKey(query), queryFn: () => queryAssemblies(query) });
@@ -176,6 +178,15 @@ export function useAssemblyGermanPrice(assemblyId: string | undefined) {
   return useQuery({
     queryKey: germanPriceKey(assemblyId ?? ''),
     queryFn: () => calculateAssemblyGermanPrice(assemblyId as string),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+/** "додай можливість робити такий звіт у будь якій специфікації" (2026-10-17) — the line-by-line cost-vs-German-price comparison report. */
+export function useAssemblyCostVsGermanPrice(assemblyId: string | undefined) {
+  return useQuery({
+    queryKey: costVsGermanPriceKey(assemblyId ?? ''),
+    queryFn: () => compareAssemblyCostToGermanPrice(assemblyId as string),
     enabled: Boolean(assemblyId),
   });
 }
