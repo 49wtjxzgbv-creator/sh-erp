@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "postinstall": "node scripts/copy-occt-wasm.js",
+    "postinstall": "node scripts/copy-occt-wasm.js && node scripts/copy-pdfjs-worker.js",
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/copy-standalone-static.js",
@@ -47,6 +47,8 @@
     "next": "^14.2.15",
     "next-intl": "^3.19.4",
     "occt-import-js": "^0.0.23",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",

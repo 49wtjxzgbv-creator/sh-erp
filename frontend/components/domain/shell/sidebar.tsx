@@ -16,6 +16,7 @@ import {
   Wallet,
   ShoppingCart,
   FileText,
+  FileSignature,
   Users,
   BarChart3,
   Sparkles,
@@ -58,6 +59,7 @@ export const NAV_ITEMS = [
   // 403 immediately.
   { href: '/hr', labelKey: 'hr', icon: Users, permission: 'employees:manage' },
   { href: '/reports', labelKey: 'reports', icon: BarChart3 },
+  { href: '/pdf', labelKey: 'pdf', icon: FileSignature, permission: 'files:read' },
   { href: '/ai', labelKey: 'ai', icon: Sparkles },
   { href: '/notifications', labelKey: 'notifications', icon: Bell },
   { href: '/training', labelKey: 'training', icon: GraduationCap },

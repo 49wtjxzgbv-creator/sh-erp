@@ -62,6 +62,7 @@
     "sales": "SprzedaÅ¼",
     "hr": "Kadry",
     "reports": "Raporty",
+    "pdf": "PDF",
     "ai": "Asystent AI",
     "notifications": "Powiadomienia",
     "billing": "Rozliczenia",
@@ -1952,5 +1953,31 @@
     "convertConfirmDescription": "ZamÃ³wienie zostanie utworzone na podstawie zatwierdzonej wersji. Pozycje bez odpowiednika produkcyjnego (usÅugi, dostawa itp.) zostanÄ uwzglÄdnione w kosztach dodatkowych zamÃ³wienia.",
     "conversionSuccess": "ZamÃ³wienie utworzone pomyÅlnie.",
     "viewCreatedOrder": "PrzejdÅº do zamÃ³wienia"
+  },
+  "pdf": {
+    "title": "Biblioteka PDF",
+    "uploadAction": "Prześlij PDF",
+    "library": "Biblioteka",
+    "name": "Nazwa",
+    "size": "Rozmiar",
+    "updatedAt": "Zaktualizowano",
+    "empty": "Brak dokumentów PDF",
+    "rename": "Zmień nazwę",
+    "deleteConfirmTitle": "Usunąć dokument?",
+    "deleteConfirmDescription": "Tej operacji nie można odwrócić. Dokument zostanie usunięty z biblioteki.",
+    "toolSelect": "Wybór",
+    "toolHighlight": "Zakreślenie",
+    "toolNote": "Notatka",
+    "toolDraw": "Rysowanie",
+    "rotatePage": "Obróć stronę",
+    "deletePage": "Usuń stronę",
+    "mergeFile": "Dodaj plik",
+    "zoomIn": "Powiększ",
+    "zoomOut": "Zmniejsz",
+    "save": "Zapisz",
+    "download": "Pobierz",
+    "unsavedChanges": "Niezapisane zmiany",
+    "savedJustNow": "Zapisano",
+    "cannotDeleteLastPage": "Nie można usunąć ostatniej strony dokumentu"
   }
 }

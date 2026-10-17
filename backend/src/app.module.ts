@@ -11,6 +11,7 @@ import { TenancyModule } from './modules/tenancy/tenancy.module';
 import { AuthorizationModule } from './modules/authorization/authorization.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { FilesModule } from './modules/files/files.module';
+import { PdfModule } from './modules/pdf/pdf.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -54,6 +55,7 @@ import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
     AuthorizationModule,
     TenancyModule,
     FilesModule,
+    PdfModule,
     CatalogModule,
     SettingsModule,
     InventoryModule,

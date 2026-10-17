@@ -171,6 +171,7 @@ model Company {
   employees                      Employee[]
   payrollEntries                 PayrollEntry[]
   fileAssets                     FileAsset[]
+  pdfDocuments                   PdfDocument[]
   pendingAiActions               PendingAiAction[]
   aiUsageLogs                    AiUsageLog[]
   legacyMigrationRuns            LegacyMigrationRun[]
@@ -677,6 +678,34 @@ model FileAsset {
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, entityType, entityId])
   @@map("file_assets")
+}
+
+// "створи пдф редактор і переглядач такий як едобе акробат" (2026-10-17) —
+// a company-wide PDF library, deliberately NOT entity-scoped like
+// FileAsset (no entityType/entityId — nothing here is "the invoice
+// attached to PO #123", it's a standalone document a user opened to view/
+// mark up/rearrange). Editing itself (page reorder/rotate/delete/merge,
+// highlight/note/draw annotations) happens entirely client-side via
+// pdf-lib against the bytes served by GET /pdf-documents/:id/content —
+// "Зберегти" re-runs the same presigned-upload+confirm pair FileAsset
+// already uses, just targeting this existing row's id instead of creating
+// a new one, so a save is a normal R2 PUT, not a server-side PDF engine.
+model PdfDocument {
+  id          String  @id @default(uuid()) @db.Uuid
+  companyId   String  @db.Uuid
+  name        String
+  storageKey  String // R2 object key — tenants/{companyId}/pdf-documents/{uuid}-{filename}, same layout convention as FileAsset
+  sizeBytes   Int
+  createdById String? @db.Uuid // plain id, no formal relation — same convention as FileAsset.uploadedById above
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3) // bumped on every "Зберегти" — the one signal the library list sorts by
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@map("pdf_documents")
 }
 
 enum FileDomain {
