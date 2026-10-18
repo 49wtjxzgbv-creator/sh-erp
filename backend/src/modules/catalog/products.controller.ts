@@ -8,6 +8,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
+import { BatchProductIdsDto, BatchProductArticlesDto } from './dto/batch-products.dto';
 import { SetProductSuppliersDto } from './dto/product-supplier.dto';
 import { ApplyGermanPriceImportDto } from './dto/german-price-import.dto';
 import { ProductsService } from './products.service';
@@ -99,18 +100,20 @@ export class ProductsController {
   }
 
   /**
-   * Declared BEFORE `GET /:id` for the same reason as `export` above —
-   * otherwise `:id` would swallow the literal path segment "batch".
+   * POST, not GET+query (2026-10-18 fix — see BatchProductIdsDto's header
+   * comment): avoids an N-request fan-out resolving productIds into
+   * names/photos for a list view, without the id-list-length ceiling a
+   * query string has.
    */
-  @Get('batch')
+  @Post('batch')
   @RequirePermissions('products:read')
   @ApiOperation({ summary: 'Many products in one call by id — avoids an N-request fan-out resolving productIds into names/photos for a list view.' })
-  async findByIds(@CurrentUser() user: RequestUser, @Query('ids') ids: string) {
-    return this.productsService.findByIds(user, ids.split(',').filter(Boolean));
+  async findByIds(@CurrentUser() user: RequestUser, @Body() dto: BatchProductIdsDto) {
+    return this.productsService.findByIds(user, dto.ids);
   }
 
   /**
-   * Same "one request, however many rows" rationale as `GET /products/batch`
+   * Same "one request, however many rows" rationale as `POST /products/batch`
    * (by id) above — and the same real incident `ProductsService.bulkRemove`'s
    * own header comment describes (N parallel per-row requests blowing
    * through the global 100 req/60s per-client `ThrottlerModule` budget).
@@ -120,11 +123,11 @@ export class ProductsController {
    * like the old bulk-delete did. This resolves every part's article
    * against the catalog in ONE request instead.
    */
-  @Get('batch-by-article')
+  @Post('batch-by-article')
   @RequirePermissions('products:read')
   @ApiOperation({ summary: 'Many products in one call by exact article — avoids an N-request fan-out resolving article strings into Products for a list view.' })
-  async findByArticles(@CurrentUser() user: RequestUser, @Query('articles') articles: string) {
-    return this.productsService.findByArticles(user, articles.split(',').filter(Boolean));
+  async findByArticles(@CurrentUser() user: RequestUser, @Body() dto: BatchProductArticlesDto) {
+    return this.productsService.findByArticles(user, dto.articles);
   }
 
   @Get(':id')

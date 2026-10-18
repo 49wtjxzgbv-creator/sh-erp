@@ -143,16 +143,24 @@ export function getProduct(id: string): Promise<Product> {
   return apiClient.get<Product>(`products/${id}`);
 }
 
-/** Many products in one call by id — avoids an N-request fan-out resolving productIds into names/photos for a list view (e.g. Stock Levels). */
+/**
+ * Many products in one call by id — avoids an N-request fan-out resolving
+ * productIds into names/photos for a list view (e.g. Stock Levels). POST,
+ * not GET+query (2026-10-18 fix): a company with enough distinct products
+ * made the old `?ids=a,b,c...` URL long enough (12KB+) to blow past Node's
+ * default header-size limit, silently killing the request before it ever
+ * reached the backend (real incident: Склад/Каталог showing blank
+ * photo/name/article). A POST body has no comparable ceiling.
+ */
 export function getProductsByIds(ids: string[]): Promise<Product[]> {
   if (ids.length === 0) return Promise.resolve([]);
-  return apiClient.get<Product[]>('products/batch', { query: { ids: ids.join(',') } });
+  return apiClient.post<Product[]>('products/batch', { ids });
 }
 
 /** Same "one request, however many rows" shape as `getProductsByIds`, keyed by exact article instead — the "Деталі (3D)" tab's own catalog-resolution pass used to fire one `queryProducts` per distinct part and intermittently hit the global per-client rate limit (real, reported: "через раз то відкриває то ні"). */
 export function getProductsByArticles(articles: string[]): Promise<Product[]> {
   if (articles.length === 0) return Promise.resolve([]);
-  return apiClient.get<Product[]>('products/batch-by-article', { query: { articles: articles.join(',') } });
+  return apiClient.post<Product[]>('products/batch-by-article', { articles });
 }
 
 export function createProduct(dto: CreateProductInput): Promise<Product> {

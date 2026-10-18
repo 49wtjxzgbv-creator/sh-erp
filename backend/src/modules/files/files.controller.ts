@@ -4,12 +4,19 @@ import type { FileDomain } from '@prisma/client';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CreatePresignedUploadDto } from './dto/create-presigned-upload.dto';
+import { BatchFilesDto } from './dto/batch-files.dto';
 import { FilesService } from './files.service';
 
-/** `?domain=PRODUCT_PHOTO,PRODUCT_DOCUMENT` — comma-separated, undefined/empty means "no filter" (existing behavior preserved for callers that don't pass it). Not DTO-validated against the enum here since an unrecognized value just filters to zero rows rather than being unsafe. */
-function parseDomains(domain?: string): FileDomain[] | undefined {
+/**
+ * `?domain=PRODUCT_PHOTO,PRODUCT_DOCUMENT` (comma-separated string, the
+ * single-entity `GET /files` route) or `domain: [...]` (real array, the
+ * `POST /files/batch` route's JSON body) — undefined/empty either way means
+ * "no filter". Not DTO-validated against the enum here since an
+ * unrecognized value just filters to zero rows rather than being unsafe.
+ */
+function parseDomains(domain?: string | string[]): FileDomain[] | undefined {
   if (!domain) return undefined;
-  const values = domain.split(',').filter(Boolean) as FileDomain[];
+  const values = (Array.isArray(domain) ? domain : domain.split(',')).filter(Boolean) as FileDomain[];
   return values.length > 0 ? values : undefined;
 }
 
@@ -58,20 +65,24 @@ export class FilesController {
     return this.filesService.listForEntity(user, entityType, entityId, parseDomains(domain));
   }
 
-  @Get('batch')
+  /**
+   * POST, not GET+query (2026-10-18 fix — see ProductsController's
+   * BatchProductIdsDto header comment): the entityIds list has no
+   * practical length ceiling this way, unlike a query string (real
+   * incident: Склад/Каталог showing blank photos for a company with
+   * enough products that the old `?entityIds=a,b,c...` URL exceeded
+   * Node's default header-size limit once combined with the Authorization
+   * header).
+   */
+  @Post('batch')
   @RequirePermissions('files:read')
   @ApiOperation({
     summary:
       'Files for MANY entities of the same type in one call — avoids an N-request fan-out from a list view ' +
       '(e.g. a 50-row product list rendering a thumbnail per row). Optionally filtered to specific domain(s).',
   })
-  async listForEntities(
-    @CurrentUser() user: RequestUser,
-    @Query('entityType') entityType: string,
-    @Query('entityIds') entityIds: string,
-    @Query('domain') domain?: string,
-  ) {
-    return this.filesService.listForEntities(user, entityType, entityIds.split(',').filter(Boolean), parseDomains(domain));
+  async listForEntities(@CurrentUser() user: RequestUser, @Body() dto: BatchFilesDto) {
+    return this.filesService.listForEntities(user, dto.entityType, dto.entityIds, parseDomains(dto.domain));
   }
 
   @Delete(':id')

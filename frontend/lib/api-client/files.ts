@@ -107,15 +107,22 @@ export interface FileAssetWithUrl extends FileAsset {
   arOptimizedDownloadUrl?: string;
 }
 
-/** Batch counterpart used by list views (e.g. a product grid's thumbnail column) to avoid one request per row. */
+/**
+ * Batch counterpart used by list views (e.g. a product grid's thumbnail
+ * column) to avoid one request per row. POST, not GET+query (2026-10-18
+ * fix — see getProductsByIds' own comment in lib/api-client/catalog.ts):
+ * the entityIds list has no practical length ceiling this way.
+ */
 export function listFilesForEntities(
   entityType: string,
   entityIds: string[],
   domain?: FileDomain | FileDomain[],
 ): Promise<Record<string, FileAssetWithUrl[]>> {
   if (entityIds.length === 0) return Promise.resolve({});
-  return apiClient.get<Record<string, FileAssetWithUrl[]>>('files/batch', {
-    query: { entityType, entityIds: entityIds.join(','), ...domainQuery(domain) },
+  return apiClient.post<Record<string, FileAssetWithUrl[]>>('files/batch', {
+    entityType,
+    entityIds,
+    domain: domain ? (Array.isArray(domain) ? domain : [domain]) : undefined,
   });
 }
 

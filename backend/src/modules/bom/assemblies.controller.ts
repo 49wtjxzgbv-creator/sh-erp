@@ -8,6 +8,7 @@ import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
 import { CheckAvailabilityDto, ProduceAssemblyDto, SubAssembliesNeededQueryDto } from './dto/produce-assembly.dto';
 import { QueryAssembliesDto } from './dto/query-assemblies.dto';
+import { BatchAssemblyIdsDto } from './dto/batch-assemblies.dto';
 
 @ApiTags('bom')
 @Controller({ path: 'assemblies', version: '1' })
@@ -29,15 +30,16 @@ export class AssembliesController {
   }
 
   /**
-   * Declared BEFORE `GET /:id` for the same reason as ProductsController's
-   * own `GET /batch` — otherwise `:id` would swallow the literal path
-   * segment "batch".
+   * POST, not GET+query (2026-10-18 fix — see ProductsController's
+   * BatchProductIdsDto header comment): avoids an N-request fan-out
+   * resolving assemblyIds into names (e.g. a customer order's full BOM
+   * composition print), without the id-list-length ceiling a query string has.
    */
-  @Get('batch')
+  @Post('batch')
   @RequirePermissions('assemblies:read')
   @ApiOperation({ summary: 'Many assemblies in one call by id — avoids an N-request fan-out resolving assemblyIds into names (e.g. a customer order\'s full BOM composition print).' })
-  async findByIds(@CurrentUser() user: RequestUser, @Query('ids') ids: string) {
-    return this.assembliesService.findByIds(user, ids.split(',').filter(Boolean));
+  async findByIds(@CurrentUser() user: RequestUser, @Body() dto: BatchAssemblyIdsDto) {
+    return this.assembliesService.findByIds(user, dto.ids);
   }
 
   @Get(':id')
