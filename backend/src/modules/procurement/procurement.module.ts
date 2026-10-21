@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { InventoryModule } from '../inventory/inventory.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FilesModule } from '../files/files.module';
 import { PurchaseOrdersController } from './purchase-orders.controller';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestsController } from './purchase-requests.controller';
 import { PurchaseRequestsService } from './purchase-requests.service';
+import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
+import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
 import { DeliverySchedulesService } from './delivery-schedules.service';
 import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
 import { SuppliersController } from './suppliers.controller';
@@ -14,9 +17,18 @@ import { SuppliersService } from './suppliers.service';
   imports: [
     InventoryModule, // for StockService — PurchaseOrdersService.receive() posts RECEIVE movements through the same ledger as every other stock mutation
     NotificationsModule, // for EmailService — SuppliersService#invitePortal emails the supplier's temp password; also Phase 2 lifecycle notifications
+    FilesModule, // for FilesService — PurchaseRequestPdfService#generateAndStore stores the rendered PDF as a FileAsset (no circular-import risk: FilesModule has no imports of its own)
   ],
   controllers: [SuppliersController, PurchaseOrdersController, PurchaseRequestsController],
-  providers: [SuppliersService, PurchaseOrdersService, PurchaseRequestsService, DeliverySchedulesService, PurchaseOrderCommentsService],
+  providers: [
+    SuppliersService,
+    PurchaseOrdersService,
+    PurchaseRequestsService,
+    PurchaseRequestRendererService,
+    PurchaseRequestPdfService,
+    DeliverySchedulesService,
+    PurchaseOrderCommentsService,
+  ],
   // DeliverySchedulesService/PurchaseOrderCommentsService exported so
   // SupplierPortalModule can share the same state machines (Phase 1/2)
   // rather than duplicating them. PurchaseRequestsService NOT imported by

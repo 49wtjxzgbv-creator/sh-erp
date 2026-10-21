@@ -6,15 +6,19 @@ describe('PurchaseRequestsService', () => {
   let prisma: any;
   let audit: any;
   let purchaseOrdersService: any;
+  let pdfRenderer: any;
+  let pdfService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const request = {
     id: 'pr1',
+    number: 'ЗП-2026-0001',
     status: 'DRAFT',
     supplierId: 's1',
     supplierNameSnapshot: 'Acme Supplier',
     comment: null,
     convertedPurchaseOrderId: null,
+    createdAt: new Date('2026-10-21T00:00:00Z'),
     items: [
       { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, expectedPrice: null },
     ],
@@ -32,12 +36,16 @@ describe('PurchaseRequestsService', () => {
           delete: jest.fn(),
         },
         purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+        company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
+        supplier: { findUnique: jest.fn().mockResolvedValue({ id: 's1', name: 'Acme Supplier', contactPerson: null, phone: null, email: null }) },
         $queryRaw: jest.fn().mockResolvedValue([{ lastValue: 1 }]),
       },
     };
     audit = { record: jest.fn() };
     purchaseOrdersService = { create: jest.fn().mockResolvedValue({ id: 'po-new', status: 'ORDERED' }) };
-    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService);
+    pdfRenderer = { renderHtml: jest.fn().mockReturnValue('<html></html>') };
+    pdfService = { generateAndStore: jest.fn().mockResolvedValue('file-1') };
+    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService);
   });
 
   describe('create', () => {
@@ -129,6 +137,41 @@ describe('PurchaseRequestsService', () => {
     it('rejects converting a CANCELLED request', async () => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, status: 'CANCELLED' });
       await expect(service.convertToOrder(user, 'pr1')).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('generatePdf', () => {
+    it('renders HTML from the current request state, stores it, and persists pdfFileId', async () => {
+      await service.generatePdf(user, 'pr1');
+
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          number: 'ЗП-2026-0001',
+          companyName: 'My Company',
+          supplier: expect.objectContaining({ name: 'Acme Supplier' }),
+          items: [expect.objectContaining({ articleSnapshot: 'ABC', qty: 10 })],
+        }),
+      );
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(user, expect.objectContaining({ purchaseRequestId: 'pr1', purchaseRequestNumber: 'ЗП-2026-0001' }));
+      expect(prisma.tenant.purchaseRequest.update).toHaveBeenCalledWith({
+        where: { id: 'pr1' },
+        data: { pdfFileId: 'file-1' },
+        include: { items: true },
+      });
+    });
+
+    it('allows generating a PDF for a DRAFT request (no status gate, unlike Quotation send())', async () => {
+      prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...request, pdfFileId: 'file-1' });
+      await expect(service.generatePdf(user, 'pr1')).resolves.toEqual(expect.objectContaining({ pdfFileId: 'file-1' }));
+    });
+
+    it('falls back to supplierNameSnapshot with null contact fields when the request has no linked supplierId', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, supplierId: null });
+      await service.generatePdf(user, 'pr1');
+      expect(prisma.tenant.supplier.findUnique).not.toHaveBeenCalled();
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({ supplier: { name: 'Acme Supplier', contactPerson: null, phone: null, email: null } }),
+      );
     });
   });
 

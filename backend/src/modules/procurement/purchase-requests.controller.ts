@@ -57,6 +57,13 @@ export class PurchaseRequestsController {
     return this.purchaseRequestsService.send(user, id);
   }
 
+  @Post(':id/pdf')
+  @RequirePermissions('purchase-requests:manage')
+  @ApiOperation({ summary: 'Render and store a PDF of this request\'s current state (overwrites any previous one) — the document staff hand/email to the supplier.' })
+  async generatePdf(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.purchaseRequestsService.generatePdf(user, id);
+  }
+
   @Post(':id/cancel')
   @RequirePermissions('purchase-requests:manage')
   @ApiOperation({ summary: 'Cancel a DRAFT or SENT purchase request.' })

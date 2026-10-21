@@ -5,6 +5,8 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
+import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
+import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
 import {
   CreatePurchaseRequestDto,
   QueryPurchaseRequestsDto,
@@ -18,9 +20,10 @@ import {
  * itself: finance.service.ts and dashboard-timeline.service.ts both read
  * every PurchaseOrder row with no status filter, so a draft/RFQ row sharing
  * that table would silently leak into spend totals and the delivery
- * timeline. Internal-only for now — no supplier-portal exposure, no
- * PDF/email; staff negotiate manually and record prices back onto the
- * request, then convert it into a real PurchaseOrder once ready.
+ * timeline. Internal-only for now — no supplier-portal exposure; staff
+ * generate a PDF (generatePdf, 2026-10-21) to hand/email the supplier
+ * themselves, negotiate manually, and record prices back onto the request,
+ * then convert it into a real PurchaseOrder once ready.
  */
 @Injectable()
 export class PurchaseRequestsService {
@@ -28,6 +31,8 @@ export class PurchaseRequestsService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly purchaseOrdersService: PurchaseOrdersService,
+    private readonly pdfRenderer: PurchaseRequestRendererService,
+    private readonly pdfService: PurchaseRequestPdfService,
   ) {}
 
   /**
@@ -235,6 +240,62 @@ export class PurchaseRequestsService {
     });
 
     return { purchaseOrder: order, purchaseRequest: updated };
+  }
+
+  /**
+   * "кидати цю заявку постачальнику" (2026-10-21) — renders the current
+   * state (items/prices/comment, whatever is filled in right now) to a
+   * real PDF and stores it, overwriting any previous pdfFileId. Allowed in
+   * any non-deleted status (including DRAFT, unlike Quotation's send()
+   * which requires a committed SENT transition first) — this is a
+   * standalone document action, independent of the status marker set()
+   * flips; staff may regenerate it as many times as prices change.
+   */
+  async generatePdf(user: RequestUser, id: string) {
+    const request = await this.findOne(user, id);
+
+    const [company, supplier] = await Promise.all([
+      this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
+      request.supplierId ? this.prisma.tenant.supplier.findUnique({ where: { id: request.supplierId } }) : null,
+    ]);
+
+    const html = this.pdfRenderer.renderHtml({
+      number: request.number,
+      createdAt: request.createdAt,
+      companyName: company?.name ?? '',
+      supplier: {
+        name: request.supplierNameSnapshot,
+        contactPerson: supplier?.contactPerson ?? null,
+        phone: supplier?.phone ?? null,
+        email: supplier?.email ?? null,
+      },
+      comment: request.comment,
+      items: (request.items as any[]).map((item) => ({
+        articleSnapshot: item.articleSnapshot,
+        productNameSnapshot: item.productNameSnapshot,
+        qty: Number(item.qty),
+        expectedPrice: item.expectedPrice != null ? Number(item.expectedPrice) : null,
+      })),
+    });
+
+    const pdfFileId = await this.pdfService.generateAndStore(user, {
+      purchaseRequestId: id,
+      purchaseRequestNumber: request.number,
+      html,
+    });
+
+    const updated = await this.prisma.tenant.purchaseRequest.update({ where: { id }, data: { pdfFileId }, include: { items: true } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'purchase_request.pdf_generated',
+      entityType: 'PurchaseRequest',
+      entityId: id,
+      after: { pdfFileId },
+    });
+
+    return updated;
   }
 
   /** DRAFT only — a sent/converted/cancelled request stays as a record (use cancel() for the reversible version of "not proceeding"). */

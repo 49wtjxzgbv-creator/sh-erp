@@ -30,6 +30,7 @@ import {
   updatePurchaseRequest,
   savePurchaseRequestItems,
   sendPurchaseRequest,
+  generatePurchaseRequestPdf,
   cancelPurchaseRequest,
   convertPurchaseRequestToOrder,
   deletePurchaseRequest,
@@ -282,6 +283,17 @@ export function useSendPurchaseRequest(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => sendPurchaseRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+    },
+  });
+}
+
+export function useGeneratePurchaseRequestPdf(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generatePurchaseRequestPdf(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['purchase-requests'] });
       qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });

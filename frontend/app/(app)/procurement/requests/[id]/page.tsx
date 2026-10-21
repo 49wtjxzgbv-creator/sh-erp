@@ -10,10 +10,12 @@ import {
   useUpdatePurchaseRequest,
   useSavePurchaseRequestItems,
   useSendPurchaseRequest,
+  useGeneratePurchaseRequestPdf,
   useCancelPurchaseRequest,
   useConvertPurchaseRequestToOrder,
   useDeletePurchaseRequest,
 } from '@/lib/hooks/use-procurement';
+import { getFileDownloadUrl } from '@/lib/api-client/files';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { PurchaseRequestStatus, PurchaseRequestItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
@@ -71,6 +73,7 @@ export default function PurchaseRequestDetailPage() {
   const updateHeader = useUpdatePurchaseRequest(params.id);
   const saveItems = useSavePurchaseRequestItems(params.id);
   const sendRequest = useSendPurchaseRequest(params.id);
+  const generatePdf = useGeneratePurchaseRequestPdf(params.id);
   const cancelRequest = useCancelPurchaseRequest(params.id);
   const convertToOrder = useConvertPurchaseRequestToOrder(params.id);
   const deleteRequest = useDeletePurchaseRequest();
@@ -185,6 +188,20 @@ export default function PurchaseRequestDetailPage() {
     }
   }
 
+  /** "кидати цю заявку постачальнику" — renders the current state to a PDF, stores it (overwriting any previous one), then immediately opens it so staff can download/forward it. */
+  async function handleGeneratePdf() {
+    setError(null);
+    try {
+      const updated = await generatePdf.mutateAsync();
+      if (updated.pdfFileId) {
+        const { downloadUrl } = await getFileDownloadUrl(updated.pdfFileId);
+        window.open(downloadUrl, '_blank');
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
   async function handleCancel() {
     setError(null);
     try {
@@ -225,6 +242,11 @@ export default function PurchaseRequestDetailPage() {
           {canManage && request.status === 'DRAFT' && (
             <Button variant="outline" size="sm" loading={sendRequest.isPending} onClick={handleSend}>
               {t('sendRequest')}
+            </Button>
+          )}
+          {canManage && (
+            <Button variant="outline" size="sm" loading={generatePdf.isPending} onClick={handleGeneratePdf}>
+              {t('generatePdf')}
             </Button>
           )}
           {canManage && isEditable && request.status !== 'CANCELLED' && (

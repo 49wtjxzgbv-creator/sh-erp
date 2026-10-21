@@ -368,6 +368,8 @@ export interface PurchaseRequest {
   createdById: string;
   createdAt: string;
   sentAt: string | null;
+  /** Set/overwritten each time "Сформувати PDF" is used — rendered from whatever is filled in at that moment, independent of status/sentAt. */
+  pdfFileId: string | null;
   /** Present on create/findOne/saveItems responses; not on query() list rows. */
   items?: PurchaseRequestItem[];
 }
@@ -423,6 +425,10 @@ export function savePurchaseRequestItems(id: string, items: PurchaseRequestItemI
 /** DRAFT -> SENT marker only (no PDF/email) — editing stays allowed afterward. */
 export function sendPurchaseRequest(id: string): Promise<PurchaseRequest> {
   return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/send`);
+}
+/** Renders and stores a PDF of the request's CURRENT state (overwrites any previous pdfFileId) — allowed in any non-deleted status, unlike Quotation's send(). */
+export function generatePurchaseRequestPdf(id: string): Promise<PurchaseRequest> {
+  return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/pdf`);
 }
 export function cancelPurchaseRequest(id: string): Promise<PurchaseRequest> {
   return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/cancel`);

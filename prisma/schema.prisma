@@ -771,6 +771,15 @@ enum FileDomain {
   // ASSEMBLY_DRAWING — "drawing" reads as a 2D technical drawing, which
   // this is not.
   ASSEMBLY_3D_MODEL
+  // Заявка на прорахунок постачальнику (2026-10-21) — entityType
+  // "PurchaseRequest", entityId = PurchaseRequest.id. System-generated
+  // (Playwright-rendered), same mechanism as QUOTATION_DOCUMENT above —
+  // see PurchaseRequestPdfService. Deliberately its own value, not reused
+  // from QUOTATION_DOCUMENT (wrong document family — that one is
+  // customer-facing) or PURCHASE_INVOICE/FINANCE_DOCUMENT (those are
+  // human-uploaded financial paperwork on an already-committed
+  // PurchaseOrder, not a system-rendered pre-order document).
+  PURCHASE_REQUEST_DOCUMENT
 }
 
 enum FileConversionStatus {
@@ -2437,7 +2446,15 @@ model PurchaseRequest {
   createdById              String                @db.Uuid
 
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  sentAt    DateTime? @db.Timestamptz(3) // DRAFT -> SENT marker only (no PDF/email) — editing still allowed afterward, unlike Quotation's hard lock, since this is an internal tracker staff keep updating as the supplier calls back with prices
+  sentAt    DateTime? @db.Timestamptz(3) // DRAFT -> SENT status marker only — editing still allowed afterward, unlike Quotation's hard lock, since this is an internal tracker staff keep updating as the supplier calls back with prices. Independent of pdfFileId below: marking SENT does not itself generate a PDF, and generating/regenerating a PDF does not itself change status.
+  // Set/overwritten each time "Сформувати PDF" is used (see
+  // PurchaseRequestsService#generatePdf / PurchaseRequestPdfService) — the
+  // document staff actually hand/email to the supplier. Deliberately NOT
+  // tied to the sentAt transition above (unlike QuotationVersion.pdfFileId,
+  // which Quotation's send() requires in the same transaction): this
+  // entity stays editable after SENT, so the PDF may legitimately be
+  // regenerated more than once as prices come back from the supplier.
+  pdfFileId String? @db.Uuid
 
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
