@@ -40,6 +40,14 @@ export class CreateQuotationDto {
   @IsString()
   notes?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Free-text override for the header\'s company-details block (under the logo) — wins over both the template\'s own companyDetailsText and the Settings → "Реквізити компанії" fallback. Lets staff type literally anything for this one document.',
+  })
+  @IsOptional()
+  @IsString()
+  companyDetailsOverride?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()

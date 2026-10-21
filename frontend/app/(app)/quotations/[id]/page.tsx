@@ -147,6 +147,7 @@ export default function QuotationDetailPage() {
   const [deliveryTerms, setDeliveryTerms] = useState('');
   const [installationTerms, setInstallationTerms] = useState('');
   const [notes, setNotes] = useState('');
+  const [companyDetailsOverride, setCompanyDetailsOverride] = useState('');
   const [termsDirty, setTermsDirty] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -168,6 +169,7 @@ export default function QuotationDetailPage() {
     setDeliveryTerms(currentVersion.deliveryTerms ?? '');
     setInstallationTerms(currentVersion.installationTerms ?? '');
     setNotes(currentVersion.notes ?? '');
+    setCompanyDetailsOverride(currentVersion.companyDetailsOverride ?? '');
   }, [currentVersion, termsDirty]);
 
   if (isLoading || !quotation || !currentVersion) {
@@ -186,6 +188,7 @@ export default function QuotationDetailPage() {
           deliveryTerms: deliveryTerms || undefined,
           installationTerms: installationTerms || undefined,
           notes: notes || undefined,
+          companyDetailsOverride: companyDetailsOverride || undefined,
           vatRatePercent: vatRatePercent === '' ? undefined : Number(vatRatePercent),
         });
         setTermsDirty(false);
@@ -430,6 +433,19 @@ export default function QuotationDetailPage() {
               disabled={!editable}
               onChange={(e) => {
                 setNotes(e.target.value);
+                setTermsDirty(true);
+              }}
+            />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="companyDetailsOverride">{t('companyDetailsOverride')}</Label>
+            <Textarea
+              id="companyDetailsOverride"
+              placeholder={t('companyDetailsOverridePlaceholder')}
+              value={companyDetailsOverride}
+              disabled={!editable}
+              onChange={(e) => {
+                setCompanyDetailsOverride(e.target.value);
                 setTermsDirty(true);
               }}
             />

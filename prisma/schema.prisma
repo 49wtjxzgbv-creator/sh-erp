@@ -3681,6 +3681,15 @@ model QuotationVersion {
   installationTerms String?
   notes             String?
 
+  // Free-text override for the header's company-details block (2026-10-22
+  // user request — "там де пише Vikno Plus додай можливість прописувати
+  // будь який свій текст"). When set, wins over both the template's own
+  // companyDetailsText and the Settings → "Реквізити компанії" fallback
+  // (QuotationsService#renderVersionHtml) — lets staff type literally
+  // anything for this one document instead of being limited to the fixed
+  // legalName/taxId/address/... shape formatRequisitesText() produces.
+  companyDetailsOverride String?
+
   // "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) —
   // manually entered per version (never defaulted off CompanySettings.
   // vatRatePercent, which is a dead/unused field — see that model's own

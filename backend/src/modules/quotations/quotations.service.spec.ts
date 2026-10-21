@@ -534,6 +534,15 @@ describe('QuotationsService', () => {
       );
     });
 
+    it('companyDetailsOverride (2026-10-22) wins over the computed company-details text', async () => {
+      const { service, renderer } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.updateVersionTerms(user, q.id, { companyDetailsOverride: 'Будь-який свій текст' } as any);
+
+      await service.previewHtml(user, q.id);
+      expect(renderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ companyDetailsText: 'Будь-який свій текст' }));
+    });
+
     it('reflects the SAME data after send() — no separate "unsaved" preview state', async () => {
       const { service, db, assemblies, renderer } = makeService();
       db.assembly.set('asm-1', { id: 'asm-1', name: 'A', baseSalePriceEur: 100 });

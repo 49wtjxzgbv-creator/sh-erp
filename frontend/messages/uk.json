@@ -2114,6 +2114,8 @@
     "deliveryTerms": "Умови доставки",
     "installationTerms": "Умови монтажу",
     "notes": "Примітки",
+    "companyDetailsOverride": "Текст компанії (замість реквізитів)",
+    "companyDetailsOverridePlaceholder": "Необов’язково — за замовчуванням реквізити компанії з Налаштувань",
     "items": "Позиції",
     "noItemsYet": "Ще немає жодної позиції — додайте першу нижче.",
     "addItem": "Додати позицію",

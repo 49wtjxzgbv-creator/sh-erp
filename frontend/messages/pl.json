@@ -1940,6 +1940,8 @@
     "deliveryTerms": "Warunki dostawy",
     "installationTerms": "Warunki montaÅ¼u",
     "notes": "Uwagi",
+    "companyDetailsOverride": "Company header text (instead of requisites)",
+    "companyDetailsOverridePlaceholder": "Optional — defaults to company requisites from Settings",
     "items": "Pozycje",
     "noItemsYet": "Brak pozycji â dodaj pierwszÄ poniÅ¼ej.",
     "addItem": "Dodaj pozycjÄ",

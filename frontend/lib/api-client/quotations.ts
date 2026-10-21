@@ -86,6 +86,8 @@ export interface QuotationVersion {
   deliveryTerms: string | null;
   installationTerms: string | null;
   notes: string | null;
+  /** Free-text override for the header's company-details block (under the logo) — wins over both the template's own companyDetailsText and the Settings → "Реквізити компанії" fallback. */
+  companyDetailsOverride: string | null;
   /** "додай можливість робити КП по німецьких цінах з ПДВ" (2026-10-15) — manually entered, used only to split a VAT amount out of GERMAN_PRICE_INCL_VAT items for the printed totals. Null = not set, VAT line omitted even if such items exist. */
   vatRatePercent: DecimalString | null;
   subtotal: DecimalString;
@@ -142,6 +144,7 @@ export interface CreateQuotationInput {
   deliveryTerms?: string;
   installationTerms?: string;
   notes?: string;
+  companyDetailsOverride?: string;
   templateId?: string;
   vatRatePercent?: number;
 }

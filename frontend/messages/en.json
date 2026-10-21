@@ -1940,6 +1940,8 @@
     "deliveryTerms": "Delivery terms",
     "installationTerms": "Installation terms",
     "notes": "Notes",
+    "companyDetailsOverride": "Company header text (instead of requisites)",
+    "companyDetailsOverridePlaceholder": "Optional — defaults to company requisites from Settings",
     "items": "Items",
     "noItemsYet": "No items yet â add the first one below.",
     "addItem": "Add item",

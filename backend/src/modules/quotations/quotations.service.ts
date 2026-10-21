@@ -75,6 +75,7 @@ export class QuotationsService {
         deliveryTerms: dto.deliveryTerms,
         installationTerms: dto.installationTerms,
         notes: dto.notes,
+        companyDetailsOverride: dto.companyDetailsOverride,
         templateId: dto.templateId,
         vatRatePercent: dto.vatRatePercent ?? null,
         subtotal: 0,
@@ -264,6 +265,7 @@ export class QuotationsService {
         deliveryTerms: dto.deliveryTerms,
         installationTerms: dto.installationTerms,
         notes: dto.notes,
+        companyDetailsOverride: dto.companyDetailsOverride,
         templateId: dto.templateId,
         vatRatePercent: dto.vatRatePercent,
       } as any,
@@ -520,6 +522,7 @@ export class QuotationsService {
       deliveryTerms: string | null;
       installationTerms: string | null;
       notes: string | null;
+      companyDetailsOverride: string | null;
       templateId: string | null;
       vatRatePercent: unknown;
     },
@@ -566,7 +569,7 @@ export class QuotationsService {
       : null;
     const companySnapshot = {
       name: company?.name ?? '',
-      companyDetailsText: template?.companyDetailsText || formatRequisitesText(requisites),
+      companyDetailsText: version.companyDetailsOverride || template?.companyDetailsText || formatRequisitesText(requisites),
     };
 
     const logoFileId = template?.printLogoFileId ?? branding?.printLogoFileId ?? null;
