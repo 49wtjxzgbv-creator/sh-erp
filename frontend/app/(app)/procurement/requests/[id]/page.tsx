@@ -20,6 +20,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { PurchaseRequestStatus, PurchaseRequestItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
+import { ItemFileAttachmentsPicker } from '@/components/domain/procurement/item-file-attachments-picker';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -54,6 +55,7 @@ interface EditableItemRow {
   productNameSnapshot: string;
   qty: string;
   expectedPrice: string;
+  attachedFileIds: string[];
 }
 
 let rowKeySeq = 0;
@@ -81,6 +83,7 @@ export default function PurchaseRequestDetailPage() {
 
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [supplierNameSnapshot, setSupplierNameSnapshot] = useState('');
+  const [fromName, setFromName] = useState('');
   const [comment, setComment] = useState('');
   const [headerDirty, setHeaderDirty] = useState(false);
   const [rows, setRows] = useState<EditableItemRow[]>([]);
@@ -91,6 +94,7 @@ export default function PurchaseRequestDetailPage() {
     if (!request) return;
     setSupplierId(request.supplierId ?? undefined);
     setSupplierNameSnapshot(request.supplierNameSnapshot);
+    setFromName(request.fromName ?? '');
     setComment(request.comment ?? '');
     setHeaderDirty(false);
     setRows(
@@ -101,6 +105,7 @@ export default function PurchaseRequestDetailPage() {
         productNameSnapshot: item.productNameSnapshot,
         qty: String(item.qty),
         expectedPrice: item.expectedPrice != null ? String(item.expectedPrice) : '',
+        attachedFileIds: item.attachedFileIds ?? [],
       })),
     );
     setItemsDirty(false);
@@ -114,7 +119,7 @@ export default function PurchaseRequestDetailPage() {
   const canEdit = canManage && isEditable;
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '' }]);
+    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '', attachedFileIds: [] }]);
     setItemsDirty(true);
   }
   function removeRow(key: string) {
@@ -127,7 +132,9 @@ export default function PurchaseRequestDetailPage() {
   }
   function handlePickProduct(key: string, productId: string | undefined, label: string | undefined) {
     const row = rows.find((r) => r.key === key);
-    const patch: Partial<EditableItemRow> = { productId };
+    // Attachments are sourced from the LINKED product's own documents — a
+    // different product means a different, unrelated document set.
+    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [] };
     if (label) {
       const [article, name] = label.split(' — ');
       if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
@@ -143,7 +150,12 @@ export default function PurchaseRequestDetailPage() {
       return;
     }
     try {
-      await updateHeader.mutateAsync({ supplierId, supplierNameSnapshot: supplierNameSnapshot.trim(), comment: comment || undefined });
+      await updateHeader.mutateAsync({
+        supplierId,
+        supplierNameSnapshot: supplierNameSnapshot.trim(),
+        comment: comment || undefined,
+        fromName: fromName.trim() || null,
+      });
       setHeaderDirty(false);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
@@ -169,6 +181,7 @@ export default function PurchaseRequestDetailPage() {
         productNameSnapshot: row.productNameSnapshot.trim(),
         qty,
         expectedPrice: row.expectedPrice ? Number(row.expectedPrice) : undefined,
+        attachedFileIds: row.attachedFileIds.length > 0 ? row.attachedFileIds : undefined,
       });
     }
     try {
@@ -354,6 +367,16 @@ export default function PurchaseRequestDetailPage() {
               onChange={(e) => { setSupplierNameSnapshot(e.target.value); setHeaderDirty(true); }}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pr-fromName">{t('fromName')}</Label>
+            <Input
+              id="pr-fromName"
+              placeholder={t('fromNamePlaceholder')}
+              value={fromName}
+              disabled={!canEdit}
+              onChange={(e) => { setFromName(e.target.value); setHeaderDirty(true); }}
+            />
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="pr-comment">{t('comment')}</Label>
             <Textarea id="pr-comment" value={comment} disabled={!canEdit} onChange={(e) => { setComment(e.target.value); setHeaderDirty(true); }} />
@@ -381,13 +404,14 @@ export default function PurchaseRequestDetailPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead className="w-28">{t('qty')}</TableHead>
                 <TableHead className="w-28">{t('expectedPrice')}</TableHead>
+                <TableHead className="w-40">{t('attachFiles')}</TableHead>
                 {canEdit && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
@@ -433,6 +457,17 @@ export default function PurchaseRequestDetailPage() {
                         />
                       ) : (
                         row.expectedPrice || '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {canEdit ? (
+                        <ItemFileAttachmentsPicker
+                          productId={row.productId}
+                          value={row.attachedFileIds}
+                          onChange={(ids) => updateRow(row.key, { attachedFileIds: ids })}
+                        />
+                      ) : (
+                        row.attachedFileIds.length > 0 ? t('attachedFilesCount', { count: row.attachedFileIds.length }) : '—'
                       )}
                     </TableCell>
                     {canEdit && (

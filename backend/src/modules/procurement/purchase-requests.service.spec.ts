@@ -8,6 +8,7 @@ describe('PurchaseRequestsService', () => {
   let purchaseOrdersService: any;
   let pdfRenderer: any;
   let pdfService: any;
+  let filesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const request = {
@@ -17,10 +18,11 @@ describe('PurchaseRequestsService', () => {
     supplierId: 's1',
     supplierNameSnapshot: 'Acme Supplier',
     comment: null,
+    fromName: null,
     convertedPurchaseOrderId: null,
     createdAt: new Date('2026-10-21T00:00:00Z'),
     items: [
-      { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, expectedPrice: null },
+      { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, expectedPrice: null, attachedFileIds: [] },
     ],
   };
 
@@ -38,6 +40,8 @@ describe('PurchaseRequestsService', () => {
         purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn() },
         company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
         supplier: { findUnique: jest.fn().mockResolvedValue({ id: 's1', name: 'Acme Supplier', contactPerson: null, phone: null, email: null }) },
+        companyBranding: { findUnique: jest.fn().mockResolvedValue(null) },
+        fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
         $queryRaw: jest.fn().mockResolvedValue([{ lastValue: 1 }]),
       },
     };
@@ -45,7 +49,8 @@ describe('PurchaseRequestsService', () => {
     purchaseOrdersService = { create: jest.fn().mockResolvedValue({ id: 'po-new', status: 'ORDERED' }) };
     pdfRenderer = { renderHtml: jest.fn().mockReturnValue('<html></html>') };
     pdfService = { generateAndStore: jest.fn().mockResolvedValue('file-1') };
-    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService);
+    filesService = { listForEntities: jest.fn().mockResolvedValue({}), getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.com/logo.png' }) };
+    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService, filesService);
   });
 
   describe('create', () => {
@@ -147,17 +152,61 @@ describe('PurchaseRequestsService', () => {
       expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
         expect.objectContaining({
           number: 'ЗП-2026-0001',
-          companyName: 'My Company',
+          fromName: 'My Company',
+          fromLogoUrl: null,
           supplier: expect.objectContaining({ name: 'Acme Supplier' }),
-          items: [expect.objectContaining({ articleSnapshot: 'ABC', qty: 10 })],
+          items: [expect.objectContaining({ articleSnapshot: 'ABC', qty: 10, photoUrl: null })],
         }),
       );
-      expect(pdfService.generateAndStore).toHaveBeenCalledWith(user, expect.objectContaining({ purchaseRequestId: 'pr1', purchaseRequestNumber: 'ЗП-2026-0001' }));
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(user, expect.objectContaining({ purchaseRequestId: 'pr1', purchaseRequestNumber: 'ЗП-2026-0001', attachments: [] }));
       expect(prisma.tenant.purchaseRequest.update).toHaveBeenCalledWith({
         where: { id: 'pr1' },
         data: { pdfFileId: 'file-1' },
         include: { items: true },
       });
+    });
+
+    it('prefers PurchaseRequest.fromName over the company name when set', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, fromName: 'Custom Sender LLC' });
+      await service.generatePdf(user, 'pr1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ fromName: 'Custom Sender LLC' }));
+    });
+
+    it('resolves the branding print logo to a presigned URL for fromLogoUrl', async () => {
+      prisma.tenant.companyBranding.findUnique.mockResolvedValue({ companyId: 'c1', printLogoFileId: 'logo-1' });
+      await service.generatePdf(user, 'pr1');
+      expect(filesService.getDownloadUrl).toHaveBeenCalledWith(user, 'logo-1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ fromLogoUrl: 'https://example.com/logo.png' }));
+    });
+
+    it('resolves each linked product\'s live PRODUCT_PHOTO for the item photo column', async () => {
+      filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
+      await service.generatePdf(user, 'pr1');
+      expect(filesService.listForEntities).toHaveBeenCalledWith(user, 'Product', ['p1'], ['PRODUCT_PHOTO']);
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({ items: [expect.objectContaining({ photoUrl: 'https://example.com/p1.jpg' })] }),
+      );
+    });
+
+    it('builds one merge attachment per selected file id, with a heading naming the line and the file', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({
+        ...request,
+        items: [{ ...request.items[0], attachedFileIds: ['f1', 'f2'] }],
+      });
+      prisma.tenant.fileAsset.findMany.mockResolvedValue([
+        { id: 'f1', originalName: 'drawing.pdf' },
+        { id: 'f2', originalName: 'spec.png' },
+      ]);
+      await service.generatePdf(user, 'pr1');
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({
+          attachments: [
+            { fileAssetId: 'f1', heading: 'Поз. 1 — ABC — drawing.pdf' },
+            { fileAssetId: 'f2', heading: 'Поз. 1 — ABC — spec.png' },
+          ],
+        }),
+      );
     });
 
     it('allows generating a PDF for a DRAFT request (no status gate, unlike Quotation send())', async () => {

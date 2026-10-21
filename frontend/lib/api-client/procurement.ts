@@ -353,6 +353,8 @@ export interface PurchaseRequestItem {
   productNameSnapshot: string;
   qty: DecimalString;
   expectedPrice: DecimalString | null;
+  /** FileAsset ids (from this line's linked product's own PRODUCT_DOCUMENT attachments) merged as extra pages onto the generated PDF. */
+  attachedFileIds: string[];
 }
 
 export interface PurchaseRequest {
@@ -363,6 +365,8 @@ export interface PurchaseRequest {
   supplierNameSnapshot: string;
   status: PurchaseRequestStatus;
   comment: string | null;
+  /** "Від кого" block on the generated PDF — free text; null/empty falls back to the company's own name at render time. */
+  fromName: string | null;
   /** Set once "Перетворити на замовлення" succeeds — presence alone blocks re-conversion. */
   convertedPurchaseOrderId: string | null;
   createdById: string;
@@ -380,17 +384,21 @@ export interface PurchaseRequestItemInput {
   productNameSnapshot: string;
   qty: number;
   expectedPrice?: number;
+  attachedFileIds?: string[];
 }
 
 export interface CreatePurchaseRequestInput {
   supplierId?: string;
   supplierNameSnapshot: string;
   comment?: string;
+  /** "Від кого" block on the generated PDF — free text, defaults to the company's own name at render time when omitted/empty. */
+  fromName?: string;
   items: PurchaseRequestItemInput[];
 }
 
 /** Header-only — items go through saveItems (full bulk replace). */
-export type UpdatePurchaseRequestInput = Partial<Omit<CreatePurchaseRequestInput, 'items'>>;
+/** `fromName: null` clears a previously-set override back to the company's own name; an omitted key leaves it untouched. */
+export type UpdatePurchaseRequestInput = Partial<Omit<CreatePurchaseRequestInput, 'items' | 'fromName'>> & { fromName?: string | null };
 
 export interface QueryPurchaseRequestsInput {
   status?: PurchaseRequestStatus;

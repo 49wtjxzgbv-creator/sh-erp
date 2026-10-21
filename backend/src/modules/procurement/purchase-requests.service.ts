@@ -4,6 +4,7 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { FilesService } from '../files/files.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
 import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
@@ -33,6 +34,7 @@ export class PurchaseRequestsService {
     private readonly purchaseOrdersService: PurchaseOrdersService,
     private readonly pdfRenderer: PurchaseRequestRendererService,
     private readonly pdfService: PurchaseRequestPdfService,
+    private readonly filesService: FilesService,
   ) {}
 
   /**
@@ -64,6 +66,7 @@ export class PurchaseRequestsService {
         supplierId: dto.supplierId,
         supplierNameSnapshot: dto.supplierNameSnapshot,
         comment: dto.comment,
+        fromName: dto.fromName,
         status: 'DRAFT',
         createdById: user.userId,
         items: {
@@ -73,6 +76,7 @@ export class PurchaseRequestsService {
             productNameSnapshot: item.productNameSnapshot,
             qty: item.qty,
             expectedPrice: item.expectedPrice,
+            attachedFileIds: item.attachedFileIds ?? [],
           })),
         },
       } as any,
@@ -147,6 +151,7 @@ export class PurchaseRequestsService {
         productNameSnapshot: item.productNameSnapshot,
         qty: item.qty,
         expectedPrice: item.expectedPrice,
+        attachedFileIds: item.attachedFileIds ?? [],
       })) as any,
     });
 
@@ -253,16 +258,37 @@ export class PurchaseRequestsService {
    */
   async generatePdf(user: RequestUser, id: string) {
     const request = await this.findOne(user, id);
+    const items = request.items as any[];
 
-    const [company, supplier] = await Promise.all([
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
+    const allAttachedFileIds = [...new Set(items.flatMap((i) => (i.attachedFileIds as string[]) ?? []))];
+
+    const [company, supplier, branding, productPhotos, attachedFileAssets] = await Promise.all([
       this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
       request.supplierId ? this.prisma.tenant.supplier.findUnique({ where: { id: request.supplierId } }) : null,
+      this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
+      productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_PHOTO']) : {},
+      allAttachedFileIds.length > 0 ? this.prisma.tenant.fileAsset.findMany({ where: { id: { in: allAttachedFileIds } } }) : [],
     ]);
+
+    // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId) — same fallback-to-nothing shape as Quotation's own logoUrl resolution (QuotationsService#renderVersionHtml).
+    const fromLogoUrl = branding?.printLogoFileId
+      ? ((await this.filesService.getDownloadUrl(user, branding.printLogoFileId).catch(() => null))?.downloadUrl ?? null)
+      : null;
+
+    const fileNameById = new Map((attachedFileAssets as any[]).map((f) => [f.id, f.originalName]));
+    const attachments = items.flatMap((item, i) =>
+      ((item.attachedFileIds as string[]) ?? []).map((fileAssetId) => ({
+        fileAssetId,
+        heading: `Поз. ${i + 1} — ${item.articleSnapshot} — ${fileNameById.get(fileAssetId) ?? 'файл'}`,
+      })),
+    );
 
     const html = this.pdfRenderer.renderHtml({
       number: request.number,
       createdAt: request.createdAt,
-      companyName: company?.name ?? '',
+      fromName: request.fromName || company?.name || '',
+      fromLogoUrl,
       supplier: {
         name: request.supplierNameSnapshot,
         contactPerson: supplier?.contactPerson ?? null,
@@ -270,11 +296,11 @@ export class PurchaseRequestsService {
         email: supplier?.email ?? null,
       },
       comment: request.comment,
-      items: (request.items as any[]).map((item) => ({
+      items: items.map((item) => ({
         articleSnapshot: item.articleSnapshot,
         productNameSnapshot: item.productNameSnapshot,
         qty: Number(item.qty),
-        expectedPrice: item.expectedPrice != null ? Number(item.expectedPrice) : null,
+        photoUrl: item.productId ? ((productPhotos as any)[item.productId]?.[0]?.downloadUrl ?? null) : null,
       })),
     });
 
@@ -282,6 +308,7 @@ export class PurchaseRequestsService {
       purchaseRequestId: id,
       purchaseRequestNumber: request.number,
       html,
+      attachments,
     });
 
     const updated = await this.prisma.tenant.purchaseRequest.update({ where: { id }, data: { pdfFileId }, include: { items: true } });

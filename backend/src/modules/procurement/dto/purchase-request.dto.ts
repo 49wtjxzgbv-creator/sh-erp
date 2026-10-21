@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 
 export class PurchaseRequestItemDto {
   @ApiPropertyOptional({ description: 'Optional — same "article not yet in Products" allowance as PurchaseOrderItem.productId.' })
@@ -30,6 +30,15 @@ export class PurchaseRequestItemDto {
   @IsNumber()
   @Min(0)
   expectedPrice?: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'FileAsset ids (from this line\'s linked product\'s own PRODUCT_DOCUMENT attachments) to merge as extra pages onto the generated PDF — "attach all" is just the caller sending every available id.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  attachedFileIds?: string[];
 }
 
 export class CreatePurchaseRequestDto {
@@ -47,6 +56,11 @@ export class CreatePurchaseRequestDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @ApiPropertyOptional({ description: '"Від кого" block on the generated PDF — free text, defaults to the company\'s own name at render time when omitted/empty.' })
+  @IsOptional()
+  @IsString()
+  fromName?: string;
 
   @ApiProperty({ type: [PurchaseRequestItemDto] })
   @IsArray()
@@ -73,6 +87,18 @@ export class UpdatePurchaseRequestDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  // Same "omitted leaves untouched, null clears, empty string also clears"
+  // convention as update-purchase-order-milestones.dto.ts's own nullable
+  // date fields — a staff member clearing a previously-typed fromName
+  // override back to "use the company's own name" is a real, intended
+  // action here, not a default-value omission.
+  @ApiPropertyOptional({ nullable: true, description: '"Від кого" block on the generated PDF — null/empty clears the override back to the company\'s own name; an omitted key leaves the current value untouched.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  fromName?: string | null;
 }
 
 /** Full bulk replace — same convention as QuotationsService#saveItems (delete all, recreate from the submitted array). */

@@ -9,6 +9,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { PurchaseRequestItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
+import { ItemFileAttachmentsPicker } from '@/components/domain/procurement/item-file-attachments-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,6 +25,7 @@ interface EditableItemRow {
   productNameSnapshot: string;
   qty: string;
   expectedPrice: string;
+  attachedFileIds: string[];
 }
 
 let rowKeySeq = 0;
@@ -41,12 +43,13 @@ export default function NewPurchaseRequestPage() {
 
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [supplierNameSnapshot, setSupplierNameSnapshot] = useState('');
+  const [fromName, setFromName] = useState('');
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '' }]);
+    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '', attachedFileIds: [] }]);
   }
   function removeRow(key: string) {
     setRows((r) => r.filter((row) => row.key !== key));
@@ -57,7 +60,10 @@ export default function NewPurchaseRequestPage() {
 
   function handlePickProduct(key: string, productId: string | undefined, label: string | undefined) {
     const row = rows.find((r) => r.key === key);
-    const patch: Partial<EditableItemRow> = { productId };
+    // Attachments are sourced from the LINKED product's own documents — a
+    // different product means a different, unrelated document set, so a
+    // previous selection would silently point at the wrong product's files.
+    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [] };
     if (label) {
       const [article, name] = label.split(' — ');
       if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
@@ -89,6 +95,7 @@ export default function NewPurchaseRequestPage() {
         productNameSnapshot: row.productNameSnapshot.trim(),
         qty,
         expectedPrice: row.expectedPrice ? Number(row.expectedPrice) : undefined,
+        attachedFileIds: row.attachedFileIds.length > 0 ? row.attachedFileIds : undefined,
       });
     }
 
@@ -97,6 +104,7 @@ export default function NewPurchaseRequestPage() {
         supplierId,
         supplierNameSnapshot: supplierNameSnapshot.trim(),
         comment: comment || undefined,
+        fromName: fromName.trim() || undefined,
         items,
       });
       router.replace(`/procurement/requests/${request.id}`);
@@ -132,6 +140,10 @@ export default function NewPurchaseRequestPage() {
               onChange={(e) => setSupplierNameSnapshot(e.target.value)}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="fromName">{t('fromName')}</Label>
+            <Input id="fromName" placeholder={t('fromNamePlaceholder')} value={fromName} onChange={(e) => setFromName(e.target.value)} />
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="comment">{t('comment')}</Label>
             <Textarea id="comment" value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -152,13 +164,14 @@ export default function NewPurchaseRequestPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead className="w-28">{t('qty')}</TableHead>
                 <TableHead className="w-28">{t('expectedPrice')}</TableHead>
+                <TableHead className="w-40">{t('attachFiles')}</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
@@ -190,6 +203,13 @@ export default function NewPurchaseRequestPage() {
                         min={0}
                         value={row.expectedPrice}
                         onChange={(e) => updateRow(row.key, { expectedPrice: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <ItemFileAttachmentsPicker
+                        productId={row.productId}
+                        value={row.attachedFileIds}
+                        onChange={(ids) => updateRow(row.key, { attachedFileIds: ids })}
                       />
                     </TableCell>
                     <TableCell>

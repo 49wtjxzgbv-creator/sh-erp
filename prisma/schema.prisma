@@ -2438,6 +2438,13 @@ model PurchaseRequest {
   supplierNameSnapshot     String
   status                   PurchaseRequestStatus @default(DRAFT)
   comment                  String?
+  // "Від кого" block on the generated PDF (2026-10-21 user request) — free
+  // text, editable per-request; null/empty falls back to Company.name at
+  // render time (PurchaseRequestsService#generatePdf). Deliberately a plain
+  // override column, not a live read of Company.name alone, so a company
+  // that wants a slightly different name/legal form on outgoing supplier
+  // documents can type it once per request without renaming the company itself.
+  fromName                 String?
   // Set once "Перетворити на замовлення" succeeds — presence alone blocks
   // re-conversion, same convention as Quotation.convertedCustomerOrderId
   // (plain informational column, no declared Prisma relation/back-relation
@@ -2475,6 +2482,18 @@ model PurchaseRequestItem {
   productNameSnapshot String
   qty                 Decimal  @db.Decimal(14, 3)
   expectedPrice       Decimal? @db.Decimal(14, 2)
+  // "додай можливість додавати файли з товарів ... які саме додавати або
+  // додавати всі і це окремо до кожної позиції" (2026-10-21) — explicit,
+  // per-line choice of which of the linked product's own PRODUCT_DOCUMENT
+  // FileAsset ids get merged as extra pages onto this request's PDF
+  // (PurchaseRequestPdfService) — plain id list, not a boolean "attach
+  // all" flag, since "attach all" is just the UI selecting every id at
+  // once; no separate persisted state needed for that. Empty/[] when the
+  // line has no productId, or the product has no documents, or staff chose
+  // none. Same bare `String[]` convention as
+  // ProductionOrderStageEvent.consumedFinishedGoodIds (no @db.Uuid[] — this
+  // codebase stores id arrays as plain text arrays throughout).
+  attachedFileIds     String[] @default([])
 
   company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   purchaseRequest PurchaseRequest @relation(fields: [companyId, purchaseRequestId], references: [companyId, id], onDelete: Cascade) // composite — a line has no meaning without its request
