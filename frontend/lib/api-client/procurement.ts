@@ -333,3 +333,104 @@ export function listPurchaseOrderComments(orderId: string): Promise<PurchaseOrde
 export function addPurchaseOrderComment(orderId: string, body: string): Promise<PurchaseOrderComment> {
   return apiClient.post<PurchaseOrderComment>(`purchase-orders/${orderId}/comments`, { body });
 }
+
+/**
+ * Заявка на прорахунок постачальнику (2026-10-21) — a non-committal,
+ * single-supplier quote request. Deliberately a separate entity from
+ * PurchaseOrder, not an earlier status on it (see the backend model's own
+ * schema.prisma comment). Internal-only for now — no supplier-portal
+ * exposure, no PDF/email; staff negotiate manually and convert it into a
+ * real PurchaseOrder once ready.
+ */
+export type PurchaseRequestStatus = 'DRAFT' | 'SENT' | 'CONVERTED' | 'CANCELLED';
+
+export interface PurchaseRequestItem {
+  id: string;
+  companyId: string;
+  purchaseRequestId: string;
+  productId: string | null;
+  articleSnapshot: string;
+  productNameSnapshot: string;
+  qty: DecimalString;
+  expectedPrice: DecimalString | null;
+}
+
+export interface PurchaseRequest {
+  id: string;
+  companyId: string;
+  number: string;
+  supplierId: string | null;
+  supplierNameSnapshot: string;
+  status: PurchaseRequestStatus;
+  comment: string | null;
+  /** Set once "Перетворити на замовлення" succeeds — presence alone blocks re-conversion. */
+  convertedPurchaseOrderId: string | null;
+  createdById: string;
+  createdAt: string;
+  sentAt: string | null;
+  /** Present on create/findOne/saveItems responses; not on query() list rows. */
+  items?: PurchaseRequestItem[];
+}
+
+export interface PurchaseRequestItemInput {
+  productId?: string;
+  articleSnapshot: string;
+  productNameSnapshot: string;
+  qty: number;
+  expectedPrice?: number;
+}
+
+export interface CreatePurchaseRequestInput {
+  supplierId?: string;
+  supplierNameSnapshot: string;
+  comment?: string;
+  items: PurchaseRequestItemInput[];
+}
+
+/** Header-only — items go through saveItems (full bulk replace). */
+export type UpdatePurchaseRequestInput = Partial<Omit<CreatePurchaseRequestInput, 'items'>>;
+
+export interface QueryPurchaseRequestsInput {
+  status?: PurchaseRequestStatus;
+  supplierId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedPurchaseRequests {
+  items: PurchaseRequest[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function queryPurchaseRequests(query: QueryPurchaseRequestsInput = {}): Promise<PaginatedPurchaseRequests> {
+  return apiClient.get<PaginatedPurchaseRequests>('purchase-requests', { query: query as Record<string, string | number> });
+}
+export function getPurchaseRequest(id: string): Promise<PurchaseRequest> {
+  return apiClient.get<PurchaseRequest>(`purchase-requests/${id}`);
+}
+export function createPurchaseRequest(dto: CreatePurchaseRequestInput): Promise<PurchaseRequest> {
+  return apiClient.post<PurchaseRequest>('purchase-requests', dto);
+}
+export function updatePurchaseRequest(id: string, dto: UpdatePurchaseRequestInput): Promise<PurchaseRequest> {
+  return apiClient.patch<PurchaseRequest>(`purchase-requests/${id}`, dto);
+}
+/** Full bulk replace — same convention as Quotations' saveItems. */
+export function savePurchaseRequestItems(id: string, items: PurchaseRequestItemInput[]): Promise<PurchaseRequest> {
+  return apiClient.patch<PurchaseRequest>(`purchase-requests/${id}/items`, { items });
+}
+/** DRAFT -> SENT marker only (no PDF/email) — editing stays allowed afterward. */
+export function sendPurchaseRequest(id: string): Promise<PurchaseRequest> {
+  return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/send`);
+}
+export function cancelPurchaseRequest(id: string): Promise<PurchaseRequest> {
+  return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/cancel`);
+}
+export function convertPurchaseRequestToOrder(id: string): Promise<{ purchaseOrder: PurchaseOrder; purchaseRequest: PurchaseRequest }> {
+  return apiClient.post<{ purchaseOrder: PurchaseOrder; purchaseRequest: PurchaseRequest }>(`purchase-requests/${id}/convert-to-order`);
+}
+/** DRAFT only — use cancelPurchaseRequest for a sent one. */
+export function deletePurchaseRequest(id: string): Promise<{ ok: true }> {
+  return apiClient.delete<{ ok: true }>(`purchase-requests/${id}`);
+}

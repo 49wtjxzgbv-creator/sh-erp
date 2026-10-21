@@ -24,6 +24,15 @@ import {
   rejectDeliverySchedule,
   listPurchaseOrderComments,
   addPurchaseOrderComment,
+  queryPurchaseRequests,
+  getPurchaseRequest,
+  createPurchaseRequest,
+  updatePurchaseRequest,
+  savePurchaseRequestItems,
+  sendPurchaseRequest,
+  cancelPurchaseRequest,
+  convertPurchaseRequestToOrder,
+  deletePurchaseRequest,
   type QuerySuppliersInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
@@ -32,12 +41,18 @@ import {
   type ReceivePurchaseOrderInput,
   type UpdatePurchaseOrderMilestonesInput,
   type DeliveryScheduleLineInput,
+  type QueryPurchaseRequestsInput,
+  type CreatePurchaseRequestInput,
+  type UpdatePurchaseRequestInput,
+  type PurchaseRequestItemInput,
 } from '@/lib/api-client/procurement';
 
 const suppliersKey = (query: QuerySuppliersInput) => ['suppliers', query] as const;
 const supplierKey = (id: string) => ['suppliers', id] as const;
 const purchaseOrdersKey = (query: QueryPurchaseOrdersInput) => ['purchase-orders', query] as const;
 const purchaseOrderKey = (id: string) => ['purchase-orders', id] as const;
+const purchaseRequestsKey = (query: QueryPurchaseRequestsInput) => ['purchase-requests', query] as const;
+const purchaseRequestKey = (id: string) => ['purchase-requests', id] as const;
 
 export function useSuppliers(query: QuerySuppliersInput) {
   return useQuery({ queryKey: suppliersKey(query), queryFn: () => querySuppliers(query) });
@@ -218,5 +233,91 @@ export function useAddPurchaseOrderComment(orderId: string) {
   return useMutation({
     mutationFn: (body: string) => addPurchaseOrderComment(orderId, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderCommentsKey(orderId) }),
+  });
+}
+
+export function usePurchaseRequests(query: QueryPurchaseRequestsInput) {
+  return useQuery({ queryKey: purchaseRequestsKey(query), queryFn: () => queryPurchaseRequests(query) });
+}
+
+export function usePurchaseRequest(id: string | undefined) {
+  return useQuery({
+    queryKey: purchaseRequestKey(id ?? ''),
+    queryFn: () => getPurchaseRequest(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreatePurchaseRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreatePurchaseRequestInput) => createPurchaseRequest(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-requests'] }),
+  });
+}
+
+export function useUpdatePurchaseRequest(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdatePurchaseRequestInput) => updatePurchaseRequest(id, dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+    },
+  });
+}
+
+export function useSavePurchaseRequestItems(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (items: PurchaseRequestItemInput[]) => savePurchaseRequestItems(id, items),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+    },
+  });
+}
+
+export function useSendPurchaseRequest(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => sendPurchaseRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+    },
+  });
+}
+
+export function useCancelPurchaseRequest(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => cancelPurchaseRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+    },
+  });
+}
+
+/** Creates a real PurchaseOrder, so both lists must go stale together. */
+export function useConvertPurchaseRequestToOrder(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => convertPurchaseRequestToOrder(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      qc.invalidateQueries({ queryKey: purchaseRequestKey(id) });
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+  });
+}
+
+/** DRAFT only — use useCancelPurchaseRequest for a sent one. */
+export function useDeletePurchaseRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deletePurchaseRequest(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-requests'] }),
   });
 }

@@ -159,6 +159,8 @@ model Company {
   shipmentItems                  ShipmentItem[]
   purchaseOrders                 PurchaseOrder[]
   purchaseOrderItems             PurchaseOrderItem[]
+  purchaseRequests                PurchaseRequest[]
+  purchaseRequestItems            PurchaseRequestItem[]
   deliverySchedules              DeliverySchedule[]
   deliveryScheduleLines          DeliveryScheduleLine[]
   purchaseOrderComments          PurchaseOrderComment[]
@@ -835,6 +837,7 @@ model Product {
   warehouseStocks           WarehouseStock[]
   inventoryItems            InventoryItem[]
   purchaseOrderItems        PurchaseOrderItem[]
+  purchaseRequestItems      PurchaseRequestItem[]
   suppliers                 ProductSupplier[]
   stockReservations         StockReservation[]
   orderMaterialRequirements OrderMaterialRequirement[]
@@ -886,6 +889,7 @@ model Supplier {
   products                      Product[] // legacy single-value defaultSupplierId back-relation — see ProductSupplier for the real multi-supplier link
   assemblies                    Assembly[] // legacy single-value defaultSupplierId back-relation — see AssemblySupplier for the real multi-supplier link
   purchaseOrders                PurchaseOrder[]
+  purchaseRequests              PurchaseRequest[]
   // Portal access for THIS company's record of this supplier now goes
   // through SupplierConnection (2026-08-21 P0 — one real-world supplier
   // can work with many companies through one shared login/SupplierOrganization).
@@ -2398,6 +2402,70 @@ model PurchaseOrderItem {
   @@index([companyId])
   @@index([sourceRequirementId])
   @@map("purchase_order_items")
+}
+
+// Заявка на прорахунок постачальнику (2026-10-21) — a non-committal,
+// single-supplier quote request, deliberately a SEPARATE table from
+// PurchaseOrder rather than an earlier status on it: finance.service.ts
+// and dashboard-timeline.service.ts both read every PurchaseOrder row with
+// no status filter at all (confirmed before adding this), so a draft/RFQ
+// row sharing that table would silently leak into spend totals and the
+// delivery timeline. Internal-only for now — no supplier-portal exposure,
+// no PDF/email generation; staff negotiate with the supplier manually and
+// record the resulting prices back onto the request, then convert it into
+// a real PurchaseOrder once ready (PurchaseRequestsService#convertToOrder).
+enum PurchaseRequestStatus {
+  DRAFT
+  SENT
+  CONVERTED
+  CANCELLED
+}
+
+model PurchaseRequest {
+  id                       String                @id @default(uuid()) @db.Uuid
+  companyId                String                @db.Uuid
+  number                   String // atomic per-company counter, same mechanism as Quotation.number (DocumentNumberingService's "INSERT ... ON CONFLICT" pattern, counterKey "PURCHASE_REQUEST_{year}") — inlined in PurchaseRequestsService rather than importing QuotationsModule, which would create a cycle (ProcurementModule -> QuotationsModule -> SalesModule -> ProcurementModule)
+  supplierId               String?               @db.Uuid // single-column FK — see header §cross-tenant (optional relation); same free-text-name-allowed convention as PurchaseOrder.supplierId
+  supplierNameSnapshot     String
+  status                   PurchaseRequestStatus @default(DRAFT)
+  comment                  String?
+  // Set once "Перетворити на замовлення" succeeds — presence alone blocks
+  // re-conversion, same convention as Quotation.convertedCustomerOrderId
+  // (plain informational column, no declared Prisma relation/back-relation
+  // needed — the frontend fetches the PurchaseOrder separately by this id).
+  convertedPurchaseOrderId String?               @db.Uuid
+  createdById              String                @db.Uuid
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  sentAt    DateTime? @db.Timestamptz(3) // DRAFT -> SENT marker only (no PDF/email) — editing still allowed afterward, unlike Quotation's hard lock, since this is an internal tracker staff keep updating as the supplier calls back with prices
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items    PurchaseRequestItem[]
+
+  @@unique([companyId, id]) // composite-FK target for PurchaseRequestItem
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  companyId           String   @db.Uuid
+  purchaseRequestId   String   @db.Uuid
+  productId           String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation); same "article not yet in Products" allowance as PurchaseOrderItem.productId
+  articleSnapshot     String
+  productNameSnapshot String
+  qty                 Decimal  @db.Decimal(14, 3)
+  expectedPrice       Decimal? @db.Decimal(14, 2)
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseRequest PurchaseRequest @relation(fields: [companyId, purchaseRequestId], references: [companyId, id], onDelete: Cascade) // composite — a line has no meaning without its request
+  product         Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseRequestId])
+  @@index([companyId])
+  @@map("purchase_request_items")
 }
 
 // Delivery Schedule (Phase 1, 2026-08-21) — versioned multi-date delivery

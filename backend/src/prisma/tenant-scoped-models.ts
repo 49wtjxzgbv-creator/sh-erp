@@ -91,4 +91,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'QuotationVersionItem',
   // PDF editor/library (2026-10-17)
   'PdfDocument',
+  // Заявка на прорахунок постачальнику (2026-10-21)
+  'PurchaseRequest',
+  'PurchaseRequestItem',
 ]);

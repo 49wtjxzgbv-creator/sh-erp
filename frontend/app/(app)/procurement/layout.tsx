@@ -8,15 +8,26 @@ import { useHasPermission } from '@/lib/hooks/use-roles';
 
 const TABS = [
   { href: '/procurement', labelKey: 'purchaseOrders' },
+  { href: '/procurement/requests', labelKey: 'purchaseRequests', permission: 'purchase-requests:read' },
   { href: '/procurement/suppliers', labelKey: 'suppliers', permission: 'suppliers:read' },
 ] as const;
 
 export default function ProcurementLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations('procurement');
   const pathname = usePathname();
-  const activeHref = pathname.startsWith('/procurement/suppliers') ? '/procurement/suppliers' : '/procurement';
+  const activeHref = pathname.startsWith('/procurement/suppliers')
+    ? '/procurement/suppliers'
+    : pathname.startsWith('/procurement/requests')
+      ? '/procurement/requests'
+      : '/procurement';
   const canReadSuppliers = useHasPermission('suppliers:read');
-  const tabs = TABS.filter((tab) => !('permission' in tab) || canReadSuppliers);
+  const canReadPurchaseRequests = useHasPermission('purchase-requests:read');
+  const tabs = TABS.filter((tab) => {
+    if (!('permission' in tab)) return true;
+    if (tab.permission === 'suppliers:read') return canReadSuppliers;
+    if (tab.permission === 'purchase-requests:read') return canReadPurchaseRequests;
+    return true;
+  });
 
   return (
     <div className="space-y-4">

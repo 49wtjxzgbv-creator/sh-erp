@@ -87,6 +87,12 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'purchase-orders:read', resource: 'purchase-orders', action: 'read', description: 'View purchase orders.' },
   { key: 'purchase-orders:manage', resource: 'purchase-orders', action: 'manage', description: 'Create/edit purchase orders and record receiving.' },
   { key: 'purchase-orders:delete', resource: 'purchase-orders', action: 'delete', description: 'Permanently delete a purchase order — admin-only, not granted to any default role besides Admin.' },
+  // Заявка на прорахунок постачальнику (2026-10-21) — separate from
+  // purchase-orders:* since it's a distinct, non-committal entity (see
+  // PurchaseRequest's own schema.prisma comment). Not granted to any
+  // default role besides Admin, same as purchase-orders:manage itself.
+  { key: 'purchase-requests:read', resource: 'purchase-requests', action: 'read', description: 'View purchase requests (заявки на прорахунок).' },
+  { key: 'purchase-requests:manage', resource: 'purchase-requests', action: 'manage', description: 'Create/edit purchase requests and convert them to real purchase orders.' },
 
   // Finance — PO documents/expenses/payments (Finance module, 2026-08-24).
   // Admin-only by default, same sensitivity rationale as `reports:valuation`
