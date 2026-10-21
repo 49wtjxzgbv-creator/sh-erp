@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 import { QUOTATION_LOCALES } from '../quotation-renderer.service';
 
 export class CreateQuotationDto {
@@ -65,8 +65,23 @@ export class CreateQuotationDto {
   vatRatePercent?: number;
 }
 
-/** Header-only update of the CURRENT version's terms — items are saved separately via SaveQuotationItemsDto. Only valid while the current version is still DRAFT (not sentAt). */
-export class UpdateQuotationVersionDto extends PartialType(CreateQuotationDto) {}
+/**
+ * Header-only update of the CURRENT version's terms — items are saved
+ * separately via SaveQuotationItemsDto. Only valid while the current
+ * version is still DRAFT (not sentAt). companyDetailsOverride is
+ * redeclared (not inherited via PartialType) with the same
+ * "omitted leaves untouched, null/empty clears" convention as
+ * PurchaseRequest's own fromName — CreateQuotationDto's own field stays
+ * undefined-only since create() never needs to clear anything.
+ */
+export class UpdateQuotationVersionDto extends PartialType(OmitType(CreateQuotationDto, ['companyDetailsOverride'] as const)) {
+  @ApiPropertyOptional({ nullable: true, description: 'null/empty clears the override back to the computed company-details text; an omitted key leaves the current value untouched.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  companyDetailsOverride?: string | null;
+}
 
 /** Document number — editable (2026-10-22 user request) in case staff need to append a suffix or match an external numbering scheme. Lives on the Quotation row itself (not per-version), so unlike UpdateQuotationVersionDto this is never locked by a sent version. Stays unique per company. */
 export class UpdateQuotationNumberDto {

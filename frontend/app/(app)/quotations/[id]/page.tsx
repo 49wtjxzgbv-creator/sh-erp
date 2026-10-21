@@ -188,7 +188,7 @@ export default function QuotationDetailPage() {
           deliveryTerms: deliveryTerms || undefined,
           installationTerms: installationTerms || undefined,
           notes: notes || undefined,
-          companyDetailsOverride: companyDetailsOverride || undefined,
+          companyDetailsOverride: companyDetailsOverride.trim() || null,
           vatRatePercent: vatRatePercent === '' ? undefined : Number(vatRatePercent),
         });
         setTermsDirty(false);

@@ -149,7 +149,8 @@ export interface CreateQuotationInput {
   vatRatePercent?: number;
 }
 
-export type UpdateQuotationVersionInput = Partial<CreateQuotationInput>;
+/** `companyDetailsOverride: null` clears the override back to the computed company-details text; an omitted key leaves it untouched. */
+export type UpdateQuotationVersionInput = Partial<Omit<CreateQuotationInput, 'companyDetailsOverride'>> & { companyDetailsOverride?: string | null };
 
 export interface QuotationItemInput {
   kind: QuotationItemKind;
