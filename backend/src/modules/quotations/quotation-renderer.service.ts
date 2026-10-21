@@ -206,7 +206,7 @@ export class QuotationRendererService {
   .header .brand-divider { width: 1px; height: 34px; background: #dddddd; }
   .header .doc-meta { text-align: right; font-size: 12px; color: #555555; }
   .header .doc-title { font-size: 15pt; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
-  .company-details { font-size: 11.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
+  .company-details { font-size: 13.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
   .parties { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px; }
   .party { flex: 1; min-width: 200px; border: 1px solid #e2e2e2; border-radius: 4px; padding: 10px 12px; }
   .party h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #888888; font-weight: 600; }
