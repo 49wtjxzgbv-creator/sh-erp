@@ -1774,6 +1774,7 @@
     "PURCHASE_REQUEST_CANNOT_DELETE_NON_DRAFT": "Видалити можна лише заявку-чернетку — скасуйте її замість цього.",
     "PURCHASE_REQUEST_PDF_TIMEOUT": "Формування PDF заявки тривало занадто довго. Спробуйте ще раз.",
     "PURCHASE_REQUEST_PDF_RENDER_FAILED": "Не вдалося сформувати PDF заявки.",
+    "PURCHASE_REQUEST_NUMBER_ALREADY_EXISTS": "Заявка з таким номером вже існує — вкажіть інший.",
     "PROCUREMENT_NO_DEFAULT_WAREHOUSE": "Не налаштовано склад за замовчуванням і жоден склад не вказано — незрозуміло, куди оприбутковувати товар.",
     "SUPPLIER_PORTAL_LINE_NOT_FOUND": "Цей рядок не належить даному замовленню постачальнику.",
     "DELIVERY_SCHEDULE_ALREADY_EXISTS": "Для цієї позиції вже існує графік поставки.",

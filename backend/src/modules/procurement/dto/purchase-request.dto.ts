@@ -72,6 +72,12 @@ export class CreatePurchaseRequestDto {
 
 /** Header-only update — same shape as CreatePurchaseRequestDto minus items (which go through the dedicated bulk-replace endpoint, see saveItems). */
 export class UpdatePurchaseRequestDto {
+  @ApiPropertyOptional({ description: 'Auto-assigned on create but editable afterward (2026-10-21 user request) — staff may want to append a suffix or match an external numbering scheme. Stays unique per company.' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  number?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()

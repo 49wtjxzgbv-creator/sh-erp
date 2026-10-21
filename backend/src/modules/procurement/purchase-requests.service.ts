@@ -123,7 +123,17 @@ export class PurchaseRequestsService {
   async update(user: RequestUser, id: string, dto: UpdatePurchaseRequestDto) {
     const before = await this.findOne(user, id);
     this.assertEditable(before);
-    const request = await this.prisma.tenant.purchaseRequest.update({ where: { id }, data: dto as any });
+    let request;
+    try {
+      request = await this.prisma.tenant.purchaseRequest.update({ where: { id }, data: dto as any });
+    } catch (err) {
+      // number is editable (2026-10-21 user request — staff may want to append a suffix or
+      // match an external numbering scheme) but stays unique per company (@@unique([companyId, number])).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new CodedConflictException('PURCHASE_REQUEST_NUMBER_ALREADY_EXISTS', `A purchase request with number "${dto.number}" already exists.`);
+      }
+      throw err;
+    }
     await this.auditService.record({
       companyId: user.companyId,
       actorUserId: user.userId,

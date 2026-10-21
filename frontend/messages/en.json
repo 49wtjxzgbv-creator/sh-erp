@@ -1711,6 +1711,7 @@
     "PURCHASE_REQUEST_CANNOT_DELETE_NON_DRAFT": "Only a draft request can be deleted — cancel it instead.",
     "PURCHASE_REQUEST_PDF_TIMEOUT": "Generating the request PDF took too long. Try again.",
     "PURCHASE_REQUEST_PDF_RENDER_FAILED": "Failed to generate the request PDF.",
+    "PURCHASE_REQUEST_NUMBER_ALREADY_EXISTS": "A purchase request with this number already exists.",
     "CUSTOMER_ORDER_CANNOT_EDIT_ITEMS_TERMINAL": "Cannot change line items on a completed or already-cancelled order.",
     "IMPORT_BLOCKED_BY_ERRORS": "Import blocked due to critical errors.",
     "IMPORT_CONNECTION_NOT_FOUND": "Import connection not found.",

@@ -81,6 +81,7 @@ export default function PurchaseRequestDetailPage() {
   const deleteRequest = useDeletePurchaseRequest();
   const canManage = useHasPermission('purchase-requests:manage');
 
+  const [number, setNumber] = useState('');
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [supplierNameSnapshot, setSupplierNameSnapshot] = useState('');
   const [fromName, setFromName] = useState('');
@@ -92,6 +93,7 @@ export default function PurchaseRequestDetailPage() {
 
   useEffect(() => {
     if (!request) return;
+    setNumber(request.number);
     setSupplierId(request.supplierId ?? undefined);
     setSupplierNameSnapshot(request.supplierNameSnapshot);
     setFromName(request.fromName ?? '');
@@ -145,12 +147,13 @@ export default function PurchaseRequestDetailPage() {
 
   async function handleSaveHeader() {
     setError(null);
-    if (!supplierNameSnapshot.trim()) {
+    if (!number.trim() || !supplierNameSnapshot.trim()) {
       setError(t('invalidOrder'));
       return;
     }
     try {
       await updateHeader.mutateAsync({
+        number: number.trim(),
         supplierId,
         supplierNameSnapshot: supplierNameSnapshot.trim(),
         comment: comment || undefined,
@@ -347,6 +350,15 @@ export default function PurchaseRequestDetailPage() {
           <CardTitle className="text-base">{t('orderHeader')}</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="pr-number">{t('requestNumber')}</Label>
+            <Input
+              id="pr-number"
+              value={number}
+              disabled={!canEdit}
+              onChange={(e) => { setNumber(e.target.value); setHeaderDirty(true); }}
+            />
+          </div>
           <div className="space-y-1.5">
             <Label>{t('supplier')}</Label>
             <SupplierPicker

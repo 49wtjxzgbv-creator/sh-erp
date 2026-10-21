@@ -1,5 +1,15 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PurchaseRequestsService } from './purchase-requests.service';
+
+// Same technique as products.service.spec.ts's own prismaKnownError — a
+// plain object with `code` set isn't enough, `instanceof
+// PrismaClientKnownRequestError` needs the real prototype explicitly set.
+function prismaKnownError(code: string) {
+  const err = Object.assign(new Error('prisma error'), { code, clientVersion: '5.20.0', name: 'PrismaClientKnownRequestError' });
+  Object.setPrototypeOf(err, Prisma.PrismaClientKnownRequestError.prototype);
+  return err;
+}
 
 describe('PurchaseRequestsService', () => {
   let service: PurchaseRequestsService;
@@ -87,6 +97,27 @@ describe('PurchaseRequestsService', () => {
         BadRequestException,
       );
       expect(prisma.tenant.purchaseRequestItem.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update — including the editable document number', () => {
+    it('persists an edited number alongside other header fields', async () => {
+      await service.update(user, 'pr1', { number: 'ЗП-2026-0001-A' } as any);
+      expect(prisma.tenant.purchaseRequest.update).toHaveBeenCalledWith({
+        where: { id: 'pr1' },
+        data: { number: 'ЗП-2026-0001-A' },
+      });
+    });
+
+    it('surfaces a duplicate number (P2002) as a friendly ConflictException', async () => {
+      prisma.tenant.purchaseRequest.update.mockRejectedValue(prismaKnownError('P2002'));
+      await expect(service.update(user, 'pr1', { number: 'ЗП-2026-0001' } as any)).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects editing a CONVERTED request', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, status: 'CONVERTED' });
+      await expect(service.update(user, 'pr1', { number: 'X' } as any)).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.purchaseRequest.update).not.toHaveBeenCalled();
     });
   });
 

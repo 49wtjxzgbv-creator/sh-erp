@@ -365,7 +365,7 @@ export interface PurchaseRequest {
   supplierNameSnapshot: string;
   status: PurchaseRequestStatus;
   comment: string | null;
-  /** "Від кого" block on the generated PDF — free text; null/empty falls back to the company's own name at render time. */
+  /** "Від кого" block on the generated PDF — free text; null/empty renders blank (no default to the company's own name). */
   fromName: string | null;
   /** Set once "Перетворити на замовлення" succeeds — presence alone blocks re-conversion. */
   convertedPurchaseOrderId: string | null;
@@ -397,8 +397,8 @@ export interface CreatePurchaseRequestInput {
 }
 
 /** Header-only — items go through saveItems (full bulk replace). */
-/** `fromName: null` clears a previously-set override back to the company's own name; an omitted key leaves it untouched. */
-export type UpdatePurchaseRequestInput = Partial<Omit<CreatePurchaseRequestInput, 'items' | 'fromName'>> & { fromName?: string | null };
+/** `fromName: null` clears a previously-set override back to blank; an omitted key leaves it untouched. `number` is editable (2026-10-21 user request) — must stay unique per company. */
+export type UpdatePurchaseRequestInput = Partial<Omit<CreatePurchaseRequestInput, 'items' | 'fromName'>> & { fromName?: string | null; number?: string };
 
 export interface QueryPurchaseRequestsInput {
   status?: PurchaseRequestStatus;
