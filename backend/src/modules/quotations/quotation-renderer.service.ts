@@ -196,7 +196,7 @@ export class QuotationRendererService {
     font-family: Inter, Montserrat, 'Helvetica Neue', Helvetica, Arial, sans-serif;
     color: #222222;
     background: #ffffff;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.45;
     margin: 0;
   }
@@ -204,13 +204,13 @@ export class QuotationRendererService {
   .header .brand { display: flex; align-items: center; gap: 14px; }
   .header .brand img { max-height: 42px; max-width: 150px; object-fit: contain; }
   .header .brand-divider { width: 1px; height: 34px; background: #dddddd; }
-  .header .doc-meta { text-align: right; font-size: 11px; color: #555555; }
-  .header .doc-title { font-size: 14pt; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
-  .company-details { font-size: 10.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
+  .header .doc-meta { text-align: right; font-size: 12px; color: #555555; }
+  .header .doc-title { font-size: 15pt; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
+  .company-details { font-size: 11.5px; color: #666666; margin-bottom: 16px; white-space: pre-line; }
   .parties { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px; }
   .party { flex: 1; min-width: 200px; border: 1px solid #e2e2e2; border-radius: 4px; padding: 10px 12px; }
-  .party h3 { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #888888; font-weight: 600; }
-  .party .line { font-size: 11.5px; margin-bottom: 2px; }
+  .party h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #888888; font-weight: 600; }
+  .party .line { font-size: 12.5px; margin-bottom: 2px; }
   /*
    * On-screen only (the iframe preview and, if ever printed directly from a
    * browser, this same rule — @page's margin above is the only thing that
@@ -230,7 +230,7 @@ export class QuotationRendererService {
   table { width: 100%; min-width: 520px; border-collapse: collapse; table-layout: fixed; margin-bottom: 0; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; }
-  th, td { border: 1px solid #999999; padding: 6px 8px; font-size: 11px; vertical-align: top; }
+  th, td { border: 1px solid #999999; padding: 6px 8px; font-size: 12px; vertical-align: top; }
   th { background: #f5f3fa; text-align: left; font-weight: 600; color: #444444; }
   .col-idx { width: 24px; text-align: center; }
   .col-num { width: 90px; text-align: right; white-space: nowrap; }
@@ -240,18 +240,18 @@ export class QuotationRendererService {
   .item-text { min-width: 0; }
   .item-article { color: #888888; font-weight: 400; }
   .item-name { font-weight: 600; }
-  .item-desc { color: #666666; font-size: 10px; margin-top: 2px; }
-  .totals { width: 260px; margin-left: auto; margin-top: 10px; font-size: 11.5px; }
+  .item-desc { color: #666666; font-size: 11px; margin-top: 2px; }
+  .totals { width: 260px; margin-left: auto; margin-top: 10px; font-size: 12.5px; }
   .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
-  .totals .row.grand { border-top: 2px solid ${accent}; margin-top: 4px; padding-top: 8px; font-size: 13.5px; font-weight: 700; }
-  .totals .row-vat { color: #888888; font-size: 10.5px; }
+  .totals .row.grand { border-top: 2px solid ${accent}; margin-top: 4px; padding-top: 8px; font-size: 14.5px; font-weight: 700; }
+  .totals .row-vat { color: #888888; font-size: 11.5px; }
   .terms { margin-top: 22px; }
   .term-block { margin-bottom: 10px; }
-  .term-block h4 { margin: 0 0 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #888888; font-weight: 600; }
-  .term-block p { margin: 0; font-size: 11px; white-space: pre-line; }
+  .term-block h4 { margin: 0 0 3px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #888888; font-weight: 600; }
+  .term-block p { margin: 0; font-size: 12px; white-space: pre-line; }
   .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #dddddd; text-align: center; }
-  .footer-brand { margin: 0; font-size: 10.5px; font-weight: 600; color: #777777; }
-  .footer-tagline { margin: 2px 0 0; font-size: 8.5px; color: #aaaaaa; }
+  .footer-brand { margin: 0; font-size: 11.5px; font-weight: 600; color: #777777; }
+  .footer-tagline { margin: 2px 0 0; font-size: 9.5px; color: #aaaaaa; }
 </style>
 </head>
 <body>
