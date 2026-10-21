@@ -261,14 +261,10 @@ export class PurchaseRequestsService {
     const items = request.items as any[];
 
     const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
-    const allAttachedFileIds = [...new Set(items.flatMap((i) => (i.attachedFileIds as string[]) ?? []))];
 
-    const [company, supplier, branding, productPhotos, attachedFileAssets] = await Promise.all([
-      this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
-      request.supplierId ? this.prisma.tenant.supplier.findUnique({ where: { id: request.supplierId } }) : null,
+    const [branding, productPhotos] = await Promise.all([
       this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
       productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_PHOTO']) : {},
-      allAttachedFileIds.length > 0 ? this.prisma.tenant.fileAsset.findMany({ where: { id: { in: allAttachedFileIds } } }) : [],
     ]);
 
     // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId) — same fallback-to-nothing shape as Quotation's own logoUrl resolution (QuotationsService#renderVersionHtml).
@@ -276,25 +272,15 @@ export class PurchaseRequestsService {
       ? ((await this.filesService.getDownloadUrl(user, branding.printLogoFileId).catch(() => null))?.downloadUrl ?? null)
       : null;
 
-    const fileNameById = new Map((attachedFileAssets as any[]).map((f) => [f.id, f.originalName]));
-    const attachments = items.flatMap((item, i) =>
-      ((item.attachedFileIds as string[]) ?? []).map((fileAssetId) => ({
-        fileAssetId,
-        heading: `Поз. ${i + 1} — ${item.articleSnapshot} — ${fileNameById.get(fileAssetId) ?? 'файл'}`,
-      })),
-    );
+    const attachments = items.flatMap((item) => ((item.attachedFileIds as string[]) ?? []).map((fileAssetId) => ({ fileAssetId })));
 
     const html = this.pdfRenderer.renderHtml({
       number: request.number,
       createdAt: request.createdAt,
-      fromName: request.fromName || company?.name || '',
+      // No default to the company's own name (2026-10-21 user request) — blank unless staff explicitly types an override.
+      fromName: request.fromName || '',
       fromLogoUrl,
-      supplier: {
-        name: request.supplierNameSnapshot,
-        contactPerson: supplier?.contactPerson ?? null,
-        phone: supplier?.phone ?? null,
-        email: supplier?.email ?? null,
-      },
+      supplier: { name: request.supplierNameSnapshot },
       comment: request.comment,
       items: items.map((item) => ({
         articleSnapshot: item.articleSnapshot,

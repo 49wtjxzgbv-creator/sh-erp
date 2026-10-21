@@ -675,7 +675,7 @@
     "sendRequest": "Mark as sent",
     "generatePdf": "Generate PDF",
     "fromName": "From",
-    "fromNamePlaceholder": "Defaults to the company name",
+    "fromNamePlaceholder": "Optional",
     "attachFiles": "Files",
     "attachAllFiles": "Select all",
     "attachedFilesCount": "Files: {count}",

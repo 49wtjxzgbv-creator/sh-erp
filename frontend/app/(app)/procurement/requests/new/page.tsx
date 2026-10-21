@@ -123,21 +123,14 @@ export default function NewPurchaseRequestPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>{t('linkSupplier')}</Label>
+            <Label>{t('supplier')}</Label>
             <SupplierPicker
               value={supplierId}
               onChange={(id, label) => {
                 setSupplierId(id);
-                if (label && !supplierNameSnapshot) setSupplierNameSnapshot(label);
+                if (label) setSupplierNameSnapshot(label);
               }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="supplierNameSnapshot">{t('supplier')}</Label>
-            <Input
-              id="supplierNameSnapshot"
-              value={supplierNameSnapshot}
-              onChange={(e) => setSupplierNameSnapshot(e.target.value)}
+              onQueryChange={setSupplierNameSnapshot}
             />
           </div>
           <div className="space-y-1.5">

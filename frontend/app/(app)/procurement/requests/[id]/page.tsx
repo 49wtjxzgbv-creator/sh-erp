@@ -348,23 +348,16 @@ export default function PurchaseRequestDetailPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>{t('linkSupplier')}</Label>
+            <Label>{t('supplier')}</Label>
             <SupplierPicker
               value={supplierId}
+              initialLabel={request.supplierNameSnapshot}
               onChange={(id, label) => {
                 setSupplierId(id);
-                if (label && !supplierNameSnapshot) setSupplierNameSnapshot(label);
+                if (label) setSupplierNameSnapshot(label);
                 setHeaderDirty(true);
               }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pr-supplierNameSnapshot">{t('supplier')}</Label>
-            <Input
-              id="pr-supplierNameSnapshot"
-              value={supplierNameSnapshot}
-              disabled={!canEdit}
-              onChange={(e) => { setSupplierNameSnapshot(e.target.value); setHeaderDirty(true); }}
+              onQueryChange={(text) => { setSupplierNameSnapshot(text); setHeaderDirty(true); }}
             />
           </div>
           <div className="space-y-1.5">

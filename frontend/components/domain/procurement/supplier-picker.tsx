@@ -23,9 +23,11 @@ export interface SupplierPickerProps {
   placeholder?: string;
   /** Seeds the search box on mount for a row hydrated from server data where the supplier's name is already known — without this, a picker that already has `value` set shows an empty box until the user re-searches (this component only ever learns a label from its own onChange). Only read once, at mount; not synced on later prop changes. */
   initialLabel?: string;
+  /** Fires on every keystroke (not just a selection) — opt-in only, for a caller that wants the typed text itself as a free-text fallback name (e.g. PurchaseRequest's supplierNameSnapshot, which the legacy system always allowed to be free text with no matching Supplier row). */
+  onQueryChange?: (query: string) => void;
 }
 
-export function SupplierPicker({ value, onChange, placeholder, initialLabel }: SupplierPickerProps) {
+export function SupplierPicker({ value, onChange, placeholder, initialLabel, onQueryChange }: SupplierPickerProps) {
   const t = useTranslations('procurement');
   const [query, setQuery] = useState(initialLabel ?? '');
   const [open, setOpen] = useState(false);
@@ -45,6 +47,7 @@ export function SupplierPicker({ value, onChange, placeholder, initialLabel }: S
         onQueryChange={(next) => {
           setQuery(next);
           if (!next) onChange(undefined, undefined);
+          onQueryChange?.(next);
         }}
         open={open}
         onOpenChange={setOpen}

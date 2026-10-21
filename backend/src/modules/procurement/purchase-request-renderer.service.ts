@@ -16,7 +16,8 @@ export interface PurchaseRequestRenderData {
   fromName: string;
   /** Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId), resolved to a presigned URL — shown next to fromName in the "Від кого" block, not in the top header (which always shows only the platform's own logo). */
   fromLogoUrl: string | null;
-  supplier: { name: string; contactPerson: string | null; phone: string | null; email: string | null };
+  /** Only the name — never the linked Supplier record's own contact/phone/email (2026-10-21 user request: the PDF should show just who we're addressing, not pull in extra fields the snapshot doesn't carry). */
+  supplier: { name: string };
   comment: string | null;
   items: PurchaseRequestRenderItem[];
 }
@@ -90,8 +91,8 @@ export class PurchaseRequestRendererService {
   th, td { border: 1px solid #999999; padding: 6px 8px; font-size: 11px; vertical-align: top; }
   th { background: #f5f3fa; text-align: left; font-weight: 600; color: #444444; }
   .col-idx { width: 24px; text-align: center; }
-  .col-photo { width: 44px; text-align: center; }
-  .item-photo { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; border: 1px solid #dddddd; }
+  .col-photo { width: 90px; text-align: center; }
+  .item-photo { width: 68px; height: 68px; object-fit: cover; border-radius: 4px; border: 1px solid #dddddd; }
   .col-article { width: 110px; color: #666666; }
   .col-num { width: 90px; text-align: right; white-space: nowrap; }
   .comment { margin-top: 18px; }
@@ -126,9 +127,6 @@ export class PurchaseRequestRendererService {
     <div class="party">
       <h3>Постачальник</h3>
       <div class="line"><strong>${escapeHtml(data.supplier.name)}</strong></div>
-      ${data.supplier.contactPerson ? `<div class="line">${escapeHtml(data.supplier.contactPerson)}</div>` : ''}
-      ${data.supplier.phone ? `<div class="line">${escapeHtml(data.supplier.phone)}</div>` : ''}
-      ${data.supplier.email ? `<div class="line">${escapeHtml(data.supplier.email)}</div>` : ''}
     </div>
   </div>
 

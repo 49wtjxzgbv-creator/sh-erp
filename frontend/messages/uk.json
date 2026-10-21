@@ -680,7 +680,7 @@
     "sendRequest": "Позначити надісланою",
     "generatePdf": "Сформувати PDF",
     "fromName": "Від кого",
-    "fromNamePlaceholder": "За замовчуванням — назва компанії",
+    "fromNamePlaceholder": "Необов’язково",
     "attachFiles": "Файли",
     "attachAllFiles": "Вибрати всі",
     "attachedFilesCount": "Файлів: {count}",

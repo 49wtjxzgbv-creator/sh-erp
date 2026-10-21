@@ -38,10 +38,8 @@ describe('PurchaseRequestsService', () => {
           delete: jest.fn(),
         },
         purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn() },
-        company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
-        supplier: { findUnique: jest.fn().mockResolvedValue({ id: 's1', name: 'Acme Supplier', contactPerson: null, phone: null, email: null }) },
+        supplier: { findUnique: jest.fn() },
         companyBranding: { findUnique: jest.fn().mockResolvedValue(null) },
-        fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
         $queryRaw: jest.fn().mockResolvedValue([{ lastValue: 1 }]),
       },
     };
@@ -152,9 +150,9 @@ describe('PurchaseRequestsService', () => {
       expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
         expect.objectContaining({
           number: 'ЗП-2026-0001',
-          fromName: 'My Company',
+          fromName: '',
           fromLogoUrl: null,
-          supplier: expect.objectContaining({ name: 'Acme Supplier' }),
+          supplier: { name: 'Acme Supplier' },
           items: [expect.objectContaining({ articleSnapshot: 'ABC', qty: 10, photoUrl: null })],
         }),
       );
@@ -166,7 +164,7 @@ describe('PurchaseRequestsService', () => {
       });
     });
 
-    it('prefers PurchaseRequest.fromName over the company name when set', async () => {
+    it('uses PurchaseRequest.fromName when set — no default to the company name', async () => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, fromName: 'Custom Sender LLC' });
       await service.generatePdf(user, 'pr1');
       expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ fromName: 'Custom Sender LLC' }));
@@ -188,24 +186,15 @@ describe('PurchaseRequestsService', () => {
       );
     });
 
-    it('builds one merge attachment per selected file id, with a heading naming the line and the file', async () => {
+    it('builds one merge attachment per selected file id', async () => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({
         ...request,
         items: [{ ...request.items[0], attachedFileIds: ['f1', 'f2'] }],
       });
-      prisma.tenant.fileAsset.findMany.mockResolvedValue([
-        { id: 'f1', originalName: 'drawing.pdf' },
-        { id: 'f2', originalName: 'spec.png' },
-      ]);
       await service.generatePdf(user, 'pr1');
       expect(pdfService.generateAndStore).toHaveBeenCalledWith(
         user,
-        expect.objectContaining({
-          attachments: [
-            { fileAssetId: 'f1', heading: 'Поз. 1 — ABC — drawing.pdf' },
-            { fileAssetId: 'f2', heading: 'Поз. 1 — ABC — spec.png' },
-          ],
-        }),
+        expect.objectContaining({ attachments: [{ fileAssetId: 'f1' }, { fileAssetId: 'f2' }] }),
       );
     });
 
@@ -214,13 +203,11 @@ describe('PurchaseRequestsService', () => {
       await expect(service.generatePdf(user, 'pr1')).resolves.toEqual(expect.objectContaining({ pdfFileId: 'file-1' }));
     });
 
-    it('falls back to supplierNameSnapshot with null contact fields when the request has no linked supplierId', async () => {
+    it('uses supplierNameSnapshot for the supplier block — no linked Supplier record is fetched', async () => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, supplierId: null });
       await service.generatePdf(user, 'pr1');
       expect(prisma.tenant.supplier.findUnique).not.toHaveBeenCalled();
-      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
-        expect.objectContaining({ supplier: { name: 'Acme Supplier', contactPerson: null, phone: null, email: null } }),
-      );
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ supplier: { name: 'Acme Supplier' } }));
     });
   });
 
