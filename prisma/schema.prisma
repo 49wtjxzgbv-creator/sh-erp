@@ -3588,7 +3588,7 @@ model QuotationTemplate {
 model Quotation {
   id         String          @id @default(uuid()) @db.Uuid
   companyId  String          @db.Uuid
-  number     String // "КП-2026-0001" — generated once via CompanyDocumentCounter, immutable after creation, never user-typed
+  number     String // "КП-2026-0001" — generated once via CompanyDocumentCounter; editable afterward (2026-10-22 user request, QuotationsService#updateNumber) to append a suffix or match an external numbering scheme
   customerId String          @db.Uuid
   status     QuotationStatus @default(DRAFT)
 

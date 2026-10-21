@@ -12,7 +12,14 @@ import { DocumentNumberingService } from './document-numbering.service';
 import { QuotationPricingService } from './quotation-pricing.service';
 import { QuotationPdfService } from './quotation-pdf.service';
 import { QuotationRendererService } from './quotation-renderer.service';
-import { CreateQuotationDto, QueryQuotationsDto, QuotationItemInputDto, SaveQuotationItemsDto, UpdateQuotationVersionDto } from './dto/quotation.dto';
+import {
+  CreateQuotationDto,
+  QueryQuotationsDto,
+  QuotationItemInputDto,
+  SaveQuotationItemsDto,
+  UpdateQuotationNumberDto,
+  UpdateQuotationVersionDto,
+} from './dto/quotation.dto';
 
 /**
  * КП ≠ CustomerOrder (explicit user decision) — a Quotation exists
@@ -205,6 +212,44 @@ export class QuotationsService {
     if (version.sentAt) {
       throw new CodedConflictException('QUOTATION_VERSION_LOCKED', 'This version was already sent and is now immutable — use "Створити нову версію" to make changes.');
     }
+  }
+
+  /**
+   * number is editable (2026-10-22 user request — staff may want to
+   * append a suffix or match an external numbering scheme). It lives on
+   * the Quotation row itself, not per-version, so — unlike
+   * updateVersionTerms — this is never blocked by a sent/locked version:
+   * the current version can be fully frozen while the document's own
+   * label is still just text. Nothing re-reads Quotation.number live
+   * after the fact except display UI — convertToOrder() copies it into
+   * CustomerOrder.orderNumber once, at conversion time, so a later edit
+   * here can't retroactively desync an already-converted order.
+   */
+  async updateNumber(user: RequestUser, id: string, dto: UpdateQuotationNumberDto) {
+    const before = await this.prisma.tenant.quotation.findUnique({ where: { id } });
+    if (!before) throw new CodedNotFoundException('QUOTATION_NOT_FOUND', 'Quotation not found.');
+
+    let quotation;
+    try {
+      quotation = await this.prisma.tenant.quotation.update({ where: { id }, data: { number: dto.number } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new CodedConflictException('QUOTATION_NUMBER_ALREADY_EXISTS', `A quotation with number "${dto.number}" already exists.`);
+      }
+      throw err;
+    }
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'quotation.number_updated',
+      entityType: 'Quotation',
+      entityId: id,
+      before: { number: before.number },
+      after: { number: quotation.number },
+    });
+
+    return quotation;
   }
 
   async updateVersionTerms(user: RequestUser, quotationId: string, dto: UpdateQuotationVersionDto) {

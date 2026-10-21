@@ -1915,6 +1915,7 @@
     "number": "Number",
     "customer": "Customer",
     "customerRequired": "Select a customer.",
+    "numberRequired": "Enter a number.",
     "status": "Status",
     "total": "Total",
     "currency": "Currency",

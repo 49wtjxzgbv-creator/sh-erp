@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { QUOTATION_LOCALES } from '../quotation-renderer.service';
 
 export class CreateQuotationDto {
@@ -59,6 +59,14 @@ export class CreateQuotationDto {
 
 /** Header-only update of the CURRENT version's terms — items are saved separately via SaveQuotationItemsDto. Only valid while the current version is still DRAFT (not sentAt). */
 export class UpdateQuotationVersionDto extends PartialType(CreateQuotationDto) {}
+
+/** Document number — editable (2026-10-22 user request) in case staff need to append a suffix or match an external numbering scheme. Lives on the Quotation row itself (not per-version), so unlike UpdateQuotationVersionDto this is never locked by a sent version. Stays unique per company. */
+export class UpdateQuotationNumberDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  number!: string;
+}
 
 export class QuotationItemInputDto {
   @ApiProperty({ enum: ['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'] })

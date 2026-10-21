@@ -198,6 +198,10 @@ export function createQuotation(dto: CreateQuotationInput): Promise<Quotation> {
 export function updateQuotationTerms(id: string, dto: UpdateQuotationVersionInput): Promise<QuotationVersion> {
   return apiClient.patch<QuotationVersion>(`quotations/${id}/terms`, dto);
 }
+/** Changes the quotation's own document number — e.g. to append a suffix or match an external numbering scheme. Lives on the Quotation row itself, so unlike updateQuotationTerms this works even once the current version is locked (sent). */
+export function updateQuotationNumber(id: string, number: string): Promise<Quotation> {
+  return apiClient.patch<Quotation>(`quotations/${id}/number`, { number });
+}
 export function saveQuotationItems(id: string, items: QuotationItemInput[]): Promise<Quotation> {
   return apiClient.patch<Quotation>(`quotations/${id}/items`, { items });
 }

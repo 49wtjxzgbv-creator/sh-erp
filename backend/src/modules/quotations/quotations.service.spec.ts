@@ -1,7 +1,17 @@
+import { Prisma } from '@prisma/client';
 import { QuotationsService } from './quotations.service';
 import { QuotationPricingService } from './quotation-pricing.service';
 
 const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
+
+// Same technique as products.service.spec.ts's own prismaKnownError — a plain
+// object with `code` set isn't enough, `instanceof PrismaClientKnownRequestError`
+// needs the real prototype explicitly set.
+function prismaKnownError(code: string) {
+  const err = Object.assign(new Error('prisma error'), { code, clientVersion: '5.20.0', name: 'PrismaClientKnownRequestError' });
+  Object.setPrototypeOf(err, Prisma.PrismaClientKnownRequestError.prototype);
+  return err;
+}
 
 function makeFakePrisma() {
   const db = {
@@ -180,7 +190,7 @@ function makeService() {
   };
 
   const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any, ai as any);
-  return { service, db, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, ai, nextId };
+  return { service, db, prisma, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, ai, nextId };
 }
 
 describe('QuotationsService', () => {
@@ -190,6 +200,36 @@ describe('QuotationsService', () => {
     expect(result.status).toBe('DRAFT');
     expect(result.currentVersion.versionNumber).toBe(1);
     expect(result.currentVersion.sentAt).toBeNull();
+  });
+
+  describe('updateNumber — editable document number (2026-10-22)', () => {
+    it('persists an edited number', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      const updated = await service.updateNumber(user, q.id, { number: `${q.number}-A` });
+      expect(updated.number).toBe(`${q.number}-A`);
+    });
+
+    it('stays editable even once the current version is sent (locked)', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'CUSTOM', nameSnapshot: 'X', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10 }] } as any);
+      await service.send(user, q.id);
+      const updated = await service.updateNumber(user, q.id, { number: `${q.number}-A` });
+      expect(updated.number).toBe(`${q.number}-A`);
+    });
+
+    it('surfaces a duplicate number (P2002) as a friendly ConflictException', async () => {
+      const { service, prisma } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      prisma.tenant.quotation.update.mockRejectedValueOnce(prismaKnownError('P2002'));
+      await expect(service.updateNumber(user, q.id, { number: 'КП-2026-0001' })).rejects.toThrow();
+    });
+
+    it('rejects an unknown quotation id', async () => {
+      const { service } = makeService();
+      await expect(service.updateNumber(user, 'nope', { number: 'X' })).rejects.toThrow();
+    });
   });
 
   describe('saveItems — resolution and editability', () => {

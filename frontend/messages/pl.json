@@ -1915,6 +1915,7 @@
     "number": "Numer",
     "customer": "Klient",
     "customerRequired": "Wybierz klienta.",
+    "numberRequired": "Enter a number.",
     "status": "Status",
     "total": "Suma",
     "currency": "Waluta",

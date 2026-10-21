@@ -2,7 +2,14 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { CreateQuotationDto, QueryQuotationsDto, SaveQuotationItemsDto, TranslateQuotationDto, UpdateQuotationVersionDto } from './dto/quotation.dto';
+import {
+  CreateQuotationDto,
+  QueryQuotationsDto,
+  SaveQuotationItemsDto,
+  TranslateQuotationDto,
+  UpdateQuotationNumberDto,
+  UpdateQuotationVersionDto,
+} from './dto/quotation.dto';
 import { QuotationsService } from './quotations.service';
 
 @ApiTags('quotations')
@@ -37,6 +44,13 @@ export class QuotationsController {
   async previewHtml(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     const html = await this.quotationsService.previewHtml(user, id);
     return { html };
+  }
+
+  @Patch(':id/number')
+  @RequirePermissions('quotations:manage')
+  @ApiOperation({ summary: "Change the quotation's own document number — e.g. to append a suffix or match an external numbering scheme. Unique per company." })
+  async updateNumber(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateQuotationNumberDto) {
+    return this.quotationsService.updateNumber(user, id, dto);
   }
 
   @Patch(':id/terms')

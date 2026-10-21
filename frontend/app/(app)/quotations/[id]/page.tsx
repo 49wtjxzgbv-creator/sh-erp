@@ -8,6 +8,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import {
   useQuotation,
   useUpdateQuotationTerms,
+  useUpdateQuotationNumber,
   useSaveQuotationItems,
   useApproveBelowCost,
   useSendQuotation,
@@ -48,7 +49,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Languages } from 'lucide-react';
+import { Languages, Pencil, Check, X } from 'lucide-react';
 
 const STATUS_VARIANT: Record<QuotationStatus, 'secondary' | 'warning' | 'success' | 'destructive' | 'default'> = {
   DRAFT: 'secondary',
@@ -119,6 +120,7 @@ export default function QuotationDetailPage() {
 
   const saveItems = useSaveQuotationItems(params.id);
   const updateTerms = useUpdateQuotationTerms(params.id);
+  const updateNumber = useUpdateQuotationNumber(params.id);
   const approveBelowCost = useApproveBelowCost(params.id);
   const sendQuotation = useSendQuotation(params.id);
   const createNewVersion = useCreateNewQuotationVersion(params.id);
@@ -493,7 +495,12 @@ export default function QuotationDetailPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">{quotation.number}</h2>
+          <QuotationNumberHeading
+            number={quotation.number}
+            canEdit={canManage}
+            onSave={async (number) => { await updateNumber.mutateAsync(number); }}
+            pending={updateNumber.isPending}
+          />
           <Badge variant={STATUS_VARIANT[quotation.status]}>{t(`quotationStatus${quotation.status}`)}</Badge>
           {isExpired && <Badge variant="destructive">{t('quotationStatusEXPIRED')}</Badge>}
           {isLocked && <Badge variant="outline">{t('versionLocked')}</Badge>}
@@ -650,6 +657,74 @@ export default function QuotationDetailPage() {
           <TabsContent value="preview">{previewPane}</TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+/** Same inline pencil/Check/X edit pattern as sales/[id]/page.tsx's own ItemQtyCell — number lives on the Quotation row itself (not the current version), so it stays editable even once the version is locked (sent). */
+function QuotationNumberHeading({
+  number,
+  canEdit,
+  onSave,
+  pending,
+}: {
+  number: string;
+  canEdit: boolean;
+  onSave: (number: string) => Promise<void>;
+  pending: boolean;
+}) {
+  const t = useTranslations('quotations');
+  const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(number);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  if (!canEdit || !editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <h2 className="text-lg font-semibold">{number}</h2>
+        {canEdit && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={() => {
+              setValue(number);
+              setLocalError(null);
+              setEditing(true);
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  async function handleSave() {
+    if (!value.trim()) {
+      setLocalError(t('numberRequired'));
+      return;
+    }
+    try {
+      await onSave(value.trim());
+      setEditing(false);
+    } catch (err) {
+      setLocalError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input className="h-7 w-40" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+      <Button size="icon" variant="ghost" className="h-6 w-6" loading={pending} onClick={handleSave}>
+        <Check className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditing(false)}>
+        <X className="h-3.5 w-3.5" />
+      </Button>
+      {localError && <p className="text-xs text-destructive">{localError}</p>}
     </div>
   );
 }
