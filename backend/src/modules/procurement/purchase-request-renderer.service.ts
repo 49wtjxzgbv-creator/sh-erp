@@ -88,11 +88,11 @@ export class PurchaseRequestRendererService {
   table { width: 100%; min-width: 480px; border-collapse: collapse; table-layout: fixed; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; }
-  th, td { border: 1px solid #999999; padding: 6px 8px; font-size: 11px; vertical-align: top; }
+  th, td { border: 1px solid #999999; padding: 8px 10px; font-size: 13px; vertical-align: middle; }
   th { background: #f5f3fa; text-align: left; font-weight: 600; color: #444444; }
   .col-idx { width: 24px; text-align: center; }
-  .col-photo { width: 90px; text-align: center; }
-  .item-photo { width: 68px; height: 68px; object-fit: cover; border-radius: 4px; border: 1px solid #dddddd; }
+  .col-photo { width: 62px; text-align: center; }
+  .item-photo { width: 46px; height: 46px; object-fit: cover; border-radius: 4px; border: 1px solid #dddddd; }
   .col-article { width: 110px; color: #666666; }
   .col-num { width: 90px; text-align: right; white-space: nowrap; }
   .comment { margin-top: 18px; }
