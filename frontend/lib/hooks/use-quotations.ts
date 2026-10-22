@@ -7,6 +7,7 @@ import {
   createQuotation,
   updateQuotationTerms,
   updateQuotationNumber,
+  updateQuotationInternalNote,
   saveQuotationItems,
   approveBelowCost,
   sendQuotation,
@@ -77,6 +78,14 @@ export function useUpdateQuotationNumber(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (number: string) => updateQuotationNumber(id, number),
+    onSuccess: () => invalidateQuotation(qc, id),
+  });
+}
+
+export function useUpdateQuotationInternalNote(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (internalNote: string | null) => updateQuotationInternalNote(id, internalNote),
     onSuccess: () => invalidateQuotation(qc, id),
   });
 }

@@ -232,6 +232,45 @@ describe('QuotationsService', () => {
     });
   });
 
+  describe('updateInternalNote — staff-only note (2026-10-22)', () => {
+    it('sets a note', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      const updated = await service.updateInternalNote(user, q.id, { internalNote: 'Call back Tuesday' });
+      expect(updated.internalNote).toBe('Call back Tuesday');
+    });
+
+    it('clears a previously-set note when given null (the DTO\'s own "" -> null transform runs upstream, in the pipe, not here)', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.updateInternalNote(user, q.id, { internalNote: 'Draft note' });
+      const cleared = await service.updateInternalNote(user, q.id, { internalNote: null });
+      expect(cleared.internalNote).toBeNull();
+    });
+
+    it('stays editable even once the current version is sent (locked)', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'CUSTOM', nameSnapshot: 'X', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10 }] } as any);
+      await service.send(user, q.id);
+      const updated = await service.updateInternalNote(user, q.id, { internalNote: 'Note after send' });
+      expect(updated.internalNote).toBe('Note after send');
+    });
+
+    it('rejects an unknown quotation id', async () => {
+      const { service } = makeService();
+      await expect(service.updateInternalNote(user, 'nope', { internalNote: 'X' })).rejects.toThrow();
+    });
+
+    it('is included on list rows', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.updateInternalNote(user, q.id, { internalNote: 'Visible in list' });
+      const result = await service.query(user, {} as any);
+      expect(result.items.find((i: any) => i.id === q.id)?.internalNote).toBe('Visible in list');
+    });
+  });
+
   describe('saveItems — resolution and editability', () => {
     it('resolves an ASSEMBLY item using live cost + baseSalePriceEur at save time', async () => {
       const { service, db, assemblies } = makeService();

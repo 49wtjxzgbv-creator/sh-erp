@@ -17,6 +17,7 @@ import {
   QueryQuotationsDto,
   QuotationItemInputDto,
   SaveQuotationItemsDto,
+  UpdateQuotationInternalNoteDto,
   UpdateQuotationNumberDto,
   UpdateQuotationVersionDto,
 } from './dto/quotation.dto';
@@ -190,6 +191,7 @@ export class QuotationsService {
         currency: currentVersion?.currency ?? 'EUR',
         validUntil: currentVersion?.validUntil ?? null,
         isExpired: this.isExpired(q.status, currentVersion?.validUntil ?? null),
+        internalNote: q.internalNote ?? null,
       };
     });
 
@@ -248,6 +250,32 @@ export class QuotationsService {
       entityId: id,
       before: { number: before.number },
       after: { number: quotation.number },
+    });
+
+    return quotation;
+  }
+
+  /**
+   * Staff-only note (2026-10-22 user request) — purely internal metadata,
+   * never rendered on the printed/customer-facing document (unlike
+   * QuotationVersion.notes, which is a term-block the customer sees).
+   * Lives on the Quotation row itself and is editable at any time,
+   * regardless of version lock/status — it carries no document content.
+   */
+  async updateInternalNote(user: RequestUser, id: string, dto: UpdateQuotationInternalNoteDto) {
+    const before = await this.prisma.tenant.quotation.findUnique({ where: { id } });
+    if (!before) throw new CodedNotFoundException('QUOTATION_NOT_FOUND', 'Quotation not found.');
+
+    const quotation = await this.prisma.tenant.quotation.update({ where: { id }, data: { internalNote: dto.internalNote } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'quotation.internal_note_updated',
+      entityType: 'Quotation',
+      entityId: id,
+      before: { internalNote: before.internalNote },
+      after: { internalNote: quotation.internalNote },
     });
 
     return quotation;

@@ -7,6 +7,7 @@ import {
   QueryQuotationsDto,
   SaveQuotationItemsDto,
   TranslateQuotationDto,
+  UpdateQuotationInternalNoteDto,
   UpdateQuotationNumberDto,
   UpdateQuotationVersionDto,
 } from './dto/quotation.dto';
@@ -51,6 +52,13 @@ export class QuotationsController {
   @ApiOperation({ summary: "Change the quotation's own document number — e.g. to append a suffix or match an external numbering scheme. Unique per company." })
   async updateNumber(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateQuotationNumberDto) {
     return this.quotationsService.updateNumber(user, id, dto);
+  }
+
+  @Patch(':id/internal-note')
+  @RequirePermissions('quotations:manage')
+  @ApiOperation({ summary: 'Set/clear a staff-only internal note — never shown on the printed/customer-facing document, editable from the quotations list.' })
+  async updateInternalNote(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateQuotationInternalNoteDto) {
+    return this.quotationsService.updateInternalNote(user, id, dto);
   }
 
   @Patch(':id/terms')

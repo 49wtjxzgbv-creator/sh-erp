@@ -91,6 +91,16 @@ export class UpdateQuotationNumberDto {
   number!: string;
 }
 
+/** Staff-only note (2026-10-22 user request) — editable inline from the quotations list, never shown on the printed/customer-facing document. Same "omitted leaves untouched, null/empty clears" convention as the other Quotation-level editable fields. */
+export class UpdateQuotationInternalNoteDto {
+  @ApiPropertyOptional({ nullable: true, description: 'Internal, staff-only note — never rendered on the printed document. null/empty clears it; an omitted key leaves the current value untouched.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  internalNote?: string | null;
+}
+
 export class QuotationItemInputDto {
   @ApiProperty({ enum: ['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'] })
   @IsIn(['ASSEMBLY', 'PRODUCT', 'SERVICE', 'DELIVERY', 'INSTALLATION', 'CUSTOM'])

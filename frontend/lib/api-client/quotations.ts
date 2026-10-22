@@ -115,6 +115,8 @@ export interface Quotation {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Staff-only note — never rendered on the printed/customer-facing document, editable inline from the quotations list. */
+  internalNote: string | null;
   /** Present on findOne only. */
   customer?: Customer;
   currentVersion?: QuotationVersion;
@@ -134,6 +136,8 @@ export interface QuotationListItem {
   validUntil: string | null;
   /** Computed, never persisted — true only for a SENT/VIEWED quotation whose validUntil has passed (QuotationsService#isExpired). */
   isExpired: boolean;
+  /** Staff-only note — never rendered on the printed/customer-facing document, editable inline from the quotations list. */
+  internalNote: string | null;
 }
 
 export interface CreateQuotationInput {
@@ -205,6 +209,10 @@ export function updateQuotationTerms(id: string, dto: UpdateQuotationVersionInpu
 /** Changes the quotation's own document number — e.g. to append a suffix or match an external numbering scheme. Lives on the Quotation row itself, so unlike updateQuotationTerms this works even once the current version is locked (sent). */
 export function updateQuotationNumber(id: string, number: string): Promise<Quotation> {
   return apiClient.patch<Quotation>(`quotations/${id}/number`, { number });
+}
+/** Sets/clears a staff-only internal note — never shown on the printed/customer-facing document. `null` clears it. */
+export function updateQuotationInternalNote(id: string, internalNote: string | null): Promise<Quotation> {
+  return apiClient.patch<Quotation>(`quotations/${id}/internal-note`, { internalNote });
 }
 export function saveQuotationItems(id: string, items: QuotationItemInput[]): Promise<Quotation> {
   return apiClient.patch<Quotation>(`quotations/${id}/items`, { items });

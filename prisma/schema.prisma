@@ -3598,6 +3598,15 @@ model Quotation {
   // not a new version of the old one).
   duplicatedFromId String? @db.Uuid
 
+  // Staff-only note (2026-10-22 user request — "додай можливість робити
+  // внутрішні примітки до комерційних пропозицій для себе у списку всіх
+  // пропозицій") — editable inline from the quotations list, NEVER
+  // rendered on the printed/customer-facing document (unlike
+  // QuotationVersion.notes, which is a term-block the customer actually
+  // sees). Lives on the Quotation row itself since it's a persistent
+  // staff annotation independent of any one version.
+  internalNote String?
+
   // Set once "Створити замовлення" succeeds — presence alone blocks
   // re-conversion (§12); the specific version used is on the created
   // CustomerOrder itself (CustomerOrder.sourceQuotationVersionId), not

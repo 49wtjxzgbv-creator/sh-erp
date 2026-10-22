@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Copy, Trash2 } from 'lucide-react';
-import { useQuotations, useDuplicateQuotation, useDeleteQuotation } from '@/lib/hooks/use-quotations';
+import { useQuotations, useDuplicateQuotation, useDeleteQuotation, useUpdateQuotationInternalNote } from '@/lib/hooks/use-quotations';
 import { formatMoney } from '@/lib/finance-format';
 import type { QuotationListItem, QuotationStatus } from '@/lib/api-client/quotations';
 import { DataTable } from '@/components/domain/data-table/data-table';
@@ -26,6 +26,40 @@ const STATUS_VARIANT: Record<QuotationStatus, 'secondary' | 'warning' | 'success
   ACCEPTED: 'success',
   REJECTED: 'destructive',
 };
+
+/** Inline-editable, saves on blur — a staff-only note, never shown on the printed document (see QuotationsService#updateInternalNote). Click/focus stop propagation so editing a note doesn't navigate the row into the quotation's own detail page. */
+function InternalNoteCell({ item, canEdit }: { item: QuotationListItem; canEdit: boolean }) {
+  const t = useTranslations('quotations');
+  const updateNote = useUpdateQuotationInternalNote(item.id);
+  const [value, setValue] = useState(item.internalNote ?? '');
+
+  useEffect(() => {
+    setValue(item.internalNote ?? '');
+  }, [item.internalNote]);
+
+  function commit() {
+    const trimmed = value.trim();
+    if (trimmed === (item.internalNote ?? '')) return;
+    updateNote.mutate(trimmed || null);
+  }
+
+  if (!canEdit) return <span className="text-sm text-muted-foreground">{item.internalNote || '—'}</span>;
+
+  return (
+    <Input
+      value={value}
+      placeholder={t('internalNotePlaceholder')}
+      className="h-8 w-48 text-sm"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
 
 export default function QuotationsPage() {
   const t = useTranslations('quotations');
@@ -83,6 +117,11 @@ export default function QuotationsPage() {
         accessorKey: 'createdAt',
         header: t('createdAt'),
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
+      {
+        id: 'internalNote',
+        header: t('internalNote'),
+        cell: ({ row }) => <InternalNoteCell item={row.original} canEdit={canManage} />,
       },
       {
         id: 'actions',

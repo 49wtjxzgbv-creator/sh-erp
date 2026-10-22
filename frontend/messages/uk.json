@@ -2116,6 +2116,8 @@
     "notes": "Примітки",
     "companyDetailsOverride": "Текст компанії (замість реквізитів)",
     "companyDetailsOverridePlaceholder": "Необов’язково — за замовчуванням реквізити компанії з Налаштувань",
+    "internalNote": "Нотатка",
+    "internalNotePlaceholder": "Нотатка для себе...",
     "items": "Позиції",
     "noItemsYet": "Ще немає жодної позиції — додайте першу нижче.",
     "addItem": "Додати позицію",
