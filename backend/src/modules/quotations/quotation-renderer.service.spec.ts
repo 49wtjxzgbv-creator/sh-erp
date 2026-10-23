@@ -67,7 +67,7 @@ describe('QuotationRendererService', () => {
     expect(html).toContain('5%');
   });
 
-  it('omits the "Знижка" column entirely (header and every row) when nothing has a discount (2026-10-23)', () => {
+  it('omits the "Знижка" column entirely (header and every row), and the redundant "Разом до знижки" subtotal row, when nothing has a discount (2026-10-23)', () => {
     const html = service.renderHtml(
       baseData({
         items: [
@@ -79,6 +79,12 @@ describe('QuotationRendererService', () => {
       }),
     );
     expect(html).not.toContain('Знижка');
+    expect(html).not.toContain('Разом до знижки');
+  });
+
+  it('shows "Разом до знижки" alongside the grand total when a discount exists', () => {
+    const html = service.renderHtml(baseData());
+    expect(html).toContain('Разом до знижки');
   });
 
   it('escapes HTML-significant characters in user-entered text — a customer name cannot inject markup', () => {

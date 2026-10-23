@@ -302,7 +302,7 @@ export class QuotationRendererService {
   </div>
 
   <div class="totals">
-    <div class="row"><span>${l.subtotalBeforeDiscount}</span><span>${money(data.subtotal)}</span></div>
+    ${data.discountAmount > 0 ? `<div class="row"><span>${l.subtotalBeforeDiscount}</span><span>${money(data.subtotal)}</span></div>` : ''}
     ${data.discountAmount > 0 ? `<div class="row"><span>${l.discount}</span><span>-${money(data.discountAmount)}</span></div>` : ''}
     <div class="row grand"><span>${l.totalDue}</span><span>${money(data.total)}</span></div>
     ${data.vatRatePercent !== null && data.germanVatInclTotal > 0 ? `<div class="row row-vat"><span>${l.vatIncluded} ${formatQty(data.vatRatePercent)}%</span><span>${money(data.germanVatAmount)}</span></div>` : ''}
