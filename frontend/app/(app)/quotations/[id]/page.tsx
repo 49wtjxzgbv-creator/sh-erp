@@ -315,22 +315,34 @@ export default function QuotationDetailPage() {
     if (!pdfFileId) return;
     try {
       const { downloadUrl } = await getFileDownloadUrl(pdfFileId);
-      const win = window.open(downloadUrl, '_blank');
-      // The presigned download URL is a different origin (storage.*), so the
-      // popup's own 'load' event isn't observable here (SecurityError on a
-      // cross-origin Window) — a short delay before print() is the same
-      // best-effort workaround every "open then print" flow needs for a
-      // cross-origin file. If the browser blocks/delays it, the PDF is still
-      // open and the user can print manually (Ctrl+P or the viewer's own icon).
-      if (win) {
-        setTimeout(() => {
-          try {
-            win.print();
-          } catch {
-            // Best-effort only — see comment above.
-          }
-        }, 1000);
-      }
+      // A hidden iframe, not window.open — Chrome renders a PDF src via its
+      // own built-in viewer regardless of origin, and the IFRAME ELEMENT's
+      // own 'load' event is always observable to us (we own that element),
+      // unlike a popup window's 'load'/'onload', which throws cross-origin
+      // for a different-origin presigned storage URL. contentWindow.print()
+      // on a PDF-showing iframe triggers that same built-in viewer's print
+      // flow immediately once it has actually finished loading.
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.src = downloadUrl;
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          // Fallback if the embedded print trigger is blocked for any reason — the PDF is still reachable.
+          window.open(downloadUrl, '_blank');
+        }
+      };
+      document.body.appendChild(iframe);
+      // No reliable 'afterprint' signal from a plugin-rendered PDF — just
+      // remove the iframe well after any print dialog would have closed.
+      window.setTimeout(() => iframe.remove(), 60_000);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
