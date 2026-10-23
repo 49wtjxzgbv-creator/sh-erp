@@ -2009,6 +2009,7 @@
     "preview": "Preview",
     "previewFailed": "Failed to load the preview.",
     "downloadPdf": "Download PDF",
+    "printPdf": "Print PDF",
     "send": "Send",
     "sendConfirmTitle": "Send this quotation to the customer?",
     "sendConfirmDescription": "The current version will be locked and a PDF generated. Further changes require âCreate new versionâ.",

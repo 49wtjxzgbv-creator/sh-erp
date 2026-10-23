@@ -310,6 +310,32 @@ export default function QuotationDetailPage() {
     }
   }
 
+  async function handlePrintPdf() {
+    const pdfFileId = currentVersion?.pdfFileId;
+    if (!pdfFileId) return;
+    try {
+      const { downloadUrl } = await getFileDownloadUrl(pdfFileId);
+      const win = window.open(downloadUrl, '_blank');
+      // The presigned download URL is a different origin (storage.*), so the
+      // popup's own 'load' event isn't observable here (SecurityError on a
+      // cross-origin Window) — a short delay before print() is the same
+      // best-effort workaround every "open then print" flow needs for a
+      // cross-origin file. If the browser blocks/delays it, the PDF is still
+      // open and the user can print manually (Ctrl+P or the viewer's own icon).
+      if (win) {
+        setTimeout(() => {
+          try {
+            win.print();
+          } catch {
+            // Best-effort only — see comment above.
+          }
+        }, 1000);
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
   const isExpired =
     (quotation.status === 'SENT' || quotation.status === 'VIEWED') &&
     Boolean(currentVersion.validUntil) &&
@@ -528,6 +554,11 @@ export default function QuotationDetailPage() {
           {currentVersion.pdfFileId && (
             <Button variant="outline" size="sm" onClick={handleDownloadPdf}>
               {t('downloadPdf')}
+            </Button>
+          )}
+          {currentVersion.pdfFileId && (
+            <Button variant="outline" size="sm" onClick={handlePrintPdf}>
+              {t('printPdf')}
             </Button>
           )}
           {canManage && (

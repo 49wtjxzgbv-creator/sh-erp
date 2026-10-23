@@ -2009,6 +2009,7 @@
     "preview": "Vorschau",
     "previewFailed": "Vorschau konnte nicht geladen werden.",
     "downloadPdf": "PDF herunterladen",
+    "printPdf": "Print PDF",
     "send": "Senden",
     "sendConfirmTitle": "Angebot an den Kunden senden?",
     "sendConfirmDescription": "Die aktuelle Version wird gesperrt und ein PDF erzeugt. Weitere Ãnderungen nur Ã¼ber âNeue Version erstellenâ.",
