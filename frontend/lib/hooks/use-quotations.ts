@@ -20,6 +20,7 @@ import {
   rejectQuotation,
   convertQuotationToOrder,
   getQuotationPreviewHtml,
+  getQuotationVersionPreviewHtml,
   queryQuotationTemplates,
   getQuotationTemplate,
   createQuotationTemplate,
@@ -190,6 +191,16 @@ export function useQuotationPreview(id: string | undefined, enabled = true) {
     queryKey: quotationPreviewKey(id ?? ''),
     queryFn: () => getQuotationPreviewHtml(id as string),
     enabled: enabled && Boolean(id),
+  });
+}
+
+/** Same as useQuotationPreview but for one specific past version — only fetched while its view dialog is actually open (enabled gate), a locked version's rendered HTML never changes so this is effectively immutable per versionId. */
+export function useQuotationVersionPreview(id: string | undefined, versionId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['quotations', id ?? '', 'versions', versionId ?? '', 'preview'] as const,
+    queryFn: () => getQuotationVersionPreviewHtml(id as string, versionId as string),
+    enabled: enabled && Boolean(id) && Boolean(versionId),
+    staleTime: Infinity,
   });
 }
 

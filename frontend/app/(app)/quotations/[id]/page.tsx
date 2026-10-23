@@ -29,6 +29,7 @@ import { QUOTATION_LOCALES } from '@/lib/api-client/quotations';
 import { LOCALE_LABELS } from '@/components/domain/shell/language-switcher';
 import { QuotationItemEditor, QuotationLiveTotals } from '@/components/domain/quotations/quotation-item-editor';
 import { QuotationPreviewPane } from '@/components/domain/quotations/quotation-preview-pane';
+import { QuotationVersionPreviewPane } from '@/components/domain/quotations/quotation-version-preview-pane';
 import type { QuotationItemDraft } from '@/components/domain/quotations/quotation-item-row';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -153,6 +154,7 @@ export default function QuotationDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [conversionResult, setConversionResult] = useState<{ customerOrderId: string; warnings: string[] } | null>(null);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [viewingVersionId, setViewingVersionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentVersion || itemsDirty) return;
@@ -541,9 +543,14 @@ export default function QuotationDetailPage() {
                   <span>
                     {t('version')} {v.versionNumber} {v.id === currentVersion.id && `(${t('current')})`}
                   </span>
-                  <span className="text-muted-foreground">
-                    {v.sentAt ? `${t('sentAt')}: ${new Date(v.sentAt).toLocaleDateString()}` : t('quotationStatusDRAFT')}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-muted-foreground">
+                      {v.sentAt ? `${t('sentAt')}: ${new Date(v.sentAt).toLocaleDateString()}` : t('quotationStatusDRAFT')}
+                    </span>
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => setViewingVersionId(v.id)}>
+                      {t('viewVersion')}
+                    </Button>
+                  </div>
                 </div>
               ))}
           </CardContent>
@@ -725,6 +732,17 @@ export default function QuotationDetailPage() {
           <TabsContent value="preview">{previewPane}</TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={viewingVersionId !== null} onOpenChange={(open) => !open && setViewingVersionId(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {t('version')} {[currentVersion, ...(quotation.versionHistory ?? [])].find((v) => v.id === viewingVersionId)?.versionNumber}
+            </DialogTitle>
+          </DialogHeader>
+          <QuotationVersionPreviewPane quotationId={params.id} versionId={viewingVersionId ?? undefined} enabled={viewingVersionId !== null} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

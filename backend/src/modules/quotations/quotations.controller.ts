@@ -47,6 +47,14 @@ export class QuotationsController {
     return { html };
   }
 
+  @Get(':id/versions/:versionId/preview')
+  @RequirePermissions('quotations:read')
+  @ApiOperation({ summary: 'Render a specific (not necessarily current) version\'s document HTML — same renderer, so a historical version shows exactly as it was/would have been sent.' })
+  async previewVersionHtml(@CurrentUser() user: RequestUser, @Param('id') id: string, @Param('versionId') versionId: string) {
+    const html = await this.quotationsService.previewVersionHtml(user, id, versionId);
+    return { html };
+  }
+
   @Patch(':id/number')
   @RequirePermissions('quotations:manage')
   @ApiOperation({ summary: "Change the quotation's own document number — e.g. to append a suffix or match an external numbering scheme. Unique per company." })

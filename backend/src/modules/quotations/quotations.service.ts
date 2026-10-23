@@ -699,6 +699,25 @@ export class QuotationsService {
     return html;
   }
 
+  /**
+   * "в історії версій попередні версії ми можемо переглядати" (2026-10-23)
+   * — same renderVersionHtml() pipeline as previewHtml()/send(), just
+   * pointed at an explicit (not necessarily current) version, so a locked
+   * historical version renders exactly as it was/would have been sent —
+   * never a second, hand-rolled approximation.
+   */
+  async previewVersionHtml(user: RequestUser, quotationId: string, versionId: string): Promise<string> {
+    const quotation = await this.prisma.tenant.quotation.findUnique({ where: { id: quotationId } });
+    if (!quotation) throw new CodedNotFoundException('QUOTATION_NOT_FOUND', 'Quotation not found.');
+    const version = await this.prisma.tenant.quotationVersion.findUnique({ where: { id: versionId } });
+    if (!version || version.quotationId !== quotationId) {
+      throw new CodedNotFoundException('QUOTATION_VERSION_NOT_FOUND', 'Version not found on this quotation.');
+    }
+    const items = await this.prisma.tenant.quotationVersionItem.findMany({ where: { quotationVersionId: version.id }, orderBy: { sortOrder: 'asc' } });
+    const { html } = await this.renderVersionHtml(user, quotation, version, items);
+    return html;
+  }
+
   /** §6: the only way to change anything after send() — appends a fresh version, never mutates the sent one, and drops Quotation.status back to DRAFT for the new one to be worked on. */
   async createNewVersion(user: RequestUser, quotationId: string) {
     const current = await this.getCurrentVersion(quotationId);

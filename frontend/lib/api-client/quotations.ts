@@ -251,6 +251,10 @@ export function convertQuotationToOrder(id: string): Promise<ConvertToOrderResul
 export function getQuotationPreviewHtml(id: string): Promise<{ html: string }> {
   return apiClient.get<{ html: string }>(`quotations/${id}/preview`);
 }
+/** Same renderer, pointed at a specific (not necessarily current) version — for viewing a past entry in "Історія версій" exactly as it was/would have been sent. */
+export function getQuotationVersionPreviewHtml(id: string, versionId: string): Promise<{ html: string }> {
+  return apiClient.get<{ html: string }>(`quotations/${id}/versions/${versionId}/preview`);
+}
 
 export interface QuotationTemplate {
   id: string;

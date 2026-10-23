@@ -111,6 +111,7 @@ function makeFakePrisma() {
         const rows = [...db.quotationVersion.values()].filter((v) => v.quotationId === quotationId).sort((a, b) => b.versionNumber - a.versionNumber);
         return Promise.resolve(rows[0] ?? null);
       }),
+      findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(db.quotationVersion.get(id) ?? null)),
       update: jest.fn(({ where: { id }, data }: any) => {
         const row = db.quotationVersion.get(id);
         Object.assign(row, data);
@@ -619,6 +620,43 @@ describe('QuotationsService', () => {
       await service.previewHtml(user, q.id);
 
       expect(renderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ companyDetailsText: 'Custom template text' }));
+    });
+  });
+
+  describe('previewVersionHtml — viewing a past version from "Історія версій" (2026-10-23)', () => {
+    it('renders an OLDER (locked) version, not the current one, when asked for it explicitly', async () => {
+      const { service, db, assemblies, renderer } = makeService();
+      db.assembly.set('asm-1', { id: 'asm-1', name: 'Old item', baseSalePriceEur: 100 });
+      db.assembly.set('asm-2', { id: 'asm-2', name: 'New item', baseSalePriceEur: 200 });
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-1', costPerUnit: 60, breakdown: [] });
+
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await service.saveItems(user, q.id, { items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-1', quantity: 1, pricingSource: 'BASE_PRICE' }] } as any);
+      await service.send(user, q.id);
+      const v1Id = (await service.findOne(user, q.id)).currentVersion.id;
+
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-2', costPerUnit: 120, breakdown: [] });
+      await service.createNewVersion(user, q.id);
+      await service.saveItems(user, q.id, { items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-2', quantity: 1, pricingSource: 'BASE_PRICE' }] } as any);
+
+      renderer.renderHtml.mockClear();
+      const html = await service.previewVersionHtml(user, q.id, v1Id);
+      expect(html).toBe('<html>fake</html>');
+      expect(renderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ items: [expect.objectContaining({ nameSnapshot: 'Old item' })] }));
+    });
+
+    it('rejects a version id that belongs to a different quotation', async () => {
+      const { service } = makeService();
+      const q1 = await service.create(user, { customerId: 'cust-1' } as any);
+      const q2 = await service.create(user, { customerId: 'cust-1' } as any);
+      const q2VersionId = (await service.findOne(user, q2.id)).currentVersion.id;
+      await expect(service.previewVersionHtml(user, q1.id, q2VersionId)).rejects.toThrow();
+    });
+
+    it('rejects an unknown version id', async () => {
+      const { service } = makeService();
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      await expect(service.previewVersionHtml(user, q.id, 'nope')).rejects.toThrow();
     });
   });
 
