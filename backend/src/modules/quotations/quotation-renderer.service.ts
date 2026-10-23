@@ -154,6 +154,11 @@ export class QuotationRendererService {
     const accent = data.accentColor && /^#[0-9a-fA-F]{3,8}$/.test(data.accentColor) ? data.accentColor : '#6423d0';
     const money = (v: number) => `${v.toFixed(2)} ${escapeHtml(data.currency)}`;
     const fmtDate = (d: Date | null) => (d ? new Date(d).toLocaleDateString(DATE_LOCALE[locale]) : '—');
+    // "коли ми не заповнюємо ніякі знижки то потрібно щоб ця графа не
+    // відображалась у пдф файлах" (2026-10-23) — the whole "Знижка" column
+    // (header + every row's cell) is omitted when nothing on this document
+    // actually has a discount, rather than showing a column of bare "—".
+    const hasAnyDiscount = data.items.some((item) => item.discountAmount > 0);
 
     const itemRows = data.items
       .map(
@@ -171,7 +176,7 @@ export class QuotationRendererService {
           </td>
           <td class="col-num">${formatQty(item.quantity)} ${escapeHtml(item.unit)}</td>
           <td class="col-num">${money(item.unitPrice)}</td>
-          <td class="col-num">${item.discountPercent > 0 ? `${formatQty(item.discountPercent)}%` : '—'}</td>
+          ${hasAnyDiscount ? `<td class="col-num">${item.discountPercent > 0 ? `${formatQty(item.discountPercent)}%` : '—'}</td>` : ''}
           <td class="col-num col-total">${money(item.total)}</td>
         </tr>`,
       )
@@ -288,7 +293,7 @@ export class QuotationRendererService {
           <th>${l.item}</th>
           <th class="col-num">${l.quantity}</th>
           <th class="col-num">${l.price}</th>
-          <th class="col-num">${l.discount}</th>
+          ${hasAnyDiscount ? `<th class="col-num">${l.discount}</th>` : ''}
           <th class="col-num">${l.amount}</th>
         </tr>
       </thead>

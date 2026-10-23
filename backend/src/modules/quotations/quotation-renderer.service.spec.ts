@@ -61,6 +61,26 @@ describe('QuotationRendererService', () => {
     expect(html).not.toMatch(/собівартіст/i);
   });
 
+  it('shows the "Знижка" column when at least one item actually has a discount', () => {
+    const html = service.renderHtml(baseData());
+    expect(html).toContain('Знижка');
+    expect(html).toContain('5%');
+  });
+
+  it('omits the "Знижка" column entirely (header and every row) when nothing has a discount (2026-10-23)', () => {
+    const html = service.renderHtml(
+      baseData({
+        items: [
+          { kind: 'ASSEMBLY', nameSnapshot: 'Cabinet X', descriptionSnapshot: null, quantity: 2, unit: 'шт', unitPrice: 5000, discountPercent: 0, discountAmount: 0, total: 10000, article: null, photoUrl: null },
+        ],
+        subtotal: 10000,
+        discountAmount: 0,
+        total: 10000,
+      }),
+    );
+    expect(html).not.toContain('Знижка');
+  });
+
   it('escapes HTML-significant characters in user-entered text — a customer name cannot inject markup', () => {
     const html = service.renderHtml(baseData({ customer: { name: '<script>alert(1)</script>', contactPerson: null, phone: null, email: null, address: null } }));
     expect(html).not.toContain('<script>alert(1)</script>');
