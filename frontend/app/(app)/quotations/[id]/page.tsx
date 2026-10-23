@@ -315,13 +315,19 @@ export default function QuotationDetailPage() {
     if (!pdfFileId) return;
     try {
       const { downloadUrl } = await getFileDownloadUrl(pdfFileId);
-      // A hidden iframe, not window.open — Chrome renders a PDF src via its
-      // own built-in viewer regardless of origin, and the IFRAME ELEMENT's
-      // own 'load' event is always observable to us (we own that element),
-      // unlike a popup window's 'load'/'onload', which throws cross-origin
-      // for a different-origin presigned storage URL. contentWindow.print()
-      // on a PDF-showing iframe triggers that same built-in viewer's print
-      // flow immediately once it has actually finished loading.
+      // contentWindow.print() on an iframe pointed straight at the presigned
+      // storage URL throws (SecurityError — storage.* is a different origin
+      // from this page, so it's blocked exactly like a cross-origin popup
+      // would be — confirmed live, that's why the first attempt at this
+      // silently fell through to the same window.open() as "Завантажити").
+      // R2 already allows a plain CORS fetch for this URL, so fetch the
+      // bytes ourselves and build a blob: URL instead — a blob: URL IS
+      // same-origin to this page, so the same contentWindow.print() call
+      // works on it without that restriction.
+      const res = await fetch(downloadUrl);
+      if (!res.ok) throw new Error(`Failed to fetch PDF (${res.status})`);
+      const blobUrl = URL.createObjectURL(await res.blob());
+
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -329,7 +335,7 @@ export default function QuotationDetailPage() {
       iframe.style.width = '0';
       iframe.style.height = '0';
       iframe.style.border = '0';
-      iframe.src = downloadUrl;
+      iframe.src = blobUrl;
       iframe.onload = () => {
         try {
           iframe.contentWindow?.focus();
@@ -342,7 +348,10 @@ export default function QuotationDetailPage() {
       document.body.appendChild(iframe);
       // No reliable 'afterprint' signal from a plugin-rendered PDF — just
       // remove the iframe well after any print dialog would have closed.
-      window.setTimeout(() => iframe.remove(), 60_000);
+      window.setTimeout(() => {
+        iframe.remove();
+        URL.revokeObjectURL(blobUrl);
+      }, 60_000);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
     }
