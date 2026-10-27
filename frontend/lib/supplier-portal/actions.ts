@@ -1,4 +1,5 @@
 import { useSupplierPortalSessionStore } from './session-store';
+import { serializedRefresh } from '../auth/refresh-mutex';
 
 /**
  * Client-side supplier-portal auth actions. These call our own same-origin
@@ -56,13 +57,12 @@ export async function logout(): Promise<void> {
  */
 export async function restoreSession(): Promise<boolean> {
   try {
-    const res = await fetch('/api/supplier-portal/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (!res.ok) {
+    const result = await serializedRefresh('sh-erp-supplier-portal-auth-refresh', '/api/supplier-portal/auth/refresh');
+    if (!result.ok) {
       useSupplierPortalSessionStore.getState().clearSession();
       return false;
     }
-    const session = await parseOrThrow(res);
-    useSupplierPortalSessionStore.getState().setSession(session);
+    useSupplierPortalSessionStore.getState().setSession(result.body as SupplierPortalSessionResponse);
     return true;
   } catch {
     useSupplierPortalSessionStore.getState().clearSession();

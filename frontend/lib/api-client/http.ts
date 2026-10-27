@@ -1,5 +1,6 @@
 import { ApiError, type ApiErrorBody, type ApiRequestOptions } from './types';
-import { useSessionStore, getAccessToken } from '../auth/session-store';
+import { getAccessToken } from '../auth/session-store';
+import { restoreSession } from '../auth/actions';
 
 /**
  * Backend base URL — points directly at the NestJS API (`/api/v1` prefix
@@ -46,7 +47,6 @@ class ApiClient {
       if (refreshed) {
         return this.request<T>(method, path, body, { ...options, skipRefreshRetry: true });
       }
-      useSessionStore.getState().clearSession();
     }
 
     if (res.status === 204) return undefined as T;
@@ -62,22 +62,17 @@ class ApiClient {
   }
 
   /**
-   * Calls our own Next.js route handler (app/api/auth/refresh/route.ts,
-   * built in the auth-shell task), which reads the httpOnly refresh cookie,
-   * rotates it against the backend, and returns a fresh access token. Same
-   * origin, so the cookie rides along automatically with credentials:
-   * 'include'.
+   * Delegates to `lib/auth/actions.ts#restoreSession()` — same silent
+   * refresh `SessionBoundary` uses on mount, routed through
+   * `serializedRefresh` (refresh-mutex.ts) so a 401 here and a concurrent
+   * tab-mount/other-request's refresh never race the same not-yet-rotated
+   * refresh cookie (real incident, 2026-10-27: unprotected concurrent
+   * refreshes were tripping the backend's rotation reuse-detection and
+   * logging out every open tab). Also already sets the session store and
+   * clears it on failure — no need to duplicate that here.
    */
   private async trySilentRefresh(): Promise<boolean> {
-    try {
-      const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-      if (!res.ok) return false;
-      const data = (await res.json()) as { accessToken: string; userId: string; companyId: string; companySlug?: string };
-      useSessionStore.getState().setSession(data);
-      return true;
-    } catch {
-      return false;
-    }
+    return restoreSession();
   }
 
   get<T>(path: string, options?: ApiRequestOptions): Promise<T> {
@@ -113,7 +108,6 @@ class ApiClient {
       if (refreshed) {
         return this.postFile<T>(path, file, fieldName, { ...options, skipRefreshRetry: true });
       }
-      useSessionStore.getState().clearSession();
     }
 
     const text = await res.text();
@@ -143,7 +137,6 @@ class ApiClient {
       if (refreshed) {
         return this.getBlob(path, { ...options, skipRefreshRetry: true });
       }
-      useSessionStore.getState().clearSession();
     }
 
     if (!res.ok) {
@@ -173,7 +166,6 @@ class ApiClient {
     if (res.status === 401 && !options.skipAuth && !options.skipRefreshRetry) {
       const refreshed = await this.trySilentRefresh();
       if (refreshed) return this.postBlob(path, body, { ...options, skipRefreshRetry: true });
-      useSessionStore.getState().clearSession();
     }
 
     if (!res.ok) {

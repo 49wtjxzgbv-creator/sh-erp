@@ -1,4 +1,5 @@
 import { useSessionStore } from './session-store';
+import { serializedRefresh } from './refresh-mutex';
 import { ApiError, type ApiErrorBody } from '../api-client/types';
 import { queryClient } from '@/app/providers';
 
@@ -104,13 +105,13 @@ export async function logout(): Promise<void> {
 export async function restoreSession(): Promise<boolean> {
   const previousUserId = useSessionStore.getState().userId;
   try {
-    const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (!res.ok) {
+    const result = await serializedRefresh('sh-erp-auth-refresh', '/api/auth/refresh');
+    if (!result.ok) {
       useSessionStore.getState().clearSession();
       queryClient.clear();
       return false;
     }
-    const session = await parseOrThrow(res);
+    const session = result.body as SessionResponse;
     if (previousUserId && previousUserId !== session.userId) queryClient.clear();
     useSessionStore.getState().setSession(session);
     return true;

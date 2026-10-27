@@ -1,4 +1,5 @@
 import { useSuperAdminSessionStore } from './session-store';
+import { serializedRefresh } from '../auth/refresh-mutex';
 
 /**
  * Client-side super-admin auth actions. These call our own same-origin
@@ -51,13 +52,12 @@ export async function logout(): Promise<void> {
  */
 export async function restoreSession(): Promise<boolean> {
   try {
-    const res = await fetch('/api/super-admin/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (!res.ok) {
+    const result = await serializedRefresh('sh-erp-super-admin-auth-refresh', '/api/super-admin/auth/refresh');
+    if (!result.ok) {
       useSuperAdminSessionStore.getState().clearSession();
       return false;
     }
-    const session = await parseOrThrow(res);
-    useSuperAdminSessionStore.getState().setSession(session);
+    useSuperAdminSessionStore.getState().setSession(result.body as SuperAdminSessionResponse);
     return true;
   } catch {
     useSuperAdminSessionStore.getState().clearSession();
