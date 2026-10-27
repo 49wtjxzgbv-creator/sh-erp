@@ -94,4 +94,6 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // Заявка на прорахунок постачальнику (2026-10-21)
   'PurchaseRequest',
   'PurchaseRequestItem',
+  // Shipment-calculation module (2026-10-28)
+  'TransportUnitType',
 ]);
