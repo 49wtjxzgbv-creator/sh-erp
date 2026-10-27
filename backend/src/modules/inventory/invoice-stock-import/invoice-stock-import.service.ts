@@ -35,7 +35,21 @@ const NOT_FOLLOWED_BY_LETTER = '(?![a-zA-Zа-яёіїєґ])';
 const UNIT_QTY_AFTER = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(?:шт\\.?|pcs?\\.?|stk\\.?|st\\.?|од\\.?|x|х)${NOT_FOLLOWED_BY_LETTER}`, 'i');
 const UNIT_QTY_BEFORE = new RegExp(`(?:шт\\.?|pcs?\\.?|stk\\.?|st\\.?|од\\.?|x|х)${NOT_FOLLOWED_BY_LETTER}\\s*[:.]?\\s*(\\d+(?:[.,]\\d+)?)`, 'i');
 const STANDALONE_NUMBER = /\d+(?:[.,]\d+)?/g;
-const WRAPPING_PUNCTUATION = /^[,;:()[\]|"'`]+|[,;:()[\]|"'`]+$/g;
+
+// Latin+digit only (NOT Cyrillic) — this catalog's article codes are Latin
+// alphanumeric (same assumption GermanPriceImportService's own regex makes:
+// `[A-Za-z0-9][\w.]*`). Deliberately excluding Cyrillic from the boundary
+// class means a Cyrillic product name glued directly onto a Latin article
+// code (the common real-world case: pdf-parse fuses the Article cell onto
+// the neighboring Cyrillic Name cell with zero separator — see tryFastParse's
+// own comment) still counts as a valid boundary — only another Latin
+// letter/digit immediately touching the article is treated as ambiguous
+// and rejected.
+const ARTICLE_BOUNDARY_CLASS = 'A-Za-z0-9';
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * "а якось воно ж без аі розпізнавалось" (2026-10-27): a free, deterministic
@@ -148,6 +162,7 @@ export class InvoiceStockImportService {
       select: { id: true, article: true, name: true },
     });
     const articleMap = new Map(products.map((p) => [p.article.trim().toUpperCase(), p]));
+    if (articleMap.size === 0) return [];
 
     let pages: { text: string }[];
     try {
@@ -163,19 +178,41 @@ export class InvoiceStockImportService {
       return [];
     }
 
+    // Matched as a substring search with alphanumeric-boundary lookaround,
+    // NOT a whitespace-split token lookup — `pdf-parse`'s getText() joins
+    // two text-showing operators with NO separator whenever their visual
+    // gap is below its own ~7pt column-detection threshold (confirmed
+    // against its bundled source), which routinely glues an invoice's
+    // Article cell straight onto its neighboring Name/Qty cell with zero
+    // characters between them. A plain `/\S+/g` token lookup then produces
+    // one fused token that can never equal a known article exactly, so
+    // fast-parse silently "finds nothing" on any such invoice layout (real
+    // incident, 2026-10-27). Scanning for the article as a substring whose
+    // neighbors (if any) aren't themselves alphanumeric tolerates that —
+    // e.g. "ABC123Назва..." still matches "ABC123" because a Cyrillic
+    // letter right after it isn't in the Latin/digit boundary class used
+    // for the article side (articles in this catalog are Latin+digits).
+    // Longest-first alternation order so one article that's a substring of
+    // another longer one doesn't pre-empt the correct, longer match.
+    const sortedArticles = [...articleMap.keys()].sort((a, b) => b.length - a.length);
+    let articlePattern: RegExp;
+    try {
+      articlePattern = new RegExp(`(?<![${ARTICLE_BOUNDARY_CLASS}])(${sortedArticles.map(escapeRegExp).join('|')})(?![${ARTICLE_BOUNDARY_CLASS}])`, 'gi');
+    } catch (err) {
+      this.logger.warn(`Could not build the fast-parse article pattern (catalog too large?), will fall back to AI: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+
     const found = new Map<string, { article: string; productName: string; qty: number; rawText: string }>();
-    const TOKEN_PATTERN = /\S+/g;
     for (const page of pages) {
       for (const line of page.text.split('\n')) {
-        for (const tokenMatch of line.matchAll(TOKEN_PATTERN)) {
-          const raw = tokenMatch[0];
-          const cleaned = raw.replace(WRAPPING_PUNCTUATION, '');
-          if (!cleaned) continue;
-          const product = articleMap.get(cleaned.toUpperCase());
+        for (const articleMatch of line.matchAll(articlePattern)) {
+          const matchedText = articleMatch[0];
+          const product = articleMap.get(matchedText.toUpperCase());
           if (!product) continue;
 
-          const tokenEnd = (tokenMatch.index ?? 0) + raw.length;
-          const qty = this.extractQty(line, line.slice(tokenEnd), cleaned);
+          const matchEnd = (articleMatch.index ?? 0) + matchedText.length;
+          const qty = this.extractQty(line, line.slice(matchEnd), matchedText);
 
           const existing = found.get(product.id);
           if (existing) {

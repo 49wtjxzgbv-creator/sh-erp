@@ -55,6 +55,19 @@ describe('InvoiceStockImportService', () => {
       expect(result.matched).toEqual([expect.objectContaining({ productId: 'p1', qty: 5 })]);
     });
 
+    it('matches an article even when pdf-parse glues it directly onto the neighboring cell with no separator (real incident, 2026-10-27)', async () => {
+      // pdf-parse's getText() joins two text-showing operators with NO
+      // separator when their visual column gap is below its own ~7pt
+      // threshold — this reproduces that by fusing the article straight
+      // onto the (Cyrillic) product name with zero characters between them.
+      mockPdfText(['ABC123Профіль VBG 5 шт']);
+
+      const result = await service.preview(user, Buffer.from('pdf'), 'invoice.pdf', 'application/pdf');
+
+      expect(result.method).toBe('fast');
+      expect(result.matched).toEqual([expect.objectContaining({ productId: 'p1', qty: 5 })]);
+    });
+
     it('defaults qty to 1 when no number can be found near the article', async () => {
       mockPdfText(['Позиція ABC123 без кількості']);
 
