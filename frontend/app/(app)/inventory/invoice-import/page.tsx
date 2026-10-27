@@ -171,9 +171,9 @@ export default function InvoiceStockImportPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8" />
+                  <TableHead className="w-32">{t('qty')}</TableHead>
                   <TableHead className="w-10" />
                   <TableHead>{t('product')}</TableHead>
-                  <TableHead className="w-32">{t('qty')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -188,12 +188,6 @@ export default function InvoiceStockImportPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Avatar src={photosByProduct?.[m.productId]?.[0]?.downloadUrl} size="sm" />
-                    </TableCell>
-                    <TableCell title={m.rawText}>
-                      {m.article} — {m.productName}
-                    </TableCell>
-                    <TableCell>
                       <Input
                         type="number"
                         min={0}
@@ -203,6 +197,12 @@ export default function InvoiceStockImportPage() {
                         disabled={excluded.has(m.productId)}
                         className="w-24"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Avatar src={photosByProduct?.[m.productId]?.[0]?.downloadUrl} size="sm" />
+                    </TableCell>
+                    <TableCell title={m.rawText}>
+                      {m.article} — {m.productName}
                     </TableCell>
                   </TableRow>
                 ))}
