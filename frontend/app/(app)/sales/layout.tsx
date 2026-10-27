@@ -8,12 +8,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const TABS = [
   { href: '/sales', labelKey: 'customerOrders' },
   { href: '/sales/shipments', labelKey: 'shipments' },
+  { href: '/sales/transport-types', labelKey: 'transportTypes' },
 ] as const;
 
 export default function SalesLayout({ children }: { children: React.ReactNode }) {
   const t = useTranslations('sales');
   const pathname = usePathname();
-  const activeHref = pathname.startsWith('/sales/shipments') ? '/sales/shipments' : '/sales';
+  const activeHref = TABS.slice(1).find((tab) => pathname.startsWith(tab.href))?.href ?? '/sales';
 
   return (
     <div className="space-y-4">

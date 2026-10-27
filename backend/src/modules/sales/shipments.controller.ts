@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/commo
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { CreateShipmentDto, QueryShipmentsDto } from './dto/shipment.dto';
+import { CalculateShipmentMetricsDto, CreateShipmentDto, QueryShipmentsDto } from './dto/shipment.dto';
 import { ShipmentsService } from './shipments.service';
 
 @ApiTags('sales')
@@ -15,6 +15,13 @@ export class ShipmentsController {
   @ApiOperation({ summary: 'Create a shipment from one or more IN_STOCK finished goods — flips them to SHIPPED.' })
   async create(@CurrentUser() user: RequestUser, @Body() dto: CreateShipmentDto) {
     return this.shipmentsService.create(user, dto);
+  }
+
+  @Post('calculate-metrics')
+  @RequirePermissions('shipments:manage')
+  @ApiOperation({ summary: 'Preview total weight, place count (boxes/pallets), volume, and suggested transport-unit counts for a set of finished goods — without creating a shipment.' })
+  async calculateMetrics(@CurrentUser() user: RequestUser, @Body() dto: CalculateShipmentMetricsDto) {
+    return this.shipmentsService.calculateMetrics(user, dto.finishedGoodIds);
   }
 
   @Get()

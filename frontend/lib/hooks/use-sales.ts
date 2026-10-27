@@ -27,6 +27,7 @@ import {
   queryShipments,
   getShipment,
   createShipment,
+  calculateShipmentMetrics,
   markShipmentDelivered,
   deleteShipment,
   type QueryCustomerOrdersInput,
@@ -285,6 +286,13 @@ export function useCreateShipment() {
       // Invalidates that order's shippable-goods list too (nested under this same key prefix).
       if (dto.customerOrderId) qc.invalidateQueries({ queryKey: customerOrderKey(dto.customerOrderId) });
     },
+  });
+}
+
+/** Live preview (debounced by the caller) of weight/place/volume/transport-count for a set of finished goods, before actually creating the Shipment. A `useMutation`, not `useQuery`, since it's triggered imperatively as the selection changes rather than keyed on stable params. */
+export function useCalculateShipmentMetrics() {
+  return useMutation({
+    mutationFn: (finishedGoodIds: string[]) => calculateShipmentMetrics(finishedGoodIds),
   });
 }
 

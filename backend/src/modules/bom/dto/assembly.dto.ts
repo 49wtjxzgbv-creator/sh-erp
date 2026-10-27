@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 
 // Mirrors the old Assemblies sheet's header columns (Phase 1 §3.3) 1:1 —
 // see schema.prisma's Assembly model for the field list this DTO mirrors.
@@ -82,6 +82,45 @@ export class CreateAssemblyDto {
   @IsNumber()
   @Min(0)
   germanPriceEur?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Shipment-calculation module (2026-10-28) — how many finished units of this assembly fit in one box. ' +
+      'Unset means each finished unit is treated as its own box when calculating a shipment\'s place count.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  unitsPerBox?: number;
+
+  @ApiPropertyOptional({ description: 'How many boxes fit on one pallet. Unset means boxes themselves are the shipment place count.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  boxesPerPallet?: number;
+
+  @ApiPropertyOptional({ description: 'Packed box length, cm — used to estimate shipment volume.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  boxLengthCm?: number;
+
+  @ApiPropertyOptional({ description: 'Packed box width, cm.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  boxWidthCm?: number;
+
+  @ApiPropertyOptional({ description: 'Packed box height, cm.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  boxHeightCm?: number;
 }
 
 export class UpdateAssemblyDto extends PartialType(CreateAssemblyDto) {}

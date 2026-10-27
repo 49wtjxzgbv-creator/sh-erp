@@ -127,6 +127,7 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'customer-orders:view-profit', resource: 'customer-orders', action: 'view-profit', description: 'View a customer order\'s sale price and net-profit report (production cost, real payroll spend, additional expenses) — same admin-sensitive rationale as quotations:view-margin, not granted to any default role besides Admin.' },
   { key: 'shipments:read', resource: 'shipments', action: 'read', description: 'View shipments.' },
   { key: 'shipments:manage', resource: 'shipments', action: 'manage', description: 'Create/edit shipments, mark delivered.' },
+  { key: 'transport-unit-types:manage', resource: 'transport-unit-types', action: 'manage', description: 'Manage the truck/container type catalogue used to suggest how much transport a shipment needs.' },
 
   // HR
   { key: 'employees:manage', resource: 'employees', action: 'manage', description: 'Manage employee records.' },
@@ -186,7 +187,7 @@ export const DEFAULT_ROLES = [
       'products:read', 'assemblies:read', 'customer-orders:read', 'customer-orders:manage',
       'customers:read', 'customers:write',
       'quotations:read', 'quotations:manage', 'quotations:convert',
-      'shipments:read', 'shipments:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use', 'planner:read',
+      'shipments:read', 'shipments:manage', 'transport-unit-types:manage', 'finished-goods:read', 'stock:read', 'files:read', 'files:write', 'ai:use', 'planner:read',
     ],
   },
   {

@@ -141,6 +141,7 @@ model Company {
   supplierConnections            SupplierConnection[]
   supplierInviteTokens           SupplierInviteToken[]
   warehouses                     Warehouse[]
+  transportUnitTypes             TransportUnitType[]
   warehouseStocks                WarehouseStock[]
   stockMovements                 StockMovement[]
   inventorySessions              InventorySession[]
@@ -1506,6 +1507,20 @@ model Assembly {
   // laborCostPerUnit regardless of who/how many executed it).
   soloAllowed Boolean @default(true)
 
+  // Shipment-calculation module (2026-10-28): optional packaging hierarchy
+  // used ONLY to compute place count (boxes/pallets) when auto-calculating
+  // a Shipment. Weight per unit is deliberately NOT duplicated here — it
+  // stays a live recursive calculation from Product.weightPerUnitKg
+  // (AssembliesService#calculateWeight / GET /assemblies/:id/weight).
+  // Degrades gracefully when unset: no unitsPerBox -> each FinishedGood
+  // unit is its own place; no boxesPerPallet -> boxes themselves are the
+  // place; no box dimensions -> volume is simply left undetermined.
+  unitsPerBox    Int?
+  boxesPerPallet Int?
+  boxLengthCm    Decimal? @db.Decimal(8, 2)
+  boxWidthCm     Decimal? @db.Decimal(8, 2)
+  boxHeightCm    Decimal? @db.Decimal(8, 2)
+
   defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
   legacyId String?
@@ -2301,6 +2316,35 @@ model ShipmentItem {
   @@index([shipmentId])
   @@index([companyId])
   @@map("shipment_items")
+}
+
+// Shipment-calculation module (2026-10-28): small reference catalogue of
+// truck/container types, read by ShipmentsService#calculateMetrics to
+// suggest how many of each are needed for a given set of FinishedGoods
+// (ceil of weight/maxWeightKg, volume/maxVolumeM3, places/maxPackages —
+// whichever limits are set). Purely a lookup table — nothing else in the
+// schema references it.
+model TransportUnitType {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  name        String
+  maxWeightKg Decimal  @db.Decimal(10, 3)
+  maxVolumeM3 Decimal? @db.Decimal(10, 3)
+  maxPackages Int?
+  active      Boolean  @default(true)
+
+  legacyId String?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@unique([companyId, legacyId])
+  @@index([companyId])
+  @@map("transport_unit_types")
 }
 
 // ============================================================================

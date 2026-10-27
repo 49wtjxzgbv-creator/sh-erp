@@ -3,6 +3,7 @@ import { BomModule } from '../bom/bom.module';
 import { FilesModule } from '../files/files.module';
 import { FinanceModule } from '../finance/finance.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { LogisticsModule } from '../logistics/logistics.module';
 import { ProcurementModule } from '../procurement/procurement.module';
 import { ProductionModule } from '../production/production.module';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
@@ -13,7 +14,7 @@ import { ShipmentsService } from './shipments.service';
 import { SupplierRequestDocumentsPdfService } from './supplier-request-documents-pdf.service';
 
 @Module({
-  imports: [ProductionModule, ProcurementModule, BomModule, InventoryModule, FinanceModule, FilesModule], // ProductionOrdersService (give-to-production) + PurchaseOrdersService (shortage → PO) + AssembliesService (estimated price on the orders list) + StockReservationService (auto-reserve at order creation, release on cancel) + FinanceService (profit report's additionalExpenses) + FilesService (SupplierRequestDocumentsPdfService reading attachment bytes)
+  imports: [ProductionModule, ProcurementModule, BomModule, InventoryModule, FinanceModule, FilesModule, LogisticsModule], // ProductionOrdersService (give-to-production) + PurchaseOrdersService (shortage → PO) + AssembliesService (estimated price on the orders list, also shipment-weight calc) + StockReservationService (auto-reserve at order creation, release on cancel) + FinanceService (profit report's additionalExpenses) + FilesService (SupplierRequestDocumentsPdfService reading attachment bytes) + TransportUnitTypesService (shipment transport-count suggestion)
   controllers: [CustomerOrdersController, ShipmentsController],
   providers: [CustomerOrdersService, CustomerOrderShortageService, ShipmentsService, SupplierRequestDocumentsPdfService],
   exports: [CustomerOrdersService, CustomerOrderShortageService, ShipmentsService],

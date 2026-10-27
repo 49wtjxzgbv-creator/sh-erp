@@ -20,6 +20,7 @@ import { BomModule } from './modules/bom/bom.module';
 import { ProductionModule } from './modules/production/production.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { LogisticsModule } from './modules/logistics/logistics.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { QuotationsModule } from './modules/quotations/quotations.module';
@@ -65,6 +66,7 @@ import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
     ProductionModule,
     ProcurementModule,
     FinanceModule,
+    LogisticsModule,
     SalesModule,
     CustomersModule,
     QuotationsModule,

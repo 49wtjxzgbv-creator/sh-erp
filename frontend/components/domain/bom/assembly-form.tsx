@@ -34,6 +34,11 @@ const assemblySchema = z.object({
   otherCostPerUnit: z.coerce.number().min(0).optional().or(z.literal('')),
   baseSalePriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
   germanPriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
+  unitsPerBox: z.coerce.number().int().min(1).optional().or(z.literal('')),
+  boxesPerPallet: z.coerce.number().int().min(1).optional().or(z.literal('')),
+  boxLengthCm: z.coerce.number().min(0).optional().or(z.literal('')),
+  boxWidthCm: z.coerce.number().min(0).optional().or(z.literal('')),
+  boxHeightCm: z.coerce.number().min(0).optional().or(z.literal('')),
 });
 export type AssemblyFormValues = z.infer<typeof assemblySchema>;
 
@@ -49,6 +54,11 @@ export function assemblyToFormValues(assembly?: Assembly): Partial<AssemblyFormV
     otherCostPerUnit: toNumber(assembly.otherCostPerUnit) ?? undefined,
     baseSalePriceEur: toNumber(assembly.baseSalePriceEur) ?? undefined,
     germanPriceEur: toNumber(assembly.germanPriceEur) ?? undefined,
+    unitsPerBox: assembly.unitsPerBox ?? undefined,
+    boxesPerPallet: assembly.boxesPerPallet ?? undefined,
+    boxLengthCm: toNumber(assembly.boxLengthCm) ?? undefined,
+    boxWidthCm: toNumber(assembly.boxWidthCm) ?? undefined,
+    boxHeightCm: toNumber(assembly.boxHeightCm) ?? undefined,
   };
 }
 
@@ -185,6 +195,11 @@ export function AssemblyForm({
       otherCostPerUnit: numeric(values.otherCostPerUnit),
       baseSalePriceEur: numeric(values.baseSalePriceEur),
       germanPriceEur: numeric(values.germanPriceEur),
+      unitsPerBox: numeric(values.unitsPerBox),
+      boxesPerPallet: numeric(values.boxesPerPallet),
+      boxLengthCm: numeric(values.boxLengthCm),
+      boxWidthCm: numeric(values.boxWidthCm),
+      boxHeightCm: numeric(values.boxHeightCm),
     });
   }
 
@@ -296,6 +311,31 @@ export function AssemblyForm({
             <Label htmlFor="otherCostPerUnit">{t('otherCostPerUnit')}</Label>
             <Input id="otherCostPerUnit" type="number" step="any" {...register('otherCostPerUnit')} />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('packagingHeader')}</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="unitsPerBox">{t('unitsPerBox')}</Label>
+            <Input id="unitsPerBox" type="number" step="1" min="1" {...register('unitsPerBox')} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="boxesPerPallet">{t('boxesPerPallet')}</Label>
+            <Input id="boxesPerPallet" type="number" step="1" min="1" {...register('boxesPerPallet')} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>{t('boxDimensionsCm')}</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <Input id="boxLengthCm" type="number" step="any" placeholder={t('boxLength')} {...register('boxLengthCm')} />
+              <Input id="boxWidthCm" type="number" step="any" placeholder={t('boxWidth')} {...register('boxWidthCm')} />
+              <Input id="boxHeightCm" type="number" step="any" placeholder={t('boxHeight')} {...register('boxHeightCm')} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground sm:col-span-2">{t('packagingHint')}</p>
         </CardContent>
       </Card>
 

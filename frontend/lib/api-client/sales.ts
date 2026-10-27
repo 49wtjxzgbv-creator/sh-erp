@@ -529,6 +529,34 @@ export function getShipment(id: string): Promise<Shipment> {
 export function createShipment(dto: CreateShipmentInput): Promise<Shipment> {
   return apiClient.post<Shipment>('shipments', dto);
 }
+
+/** Shipment-calculation module (2026-10-28) — mirrors ShipmentsService#calculateMetrics' ShipmentMetrics shape. */
+export interface ShipmentMetricsBreakdownLine {
+  assemblyId: string;
+  assemblyName: string;
+  count: number;
+  boxes: number;
+  pallets: number | null;
+  weightKg: number;
+}
+export interface TransportSuggestion {
+  typeId: string;
+  name: string;
+  unitsNeeded: number;
+}
+export interface ShipmentMetrics {
+  totalWeightKg: number;
+  weightIncomplete: boolean;
+  totalPlaces: number;
+  totalVolumeM3: number | null;
+  volumeIncomplete: boolean;
+  breakdown: ShipmentMetricsBreakdownLine[];
+  transportSuggestions: TransportSuggestion[];
+}
+/** Preview totals for a set of finished goods before actually creating the Shipment. */
+export function calculateShipmentMetrics(finishedGoodIds: string[]): Promise<ShipmentMetrics> {
+  return apiClient.post<ShipmentMetrics>('shipments/calculate-metrics', { finishedGoodIds });
+}
 export function markShipmentDelivered(id: string): Promise<Shipment> {
   return apiClient.post<Shipment>(`shipments/${id}/deliver`);
 }

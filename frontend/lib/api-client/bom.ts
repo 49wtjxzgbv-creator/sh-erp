@@ -48,6 +48,12 @@ export interface Assembly {
   /** Pure benchmarking input — the going price for this same item in Germany, entered manually for comparison against our own calculated cost on the BOM cost page. Never used by any cost/pricing/quotation calculation. */
   germanPriceEur: DecimalString | null;
   defaultSupplierId: string | null;
+  /** Shipment-calculation module (2026-10-28) — packaging hierarchy used only to compute place count (boxes/pallets) when previewing a Shipment. Weight per unit stays computed (AssembliesService#calculateWeight), never stored here. */
+  unitsPerBox: number | null;
+  boxesPerPallet: number | null;
+  boxLengthCm: DecimalString | null;
+  boxWidthCm: DecimalString | null;
+  boxHeightCm: DecimalString | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -66,6 +72,11 @@ export interface CreateAssemblyInput {
   baseSalePriceEur?: number;
   germanPriceEur?: number;
   defaultSupplierId?: string;
+  unitsPerBox?: number;
+  boxesPerPallet?: number;
+  boxLengthCm?: number;
+  boxWidthCm?: number;
+  boxHeightCm?: number;
 }
 export type UpdateAssemblyInput = Partial<CreateAssemblyInput>;
 

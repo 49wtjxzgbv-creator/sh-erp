@@ -61,6 +61,17 @@ export class CreateShipmentDto {
   finishedGoodIds!: string[];
 }
 
+export class CalculateShipmentMetricsDto {
+  @ApiProperty({
+    type: [String],
+    description: 'FinishedGood ids to preview a shipment for (same shape as CreateShipmentDto.finishedGoodIds, before actually creating it).',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID(undefined, { each: true })
+  finishedGoodIds!: string[];
+}
+
 export class QueryShipmentsDto {
   @ApiPropertyOptional({ enum: ['SHIPPED', 'DELIVERED'] })
   @IsOptional()

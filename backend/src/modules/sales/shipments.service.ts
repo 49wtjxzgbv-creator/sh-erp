@@ -3,8 +3,43 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 import { Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
+import { TransportUnitTypesService } from '../logistics/transport-unit-types.service';
 import { CreateShipmentDto, QueryShipmentsDto } from './dto/shipment.dto';
+
+export interface ShipmentMetricsBreakdownLine {
+  assemblyId: string;
+  assemblyName: string;
+  count: number;
+  boxes: number;
+  pallets: number | null;
+  weightKg: number;
+}
+
+export interface TransportSuggestion {
+  typeId: string;
+  name: string;
+  unitsNeeded: number;
+}
+
+/**
+ * Result of calculateMetrics() — "place" = pallet when the assembly has
+ * boxesPerPallet set, else the box itself, else (no packaging configured
+ * at all) each FinishedGood unit — see calculateMetrics' own comment.
+ * totalVolumeM3/volumeIncomplete mirror totalWeightKg/weightIncomplete:
+ * a gap in ANY selected assembly's box dimensions makes the total `null`
+ * (an understated sum would be worse than an honest "unknown").
+ */
+export interface ShipmentMetrics {
+  totalWeightKg: number;
+  weightIncomplete: boolean;
+  totalPlaces: number;
+  totalVolumeM3: number | null;
+  volumeIncomplete: boolean;
+  breakdown: ShipmentMetricsBreakdownLine[];
+  transportSuggestions: TransportSuggestion[];
+}
 
 /**
  * Groups FinishedGoods units (by serial) into a shipment record and marks
@@ -26,6 +61,8 @@ export class ShipmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly assembliesService: AssembliesService,
+    private readonly transportUnitTypesService: TransportUnitTypesService,
   ) {}
 
   async create(user: RequestUser, dto: CreateShipmentDto) {
@@ -43,13 +80,26 @@ export class ShipmentsService {
       );
     }
 
+    // Auto-fill weight/package-count from the same calculation the "new
+    // shipment" UI previews live, whenever the caller didn't explicitly
+    // supply them — keeps API clients that never call calculateMetrics
+    // themselves from ending up with empty figures. An explicit DTO value
+    // always wins (manual override, e.g. a corrected real scale weight).
+    let packageCount = dto.packageCount;
+    let weightKg = dto.weightKg;
+    if (packageCount == null || weightKg == null) {
+      const metrics = await this.calculateMetrics(user, dto.finishedGoodIds);
+      if (packageCount == null) packageCount = metrics.totalPlaces;
+      if (weightKg == null) weightKg = metrics.totalWeightKg;
+    }
+
     const shipment = await this.prisma.tenant.shipment.create({
       data: {
         customerOrderId: dto.customerOrderId,
         carrier: dto.carrier,
         waybillNumber: dto.waybillNumber,
-        packageCount: dto.packageCount,
-        weightKg: dto.weightKg,
+        packageCount,
+        weightKg,
         dimensions: dto.dimensions,
         comment: dto.comment,
         status: 'SHIPPED',
@@ -142,5 +192,87 @@ export class ShipmentsService {
       before: shipment,
     });
     return { ok: true };
+  }
+
+  /**
+   * Weight/place/volume preview for a set of FinishedGood ids, grouped by
+   * assembly. "Place" (вантажне місце) degrades gracefully depending on
+   * how much packaging data a given Assembly has configured: pallet count
+   * if `boxesPerPallet` is set, else box count if `unitsPerBox` is set,
+   * else each FinishedGood unit is its own place. Weight comes from the
+   * already-existing recursive BOM weight calc (AssembliesService#
+   * calculateWeight) — deliberately NOT a second stored source of truth.
+   */
+  async calculateMetrics(user: RequestUser, finishedGoodIds: string[]): Promise<ShipmentMetrics> {
+    const finishedGoods = await this.prisma.tenant.finishedGood.findMany({
+      where: { id: { in: finishedGoodIds } },
+      select: { id: true, assemblyId: true },
+    });
+    if (finishedGoods.length !== finishedGoodIds.length) {
+      throw new CodedNotFoundException('SHIPMENT_FINISHED_GOODS_NOT_FOUND', 'One or more finished goods were not found.');
+    }
+
+    const countByAssembly = new Map<string, number>();
+    for (const g of finishedGoods) {
+      countByAssembly.set(g.assemblyId, (countByAssembly.get(g.assemblyId) ?? 0) + 1);
+    }
+
+    const assemblies = await this.prisma.tenant.assembly.findMany({
+      where: { id: { in: [...countByAssembly.keys()] } },
+      select: { id: true, name: true, unitsPerBox: true, boxesPerPallet: true, boxLengthCm: true, boxWidthCm: true, boxHeightCm: true },
+    });
+    const assemblyById = new Map(assemblies.map((a) => [a.id, a]));
+
+    let totalWeightKg = 0;
+    let totalPlaces = 0;
+    let totalVolumeM3: number | null = 0;
+    let weightIncomplete = false;
+    let volumeIncomplete = false;
+    const breakdown: ShipmentMetricsBreakdownLine[] = [];
+
+    for (const [assemblyId, count] of countByAssembly) {
+      const assembly = assemblyById.get(assemblyId);
+      const weight = await this.assembliesService.calculateWeight(user, assemblyId);
+      if (!weight.complete) weightIncomplete = true;
+      const lineWeightKg = weight.weightPerUnitKg * count;
+      totalWeightKg += lineWeightKg;
+
+      const unitsPerBox = assembly?.unitsPerBox ?? null;
+      const boxesPerPallet = assembly?.boxesPerPallet ?? null;
+      const boxes = unitsPerBox ? Math.ceil(count / unitsPerBox) : count;
+      const pallets = boxesPerPallet ? Math.ceil(boxes / boxesPerPallet) : null;
+      totalPlaces += pallets ?? boxes;
+
+      const length = assembly?.boxLengthCm != null ? Number(assembly.boxLengthCm) : null;
+      const width = assembly?.boxWidthCm != null ? Number(assembly.boxWidthCm) : null;
+      const height = assembly?.boxHeightCm != null ? Number(assembly.boxHeightCm) : null;
+      if (length != null && width != null && height != null) {
+        if (totalVolumeM3 != null) totalVolumeM3 += (boxes * length * width * height) / 1_000_000;
+      } else {
+        volumeIncomplete = true;
+        totalVolumeM3 = null;
+      }
+
+      breakdown.push({
+        assemblyId,
+        assemblyName: assembly?.name ?? assemblyId,
+        count,
+        boxes,
+        pallets,
+        weightKg: lineWeightKg,
+      });
+    }
+
+    const transportTypes = await this.transportUnitTypesService.listActive();
+    const transportSuggestions: TransportSuggestion[] = transportTypes.map((type) => {
+      const maxWeightKg = Number(type.maxWeightKg);
+      const maxVolumeM3 = type.maxVolumeM3 != null ? Number(type.maxVolumeM3) : null;
+      const ratios = [maxWeightKg > 0 ? totalWeightKg / maxWeightKg : 0];
+      if (maxVolumeM3 && totalVolumeM3 != null) ratios.push(totalVolumeM3 / maxVolumeM3);
+      if (type.maxPackages) ratios.push(totalPlaces / type.maxPackages);
+      return { typeId: type.id, name: type.name, unitsNeeded: Math.max(1, Math.ceil(Math.max(...ratios))) };
+    });
+
+    return { totalWeightKg, weightIncomplete, totalPlaces, totalVolumeM3, volumeIncomplete, breakdown, transportSuggestions };
   }
 }
