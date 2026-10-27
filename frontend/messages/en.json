@@ -2069,6 +2069,8 @@
     "toolEdit": "Edit",
     "editToolHint": "Click existing text or an image to retype or drag it elsewhere. For anything else, drag out a rectangle to cut it.",
     "toolSearch": "Search",
+    "undo": "Undo",
+    "redo": "Redo",
     "searchPlaceholder": "Word or code…",
     "searchMatchCount": "{current} of {total}",
     "searchNoResults": "No results",

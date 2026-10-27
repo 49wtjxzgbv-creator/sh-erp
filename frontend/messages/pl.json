@@ -2069,6 +2069,8 @@
     "toolEdit": "Edytuj",
     "editToolHint": "Kliknij istniejący tekst lub obraz, aby go przepisać albo przeciągnąć w inne miejsce. Dla innej zawartości przeciągnij prostokąt, aby ją wyciąć.",
     "toolSearch": "Szukaj",
+    "undo": "Cofnij",
+    "redo": "Ponów",
     "searchPlaceholder": "Słowo lub kod…",
     "searchMatchCount": "{current} z {total}",
     "searchNoResults": "Brak wyników",

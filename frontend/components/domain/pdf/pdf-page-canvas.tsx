@@ -168,7 +168,7 @@ export function PdfPageCanvas({
 
   const [draftRect, setDraftRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [draftPath, setDraftPath] = useState<{ x: number; y: number }[] | null>(null);
-  const [pendingNote, setPendingNote] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [pendingNote, setPendingNote] = useState<{ x: number; y: number; text: string; editingAnnotationId?: string } | null>(null);
   const [pendingText, setPendingText] = useState<PendingTextEditor | null>(null);
   const [hoverTarget, setHoverTarget] = useState<EditTarget | null>(null);
   const [dragPreview, setDragPreview] = useState<{ id: string; dx: number; dy: number } | null>(null);
@@ -270,13 +270,18 @@ export function PdfPageCanvas({
 
   // Same reuse-not-remount issue as openTextEditor above, for the 'note' tool.
   function commitPendingNote() {
-    if (pendingNote && pendingNote.text.trim()) {
-      onAddAnnotation({ id: newId(), pageKey: page.key, type: 'note', x: pendingNote.x, y: pendingNote.y, text: pendingNote.text.trim() });
+    if (!pendingNote) return;
+    const text = pendingNote.text.trim();
+    if (pendingNote.editingAnnotationId) {
+      if (text) onUpdateAnnotation(pendingNote.editingAnnotationId, { text } as Partial<Annotation>);
+      else onDeleteAnnotation(pendingNote.editingAnnotationId);
+    } else if (text) {
+      onAddAnnotation({ id: newId(), pageKey: page.key, type: 'note', x: pendingNote.x, y: pendingNote.y, text });
     }
     setPendingNote(null);
   }
 
-  function openNoteEditor(note: { x: number; y: number; text: string }) {
+  function openNoteEditor(note: { x: number; y: number; text: string; editingAnnotationId?: string }) {
     if (pendingNote) commitPendingNote();
     setPendingNote(note);
   }
@@ -647,6 +652,7 @@ export function PdfPageCanvas({
 
               // 'note'
               const [vx, vy] = viewport.convertToViewportPoint(effective.x, effective.y);
+              const noteSize = 18 * zoom;
               return (
                 <g
                   key={ann.id}
@@ -655,8 +661,12 @@ export function PdfPageCanvas({
                     e.stopPropagation();
                     if (tool === 'select') onSelectAnnotation(ann.id);
                   }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    openNoteEditor({ x: effective.x, y: effective.y, text: effective.text, editingAnnotationId: ann.id });
+                  }}
                 >
-                  <rect x={vx - 1} y={vy - 1} width={18} height={18} rx={3} fill="#fde047" stroke={selected ? '#2563eb' : '#ca8a04'} strokeWidth={selected ? 2 : 1} />
+                  <rect x={vx - zoom} y={vy - zoom} width={noteSize} height={noteSize} rx={3 * zoom} fill="#fde047" stroke={selected ? '#2563eb' : '#ca8a04'} strokeWidth={selected ? 2 : 1} />
                   <title>{effective.text}</title>
                 </g>
               );

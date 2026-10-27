@@ -2069,6 +2069,8 @@
     "toolEdit": "Bearbeiten",
     "editToolHint": "Klicken Sie auf vorhandenen Text oder ein Bild, um es neu zu schreiben oder an eine andere Stelle zu ziehen. Für alles andere ziehen Sie ein Rechteck auf, um es auszuschneiden.",
     "toolSearch": "Suche",
+    "undo": "Rückgängig",
+    "redo": "Wiederholen",
     "searchPlaceholder": "Wort oder Code…",
     "searchMatchCount": "{current} von {total}",
     "searchNoResults": "Keine Treffer",

@@ -39,6 +39,8 @@ import {
   ChevronUp,
   ChevronDown,
   X,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { usePdfDocuments, usePdfDocumentContent, useUploadPdfDocument } from '@/lib/hooks/use-pdf';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -70,6 +72,11 @@ interface SearchMatch {
   pageKey: string;
   rect: { x: number; y: number; width: number; height: number };
 }
+/** Everything undo/redo needs to restore — `sources` is deliberately excluded: its pdfjs/pdf-lib objects are never mutated in place after load, so an undone merge just stops being referenced by `pages` (a harmless orphan entry), and a redo of that merge becomes visible again with no re-parsing needed. */
+interface HistorySnapshot {
+  pages: WorkingPage[];
+  annotations: Annotation[];
+}
 export default function PdfEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -88,6 +95,8 @@ export default function PdfEditorPage() {
   const [sources, setSources] = useState<Record<string, PdfSource>>({});
   const [pages, setPages] = useState<WorkingPage[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [past, setPast] = useState<HistorySnapshot[]>([]);
+  const [future, setFuture] = useState<HistorySnapshot[]>([]);
   const [tool, setTool] = useState<AnnotationTool>('select');
   const [zoom, setZoom] = useState(1.1);
   const [activePageKey, setActivePageKey] = useState<string | null>(null);
@@ -176,17 +185,50 @@ export default function PdfEditorPage() {
     if (match.pageKey !== activePageKey) goToPage(match.pageKey);
   }
 
+  /** Called at the start of every content-mutating action (same list that already calls setDirty(true)), BEFORE that action's own setPages/setAnnotations — reads the CURRENT (pre-mutation) values via closure, same as every other mutator here does. */
+  function pushUndo() {
+    setPast((p) => [...p, { pages, annotations }]);
+    setFuture([]);
+  }
+
+  function undo() {
+    if (past.length === 0) return;
+    const prev = past[past.length - 1];
+    setPast((p) => p.slice(0, -1));
+    setFuture((f) => [...f, { pages, annotations }]);
+    setPages(prev.pages);
+    setAnnotations(prev.annotations);
+    setSelectedAnnotationId(null);
+    if (!prev.pages.some((p) => p.key === activePageKey)) setActivePageKey(prev.pages[0]?.key ?? null);
+    setDirty(true);
+  }
+
+  function redo() {
+    if (future.length === 0) return;
+    const next = future[future.length - 1];
+    setFuture((f) => f.slice(0, -1));
+    setPast((p) => [...p, { pages, annotations }]);
+    setPages(next.pages);
+    setAnnotations(next.annotations);
+    setSelectedAnnotationId(null);
+    if (!next.pages.some((p) => p.key === activePageKey)) setActivePageKey(next.pages[0]?.key ?? null);
+    setDirty(true);
+  }
+
   function handleAddAnnotation(annotation: Annotation) {
+    pushUndo();
     setAnnotations((prev) => [...prev, annotation]);
     setDirty(true);
   }
 
   function handleUpdateAnnotation(annotationId: string, patch: Partial<Annotation>) {
+    pushUndo();
     setAnnotations((prev) => prev.map((a) => (a.id === annotationId ? ({ ...a, ...patch } as Annotation) : a)));
     setDirty(true);
   }
 
   function handleDeleteAnnotation(annotationId: string) {
+    pushUndo();
     setAnnotations((prev) => prev.filter((a) => a.id !== annotationId));
     setSelectedAnnotationId(null);
     setDirty(true);
@@ -194,11 +236,13 @@ export default function PdfEditorPage() {
 
   function rotateActivePage() {
     if (!activePageKey) return;
+    pushUndo();
     setPages((prev) => prev.map((p) => (p.key === activePageKey ? { ...p, rotation: (p.rotation + 90) % 360 } : p)));
     setDirty(true);
   }
 
   function rotatePage(key: string) {
+    pushUndo();
     setPages((prev) => prev.map((p) => (p.key === key ? { ...p, rotation: (p.rotation + 90) % 360 } : p)));
     setDirty(true);
   }
@@ -208,6 +252,7 @@ export default function PdfEditorPage() {
       setError(t('cannotDeleteLastPage'));
       return;
     }
+    pushUndo();
     const idx = pages.findIndex((p) => p.key === key);
     const nextPages = pages.filter((p) => p.key !== key);
     setPages(nextPages);
@@ -222,6 +267,7 @@ export default function PdfEditorPage() {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    pushUndo();
     setPages((prev) => {
       const oldIndex = prev.findIndex((p) => p.key === active.id);
       const newIndex = prev.findIndex((p) => p.key === over.id);
@@ -242,6 +288,7 @@ export default function PdfEditorPage() {
       const pdfjsDoc = await getDocument({ data: bytes.slice() }).promise;
       const pdfLibDoc = await PDFDocument.load(bytes.slice());
       const sourceId = newId();
+      pushUndo();
       setSources((prev) => ({ ...prev, [sourceId]: { id: sourceId, pdfjsDoc, pdfLibDoc } }));
       const newPages: WorkingPage[] = Array.from({ length: pdfjsDoc.numPages }, (_, i) => ({
         key: newId(),
@@ -467,6 +514,15 @@ export default function PdfEditorPage() {
               <Icon className="h-4 w-4" />
             </Button>
           ))}
+        </div>
+
+        <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={undo} disabled={past.length === 0} title={t('undo')}>
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={redo} disabled={future.length === 0} title={t('redo')}>
+            <Redo2 className="h-4 w-4" />
+          </Button>
         </div>
 
         <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
