@@ -327,6 +327,7 @@ export class AiService {
         matched: !!match,
         article: match ? match.article : '',
         matchedName: match ? match.name : '',
+        productId: match ? match.id : '',
       };
     });
   }

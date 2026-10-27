@@ -122,6 +122,7 @@ export interface InvoiceRecognitionLine {
   matched: boolean;
   article: string;
   matchedName: string;
+  productId?: string;
 }
 
 export function recognizeInvoice(base64Image: string, mimeType: string): Promise<InvoiceRecognitionLine[]> {

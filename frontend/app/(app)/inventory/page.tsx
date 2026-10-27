@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
-import { ArrowLeftRight, Plus } from 'lucide-react';
+import { ArrowLeftRight, FileUp, Plus } from 'lucide-react';
 import { useStockLevels, useWarehouses, useRecordStockMovement } from '@/lib/hooks/use-inventory';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
@@ -315,6 +316,12 @@ export default function StockLevelsPage() {
               <Button variant="outline" onClick={() => setMoveOpen(true)}>
                 <ArrowLeftRight className="mr-2 h-4 w-4" />
                 {t('moveStock')}
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/inventory/invoice-import">
+                  <FileUp className="mr-2 h-4 w-4" />
+                  {t('invoiceImportTitle')}
+                </Link>
               </Button>
               <Button onClick={() => setMovementOpen(true)} data-tour="inventory-record-movement-button">
                 <Plus className="mr-2 h-4 w-4" />
