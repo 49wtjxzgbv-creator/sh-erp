@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { usePreviewInvoiceStockImport, useApplyInvoiceStockImport } from '@/lib/hooks/use-invoice-stock-import';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { InvoiceImportPreviewResult } from '@/lib/api-client/invoice-stock-import';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { useHasPermission } from '@/lib/hooks/use-roles';
@@ -11,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Avatar } from '@/components/ui/avatar';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
@@ -97,6 +99,9 @@ export default function InvoiceStockImportPage() {
     });
   }
 
+  const matchedProductIds = preview?.matched.map((m) => m.productId) ?? [];
+  const { data: photosByProduct } = useFilesForEntities('Product', matchedProductIds, 'PRODUCT_PHOTO');
+
   if (!canAdjustStock) return null;
 
   const includedCount = preview ? preview.matched.filter((m) => !excluded.has(m.productId)).length : 0;
@@ -166,6 +171,7 @@ export default function InvoiceStockImportPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8" />
+                  <TableHead className="w-10" />
                   <TableHead>{t('product')}</TableHead>
                   <TableHead className="w-32">{t('qty')}</TableHead>
                 </TableRow>
@@ -180,6 +186,9 @@ export default function InvoiceStockImportPage() {
                         onChange={() => toggle(m.productId)}
                         aria-label={m.article}
                       />
+                    </TableCell>
+                    <TableCell>
+                      <Avatar src={photosByProduct?.[m.productId]?.[0]?.downloadUrl} size="sm" />
                     </TableCell>
                     <TableCell title={m.rawText}>
                       {m.article} — {m.productName}
