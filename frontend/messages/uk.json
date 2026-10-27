@@ -2243,6 +2243,10 @@
     "toolText": "Текст",
     "toolEdit": "Редагувати",
     "editToolHint": "Клікніть на текст чи картинку, щоб переписати або перетягнути в інше місце. Для іншого вмісту — перетягніть прямокутник, щоб вирізати його.",
+    "toolSearch": "Пошук",
+    "searchPlaceholder": "Слово або код…",
+    "searchMatchCount": "{current} з {total}",
+    "searchNoResults": "Нічого не знайдено",
     "toolAddImage": "Додати фото"
   }
 }

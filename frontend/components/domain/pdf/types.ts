@@ -53,6 +53,8 @@ export interface ExistingTextRun {
   width: number;
   height: number;
   fontSize: number;
+  /** pdfjs's own "end of line" flag on the text-content item — only used by pdf-search.ts to decide whether to join this run to the next with a space (same line) or a newline (new line) when building a page's searchable text; every other consumer of ExistingTextRun ignores it. */
+  hasEOL?: boolean;
 }
 
 /** One image XObject's placement, recovered by walking `getOperatorList()`'s save/transform/restore stack to the CTM at each `paintImageXObject` call and projecting the unit square through it — see pdf-page-canvas.tsx's own loader for why this (not a user-dragged rectangle) is how the "Редагувати" tool finds pictures to move. Already in the page's intrinsic PDF-space coordinates, same as ExistingTextRun. */

@@ -35,15 +35,22 @@ import {
   ZoomOut,
   Save,
   Download,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { usePdfDocuments, usePdfDocumentContent, useUploadPdfDocument } from '@/lib/hooks/use-pdf';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
 import { PdfPageCanvas } from '@/components/domain/pdf/pdf-page-canvas';
 import { PdfPageThumbnail } from '@/components/domain/pdf/pdf-page-thumbnail';
 import { hexToRgb01, newId, type Annotation, type AnnotationTool, type PdfSource, type TextFontFamily, type WorkingPage } from '@/components/domain/pdf/types';
+import { extractTextRuns } from '@/components/domain/pdf/extract-text-runs';
+import { buildPageSearchIndex, findMatchesInPage } from '@/components/domain/pdf/pdf-search';
 
 /** See scripts/copy-pdf-font.js's own header comment for why these two specific files (not a pdf-lib StandardFont). */
 const TEXT_FONT_FILES: Record<TextFontFamily, string> = {
@@ -59,6 +66,10 @@ const TEXT_FONT_FILES: Record<TextFontFamily, string> = {
  * components/domain/pdf/types.ts for why annotation coordinates live in
  * the page's intrinsic PDF-point space.
  */
+interface SearchMatch {
+  pageKey: string;
+  rect: { x: number; y: number; width: number; height: number };
+}
 export default function PdfEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -84,6 +95,13 @@ export default function PdfEditorPage() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
+  const [searching, setSearching] = useState(false);
+  /** The query `searchMatches` was last computed for — null means the current `searchQuery` hasn't been searched yet, so Enter should run a fresh search rather than jump to the next match. */
+  const [searchedQuery, setSearchedQuery] = useState<string | null>(null);
   const initialized = useRef(false);
   /** Fetched once per family and reused across every export — see copy-pdf-font.js's own header comment for why a StandardFont can't be used here at all (Cyrillic). */
   const fontBytesRef = useRef<Partial<Record<TextFontFamily, ArrayBuffer>>>({});
@@ -121,6 +139,41 @@ export default function PdfEditorPage() {
   function goToPage(key: string) {
     setActivePageKey(key);
     setSelectedAnnotationId(null);
+  }
+
+  /** Scans every working page (not just the active one) — see types.ts/pdf-search.ts for why matching has to span text-run boundaries. Re-scans from scratch on each call rather than caching: cheap for this app's typical document sizes, and avoids the invalidation headache of a cache keyed on `pages`/`sources` that can change via merge/delete/reorder. */
+  async function runSearch(query: string) {
+    if (!query.trim()) return;
+    setSearching(true);
+    const found: SearchMatch[] = [];
+    for (const wp of pages) {
+      const source = sources[wp.sourceId];
+      if (!source) continue;
+      try {
+        const pdfPage = await source.pdfjsDoc.getPage(wp.sourceIndex + 1);
+        const runs = await extractTextRuns(pdfPage);
+        const index = buildPageSearchIndex(runs);
+        for (const m of findMatchesInPage(index, query)) {
+          found.push({ pageKey: wp.key, rect: m.rect });
+        }
+      } catch (err) {
+        // Same "nice to have, degrades gracefully" reasoning as pdf-page-canvas.tsx's own text-layer extraction — one problematic page shouldn't abort search on the rest.
+        console.error('PDF search failed on one page', err);
+      }
+    }
+    setSearchMatches(found);
+    setSearchActiveIndex(0);
+    setSearchedQuery(query);
+    setSearching(false);
+    if (found.length > 0 && found[0].pageKey !== activePageKey) goToPage(found[0].pageKey);
+  }
+
+  function goToMatch(index: number) {
+    if (searchMatches.length === 0) return;
+    const wrapped = ((index % searchMatches.length) + searchMatches.length) % searchMatches.length;
+    setSearchActiveIndex(wrapped);
+    const match = searchMatches[wrapped];
+    if (match.pageKey !== activePageKey) goToPage(match.pageKey);
   }
 
   function handleAddAnnotation(annotation: Annotation) {
@@ -446,10 +499,62 @@ export default function PdfEditorPage() {
         </Button>
         <input ref={addImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleAddImageFileSelected} />
 
+        <Button variant={searchOpen ? 'secondary' : 'outline'} size="sm" onClick={() => setSearchOpen((v) => !v)}>
+          <Search className="mr-2 h-4 w-4" />
+          {t('toolSearch')}
+        </Button>
+
         <span className="ml-auto text-xs tabular-nums text-muted-foreground">
           {activePageIndex + 1} / {pages.length}
         </span>
       </div>
+
+      {searchOpen && (
+        <div className="flex items-center gap-2 border-b border-border px-1 py-2">
+          <Input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSearchedQuery(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              if (searchQuery !== searchedQuery) runSearch(searchQuery);
+              else goToMatch(searchActiveIndex + 1);
+            }}
+            placeholder={t('searchPlaceholder')}
+            className="max-w-xs"
+          />
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goToMatch(searchActiveIndex - 1)} disabled={searchMatches.length === 0}>
+            <ChevronUp className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => goToMatch(searchActiveIndex + 1)} disabled={searchMatches.length === 0}>
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {searching
+              ? '…'
+              : searchedQuery === null
+                ? ''
+                : searchMatches.length === 0
+                  ? t('searchNoResults')
+                  : t('searchMatchCount', { current: searchActiveIndex + 1, total: searchMatches.length })}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchMatches([]);
+              setSearchedQuery(null);
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <div className="flex-1 overflow-auto bg-secondary/30 p-6">
@@ -466,6 +571,7 @@ export default function PdfEditorPage() {
                 onUpdateAnnotation={handleUpdateAnnotation}
                 onSelectAnnotation={setSelectedAnnotationId}
                 onDeleteAnnotation={handleDeleteAnnotation}
+                searchHighlightRect={searchMatches[searchActiveIndex]?.pageKey === activePage.key ? searchMatches[searchActiveIndex].rect : null}
               />
             )}
           </div>

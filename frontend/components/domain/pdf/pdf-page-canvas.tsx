@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { OPS, type PageViewport } from 'pdfjs-dist';
 import { cn } from '@/lib/utils';
 import { newId, type Annotation, type AnnotationTool, type ExistingImageRegion, type ExistingTextRun, type PdfSource, type TextFontFamily, type WorkingPage } from './types';
+import { extractTextRuns } from './extract-text-runs';
 
 /** On-screen approximation only — the exported PDF always uses the real embedded Roboto/Roboto Slab files (see scripts/copy-pdf-font.js), regardless of whether those exact faces happen to be installed on the viewer's system. */
 const PREVIEW_FONT_STACK: Record<TextFontFamily, string> = {
@@ -78,6 +79,8 @@ interface PdfPageCanvasProps {
   onUpdateAnnotation: (id: string, patch: Partial<Annotation>) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
+  /** PDF-point-space rect of the currently active search result on THIS page, if any — see pdf-search.ts. Null/undefined on every page but the one holding the active match. */
+  searchHighlightRect?: { x: number; y: number; width: number; height: number } | null;
 }
 
 const TEXT_LINE_HEIGHT = 1.2;
@@ -154,6 +157,7 @@ export function PdfPageCanvas({
   onUpdateAnnotation,
   onSelectAnnotation,
   onDeleteAnnotation,
+  searchHighlightRect,
 }: PdfPageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -197,15 +201,7 @@ export function PdfPageCanvas({
       }
 
       try {
-        const textContent = await pdfPage.getTextContent();
-        const runs: ExistingTextRun[] = [];
-        for (const item of textContent.items) {
-          if (!('str' in item) || !('transform' in item)) continue; // TextMarkedContent, not an actual glyph run
-          if (!item.str || !item.str.trim()) continue;
-          const t = item.transform;
-          const fontSize = Math.abs(t[3]) || Math.abs(t[2]) || item.height || 10;
-          runs.push({ str: item.str, x: t[4], y: t[5], width: item.width, height: item.height || fontSize, fontSize });
-        }
+        const runs = await extractTextRuns(pdfPage);
         if (!cancelled) textRunsRef.current = runs;
       } catch (err) {
         // Text layer is a nice-to-have for the 'edit' tool — a page this fails on just can't have its existing text edited, everything else still works.
@@ -507,6 +503,11 @@ export function PdfPageCanvas({
       >
         {viewport && (
           <svg className="pointer-events-none absolute inset-0 overflow-visible" width={size.width} height={size.height}>
+            {searchHighlightRect && (() => {
+              const r = rectToScreen(searchHighlightRect, viewport);
+              return <rect x={r.left - 2} y={r.top - 2} width={r.width + 4} height={r.height + 4} rx={2} fill="rgba(249, 115, 22, 0.45)" stroke="#ea580c" strokeWidth={2} />;
+            })()}
+
             {tool === 'edit' && hoverTarget && !editDrag.current && (() => {
               const box = hoverTarget.kind === 'text' ? runRedactBox(hoverTarget.run) : hoverTarget.region;
               const r = rectToScreen(box, viewport);

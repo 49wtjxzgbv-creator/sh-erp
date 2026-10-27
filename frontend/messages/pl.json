@@ -2068,6 +2068,10 @@
     "toolText": "Tekst",
     "toolEdit": "Edytuj",
     "editToolHint": "Kliknij istniejący tekst lub obraz, aby go przepisać albo przeciągnąć w inne miejsce. Dla innej zawartości przeciągnij prostokąt, aby ją wyciąć.",
+    "toolSearch": "Szukaj",
+    "searchPlaceholder": "Słowo lub kod…",
+    "searchMatchCount": "{current} z {total}",
+    "searchNoResults": "Brak wyników",
     "toolAddImage": "Dodaj zdjęcie"
   }
 }

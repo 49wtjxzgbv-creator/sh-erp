@@ -2068,6 +2068,10 @@
     "toolText": "Text",
     "toolEdit": "Edit",
     "editToolHint": "Click existing text or an image to retype or drag it elsewhere. For anything else, drag out a rectangle to cut it.",
+    "toolSearch": "Search",
+    "searchPlaceholder": "Word or code…",
+    "searchMatchCount": "{current} of {total}",
+    "searchNoResults": "No results",
     "toolAddImage": "Add photo"
   }
 }
