@@ -307,6 +307,20 @@ export function PdfPageCanvas({
   }
 
   function handlePointerDown(e: React.PointerEvent) {
+    // Real (trusted) clicks fire a native compat `mousedown` right after
+    // `pointerdown` — its own DEFAULT action steals focus to/from the
+    // overlay div (not focusable) independently of anything React does.
+    // Without this, that native focus-steal lands AFTER React has already
+    // synchronously committed and autofocused the 'text'/'note' popup's
+    // <textarea>, immediately blurring it and closing the just-opened
+    // editor — invisible to a synthetic (untrusted) dispatched event,
+    // which skips native default actions entirely, which is why this only
+    // reproduced via a real click (2026-10-27 bug report: "клікаю на
+    // текст, нічого не відбувається"). Per the Pointer Events spec,
+    // preventDefault() on pointerdown suppresses that compat mousedown
+    // (and its focus-stealing default action) from firing at all.
+    e.preventDefault();
+
     if (tool === 'select') {
       if (e.target === overlayRef.current) onSelectAnnotation(null);
       return;
