@@ -256,8 +256,29 @@ export function PdfPageCanvas({
     return null;
   }
 
+  // Opening a new editor while one is already pending reuses the SAME
+  // popup/textarea DOM node (just a props update, not an unmount/remount
+  // — React has no reason to recreate it), so no native 'blur' ever fires
+  // on the old one to trigger commitPendingText via onBlur. Without this,
+  // clicking a second spot while still in the 'text' tool silently threw
+  // away whatever was just typed (2026-10-27 bug report: "після того як
+  // ввів текст і клікнув в іншому місці він має зберігатись").
   function openTextEditor(editor: PendingTextEditor) {
+    if (pendingText) commitPendingText();
     setPendingText(editor);
+  }
+
+  // Same reuse-not-remount issue as openTextEditor above, for the 'note' tool.
+  function commitPendingNote() {
+    if (pendingNote && pendingNote.text.trim()) {
+      onAddAnnotation({ id: newId(), pageKey: page.key, type: 'note', x: pendingNote.x, y: pendingNote.y, text: pendingNote.text.trim() });
+    }
+    setPendingNote(null);
+  }
+
+  function openNoteEditor(note: { x: number; y: number; text: string }) {
+    if (pendingNote) commitPendingNote();
+    setPendingNote(note);
   }
 
   function commitPendingText() {
@@ -341,7 +362,7 @@ export function PdfPageCanvas({
       dragging.current = true;
       setDraftPath([{ x, y }]);
     } else if (tool === 'note') {
-      setPendingNote({ x, y, text: '' });
+      openNoteEditor({ x, y, text: '' });
     } else if (tool === 'text') {
       openTextEditor({ x, y, width: 180, fontSize: 14, fontFamily: 'sans', color: DEFAULT_TEXT_COLOR, text: '' });
     } else if (tool === 'edit') {
@@ -713,12 +734,7 @@ export function PdfPageCanvas({
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setPendingNote(null);
               }}
-              onBlur={() => {
-                if (pendingNote.text.trim()) {
-                  onAddAnnotation({ id: newId(), pageKey: page.key, type: 'note', x: pendingNote.x, y: pendingNote.y, text: pendingNote.text.trim() });
-                }
-                setPendingNote(null);
-              }}
+              onBlur={commitPendingNote}
             />
           </div>
         )}
