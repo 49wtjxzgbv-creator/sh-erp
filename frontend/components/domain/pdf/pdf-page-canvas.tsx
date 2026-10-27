@@ -172,8 +172,11 @@ export function PdfPageCanvas({
   const [pendingText, setPendingText] = useState<PendingTextEditor | null>(null);
   const [hoverTarget, setHoverTarget] = useState<EditTarget | null>(null);
   const [dragPreview, setDragPreview] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [resizePreview, setResizePreview] = useState<{ id: string; x: number; y: number; width: number; height: number } | null>(null);
   const dragging = useRef(false);
   const shapeDragOrigin = useRef<{ x: number; y: number } | null>(null);
+  /** The FIXED opposite corner (PDF-point space) a resize handle drag is anchored to — set once on pointerdown, read every move. */
+  const resizeOrigin = useRef<{ x: number; y: number } | null>(null);
   const pendingTextPopupRef = useRef<HTMLDivElement>(null);
   const editDrag = useRef<{ target: EditTarget; startX: number; startY: number; curX: number; curY: number; moved: boolean } | null>(null);
 
@@ -332,6 +335,19 @@ export function PdfPageCanvas({
     }
   }
 
+  /** Resize-via-corner-handle for 'image' annotations. Anchors the OPPOSITE corner in PDF-point space and, on every move, rebuilds the rect between that fixed corner and the current pointer's PDF position — works unchanged under any 90°-multiple page rotation, same reasoning as rectToScreen's own header comment. */
+  function startResizeImage(e: React.PointerEvent, ann: Extract<Annotation, { type: 'image' }>, oppositeX: number, oppositeY: number) {
+    e.stopPropagation();
+    onSelectAnnotation(ann.id);
+    resizeOrigin.current = { x: oppositeX, y: oppositeY };
+    setResizePreview({ id: ann.id, x: ann.x, y: ann.y, width: ann.width, height: ann.height });
+    try {
+      overlayRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // Not fatal — see handlePointerDown's own comment on this.
+    }
+  }
+
   function handlePointerDown(e: React.PointerEvent) {
     // Real (trusted) clicks fire a native compat `mousedown` right after
     // `pointerdown` — its own DEFAULT action steals focus to/from the
@@ -383,6 +399,20 @@ export function PdfPageCanvas({
   }
 
   function handlePointerMove(e: React.PointerEvent) {
+    if (resizePreview && resizeOrigin.current) {
+      const [px, py] = screenToPdf(e.clientX, e.clientY);
+      const ox = resizeOrigin.current.x;
+      const oy = resizeOrigin.current.y;
+      setResizePreview({
+        id: resizePreview.id,
+        x: Math.min(ox, px),
+        y: Math.min(oy, py),
+        width: Math.max(4, Math.abs(px - ox)),
+        height: Math.max(4, Math.abs(py - oy)),
+      });
+      return;
+    }
+
     if (dragPreview && shapeDragOrigin.current) {
       const [x, y] = screenToPdf(e.clientX, e.clientY);
       setDragPreview({ ...dragPreview, dx: x - shapeDragOrigin.current.x, dy: y - shapeDragOrigin.current.y });
@@ -430,6 +460,18 @@ export function PdfPageCanvas({
   }
 
   function handlePointerUp(e: React.PointerEvent) {
+    if (resizePreview) {
+      onUpdateAnnotation(resizePreview.id, { x: resizePreview.x, y: resizePreview.y, width: resizePreview.width, height: resizePreview.height } as Partial<Annotation>);
+      setResizePreview(null);
+      resizeOrigin.current = null;
+      try {
+        overlayRef.current?.releasePointerCapture(e.pointerId);
+      } catch {
+        // See handlePointerDown's own comment.
+      }
+      return;
+    }
+
     if (dragPreview) {
       const ann = annotations.find((a) => a.id === dragPreview.id);
       if (ann && 'x' in ann && 'y' in ann) {
@@ -556,7 +598,12 @@ export function PdfPageCanvas({
 
             {pageAnnotations.map((ann) => {
               const selected = ann.id === selectedAnnotationId;
-              const effective = dragPreview && dragPreview.id === ann.id && 'x' in ann && 'y' in ann ? { ...ann, x: ann.x + dragPreview.dx, y: ann.y + dragPreview.dy } : ann;
+              const effective =
+                dragPreview && dragPreview.id === ann.id && 'x' in ann && 'y' in ann
+                  ? { ...ann, x: ann.x + dragPreview.dx, y: ann.y + dragPreview.dy }
+                  : resizePreview && resizePreview.id === ann.id
+                    ? ({ ...ann, x: resizePreview.x, y: resizePreview.y, width: resizePreview.width, height: resizePreview.height } as Annotation)
+                    : ann;
 
               if (effective.type === 'highlight') {
                 const r = rectToScreen(effective, viewport);
@@ -606,10 +653,35 @@ export function PdfPageCanvas({
 
               if (effective.type === 'image') {
                 const r = rectToScreen(effective, viewport);
+                const corners = [
+                  { key: 'bl', px: effective.x, py: effective.y, oppX: effective.x + effective.width, oppY: effective.y + effective.height },
+                  { key: 'br', px: effective.x + effective.width, py: effective.y, oppX: effective.x, oppY: effective.y + effective.height },
+                  { key: 'tl', px: effective.x, py: effective.y + effective.height, oppX: effective.x + effective.width, oppY: effective.y },
+                  { key: 'tr', px: effective.x + effective.width, py: effective.y + effective.height, oppX: effective.x, oppY: effective.y },
+                ] as const;
                 return (
                   <g key={ann.id} className="pointer-events-auto cursor-move" onPointerDown={(e) => startDragShape(e, ann)}>
                     <image href={effective.dataUrl} x={r.left} y={r.top} width={r.width} height={r.height} preserveAspectRatio="none" />
                     {selected && <rect x={r.left} y={r.top} width={r.width} height={r.height} fill="none" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 2" />}
+                    {selected &&
+                      corners.map(({ key, px, py, oppX, oppY }) => {
+                        const [hx, hy] = viewport.convertToViewportPoint(px, py);
+                        return (
+                          <rect
+                            key={key}
+                            x={hx - 5}
+                            y={hy - 5}
+                            width={10}
+                            height={10}
+                            rx={2}
+                            fill="white"
+                            stroke="#2563eb"
+                            strokeWidth={1.5}
+                            className="cursor-nwse-resize"
+                            onPointerDown={(e) => startResizeImage(e, effective, oppX, oppY)}
+                          />
+                        );
+                      })}
                   </g>
                 );
               }
