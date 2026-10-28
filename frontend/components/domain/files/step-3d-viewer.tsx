@@ -1017,7 +1017,7 @@ function buildTree(group: THREE.Object3D): ModelTreeNode[] {
   return group.children.map(walk);
 }
 
-async function loadGlb(glbUrl: string): Promise<THREE.Object3D> {
+export async function loadGlb(glbUrl: string): Promise<THREE.Object3D> {
   const gltf = await new GLTFLoader().loadAsync(glbUrl);
   return gltf.scene;
 }
@@ -1502,7 +1502,7 @@ function meshesUnder(object: THREE.Object3D): THREE.Mesh[] {
  * bounding box, already computed for camera framing) and reuse the
  * result for every part's volume in that file.
  */
-function linearUnitScaleToMm(groupMaxDim: number): number {
+export function linearUnitScaleToMm(groupMaxDim: number): number {
   const ALREADY_METERS_MAX_DIM = 50;
   return groupMaxDim < ALREADY_METERS_MAX_DIM ? 1000 : 1;
 }

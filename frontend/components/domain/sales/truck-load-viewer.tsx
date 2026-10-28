@@ -3,11 +3,48 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { loadGlb, linearUnitScaleToMm } from '@/components/domain/files/step-3d-viewer';
 import type { LoadPlanPlacedBox } from '@/lib/api-client/sales';
 
 export interface TruckLoadViewerProps {
   truckDims: { lengthCm: number; widthCm: number; heightCm: number };
   placedBoxes: LoadPlanPlacedBox[];
+  /** assemblyId -> downloadUrl of its attached .glb, when it has one (2026-10-28, "де є глб має бути видно 3д моделі що там") — boxes for assemblies missing here fall back to a plain colored block. */
+  assemblyGlbUrls?: Record<string, string>;
+}
+
+/**
+ * Loads `glbUrl` and returns a group whose contents are re-centered on
+ * their own bounding-box center and scaled (independently per axis — a
+ * simple "stretch to fit the packed box slot" rather than a faithful
+ * uniform scale, since the slot's own length/width/height already come
+ * from a sorted-descending heuristic in computeGlbDimensions, not from the
+ * model's native orientation) so the model's footprint matches
+ * `targetCm`. Mirrors the same `loadGlb` + `Box3` + `linearUnitScaleToMm`
+ * normalization `computeGlbDimensions`/`computeGlbVolume` already use.
+ * Returns `null` if the file has no real geometry.
+ */
+async function loadGlbScaledToBox(
+  glbUrl: string,
+  targetCm: { lengthCm: number; widthCm: number; heightCm: number },
+): Promise<THREE.Object3D | null> {
+  const raw = await loadGlb(glbUrl);
+  const box = new THREE.Box3().setFromObject(raw);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (!(maxDim > 0)) return null;
+
+  const rawToCm = linearUnitScaleToMm(maxDim) / 10;
+  const wrapper = new THREE.Group();
+  raw.position.sub(center);
+  wrapper.add(raw);
+  wrapper.scale.set(
+    targetCm.lengthCm / Math.max(size.x * rawToCm, 1e-6),
+    targetCm.heightCm / Math.max(size.y * rawToCm, 1e-6),
+    targetCm.widthCm / Math.max(size.z * rawToCm, 1e-6),
+  );
+  return wrapper;
 }
 
 /** Deterministic color per assemblyId (same product keeps the same color across trucks/renders) — also used by the legend in load-plan/page.tsx, so exported. */
@@ -30,12 +67,13 @@ export function colorForAssembly(assemblyId: string): string {
  * the same hand-rolled three.js pattern, reused deliberately rather than
  * introducing react-three-fiber (not used anywhere else in this project).
  */
-export function TruckLoadViewer({ truckDims, placedBoxes }: TruckLoadViewerProps) {
+export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: TruckLoadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    let cancelled = false;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf3f4f6);
@@ -70,24 +108,81 @@ export function TruckLoadViewer({ truckDims, placedBoxes }: TruckLoadViewerProps
     group.position.set(-truckDims.lengthCm / 2, -truckDims.heightCm / 2, -truckDims.widthCm / 2);
     scene.add(group);
 
+    // Semi-transparent cargo body (2026-10-28, "короб завантаження має бути
+    // напівпрозорим") — a real solid mesh, not just edges, so the truck
+    // reads as an actual container while still letting what's loaded
+    // inside show through.
     const truckGeometry = new THREE.BoxGeometry(truckDims.lengthCm, truckDims.heightCm, truckDims.widthCm);
+    const truckMaterial = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const truckMesh = new THREE.Mesh(truckGeometry, truckMaterial);
+    truckMesh.position.set(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
+    group.add(truckMesh);
     const truckOutline = new THREE.LineSegments(new THREE.EdgesGeometry(truckGeometry), new THREE.LineBasicMaterial({ color: 0x334155 }));
-    truckOutline.position.set(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
+    truckOutline.position.copy(truckMesh.position);
     group.add(truckOutline);
-    truckGeometry.dispose();
 
     for (const box of placedBoxes) {
+      const slotPosition = new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2);
       const geometry = new THREE.BoxGeometry(box.lengthCm, box.heightCm, box.widthCm);
-      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)) });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2);
-      group.add(mesh);
       const boxEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry),
         new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.25 }),
       );
-      boxEdges.position.copy(mesh.position);
+      boxEdges.position.copy(slotPosition);
       group.add(boxEdges);
+
+      const glbUrl = assemblyGlbUrls?.[box.assemblyId];
+      if (glbUrl) {
+        // Real geometry (2026-10-28, "де є глб має бути видно 3д моделі що
+        // там") loads async — the plain colored block below is swapped in
+        // immediately so the scene never shows an empty slot while waiting,
+        // then replaced once (if) the model resolves.
+        const placeholderGeometry = new THREE.BoxGeometry(box.lengthCm, box.heightCm, box.widthCm);
+        const placeholderMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)), transparent: true, opacity: 0.5 });
+        const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
+        placeholder.position.copy(slotPosition);
+        group.add(placeholder);
+
+        loadGlbScaledToBox(glbUrl, { lengthCm: box.lengthCm, widthCm: box.widthCm, heightCm: box.heightCm })
+          .then((model) => {
+            if (!model) return;
+            if (cancelled) {
+              // Resolved after the viewer unmounted (e.g. the user switched
+              // trucks mid-load) — never got added to the (now-disposed)
+              // scene, so its own GPU resources need disposing here instead
+              // of via the effect's own cleanup traversal.
+              model.traverse((o) => {
+                if (o instanceof THREE.Mesh) {
+                  o.geometry.dispose();
+                  for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
+                }
+              });
+              return;
+            }
+            group.remove(placeholder);
+            placeholderGeometry.dispose();
+            placeholderMaterial.dispose();
+            model.position.copy(slotPosition);
+            group.add(model);
+          })
+          .catch(() => {
+            // Leave the colored placeholder in place — a broken/unreadable
+            // GLB shouldn't blank out that slot entirely.
+          });
+      } else {
+        const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)) });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(slotPosition);
+        group.add(mesh);
+        continue;
+      }
+      geometry.dispose();
     }
 
     let animationFrame: number;
@@ -108,6 +203,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes }: TruckLoadViewerProps
     resizeObserver.observe(container);
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       controls.dispose();
@@ -121,7 +217,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes }: TruckLoadViewerProps
         }
       });
     };
-  }, [truckDims, placedBoxes]);
+  }, [truckDims, placedBoxes, assemblyGlbUrls]);
 
   return <div ref={containerRef} className="h-full min-h-[320px] w-full" />;
 }

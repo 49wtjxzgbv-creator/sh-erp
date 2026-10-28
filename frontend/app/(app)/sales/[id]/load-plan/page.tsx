@@ -10,12 +10,14 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { LoadPlanTruck, LoadPlanTruckItem } from '@/lib/api-client/sales';
 import { updateAssembly } from '@/lib/api-client/bom';
 import { listFilesForEntities } from '@/lib/api-client/files';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
+import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { TruckLoadViewer, colorForAssembly } from '@/components/domain/sales/truck-load-viewer';
 
 type BulkFillStatus = 'done' | 'no-model' | 'error';
@@ -166,6 +168,18 @@ export default function LoadPlanPage() {
     ? { lengthCm: Number(planTransportType.lengthCm), widthCm: Number(planTransportType.widthCm), heightCm: Number(planTransportType.heightCm) }
     : { lengthCm: 0, widthCm: 0, heightCm: 0 };
 
+  // "в самій 3д моделі завантаження де є глб має бути видно 3д моделі що
+  // там" (2026-10-28): resolve each assembly's attached .glb once per page
+  // (not per truck) so TruckLoadViewer can swap a plain colored block for
+  // the actual model.
+  const assemblyIds = [...assemblyNames.keys()];
+  const { data: assemblyGlbFiles } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_DOCUMENT');
+  const assemblyGlbUrls: Record<string, string> = {};
+  for (const [assemblyId, files] of Object.entries(assemblyGlbFiles ?? {})) {
+    const glb = files.find((f) => isGlbFile(f.originalName));
+    if (glb) assemblyGlbUrls[assemblyId] = glb.downloadUrl;
+  }
+
   return (
     <RequirePermission permission="shipments:manage" redirectTo={`/sales/${orderId}`}>
       <div className="space-y-4">
@@ -287,7 +301,7 @@ export default function LoadPlanPage() {
                   {selectedTruck.overflowBoxCount > 0 && (
                     <p className="text-sm text-amber-600 dark:text-amber-500">{t('loadPlanOverflowWarning', { count: selectedTruck.overflowBoxCount })}</p>
                   )}
-                  <TruckLoadViewer truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} />
+                  <TruckLoadViewer truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} assemblyGlbUrls={assemblyGlbUrls} />
                   <div className="flex flex-wrap gap-3">
                     {[...assemblyNames.entries()].map(([assemblyId, name]) => (
                       <div key={assemblyId} className="flex items-center gap-1.5 text-xs">
@@ -354,8 +368,8 @@ function DraggableItemCard({ item }: { item: LoadPlanTruckItem }) {
       {...attributes}
       className={`cursor-grab rounded border border-border bg-card p-1.5 text-xs shadow-sm active:cursor-grabbing ${isDragging ? 'opacity-50' : ''}`}
     >
-      <p className="font-medium">{item.assemblyName}</p>
-      <p className="text-muted-foreground">
+      <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
+      <p className="mt-1 text-muted-foreground">
         {t('transportUnitsCount', { count: item.unitsQty })} · {item.weightKg.toFixed(1)} {t('kgUnit')}
       </p>
     </div>
