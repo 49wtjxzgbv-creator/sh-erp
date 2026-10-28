@@ -911,6 +911,8 @@
     "loadPlanTruckNumber": "Truck #{index}",
     "loadPlanVolumeUsed": "of volume used",
     "loadPlanOverflowWarning": "{count} boxes didn't fit in this truck — move something to another one.",
+    "loadPlanFocusedHint": "The camera is zoomed in on just the selected item.",
+    "loadPlanShowWholeLoad": "Show the whole load",
     "loadPlanNewTruck": "+ New truck",
     "loadPlanMissingPackagingTitle": "Missing packaging for these items",
     "loadPlanSkippedWarning": "The plan was generated without these items, due to missing dimensions.",

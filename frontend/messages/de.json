@@ -911,6 +911,8 @@
     "loadPlanTruckNumber": "LKW Nr. {index}",
     "loadPlanVolumeUsed": "Volumen belegt",
     "loadPlanOverflowWarning": "{count} Kartons passten nicht in diesen LKW — verschieben Sie etwas in einen anderen.",
+    "loadPlanFocusedHint": "Die Kamera ist nur auf den ausgewählten Artikel eingezoomt.",
+    "loadPlanShowWholeLoad": "Gesamte Ladung anzeigen",
     "loadPlanNewTruck": "+ Neuer LKW",
     "loadPlanMissingPackagingTitle": "Fehlende Verpackungsdaten für diese Artikel",
     "loadPlanSkippedWarning": "Der Plan wurde ohne diese Positionen erstellt, da die Abmessungen fehlen.",

@@ -61,6 +61,46 @@ function groupTotal(group: EditableGroup): number {
 }
 
 /**
+ * "в заявці постачальникам коли декілька замовлень воно просто складає
+ * пдф файли до купи а не об'єднує схожі артикули складаючи кількість
+ * разом з схожих замовлень" (2026-10-28) — the on-screen table and
+ * `sendGroup` both need one row PER ORDER (editing/reservation and
+ * `sourceRequirementId` are inherently per-order, see this file's own
+ * header comment on why POs stay split per order underneath), but the
+ * PRINTED document the supplier actually reads has no reason to expose
+ * that internal bookkeeping: the same article needed by several orders
+ * should read as ONE line with the combined quantity, not one line per
+ * order. Merges same (kind, productId/subAssemblyId) lines within a
+ * supplier group, summing `qty` and collecting every contributing
+ * order's number into `orderNumber` (comma-joined) — print-only, never
+ * fed back into `groups` state.
+ */
+function mergeLinesForPrint(lines: EditableLine[]) {
+  const merged = new Map<string, { kind: EditableLine['kind']; productId?: string; subAssemblyId?: string; description: string; article: string | null; qty: number; price: number | null; orderNumbers: string[] }>();
+  for (const line of lines) {
+    if (line.qty <= 0) continue;
+    const key = `${line.kind}:${line.productId ?? line.subAssemblyId ?? line.description}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.qty += line.qty;
+      if (!existing.orderNumbers.includes(line.orderNumber)) existing.orderNumbers.push(line.orderNumber);
+    } else {
+      merged.set(key, {
+        kind: line.kind,
+        productId: line.productId,
+        subAssemblyId: line.subAssemblyId,
+        description: line.description,
+        article: line.article,
+        qty: line.qty,
+        price: line.price,
+        orderNumbers: [line.orderNumber],
+      });
+    }
+  }
+  return Array.from(merged.values()).map((m) => ({ ...m, orderNumber: m.orderNumbers.join(', ') }));
+}
+
+/**
  * "можна якось в продажах обирати декілька різних замовлень і з них
  * робити заявку постачальникам щоб не на кожне окремо" (2026-10-28) —
  * runs the SAME per-order shortage preview the single-order page uses
@@ -334,16 +374,7 @@ function BulkShortagePageInner() {
             groups={printGroups.map((g) => ({
               supplierId: g.supplierId,
               supplierName: g.supplierName,
-              lines: g.lines.map((l) => ({
-                kind: l.kind,
-                productId: l.productId,
-                subAssemblyId: l.subAssemblyId,
-                description: l.description,
-                article: l.article,
-                qty: l.qty,
-                price: l.price,
-                orderNumber: l.orderNumber,
-              })),
+              lines: mergeLinesForPrint(g.lines),
             }))}
             onPreview={handlePreview}
           />

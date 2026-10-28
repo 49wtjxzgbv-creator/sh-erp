@@ -911,6 +911,8 @@
     "loadPlanTruckNumber": "Ciężarówka nr {index}",
     "loadPlanVolumeUsed": "objętości zajęte",
     "loadPlanOverflowWarning": "{count} kartonów nie zmieściło się w tej ciężarówce — przenieś coś do innej.",
+    "loadPlanFocusedHint": "Kamera jest przybliżona tylko do wybranego elementu.",
+    "loadPlanShowWholeLoad": "Pokaż cały ładunek",
     "loadPlanNewTruck": "+ Nowa ciężarówka",
     "loadPlanMissingPackagingTitle": "Brak danych opakowania dla tych pozycji",
     "loadPlanSkippedWarning": "Plan został wygenerowany bez tych pozycji z powodu braku wymiarów.",

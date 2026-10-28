@@ -11,6 +11,20 @@ export interface TruckLoadViewerProps {
   placedBoxes: LoadPlanPlacedBox[];
   /** assemblyId -> downloadUrl of its attached .glb, when it has one (2026-10-28, "де є глб має бути видно 3д моделі що там") — boxes for assemblies missing here fall back to a plain colored block. */
   assemblyGlbUrls?: Record<string, string>;
+  /**
+   * Frames the camera tightly on just this assembly's own box(es) instead
+   * of the whole truck's cargo (2026-10-28, "план завантаження мав на увазі
+   * що самі глб файли в 3д переглядачі малі") — cargo-bbox framing already
+   * helps a lightly-loaded truck, but when the packed items themselves are
+   * spread across most of the truck's own length (confirmed live: 3 long
+   * items placed end-to-end can span nearly the full envelope even at 1%
+   * volume), the camera still has to pull back far enough to show
+   * everything, leaving any ONE model small regardless. Set from the
+   * legend in load-plan/page.tsx (click an item to focus it, click again
+   * to go back to the full-load view); `undefined`/no match falls back to
+   * framing the whole cargo exactly as before.
+   */
+  focusedAssemblyId?: string | null;
 }
 
 /**
@@ -73,7 +87,7 @@ export function colorForAssembly(assemblyId: string): string {
  * the same hand-rolled three.js pattern, reused deliberately rather than
  * introducing react-three-fiber (not used anywhere else in this project).
  */
-export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: TruckLoadViewerProps) {
+export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId }: TruckLoadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -98,12 +112,18 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: Tru
     // "неипоказує там реальні глб вироби просто прямокутники"). Falls back
     // to the truck's own envelope when there's nothing loaded yet.
     const truckCenterLocal = new THREE.Vector3(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
+    // A focused assembly narrows the framing box down to just ITS OWN
+    // placed boxes — falls through to the full-cargo box below when
+    // nothing is focused, or when the focused id isn't actually in this
+    // truck (e.g. it got moved to another truck while focused).
+    const focusedBoxes = focusedAssemblyId ? placedBoxes.filter((b) => b.assemblyId === focusedAssemblyId) : [];
+    const framingBoxes = focusedBoxes.length > 0 ? focusedBoxes : placedBoxes;
     const cargoBox = new THREE.Box3();
-    for (const box of placedBoxes) {
+    for (const box of framingBoxes) {
       cargoBox.expandByPoint(new THREE.Vector3(box.x, box.z, box.y));
       cargoBox.expandByPoint(new THREE.Vector3(box.x + box.lengthCm, box.z + box.heightCm, box.y + box.widthCm));
     }
-    const hasCargo = placedBoxes.length > 0;
+    const hasCargo = framingBoxes.length > 0;
     const cargoCenterLocal = hasCargo ? cargoBox.getCenter(new THREE.Vector3()) : truckCenterLocal.clone();
     const cargoSize = hasCargo ? cargoBox.getSize(new THREE.Vector3()) : new THREE.Vector3(truckDims.lengthCm, truckDims.heightCm, truckDims.widthCm);
     const cargoMaxDim = Math.max(cargoSize.x, cargoSize.y, cargoSize.z, 1);
@@ -244,7 +264,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: Tru
         }
       });
     };
-  }, [truckDims, placedBoxes, assemblyGlbUrls]);
+  }, [truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId]);
 
-  return <div ref={containerRef} className="h-full min-h-[320px] w-full" />;
+  return <div ref={containerRef} className="h-full min-h-[420px] w-full" />;
 }

@@ -37,6 +37,12 @@ export default function LoadPlanPage() {
 
   const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>(undefined);
   const [selectedTruckIndex, setSelectedTruckIndex] = useState<number | null>(null);
+  // "план завантаження мав на увазі що самі глб файли в 3д переглядачі
+  // малі" (2026-10-28) — clicking a legend item zooms the 3D view in on
+  // just that one assembly's own box(es) instead of the whole truck's
+  // cargo; clicking the same one again (or switching trucks) goes back to
+  // the full-load view.
+  const [focusedAssemblyId, setFocusedAssemblyId] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
@@ -278,7 +284,10 @@ export default function LoadPlanPage() {
                   key={truck.id}
                   truck={truck}
                   selected={truck.index === selectedTruckIndex}
-                  onSelect={() => setSelectedTruckIndex(truck.index)}
+                  onSelect={() => {
+                    setSelectedTruckIndex(truck.index);
+                    setFocusedAssemblyId(null);
+                  }}
                 />
               ))}
               <TruckColumn
@@ -301,13 +310,33 @@ export default function LoadPlanPage() {
                   {selectedTruck.overflowBoxCount > 0 && (
                     <p className="text-sm text-amber-600 dark:text-amber-500">{t('loadPlanOverflowWarning', { count: selectedTruck.overflowBoxCount })}</p>
                   )}
-                  <TruckLoadViewer truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} assemblyGlbUrls={assemblyGlbUrls} />
+                  <TruckLoadViewer
+                    truckDims={truckDims}
+                    placedBoxes={selectedTruck.placedBoxes}
+                    assemblyGlbUrls={assemblyGlbUrls}
+                    focusedAssemblyId={focusedAssemblyId}
+                  />
+                  {focusedAssemblyId && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('loadPlanFocusedHint')}{' '}
+                      <button type="button" className="underline" onClick={() => setFocusedAssemblyId(null)}>
+                        {t('loadPlanShowWholeLoad')}
+                      </button>
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-3">
                     {[...assemblyNames.entries()].map(([assemblyId, name]) => (
-                      <div key={assemblyId} className="flex w-28 flex-col items-center gap-1.5 text-center text-xs">
+                      <button
+                        type="button"
+                        key={assemblyId}
+                        onClick={() => setFocusedAssemblyId((prev) => (prev === assemblyId ? null : assemblyId))}
+                        className={`flex w-28 flex-col items-center gap-1.5 rounded-md p-1 text-center text-xs ${
+                          focusedAssemblyId === assemblyId ? 'bg-accent ring-1 ring-primary' : 'hover:bg-accent'
+                        }`}
+                      >
                         <LegendSwatch assemblyId={assemblyId} glbUrl={assemblyGlbUrls[assemblyId]} />
                         <span className="line-clamp-2">{name}</span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </CardContent>

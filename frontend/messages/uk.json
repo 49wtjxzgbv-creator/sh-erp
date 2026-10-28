@@ -1015,6 +1015,8 @@
     "loadPlanTruckNumber": "Фура №{index}",
     "loadPlanVolumeUsed": "обʼєму зайнято",
     "loadPlanOverflowWarning": "{count} коробок не влізло в цю фуру — перенесіть щось в іншу.",
+    "loadPlanFocusedHint": "Камера наближена лише на обраний виріб.",
+    "loadPlanShowWholeLoad": "Показати все завантаження",
     "loadPlanNewTruck": "+ Нова фура",
     "loadPlanMissingPackagingTitle": "Не вистачає упаковки для розрахунку",
     "loadPlanSkippedWarning": "План згенеровано без урахування цих позицій через відсутність розмірів.",
