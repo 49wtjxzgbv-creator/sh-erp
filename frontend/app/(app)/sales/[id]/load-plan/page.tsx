@@ -304,9 +304,9 @@ export default function LoadPlanPage() {
                   <TruckLoadViewer truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} assemblyGlbUrls={assemblyGlbUrls} />
                   <div className="flex flex-wrap gap-3">
                     {[...assemblyNames.entries()].map(([assemblyId, name]) => (
-                      <div key={assemblyId} className="flex items-center gap-1.5 text-xs">
+                      <div key={assemblyId} className="flex w-28 flex-col items-center gap-1.5 text-center text-xs">
                         <LegendSwatch assemblyId={assemblyId} glbUrl={assemblyGlbUrls[assemblyId]} />
-                        {name}
+                        <span className="line-clamp-2">{name}</span>
                       </div>
                     ))}
                   </div>
@@ -349,9 +349,9 @@ function LegendSwatch({ assemblyId, glbUrl }: { assemblyId: string; glbUrl?: str
 
   if (snapshot) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={snapshot} alt="" className="h-6 w-6 rounded-sm border border-border object-cover" />;
+    return <img src={snapshot} alt="" className="h-20 w-20 rounded-md border border-border bg-card object-contain" />;
   }
-  return <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: colorForAssembly(assemblyId) }} />;
+  return <span className="h-20 w-20 rounded-md" style={{ backgroundColor: colorForAssembly(assemblyId) }} />;
 }
 
 function TruckColumn({
