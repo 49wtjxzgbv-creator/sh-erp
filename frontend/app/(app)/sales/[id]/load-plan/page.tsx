@@ -305,7 +305,7 @@ export default function LoadPlanPage() {
                   <div className="flex flex-wrap gap-3">
                     {[...assemblyNames.entries()].map(([assemblyId, name]) => (
                       <div key={assemblyId} className="flex items-center gap-1.5 text-xs">
-                        <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: colorForAssembly(assemblyId) }} />
+                        <LegendSwatch assemblyId={assemblyId} glbUrl={assemblyGlbUrls[assemblyId]} />
                         {name}
                       </div>
                     ))}
@@ -318,6 +318,40 @@ export default function LoadPlanPage() {
       </div>
     </RequirePermission>
   );
+}
+
+/**
+ * Legend swatch (2026-10-28, "неипоказує там реальні глб вироби просто
+ * прямокутники") — the shared 3D truck scene has to fit the WHOLE load in
+ * one camera, so a single item can still end up tiny/hard to read when
+ * cargo is spread across most of the truck's length (no per-item zoom
+ * there). This renders a proper close-up snapshot of the item's own .glb
+ * (same `captureGlbSnapshot` framing Step3DViewer itself proves legible —
+ * camera distance scaled to THAT item alone, not diluted by the rest of
+ * the load) right next to its name, so what's actually loaded is always
+ * recognizable regardless of truck-scene zoom. Falls back to the plain
+ * color dot for assemblies with no attached .glb.
+ */
+function LegendSwatch({ assemblyId, glbUrl }: { assemblyId: string; glbUrl?: string }) {
+  const [snapshot, setSnapshot] = useState<string | null>(null);
+  useEffect(() => {
+    if (!glbUrl) return;
+    let cancelled = false;
+    import('@/components/domain/files/step-3d-viewer').then(({ captureGlbSnapshot }) =>
+      captureGlbSnapshot(glbUrl).then((dataUrl) => {
+        if (!cancelled) setSnapshot(dataUrl);
+      }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [glbUrl]);
+
+  if (snapshot) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={snapshot} alt="" className="h-6 w-6 rounded-sm border border-border object-cover" />;
+  }
+  return <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: colorForAssembly(assemblyId) }} />;
 }
 
 function TruckColumn({
