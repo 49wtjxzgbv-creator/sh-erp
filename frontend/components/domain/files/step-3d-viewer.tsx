@@ -1908,6 +1908,29 @@ export async function computeGlbDimensions(glbUrl: string): Promise<{ lengthCm: 
   return { lengthCm: lengthMm / 10, widthCm: widthMm / 10, heightCm: heightMm / 10 };
 }
 
+/**
+ * "так, це ж потрібно і закріпити ремнями все і тд" (2026-10-28) — the bare
+ * GLB bounding box is the product itself, not the box it ships in: real
+ * packaging needs clearance on top of that for strap/tie-down slack, crate
+ * walls, and padding material. A flat cm add-on (not a percentage) because
+ * a percentage would be wildly inconsistent between a 4m conveyor belt and
+ * a 30cm part — the clearance a strap needs doesn't scale with the product.
+ * Added to all three dimensions equally since there's no reliable way to
+ * know which face actually gets strapped.
+ */
+export const DEFAULT_PACKAGING_MARGIN_CM = 5;
+
+export function addPackagingMargin(
+  dims: { lengthCm: number; widthCm: number; heightCm: number },
+  marginCm: number,
+): { lengthCm: number; widthCm: number; heightCm: number } {
+  return {
+    lengthCm: dims.lengthCm + marginCm,
+    widthCm: dims.widthCm + marginCm,
+    heightCm: dims.heightCm + marginCm,
+  };
+}
+
 export async function computeGlbVolume(glbUrl: string): Promise<number | null> {
   const group = await loadGlb(glbUrl);
   const box = new THREE.Box3().setFromObject(group);

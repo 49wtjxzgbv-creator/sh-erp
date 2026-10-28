@@ -122,7 +122,9 @@ export default function LoadPlanPage() {
         missingAssemblies.map((a) => a.id),
         'ASSEMBLY_DOCUMENT',
       );
-      const { computeGlbDimensions } = await import('@/components/domain/files/step-3d-viewer');
+      const { computeGlbDimensions, addPackagingMargin, DEFAULT_PACKAGING_MARGIN_CM } = await import(
+        '@/components/domain/files/step-3d-viewer'
+      );
       for (const assembly of missingAssemblies) {
         const glbFile = (filesByEntity[assembly.id] ?? []).find((f) => isGlbFile(f.originalName));
         if (!glbFile) {
@@ -130,11 +132,12 @@ export default function LoadPlanPage() {
           continue;
         }
         try {
-          const dims = await computeGlbDimensions(glbFile.downloadUrl);
-          if (!dims) {
+          const rawDims = await computeGlbDimensions(glbFile.downloadUrl);
+          if (!rawDims) {
             results[assembly.id] = 'no-model';
             continue;
           }
+          const dims = addPackagingMargin(rawDims, DEFAULT_PACKAGING_MARGIN_CM);
           await updateAssembly(assembly.id, {
             boxLengthCm: Math.round(dims.lengthCm * 10) / 10,
             boxWidthCm: Math.round(dims.widthCm * 10) / 10,
@@ -264,6 +267,7 @@ export default function LoadPlanPage() {
               <Button type="button" onClick={handleBulkFillFromModels} loading={bulkFilling}>
                 {t('loadPlanBulkFillFromModels')}
               </Button>
+              <p className="text-xs text-muted-foreground">{t('loadPlanBulkFillMarginHint')}</p>
             </CardContent>
           </Card>
         )}

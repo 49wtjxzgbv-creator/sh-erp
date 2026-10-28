@@ -465,6 +465,7 @@ function PackagingDimensionsFromModelCalculator({
   const glbFile = (byEntity?.[assemblyId] ?? []).find((f) => isGlbFile(f.originalName));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [marginCm, setMarginCm] = useState(5);
 
   if (!glbFile) return null;
 
@@ -472,10 +473,10 @@ function PackagingDimensionsFromModelCalculator({
     setLoading(true);
     setError(null);
     try {
-      const { computeGlbDimensions } = await import('@/components/domain/files/step-3d-viewer');
+      const { computeGlbDimensions, addPackagingMargin } = await import('@/components/domain/files/step-3d-viewer');
       const dims = await computeGlbDimensions(glbFile!.downloadUrl);
       if (!dims) setError(t('packagingDimensionsNoModel'));
-      else onApply(dims);
+      else onApply(addPackagingMargin(dims, marginCm || 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : tc('error'));
     } finally {
@@ -485,9 +486,26 @@ function PackagingDimensionsFromModelCalculator({
 
   return (
     <div className="space-y-1.5">
-      <Button type="button" variant="outline" size="sm" loading={loading} onClick={computeDims}>
-        {t('packagingDimensionsFromModel')}
-      </Button>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <Label htmlFor={`packaging-margin-${assemblyId}`} className="text-xs text-muted-foreground">
+            {t('packagingMarginCm')}
+          </Label>
+          <Input
+            id={`packaging-margin-${assemblyId}`}
+            type="number"
+            step="any"
+            min="0"
+            className="h-8 w-24"
+            value={marginCm}
+            onChange={(e) => setMarginCm(Number(e.target.value) || 0)}
+          />
+        </div>
+        <Button type="button" variant="outline" size="sm" loading={loading} onClick={computeDims}>
+          {t('packagingDimensionsFromModel')}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{t('packagingMarginHint')}</p>
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
