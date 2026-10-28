@@ -105,7 +105,19 @@ async function loadGlbScaledToBox(
   raw.position.sub(center);
   wrapper.add(raw);
   wrapper.quaternion.copy(permutationQuaternion);
-  wrapper.scale.copy(permutationScale).multiplyScalar(scale);
+  // `scale` alone only converts "native units already multiplied by
+  // rawToCm" to cm — applied directly to the RAW geometry (still in
+  // native units, meters or mm, never multiplied by rawToCm anywhere
+  // else), it silently dropped that unit conversion. For a meters-native
+  // file (rawToCm=100) this rendered everything 100x too small — easy to
+  // miss at the whole-truck overview (a tiny mis-scaled model deep inside
+  // a huge truck just reads as "small, like everything else here") but
+  // unmistakable once focus mode (above) zoomed the camera in based on
+  // the CORRECTLY-sized box slot while the model inside stayed 100x too
+  // small (2026-10-28, confirmed live: "модель в сотні разів менше чим
+  // короб" — measured directly via a bounding-box diagnostic: a model
+  // whose real size should've been ~429cm rendered at ~4.3cm).
+  wrapper.scale.copy(permutationScale).multiplyScalar(scale * rawToCm);
   return wrapper;
 }
 
