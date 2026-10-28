@@ -30,6 +30,9 @@ import {
   calculateShipmentMetrics,
   markShipmentDelivered,
   deleteShipment,
+  getLoadPlan,
+  generateLoadPlan,
+  moveLoadPlanItem,
   type QueryCustomerOrdersInput,
   type CreateCustomerOrderInput,
   type UpdateCustomerOrderInput,
@@ -316,5 +319,31 @@ export function useDeleteShipment() {
       qc.invalidateQueries({ queryKey: ['shipments'] });
       qc.invalidateQueries({ queryKey: ['finished-goods'] });
     },
+  });
+}
+
+const loadPlanKey = (customerOrderId: string) => ['load-plan', customerOrderId] as const;
+
+export function useLoadPlan(customerOrderId: string | undefined) {
+  return useQuery({
+    queryKey: loadPlanKey(customerOrderId ?? ''),
+    queryFn: () => getLoadPlan(customerOrderId as string),
+    enabled: Boolean(customerOrderId),
+  });
+}
+
+export function useGenerateLoadPlan(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (transportUnitTypeId: string) => generateLoadPlan(customerOrderId, transportUnitTypeId),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
+  });
+}
+
+export function useMoveLoadPlanItem(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, toTruckIndex }: { itemId: string; toTruckIndex: number }) => moveLoadPlanItem(customerOrderId, itemId, toTruckIndex),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
   });
 }

@@ -564,3 +564,53 @@ export function markShipmentDelivered(id: string): Promise<Shipment> {
 export function deleteShipment(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`shipments/${id}`);
 }
+
+/**
+ * Load-plan module (2026-10-28) — mirrors LoadPlanService's LoadPlanView/
+ * LoadPlanTruckView shape. A purely PLANNING tool: packs the order's full
+ * ordered qty (not what's been produced/shipped yet) into 3D-laid-out
+ * trucks of a chosen TransportUnitType. 3D box positions are always
+ * computed fresh by the backend on every GET — never cached client-side.
+ */
+export interface LoadPlanTruckItem {
+  id: string;
+  customerOrderItemId: string;
+  assemblyId: string;
+  assemblyName: string;
+  unitsQty: number;
+  weightKg: number;
+}
+export interface LoadPlanPlacedBox {
+  assemblyId: string;
+  x: number;
+  y: number;
+  z: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+}
+export interface LoadPlanTruck {
+  id: string;
+  index: number;
+  items: LoadPlanTruckItem[];
+  placedBoxes: LoadPlanPlacedBox[];
+  overflowBoxCount: number;
+  totalWeightKg: number;
+  volumeUsedPercent: number;
+}
+export interface LoadPlan {
+  id: string;
+  transportUnitTypeId: string;
+  transportUnitTypeName: string;
+  trucks: LoadPlanTruck[];
+}
+
+export function getLoadPlan(customerOrderId: string): Promise<LoadPlan | null> {
+  return apiClient.get<LoadPlan | null>(`customer-orders/${customerOrderId}/load-plan`);
+}
+export function generateLoadPlan(customerOrderId: string, transportUnitTypeId: string): Promise<LoadPlan> {
+  return apiClient.post<LoadPlan>(`customer-orders/${customerOrderId}/load-plan`, { transportUnitTypeId });
+}
+export function moveLoadPlanItem(customerOrderId: string, itemId: string, toTruckIndex: number): Promise<LoadPlan> {
+  return apiClient.patch<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}`, { toTruckIndex });
+}

@@ -142,6 +142,9 @@ model Company {
   supplierInviteTokens           SupplierInviteToken[]
   warehouses                     Warehouse[]
   transportUnitTypes             TransportUnitType[]
+  loadPlans                      LoadPlan[]
+  loadPlanTrucks                 LoadPlanTruck[]
+  loadPlanItems                  LoadPlanItem[]
   warehouseStocks                WarehouseStock[]
   stockMovements                 StockMovement[]
   inventorySessions              InventorySession[]
@@ -1540,6 +1543,7 @@ model Assembly {
   scheduleSlots           ProductionScheduleSlot[]
   suppliers               AssemblySupplier[]
   subAssemblyReservations SubAssemblyReservation[]
+  loadPlanItems           LoadPlanItem[]
 
   @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2202,6 +2206,7 @@ model CustomerOrder {
   financeExpenses         CustomerOrderExpense[] // Finance module (2026-08-24)
   subAssemblyReservations SubAssemblyReservation[] // "Зі складу" claims from the "Підвироби" dialog (2026-08-27) — see SubAssemblyReservation's own comment
   payrollEntries          PayrollEntry[] // manual ADVANCE/BONUS/PENALTY entries explicitly linked to this order (see PayrollEntry.customerOrderId's own comment) — PIECEWORK entries reach this order only indirectly, via ProductionOrder batches, never this relation
+  loadPlans               LoadPlan[]
 
   @@unique([companyId, id]) // composite-FK target for CustomerOrderItem.customerOrder
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2260,6 +2265,7 @@ model CustomerOrderItem {
   productionOrders   ProductionOrder[] @relation("ItemProductionBatches") // one CustomerOrderItem, many production batches (План-графік §1)
   subAssemblyBatches ProductionOrder[] @relation("SubAssemblyBatches") // batches producing a SUB-assembly this item's own assembly needs (see ProductionOrder.subAssemblyForItemId) — distinct relation from productionOrders above, deliberately excluded from quantity/cost rollups
   workTaskItems      WorkTaskItem[] // production-labor module: general-work tags referencing this item (reporting only, never funds)
+  loadPlanItems      LoadPlanItem[]
 
   @@unique([companyId, id]) // composite-FK target for WorkTaskItem.customerOrderItem (production-labor module, 2026-08-24)
   @@index([customerOrderId])
@@ -2333,18 +2339,95 @@ model TransportUnitType {
   maxPackages Int?
   active      Boolean  @default(true)
 
+  // Load-plan module (2026-10-28): interior cargo-box dimensions, used ONLY
+  // by LoadPlanService's 3D bin-packing/visualization — nullable because
+  // every pre-existing type (and most new ones, if the user only cares
+  // about the simple weight/volume/places suggestion on Shipment) has no
+  // need for them. A type without these just can't be selected for a
+  // LoadPlan.
+  lengthCm Decimal? @db.Decimal(8, 2)
+  widthCm  Decimal? @db.Decimal(8, 2)
+  heightCm Decimal? @db.Decimal(8, 2)
+
   legacyId String?
 
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlans LoadPlan[]
 
   @@unique([companyId, id])
   @@unique([companyId, legacyId])
   @@index([companyId])
   @@map("transport_unit_types")
+}
+
+// Load-plan module (2026-10-28): a purely PLANNING artifact — forward-
+// looking "how many trucks will this whole order need, and how do we pack
+// them" tool, computed from CustomerOrderItem.qty (the full ordered
+// amount), independent of how much has actually been produced/shipped so
+// far (deliberate choice — see LoadPlanService's own header comment).
+// Never auto-materializes into a real Shipment. One per CustomerOrder;
+// generating again replaces it in place (old trucks/items cascade-delete).
+model LoadPlan {
+  id                  String   @id @default(uuid()) @db.Uuid
+  companyId           String   @db.Uuid
+  customerOrderId     String   @db.Uuid
+  transportUnitTypeId String   @db.Uuid
+  createdById         String   @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder     CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade)
+  transportUnitType TransportUnitType @relation(fields: [companyId, transportUnitTypeId], references: [companyId, id])
+  trucks            LoadPlanTruck[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, customerOrderId])
+  @@map("load_plans")
+}
+
+model LoadPlanTruck {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @db.Uuid
+  loadPlanId String @db.Uuid
+  index      Int
+
+  company  Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlan LoadPlan       @relation(fields: [companyId, loadPlanId], references: [companyId, id], onDelete: Cascade)
+  items    LoadPlanItem[]
+
+  @@unique([companyId, id])
+  @@unique([loadPlanId, index])
+  @@map("load_plan_trucks")
+}
+
+// 3D placement (x/y/z) is deliberately NOT stored here — only which truck
+// an order-line's quantity is assigned to. LoadPlanService#get recomputes
+// the within-truck layout live from this assignment every time (same
+// "compute, don't store" convention as AssembliesService#calculateWeight),
+// so a manual move (see LoadPlanService#moveItem) only ever touches
+// `loadPlanTruckId` on one row.
+model LoadPlanItem {
+  id                  String @id @default(uuid()) @db.Uuid
+  companyId           String @db.Uuid
+  loadPlanTruckId     String @db.Uuid
+  customerOrderItemId String @db.Uuid
+  assemblyId          String @db.Uuid
+  unitsQty            Int
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlanTruck     LoadPlanTruck     @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
+  customerOrderItem CustomerOrderItem @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
+  assembly          Assembly          @relation(fields: [companyId, assemblyId], references: [companyId, id])
+
+  @@unique([companyId, id])
+  @@index([loadPlanTruckId])
+  @@index([customerOrderItemId])
+  @@map("load_plan_items")
 }
 
 // ============================================================================

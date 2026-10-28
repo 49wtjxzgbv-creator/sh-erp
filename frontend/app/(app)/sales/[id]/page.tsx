@@ -466,6 +466,11 @@ export default function CustomerOrderDetailPage() {
               <Link href={`/sales/${order.id}/shortage`}>{t('shortagePreview')}</Link>
             </Button>
           )}
+          {canManage && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/sales/${order.id}/load-plan`}>{t('loadPlanTitle')}</Link>
+            </Button>
+          )}
           <OrderShipmentDialog orderId={order.id} />
           {canComplete && canManage && (
             <Dialog>

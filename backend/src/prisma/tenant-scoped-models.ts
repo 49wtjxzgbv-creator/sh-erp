@@ -96,4 +96,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'PurchaseRequestItem',
   // Shipment-calculation module (2026-10-28)
   'TransportUnitType',
+  // Load-plan module (2026-10-28)
+  'LoadPlan',
+  'LoadPlanTruck',
+  'LoadPlanItem',
 ]);

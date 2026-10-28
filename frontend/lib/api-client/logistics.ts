@@ -15,6 +15,10 @@ export interface TransportUnitType {
   maxVolumeM3: DecimalString | null;
   maxPackages: number | null;
   active: boolean;
+  /** Interior cargo dimensions, cm — only needed to use this type in a LoadPlan (3D packing/visualization). */
+  lengthCm: DecimalString | null;
+  widthCm: DecimalString | null;
+  heightCm: DecimalString | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -26,6 +30,9 @@ export interface CreateTransportUnitTypeInput {
   maxVolumeM3?: number;
   maxPackages?: number;
   active?: boolean;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 }
 export type UpdateTransportUnitTypeInput = Partial<CreateTransportUnitTypeInput>;
 

@@ -33,6 +33,9 @@ export default function TransportTypesPage() {
   const [maxWeightKg, setMaxWeightKg] = useState('');
   const [maxVolumeM3, setMaxVolumeM3] = useState('');
   const [maxPackages, setMaxPackages] = useState('');
+  const [lengthCm, setLengthCm] = useState('');
+  const [widthCm, setWidthCm] = useState('');
+  const [heightCm, setHeightCm] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -47,11 +50,17 @@ export default function TransportTypesPage() {
         maxWeightKg: Number(maxWeightKg),
         maxVolumeM3: maxVolumeM3 ? Number(maxVolumeM3) : undefined,
         maxPackages: maxPackages ? Number(maxPackages) : undefined,
+        lengthCm: lengthCm ? Number(lengthCm) : undefined,
+        widthCm: widthCm ? Number(widthCm) : undefined,
+        heightCm: heightCm ? Number(heightCm) : undefined,
       });
       setName('');
       setMaxWeightKg('');
       setMaxVolumeM3('');
       setMaxPackages('');
+      setLengthCm('');
+      setWidthCm('');
+      setHeightCm('');
     } catch (err) {
       setCreateError(apiErrorMessage(err, tc('error')));
     }
@@ -125,12 +134,21 @@ export default function TransportTypesPage() {
                   className="max-w-[9rem]"
                 />
               </div>
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">{t('transportTypeDimensionsCm')}</label>
+                <div className="flex gap-2">
+                  <Input type="number" step="any" min="0" placeholder={t('transportTypeLength')} value={lengthCm} onChange={(e) => setLengthCm(e.target.value)} className="w-24" />
+                  <Input type="number" step="any" min="0" placeholder={t('transportTypeWidth')} value={widthCm} onChange={(e) => setWidthCm(e.target.value)} className="w-24" />
+                  <Input type="number" step="any" min="0" placeholder={t('transportTypeHeight')} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} className="w-24" />
+                </div>
+              </div>
               <Button type="submit" loading={createType.isPending}>
                 <Plus className="mr-2 h-4 w-4" />
                 {tc('create')}
               </Button>
             </form>
             {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+            <p className="mt-2 text-xs text-muted-foreground">{t('transportTypeDimensionsHint')}</p>
           </CardContent>
         </Card>
 
@@ -141,19 +159,20 @@ export default function TransportTypesPage() {
               <TableHead className="w-28">{t('transportTypeMaxWeight')}</TableHead>
               <TableHead className="w-28">{t('transportTypeMaxVolume')}</TableHead>
               <TableHead className="w-28">{t('transportTypeMaxPackages')}</TableHead>
+              <TableHead className="w-36">{t('transportTypeDimensionsCm')}</TableHead>
               <TableHead className="w-16">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                   {tc('loading')}
                 </TableCell>
               </TableRow>
             ) : !types || types.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                   {tc('noResults')}
                 </TableCell>
               </TableRow>
@@ -164,6 +183,11 @@ export default function TransportTypesPage() {
                   <TableCell>{toNumber(type.maxWeightKg)}</TableCell>
                   <TableCell>{toNumber(type.maxVolumeM3) ?? '—'}</TableCell>
                   <TableCell>{type.maxPackages ?? '—'}</TableCell>
+                  <TableCell>
+                    {type.lengthCm && type.widthCm && type.heightCm
+                      ? `${toNumber(type.lengthCm)}×${toNumber(type.widthCm)}×${toNumber(type.heightCm)}`
+                      : '—'}
+                  </TableCell>
                   <TableCell>
                     <Dialog open={pendingDeleteId === type.id} onOpenChange={(o) => setPendingDeleteId(o ? type.id : null)}>
                       <DialogTrigger asChild>

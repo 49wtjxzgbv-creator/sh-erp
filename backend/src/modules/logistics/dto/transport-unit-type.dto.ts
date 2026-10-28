@@ -32,6 +32,27 @@ export class CreateTransportUnitTypeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({ example: 1360, description: 'Interior cargo length, cm — only needed to use this type in a LoadPlan (3D packing).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  lengthCm?: number;
+
+  @ApiPropertyOptional({ example: 245, description: 'Interior cargo width, cm.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  widthCm?: number;
+
+  @ApiPropertyOptional({ example: 270, description: 'Interior cargo height, cm.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  heightCm?: number;
 }
 
 export class UpdateTransportUnitTypeDto extends PartialType(CreateTransportUnitTypeDto) {}
