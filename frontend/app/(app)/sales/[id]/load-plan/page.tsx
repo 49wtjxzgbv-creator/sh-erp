@@ -167,8 +167,20 @@ export default function LoadPlanPage() {
   }
 
   const selectedTruck = plan?.trucks.find((tr) => tr.index === selectedTruckIndex) ?? null;
+  // Used to prefetch EVERY truck's assemblies' .glb urls up front (so
+  // switching trucks doesn't refetch) — deliberately NOT what the legend
+  // below renders, see `selectedTruckAssemblyNames`.
   const assemblyNames = new Map<string, string>();
   for (const truck of plan?.trucks ?? []) for (const item of truck.items) assemblyNames.set(item.assemblyId, item.assemblyName);
+  // The legend/focus-camera UI must only ever show assemblies actually IN
+  // the currently selected truck — using the all-trucks map above there
+  // let a legend entry point at an assembly that lives in a DIFFERENT
+  // truck, so clicking it to "focus the camera" silently found nothing in
+  // the visible truck's own placedBoxes and did nothing (2026-10-28, found
+  // live: clicking "Antrieb_VBG" while Фура №1 was selected had no visible
+  // effect — it was actually packed into Фура №2).
+  const selectedTruckAssemblyNames = new Map<string, string>();
+  for (const item of selectedTruck?.items ?? []) selectedTruckAssemblyNames.set(item.assemblyId, item.assemblyName);
   const planTransportType = plan ? (transportTypes ?? []).find((tp) => tp.id === plan.transportUnitTypeId) : undefined;
   const truckDims = planTransportType
     ? { lengthCm: Number(planTransportType.lengthCm), widthCm: Number(planTransportType.widthCm), heightCm: Number(planTransportType.heightCm) }
@@ -325,7 +337,7 @@ export default function LoadPlanPage() {
                     </p>
                   )}
                   <div className="flex flex-wrap gap-3">
-                    {[...assemblyNames.entries()].map(([assemblyId, name]) => (
+                    {[...selectedTruckAssemblyNames.entries()].map(([assemblyId, name]) => (
                       <button
                         type="button"
                         key={assemblyId}
