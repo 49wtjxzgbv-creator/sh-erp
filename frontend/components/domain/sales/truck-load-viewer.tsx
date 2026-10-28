@@ -15,14 +15,21 @@ export interface TruckLoadViewerProps {
 
 /**
  * Loads `glbUrl` and returns a group whose contents are re-centered on
- * their own bounding-box center and scaled (independently per axis — a
- * simple "stretch to fit the packed box slot" rather than a faithful
- * uniform scale, since the slot's own length/width/height already come
- * from a sorted-descending heuristic in computeGlbDimensions, not from the
- * model's native orientation) so the model's footprint matches
- * `targetCm`. Mirrors the same `loadGlb` + `Box3` + `linearUnitScaleToMm`
- * normalization `computeGlbDimensions`/`computeGlbVolume` already use.
- * Returns `null` if the file has no real geometry.
+ * their own bounding-box center and scaled UNIFORMLY (same factor on all
+ * three axes) so the model's longest extent matches the longest of
+ * `targetCm`'s three dimensions. Deliberately NOT a per-axis stretch to
+ * fill the packed slot exactly — the slot's length/width/height come from
+ * a sorted-descending heuristic in computeGlbDimensions that has no fixed
+ * correspondence to the model's native X/Y/Z, so a per-axis fit silently
+ * squashes thin parts (a conveyor belt's thin profile, for example) into
+ * an unrecognizable sliver. A uniform scale keeps the model's real
+ * proportions intact — recognizable shape over exact bounding-box fill,
+ * since this is a visual aid, not an engineering drawing (2026-10-28,
+ * "не видно в фурі глб моделей виробів як вони складені" — the per-axis
+ * version was technically present but visually illegible). Mirrors the
+ * same `loadGlb` + `Box3` + `linearUnitScaleToMm` normalization
+ * `computeGlbDimensions`/`computeGlbVolume` already use. Returns `null` if
+ * the file has no real geometry.
  */
 async function loadGlbScaledToBox(
   glbUrl: string,
@@ -32,18 +39,17 @@ async function loadGlbScaledToBox(
   const box = new THREE.Box3().setFromObject(raw);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  if (!(maxDim > 0)) return null;
+  const rawMaxDim = Math.max(size.x, size.y, size.z);
+  if (!(rawMaxDim > 0)) return null;
 
-  const rawToCm = linearUnitScaleToMm(maxDim) / 10;
+  const rawToCm = linearUnitScaleToMm(rawMaxDim) / 10;
+  const targetMaxDim = Math.max(targetCm.lengthCm, targetCm.widthCm, targetCm.heightCm);
+  const scale = targetMaxDim / (rawMaxDim * rawToCm);
+
   const wrapper = new THREE.Group();
   raw.position.sub(center);
   wrapper.add(raw);
-  wrapper.scale.set(
-    targetCm.lengthCm / Math.max(size.x * rawToCm, 1e-6),
-    targetCm.heightCm / Math.max(size.y * rawToCm, 1e-6),
-    targetCm.widthCm / Math.max(size.z * rawToCm, 1e-6),
-  );
+  wrapper.scale.setScalar(scale);
   return wrapper;
 }
 
