@@ -18,7 +18,12 @@ describe('LoadPlanService', () => {
         loadPlanTruck: { create: jest.fn(), findFirst: jest.fn() },
         loadPlanItem: { createMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
         assembly: { findMany: jest.fn() },
-        $transaction: jest.fn((cb: any) => cb(prisma.tenant)),
+        // Deliberately NO `$transaction` here — `prisma.tenant` inside a
+        // request is already the per-request transaction client and has no
+        // such method of its own (see load-plan.service.ts's own comment);
+        // a regression that reintroduces `this.prisma.tenant.$transaction`
+        // would throw "not a function" against this mock, same as it did
+        // for real in production (2026-10-28).
       },
     };
     audit = { record: jest.fn() };

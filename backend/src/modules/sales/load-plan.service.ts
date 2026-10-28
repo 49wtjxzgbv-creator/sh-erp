@@ -116,25 +116,29 @@ export class LoadPlanService {
     }
     const truckIndices = [...new Set([...byTruckAndItem.values()].map((r) => r.truckIndex))].sort((a, b) => a - b);
 
-    const plan = await this.prisma.tenant.$transaction(async (tx) => {
-      await tx.loadPlan.deleteMany({ where: { customerOrderId } }); // cascades to trucks/items
-      const newPlan = await tx.loadPlan.create({
-        data: { customerOrderId, transportUnitTypeId, createdById: user.userId } as any,
-      });
-      for (const index of truckIndices) {
-        const truck = await tx.loadPlanTruck.create({ data: { loadPlanId: newPlan.id, index } as any });
-        const rows = [...byTruckAndItem.values()].filter((r) => r.truckIndex === index);
-        await tx.loadPlanItem.createMany({
-          data: rows.map((r) => ({
-            loadPlanTruckId: truck.id,
-            customerOrderItemId: r.customerOrderItemId,
-            assemblyId: r.assemblyId,
-            unitsQty: r.unitsQty,
-          })) as any,
-        });
-      }
-      return newPlan;
+    // No explicit `$transaction` wrapper here, deliberately: `this.prisma.
+    // tenant` inside a request handler is ALREADY the per-request
+    // transaction client TenantScopeInterceptor opened (see PrismaService's
+    // own header comment) — it has no `.$transaction` of its own (nested
+    // transactions aren't a thing on Prisma's interactive-tx client), and
+    // every call below is already atomic as part of that same request-wide
+    // transaction without wrapping it again.
+    await this.prisma.tenant.loadPlan.deleteMany({ where: { customerOrderId } }); // cascades to trucks/items
+    const plan = await this.prisma.tenant.loadPlan.create({
+      data: { customerOrderId, transportUnitTypeId, createdById: user.userId } as any,
     });
+    for (const index of truckIndices) {
+      const truck = await this.prisma.tenant.loadPlanTruck.create({ data: { loadPlanId: plan.id, index } as any });
+      const rows = [...byTruckAndItem.values()].filter((r) => r.truckIndex === index);
+      await this.prisma.tenant.loadPlanItem.createMany({
+        data: rows.map((r) => ({
+          loadPlanTruckId: truck.id,
+          customerOrderItemId: r.customerOrderItemId,
+          assemblyId: r.assemblyId,
+          unitsQty: r.unitsQty,
+        })) as any,
+      });
+    }
 
     await this.auditService.record({
       companyId: user.companyId,
