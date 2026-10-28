@@ -11,6 +11,7 @@ import type { PurchaseOrderGroupInput, ShortageGroupLineInput, ShortageSupplierO
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Avatar } from '@/components/ui/avatar';
@@ -95,6 +96,13 @@ function ShortagePreviewPageInner() {
   const [groups, setGroups] = useState<EditableGroup[]>([]);
   const [ambiguousLines, setAmbiguousLines] = useState<AmbiguousLine[]>([]);
   const hydrated = useRef(false);
+  // Stock-aware defaults as first hydrated (never mutated afterward) — the
+  // "ignore stock" toggle below re-derives from THIS, not from whatever's
+  // currently in `groups`/`ambiguousLines`, so switching it back and forth
+  // always gives the same two predictable states rather than compounding
+  // on top of prior manual edits.
+  const originalDataRef = useRef<{ groups: EditableGroup[]; ambiguousLines: AmbiguousLine[] } | null>(null);
+  const [ignoreStock, setIgnoreStock] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reservedGroupIdx, setReservedGroupIdx] = useState<number | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
@@ -140,43 +148,68 @@ function ShortagePreviewPageInner() {
       previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS
         ? preview.groups.filter((g) => (g.supplierId ?? NO_SUPPLIER) === previewSupplierParam)
         : preview.groups;
-    setGroups(
-      rawGroups.map((g) => ({
-        supplierId: g.supplierId ?? undefined,
-        supplierName: g.supplierName,
-        lines: g.lines.map((line) => ({
-          kind: line.kind,
-          productId: line.productId,
-          subAssemblyId: line.subAssemblyId,
-          description: line.description,
-          article: line.article,
-          qty: previewQtyOverrides?.get(lineId(line)) ?? line.qtyToPurchase ?? line.neededQty,
-          neededQty: line.neededQty,
-          currentStock: line.currentStock,
-          price: line.price,
-          reservedQty: line.reservedQty,
-          sourceRequirementId: line.sourceRequirementId,
-        })),
-      })),
-    );
-    setAmbiguousLines(
-      preview.ambiguousLines.map((line) => ({
+    const hydratedGroups = rawGroups.map((g) => ({
+      supplierId: g.supplierId ?? undefined,
+      supplierName: g.supplierName,
+      lines: g.lines.map((line) => ({
         kind: line.kind,
         productId: line.productId,
         subAssemblyId: line.subAssemblyId,
         description: line.description,
         article: line.article,
-        qty: line.qtyToPurchase ?? line.neededQty,
+        qty: previewQtyOverrides?.get(lineId(line)) ?? line.qtyToPurchase ?? line.neededQty,
         neededQty: line.neededQty,
         currentStock: line.currentStock,
-        price: null,
+        price: line.price,
         reservedQty: line.reservedQty,
         sourceRequirementId: line.sourceRequirementId,
-        supplierOptions: line.supplierOptions ?? [],
       })),
-    );
+    }));
+    const hydratedAmbiguous = preview.ambiguousLines.map((line) => ({
+      kind: line.kind,
+      productId: line.productId,
+      subAssemblyId: line.subAssemblyId,
+      description: line.description,
+      article: line.article,
+      qty: line.qtyToPurchase ?? line.neededQty,
+      neededQty: line.neededQty,
+      currentStock: line.currentStock,
+      price: null,
+      reservedQty: line.reservedQty,
+      sourceRequirementId: line.sourceRequirementId,
+      supplierOptions: line.supplierOptions ?? [],
+    }));
+    originalDataRef.current = { groups: hydratedGroups, ambiguousLines: hydratedAmbiguous };
+    setGroups(hydratedGroups);
+    setAmbiguousLines(hydratedAmbiguous);
     if (previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS) setPrintSupplierId(previewSupplierParam);
   }, [preview, previewSupplierParam, previewQtyOverrides]);
+
+  /**
+   * "потрібно мати можливість робити заявки постачальникам повністю на все
+   * що потрібно не зважаючи на залишки на складі" (2026-10-28) — the page
+   * already let you hand-edit "Заброньовано"/"Кількість до замовлення" per
+   * line, but doing that across an entire order one row at a time was the
+   * actual complaint. This re-derives every line from the ORIGINAL
+   * stock-aware preview (`originalDataRef`, never mutated), not from
+   * whatever's currently in `groups` — switching the toggle off always
+   * restores the real stock-based numbers, even after switching it on then
+   * editing a few rows by hand.
+   */
+  function toggleIgnoreStock(ignore: boolean) {
+    setIgnoreStock(ignore);
+    const original = originalDataRef.current;
+    if (!original) return;
+    setGroups(
+      original.groups.map((g) => ({
+        ...g,
+        lines: g.lines.map((l) => (ignore ? { ...l, qty: l.neededQty, reservedQty: l.kind === 'PRODUCT' ? 0 : l.reservedQty } : { ...l })),
+      })),
+    );
+    setAmbiguousLines(
+      original.ambiguousLines.map((l) => (ignore ? { ...l, qty: l.neededQty, reservedQty: l.kind === 'PRODUCT' ? 0 : l.reservedQty } : { ...l })),
+    );
+  }
 
   /** Moves a line out of `ambiguousLines` into the matching (or newly created) group once the user picks which of its several linked suppliers to order from. */
   function resolveAmbiguousLine(index: number, supplierId: string) {
@@ -286,6 +319,12 @@ function ShortagePreviewPageInner() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{t('shortagePreview')}</h2>
+        {(groups.length > 0 || ambiguousLines.length > 0) && (
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={ignoreStock} onCheckedChange={toggleIgnoreStock} />
+            {t('shortageIgnoreStock')}
+          </label>
+        )}
         {groups.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <Select value={printSupplierId} onValueChange={setPrintSupplierId}>
