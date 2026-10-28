@@ -909,6 +909,8 @@
     "loadPlanNewTruck": "+ Neuer LKW",
     "loadPlanMissingPackagingTitle": "Fehlende Verpackungsdaten für diese Artikel",
     "loadPlanSkippedWarning": "Der Plan wurde ohne diese Positionen erstellt, da die Abmessungen fehlen.",
+    "loadPlanDoesNotFitTitle": "Passt nicht in den gewählten Fahrzeugtyp",
+    "loadPlanDoesNotFitWarning": "Der Plan wurde ohne diese Positionen erstellt — ihre Verpackung (oder ihr Gewicht) überschreitet die Kapazität des gewählten Fahrzeugtyps. Wählen Sie einen größeren Fahrzeugtyp oder verpacken Sie den Artikel neu.",
     "loadPlanBulkFillFromModels": "Alles aus GLB-Modellen berechnen",
     "loadPlanBulkFillDone": "Fertig",
     "loadPlanBulkFillNoModel": "Kein 3D-Modell — manuell eingeben",

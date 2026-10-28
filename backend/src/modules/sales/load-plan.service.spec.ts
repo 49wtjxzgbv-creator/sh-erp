@@ -163,13 +163,39 @@ describe('LoadPlanService', () => {
       });
       prisma.tenant.assembly.findMany.mockResolvedValue([]);
       prisma.tenant.customerOrderItem.findMany.mockResolvedValue([
-        { id: 'item-1', assemblyId: 'a1', assembly: { id: 'a1', name: 'Packable', boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
-        { id: 'item-2', assemblyId: 'a2', assembly: { id: 'a2', name: 'No packaging yet', boxLengthCm: null, boxWidthCm: null, boxHeightCm: null } },
+        { id: 'item-1', assemblyId: 'a1', qty: '1', assembly: { id: 'a1', name: 'Packable', unitsPerBox: 1, boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
+        { id: 'item-2', assemblyId: 'a2', qty: '1', assembly: { id: 'a2', name: 'No packaging yet', boxLengthCm: null, boxWidthCm: null, boxHeightCm: null } },
       ]);
+      assemblies.calculateWeight.mockResolvedValue({ weightPerUnitKg: 5, complete: true, breakdown: [] });
 
       const view = await service.get(user, 'order-1');
 
-      expect(view!.skippedAssemblies).toEqual([{ id: 'a2', name: 'No packaging yet' }]);
+      expect(view!.skippedAssemblies).toEqual([{ id: 'a2', name: 'No packaging yet', reason: 'missing-packaging' }]);
+    });
+
+    it('classifies a box too big for the truck envelope as does-not-fit, separately from missing-packaging', async () => {
+      // Discovered live on order #441835: a box can have dimensions and
+      // still be unpackable because it's simply bigger than the chosen
+      // truck's own empty cargo envelope (or too heavy on its own) — this
+      // must be left out of the plan the same way, but reported with a
+      // different `reason` so the UI can point the user at "pick a bigger
+      // truck" instead of "measure the 3D model" (2026-10-28).
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        transportUnitTypeId: 'type-1',
+        transportUnitType: { id: 'type-1', name: 'Тент 20т', lengthCm: '500', widthCm: '200', heightCm: '200', maxWeightKg: '20000' },
+        trucks: [],
+      });
+      prisma.tenant.assembly.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([
+        { id: 'item-1', assemblyId: 'a1', qty: '1', assembly: { id: 'a1', name: 'Fits fine', unitsPerBox: 1, boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
+        { id: 'item-2', assemblyId: 'a2', qty: '1', assembly: { id: 'a2', name: 'Too long for this truck', unitsPerBox: 1, boxLengthCm: '600', boxWidthCm: '40', boxHeightCm: '30' } },
+      ]);
+      assemblies.calculateWeight.mockResolvedValue({ weightPerUnitKg: 5, complete: true, breakdown: [] });
+
+      const view = await service.get(user, 'order-1');
+
+      expect(view!.skippedAssemblies).toEqual([{ id: 'a2', name: 'Too long for this truck', reason: 'does-not-fit' }]);
     });
   });
 

@@ -17,21 +17,28 @@ export interface LoadPlanTruckView {
   volumeUsedPercent: number;
 }
 
+export interface LoadPlanSkippedAssembly {
+  id: string;
+  name: string;
+  /** `missing-packaging` — no box dimensions set at all. `does-not-fit` — box dimensions (or a single box's weight) exceed the chosen transport type's own envelope/weight limit, so it could never fit this truck type regardless of how the rest of the order packs. */
+  reason: 'missing-packaging' | 'does-not-fit';
+}
+
 export interface LoadPlanView {
   id: string;
   transportUnitTypeId: string;
   transportUnitTypeName: string;
   trucks: LoadPlanTruckView[];
   /**
-   * Order lines whose assembly is still missing box dimensions, so they
-   * were left out of `trucks` entirely — the plan covers everything it
-   * CAN, rather than refusing to generate at all over a few incomplete
-   * lines. Recomputed fresh on every `get()` from the order's CURRENT
-   * items/assemblies (not frozen at generate() time), so filling in
-   * packaging later makes an item disappear from this list without
-   * needing to regenerate.
+   * Order lines left out of `trucks` entirely — the plan covers everything
+   * it CAN, rather than refusing to generate at all over a few lines that
+   * can't be packed. Recomputed fresh on every `get()` from the order's
+   * CURRENT items/assemblies and the plan's own transport type (not frozen
+   * at generate() time), so fixing an assembly's packaging — or switching
+   * to a bigger transport type — makes a line disappear from this list
+   * without needing to regenerate by hand.
    */
-  skippedAssemblies: { id: string; name: string }[];
+  skippedAssemblies: LoadPlanSkippedAssembly[];
 }
 
 /**
@@ -74,20 +81,42 @@ export class LoadPlanService {
       throw new CodedConflictException('LOAD_PLAN_NO_ITEMS', 'This order has no line items to plan.');
     }
 
-    // Lines whose assembly has no box dimensions are left OUT of the pack
-    // rather than blocking the whole plan — "ген план все одно, але без
-    // урахування того що нема, і пиши що план згенеровано без урахування
-    // цих позицій" (2026-10-28). `get()` below recomputes the skipped list
-    // fresh every time, so this loop doesn't need to collect/return it.
+    const truckDims: TruckDims = {
+      lengthCm: Number(transportType.lengthCm),
+      widthCm: Number(transportType.widthCm),
+      heightCm: Number(transportType.heightCm),
+      maxWeightKg: Number(transportType.maxWeightKg),
+    };
+
+    // Lines that can't be packed — no box dimensions at all, OR a box that
+    // (even on its own) is bigger than the truck's own empty envelope, OR
+    // a single box heavier than the truck's own max weight — are left OUT
+    // of the pack rather than blocking the whole plan: "ген план все
+    // одно, але без урахування того що нема, і пиши що план згенеровано
+    // без урахування цих позицій" (2026-10-28). Pre-filtering here means
+    // `packBoxesIntoTrucks` below only ever sees boxes that are guaranteed
+    // to fit SOME truck — its own per-box envelope/weight checks become a
+    // defensive invariant that should never actually trigger from this
+    // caller. `get()`'s `findSkippedAssemblies` redoes this exact same
+    // classification live, so this loop doesn't need to collect/return it.
     const packBoxes: PackBox[] = [];
     for (const item of items as any[]) {
       const assembly = item.assembly;
       if (assembly.boxLengthCm == null || assembly.boxWidthCm == null || assembly.boxHeightCm == null) {
         continue;
       }
+      const lengthCm = Number(assembly.boxLengthCm);
+      const widthCm = Number(assembly.boxWidthCm);
+      const heightCm = Number(assembly.boxHeightCm);
+      if (lengthCm > truckDims.lengthCm || widthCm > truckDims.widthCm || heightCm > truckDims.heightCm) {
+        continue;
+      }
       const weight = await this.assembliesService.calculateWeight(user, item.assemblyId);
       const totalUnits = Math.ceil(Number(item.qty));
       const unitsPerBox: number = assembly.unitsPerBox ?? 1;
+      if (weight.weightPerUnitKg * Math.min(unitsPerBox, totalUnits) > truckDims.maxWeightKg) {
+        continue;
+      }
       const boxesCount = Math.ceil(totalUnits / unitsPerBox);
       let unitsLeft = totalUnits;
       for (let i = 0; i < boxesCount; i++) {
@@ -96,20 +125,14 @@ export class LoadPlanService {
         packBoxes.push({
           customerOrderItemId: item.id,
           assemblyId: item.assemblyId,
-          lengthCm: Number(assembly.boxLengthCm),
-          widthCm: Number(assembly.boxWidthCm),
-          heightCm: Number(assembly.boxHeightCm),
+          lengthCm,
+          widthCm,
+          heightCm,
           weightKg: weight.weightPerUnitKg * unitsInThisBox,
           unitsQty: unitsInThisBox,
         });
       }
     }
-    const truckDims: TruckDims = {
-      lengthCm: Number(transportType.lengthCm),
-      widthCm: Number(transportType.widthCm),
-      heightCm: Number(transportType.heightCm),
-      maxWeightKg: Number(transportType.maxWeightKg),
-    };
     const placed = packBoxesIntoTrucks(packBoxes, truckDims);
 
     // Collapse placed boxes back into (truckIndex, customerOrderItemId) rows.
@@ -227,7 +250,7 @@ export class LoadPlanService {
       });
     }
 
-    const skippedAssemblies = await this.findSkippedAssemblies(customerOrderId);
+    const skippedAssemblies = await this.findSkippedAssemblies(user, customerOrderId, truckDims);
 
     return {
       id: plan.id,
@@ -238,21 +261,39 @@ export class LoadPlanService {
     };
   }
 
-  /** Order lines whose assembly currently has no box dimensions — same check `generate()` uses to decide what to leave out of the pack, re-run live against the order's CURRENT items/assemblies (not frozen at generate() time). */
-  private async findSkippedAssemblies(customerOrderId: string): Promise<{ id: string; name: string }[]> {
+  /** Order lines that can't be packed into this plan's truck type — same three-way check `generate()`'s box-building loop uses to decide what to leave out, re-run live against the order's CURRENT items/assemblies and the plan's CURRENT transport type (not frozen at generate() time). */
+  private async findSkippedAssemblies(user: RequestUser, customerOrderId: string, truckDims: TruckDims): Promise<LoadPlanSkippedAssembly[]> {
     const items = await this.prisma.tenant.customerOrderItem.findMany({
       where: { customerOrderId },
       include: { assembly: true },
     });
     const seen = new Set<string>();
-    const skipped: { id: string; name: string }[] = [];
+    const skipped: LoadPlanSkippedAssembly[] = [];
     for (const item of items as any[]) {
       const assembly = item.assembly;
+      if (seen.has(assembly.id)) continue;
+
       if (assembly.boxLengthCm == null || assembly.boxWidthCm == null || assembly.boxHeightCm == null) {
-        if (!seen.has(assembly.id)) {
-          seen.add(assembly.id);
-          skipped.push({ id: assembly.id, name: assembly.name });
-        }
+        seen.add(assembly.id);
+        skipped.push({ id: assembly.id, name: assembly.name, reason: 'missing-packaging' });
+        continue;
+      }
+
+      const lengthCm = Number(assembly.boxLengthCm);
+      const widthCm = Number(assembly.boxWidthCm);
+      const heightCm = Number(assembly.boxHeightCm);
+      if (lengthCm > truckDims.lengthCm || widthCm > truckDims.widthCm || heightCm > truckDims.heightCm) {
+        seen.add(assembly.id);
+        skipped.push({ id: assembly.id, name: assembly.name, reason: 'does-not-fit' });
+        continue;
+      }
+
+      const unitsPerBox: number = assembly.unitsPerBox ?? 1;
+      const totalUnits = Math.ceil(Number(item.qty));
+      const weight = await this.assembliesService.calculateWeight(user, item.assemblyId);
+      if (weight.weightPerUnitKg * Math.min(unitsPerBox, totalUnits) > truckDims.maxWeightKg) {
+        seen.add(assembly.id);
+        skipped.push({ id: assembly.id, name: assembly.name, reason: 'does-not-fit' });
       }
     }
     return skipped;

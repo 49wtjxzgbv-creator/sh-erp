@@ -1013,6 +1013,8 @@
     "loadPlanNewTruck": "+ Нова фура",
     "loadPlanMissingPackagingTitle": "Не вистачає упаковки для розрахунку",
     "loadPlanSkippedWarning": "План згенеровано без урахування цих позицій через відсутність розмірів.",
+    "loadPlanDoesNotFitTitle": "Не влазить у вибраний тип транспорту",
+    "loadPlanDoesNotFitWarning": "План згенеровано без урахування цих позицій — їхнє пакування (або вага) перевищує місткість обраного типу транспорту. Оберіть більший тип транспорту або зменшіть/перепакуйте виріб.",
     "loadPlanBulkFillFromModels": "Порахувати все з GLB-моделей",
     "loadPlanBulkFillDone": "Готово",
     "loadPlanBulkFillNoModel": "Немає 3D-моделі — введіть вручну",

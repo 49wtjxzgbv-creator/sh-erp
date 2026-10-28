@@ -909,6 +909,8 @@
     "loadPlanNewTruck": "+ New truck",
     "loadPlanMissingPackagingTitle": "Missing packaging for these items",
     "loadPlanSkippedWarning": "The plan was generated without these items, due to missing dimensions.",
+    "loadPlanDoesNotFitTitle": "Does not fit the selected transport type",
+    "loadPlanDoesNotFitWarning": "The plan was generated without these items — their packaging (or weight) exceeds the chosen transport type's capacity. Pick a bigger transport type, or repackage the item.",
     "loadPlanBulkFillFromModels": "Calculate everything from GLB models",
     "loadPlanBulkFillDone": "Done",
     "loadPlanBulkFillNoModel": "No 3D model — enter manually",

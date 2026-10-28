@@ -38,7 +38,14 @@ export default function LoadPlanPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
-  const missingAssemblies = plan?.skippedAssemblies ?? [];
+  const skippedAssemblies = plan?.skippedAssemblies ?? [];
+  // Only `missing-packaging` lines can be helped by measuring a 3D model —
+  // a `does-not-fit` line already HAS box dimensions, they're just bigger
+  // than the chosen truck type's own envelope/weight limit, so recomputing
+  // from the GLB wouldn't change anything; the fix there is picking a
+  // bigger transport type or physically repackaging, not remeasuring.
+  const missingAssemblies = skippedAssemblies.filter((a) => a.reason === 'missing-packaging');
+  const doesNotFitAssemblies = skippedAssemblies.filter((a) => a.reason === 'does-not-fit');
 
   useEffect(() => {
     if (!selectedTypeId && plan) setSelectedTypeId(plan.transportUnitTypeId);
@@ -225,6 +232,22 @@ export default function LoadPlanPage() {
               <Button type="button" onClick={handleBulkFillFromModels} loading={bulkFilling}>
                 {t('loadPlanBulkFillFromModels')}
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {doesNotFitAssemblies.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('loadPlanDoesNotFitTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-amber-600 dark:text-amber-500">{t('loadPlanDoesNotFitWarning')}</p>
+              <ul className="space-y-1 text-sm">
+                {doesNotFitAssemblies.map((a) => (
+                  <li key={a.id}>{a.name}</li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         )}

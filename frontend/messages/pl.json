@@ -909,6 +909,8 @@
     "loadPlanNewTruck": "+ Nowa ciężarówka",
     "loadPlanMissingPackagingTitle": "Brak danych opakowania dla tych pozycji",
     "loadPlanSkippedWarning": "Plan został wygenerowany bez tych pozycji z powodu braku wymiarów.",
+    "loadPlanDoesNotFitTitle": "Nie mieści się w wybranym typie transportu",
+    "loadPlanDoesNotFitWarning": "Plan został wygenerowany bez tych pozycji — ich opakowanie (lub waga) przekracza pojemność wybranego typu transportu. Wybierz większy typ transportu lub przepakuj produkt.",
     "loadPlanBulkFillFromModels": "Oblicz wszystko z modeli GLB",
     "loadPlanBulkFillDone": "Gotowe",
     "loadPlanBulkFillNoModel": "Brak modelu 3D — wprowadź ręcznie",

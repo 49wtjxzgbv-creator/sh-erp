@@ -601,6 +601,7 @@ export interface LoadPlanTruck {
 export interface LoadPlanSkippedAssembly {
   id: string;
   name: string;
+  reason: 'missing-packaging' | 'does-not-fit';
 }
 export interface LoadPlan {
   id: string;
