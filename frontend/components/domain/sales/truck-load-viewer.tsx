@@ -322,22 +322,30 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     }
 
     // Tie-down straps (2026-10-28, "потрібно щоб враховувало стропи ремені
-    // як привязувати в фурі") — one upside-down-U line per recommended
-    // strap position, from the floor on one side of the truck, over the
-    // stack, down to the floor on the other side. Skipped in focus mode:
-    // see this prop's own header comment.
+    // як привязувати в фурі") — one curved line per recommended strap
+    // position, from the floor on one side of the truck, over the stack,
+    // down to the floor on the other side. A sharp 4-point rectangle here
+    // read as a rigid rod, not webbing ("вони ж з мотузки і не так
+    // натягуються" — 2026-10-28): a real strap pulled taut still bends
+    // smoothly around the load's top corners rather than turning a crisp
+    // right angle, so this runs a `CatmullRomCurve3` through rounded-corner
+    // control points instead of a straight-edged path. Skipped in focus
+    // mode: see this prop's own header comment.
     if (strapPlan && !focusedBox) {
       const loadHeightCm = placedBoxes.length > 0 ? Math.max(...placedBoxes.map((b) => b.z + b.heightCm)) : 0;
-      const strapClearanceCm = loadHeightCm + Math.max(truckDims.heightCm * 0.03, 3);
+      const strapTopCm = loadHeightCm + Math.max(truckDims.heightCm * 0.03, 3);
+      const cornerRoundingCm = Math.min(strapTopCm, truckDims.widthCm) * 0.18;
       const strapMaterial = new THREE.LineBasicMaterial({ color: 0xea580c });
       for (const x of strapPlan.positionsCm) {
-        const points = [
+        const curve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(x, 0, 0),
-          new THREE.Vector3(x, strapClearanceCm, 0),
-          new THREE.Vector3(x, strapClearanceCm, truckDims.widthCm),
+          new THREE.Vector3(x, strapTopCm * 0.55, cornerRoundingCm * 0.25),
+          new THREE.Vector3(x, strapTopCm, cornerRoundingCm),
+          new THREE.Vector3(x, strapTopCm, truckDims.widthCm - cornerRoundingCm),
+          new THREE.Vector3(x, strapTopCm * 0.55, truckDims.widthCm - cornerRoundingCm * 0.25),
           new THREE.Vector3(x, 0, truckDims.widthCm),
-        ];
-        const strapLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), strapMaterial);
+        ]);
+        const strapLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)), strapMaterial);
         group.add(strapLine);
       }
     }
