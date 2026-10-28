@@ -589,6 +589,11 @@ export interface LoadPlanPlacedBox {
   widthCm: number;
   heightCm: number;
 }
+export interface LoadPlanStrapPlan {
+  count: number;
+  lengthCm: number;
+  positionsCm: number[];
+}
 export interface LoadPlanTruck {
   id: string;
   index: number;
@@ -597,6 +602,7 @@ export interface LoadPlanTruck {
   overflowBoxCount: number;
   totalWeightKg: number;
   volumeUsedPercent: number;
+  strapPlan: LoadPlanStrapPlan | null;
 }
 export interface LoadPlanSkippedAssembly {
   id: string;

@@ -913,6 +913,7 @@
     "loadPlanTruckNumber": "LKW Nr. {index}",
     "loadPlanVolumeUsed": "Volumen belegt",
     "loadPlanOverflowWarning": "{count} Kartons passten nicht in diesen LKW — verschieben Sie etwas in einen anderen.",
+    "loadPlanStrapRecommendation": "Empfohlen: {count} Zurrgurte, je ~{length} cm lang (über die Ladung, von Schiene zu Schiene).",
     "loadPlanFocusedHint": "Die Kamera ist nur auf den ausgewählten Artikel eingezoomt.",
     "loadPlanShowWholeLoad": "Gesamte Ladung anzeigen",
     "loadPlanNewTruck": "+ Neuer LKW",

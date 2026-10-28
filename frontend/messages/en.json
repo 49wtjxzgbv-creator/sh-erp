@@ -913,6 +913,7 @@
     "loadPlanTruckNumber": "Truck #{index}",
     "loadPlanVolumeUsed": "of volume used",
     "loadPlanOverflowWarning": "{count} boxes didn't fit in this truck — move something to another one.",
+    "loadPlanStrapRecommendation": "Recommended: {count} tie-down straps, each ~{length} cm long (over the load, rail to rail).",
     "loadPlanFocusedHint": "The camera is zoomed in on just the selected item.",
     "loadPlanShowWholeLoad": "Show the whole load",
     "loadPlanNewTruck": "+ New truck",

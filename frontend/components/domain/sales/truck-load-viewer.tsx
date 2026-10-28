@@ -4,11 +4,22 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { loadGlb, linearUnitScaleToMm } from '@/components/domain/files/step-3d-viewer';
-import type { LoadPlanPlacedBox } from '@/lib/api-client/sales';
+import type { LoadPlanPlacedBox, LoadPlanStrapPlan } from '@/lib/api-client/sales';
 
 export interface TruckLoadViewerProps {
   truckDims: { lengthCm: number; widthCm: number; heightCm: number };
   placedBoxes: LoadPlanPlacedBox[];
+  /**
+   * Where/how many tie-down straps to draw over the load (2026-10-28,
+   * "потрібно щоб враховувало стропи ремені як привязувати в фурі") —
+   * each position becomes an upside-down-U line from the floor on one side,
+   * over the stack, down to the floor on the other side, the same path a
+   * real strap takes from one anchor rail to the opposite one. Skipped
+   * entirely in focus mode (see `focusedAssemblyId` below) — a stray strap
+   * line floating over a single close-up item is noise, not signal, at
+   * that zoom level.
+   */
+  strapPlan?: LoadPlanStrapPlan | null;
   /** assemblyId -> downloadUrl of its attached .glb, when it has one (2026-10-28, "де є глб має бути видно 3д моделі що там") — boxes for assemblies missing here fall back to a plain colored block. */
   assemblyGlbUrls?: Record<string, string>;
   /**
@@ -141,7 +152,7 @@ export function colorForAssembly(assemblyId: string): string {
  * the same hand-rolled three.js pattern, reused deliberately rather than
  * introducing react-three-fiber (not used anywhere else in this project).
  */
-export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId }: TruckLoadViewerProps) {
+export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan }: TruckLoadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -310,6 +321,27 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
       geometry.dispose();
     }
 
+    // Tie-down straps (2026-10-28, "потрібно щоб враховувало стропи ремені
+    // як привязувати в фурі") — one upside-down-U line per recommended
+    // strap position, from the floor on one side of the truck, over the
+    // stack, down to the floor on the other side. Skipped in focus mode:
+    // see this prop's own header comment.
+    if (strapPlan && !focusedBox) {
+      const loadHeightCm = placedBoxes.length > 0 ? Math.max(...placedBoxes.map((b) => b.z + b.heightCm)) : 0;
+      const strapClearanceCm = loadHeightCm + Math.max(truckDims.heightCm * 0.03, 3);
+      const strapMaterial = new THREE.LineBasicMaterial({ color: 0xea580c });
+      for (const x of strapPlan.positionsCm) {
+        const points = [
+          new THREE.Vector3(x, 0, 0),
+          new THREE.Vector3(x, strapClearanceCm, 0),
+          new THREE.Vector3(x, strapClearanceCm, truckDims.widthCm),
+          new THREE.Vector3(x, 0, truckDims.widthCm),
+        ];
+        const strapLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), strapMaterial);
+        group.add(strapLine);
+      }
+    }
+
     let animationFrame: number;
     function animate() {
       animationFrame = requestAnimationFrame(animate);
@@ -335,14 +367,14 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
       renderer.dispose();
       renderer.domElement.remove();
       scene.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
+        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments || o instanceof THREE.Line) {
           o.geometry.dispose();
           const mats = Array.isArray(o.material) ? o.material : [o.material];
           for (const m of mats) m.dispose();
         }
       });
     };
-  }, [truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId]);
+  }, [truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan]);
 
   return <div ref={containerRef} className="h-full min-h-[420px] w-full" />;
 }

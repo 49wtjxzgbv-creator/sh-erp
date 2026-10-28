@@ -307,7 +307,7 @@ export default function LoadPlanPage() {
                 />
               ))}
               <TruckColumn
-                truck={{ id: 'new', index: (plan.trucks.at(-1)?.index ?? 0) + 1, items: [], placedBoxes: [], overflowBoxCount: 0, totalWeightKg: 0, volumeUsedPercent: 0 }}
+                truck={{ id: 'new', index: (plan.trucks.at(-1)?.index ?? 0) + 1, items: [], placedBoxes: [], overflowBoxCount: 0, totalWeightKg: 0, volumeUsedPercent: 0, strapPlan: null }}
                 selected={false}
                 onSelect={() => {}}
                 isNewDropZone
@@ -331,7 +331,16 @@ export default function LoadPlanPage() {
                     placedBoxes={selectedTruck.placedBoxes}
                     assemblyGlbUrls={assemblyGlbUrls}
                     focusedAssemblyId={focusedAssemblyId}
+                    strapPlan={selectedTruck.strapPlan}
                   />
+                  {selectedTruck.strapPlan && !focusedAssemblyId && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('loadPlanStrapRecommendation', {
+                        count: selectedTruck.strapPlan.count,
+                        length: selectedTruck.strapPlan.lengthCm,
+                      })}
+                    </p>
+                  )}
                   {focusedAssemblyId && (
                     <p className="text-xs text-muted-foreground">
                       {t('loadPlanFocusedHint')}{' '}

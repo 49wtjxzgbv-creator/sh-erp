@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { TransportUnitTypesService } from '../logistics/transport-unit-types.service';
-import { PackBox, TruckDims, layoutSingleTruck, packBoxesIntoTrucks } from './load-plan-packing';
+import { PackBox, StrapPlan, TruckDims, computeStrapPlan, layoutSingleTruck, packBoxesIntoTrucks } from './load-plan-packing';
 
 export interface LoadPlanTruckView {
   id: string;
@@ -15,6 +15,8 @@ export interface LoadPlanTruckView {
   overflowBoxCount: number;
   totalWeightKg: number;
   volumeUsedPercent: number;
+  /** How to tie this truck's load down — null only when the truck has nothing placed in it. */
+  strapPlan: StrapPlan | null;
 }
 
 export interface LoadPlanSkippedAssembly {
@@ -247,6 +249,7 @@ export class LoadPlanService {
         overflowBoxCount: overflow.length,
         totalWeightKg,
         volumeUsedPercent: truckVolumeCm3 > 0 ? (usedVolumeCm3 / truckVolumeCm3) * 100 : 0,
+        strapPlan: computeStrapPlan(placed, truckDims),
       });
     }
 

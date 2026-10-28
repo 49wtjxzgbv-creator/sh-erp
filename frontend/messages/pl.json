@@ -913,6 +913,7 @@
     "loadPlanTruckNumber": "Ciężarówka nr {index}",
     "loadPlanVolumeUsed": "objętości zajęte",
     "loadPlanOverflowWarning": "{count} kartonów nie zmieściło się w tej ciężarówce — przenieś coś do innej.",
+    "loadPlanStrapRecommendation": "Zalecane: {count} pasów mocujących, każdy ~{length} cm długości (przez ładunek, od burty do burty).",
     "loadPlanFocusedHint": "Kamera jest przybliżona tylko do wybranego elementu.",
     "loadPlanShowWholeLoad": "Pokaż cały ładunek",
     "loadPlanNewTruck": "+ Nowa ciężarówka",

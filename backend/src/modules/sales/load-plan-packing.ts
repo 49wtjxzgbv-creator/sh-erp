@@ -136,6 +136,72 @@ export function layoutSingleTruck(boxes: PackBox[], truck: TruckDims): { placed:
  * repacking could fit them here — the accepted NFDH tradeoff for a
  * roughly 2x-worst-case-bounded algorithm that's simple to reason about.
  */
+export interface StrapPlan {
+  /** Number of tie-down straps recommended for this truck's load. */
+  count: number;
+  /** Approximate length of a single strap, cm — enough to run from one side rail, up and over the stack, down to the opposite rail, plus slack for the buckle/tensioner. */
+  lengthCm: number;
+  /** Where along the truck's length (X, cm from the front) each strap should cross — snapped to a natural gap between boxes when one exists nearby, so the strap doesn't have to rest directly on a box's top edge. */
+  positionsCm: number[];
+}
+
+const STRAP_INTERVAL_CM = 150;
+const STRAP_SLACK_CM = 60;
+const STRAP_GAP_SNAP_CM = 40;
+const STRAP_MIN_GAP_WIDTH_CM = 3;
+
+/**
+ * "потрібно щоб враховувало стропи ремені як привязувати в фурі" (2026-10-28)
+ * — a real tie-down doesn't need horizontal clearance from the side walls
+ * (it runs from the anchor rail straight up and over the stack, same as any
+ * curtain-side/flatbed load), so this doesn't touch the packing geometry
+ * above. What it DOES need is: how many straps, how long, and — ideally —
+ * landing in a clear gap between boxes along the truck's length rather than
+ * resting on a box's own top edge. A straight rule-of-thumb heuristic
+ * (one strap per ~1.5m of load length, minimum 2 so a short load is still
+ * secured at both ends), not a load-rating calculation — same honest
+ * "practical, not a physics engine" tradeoff as the bin-packing above.
+ */
+export function computeStrapPlan(placed: PlacedBox[], truck: TruckDims): StrapPlan | null {
+  if (placed.length === 0) return null;
+
+  const loadLengthCm = Math.max(...placed.map((b) => b.x + b.lengthCm));
+  const loadHeightCm = Math.max(...placed.map((b) => b.z + b.heightCm));
+  const count = Math.max(2, Math.ceil(loadLengthCm / STRAP_INTERVAL_CM));
+
+  // Union of every box's X-span (any height level) — an X inside this union
+  // has a box somewhere along its vertical drop; only X outside it is a
+  // clear gap a strap can pass straight down through to the floor.
+  const sortedSpans = placed.map((b): [number, number] => [b.x, b.x + b.lengthCm]).sort((a, b) => a[0] - b[0]);
+  const occupied: [number, number][] = [];
+  for (const [start, end] of sortedSpans) {
+    const last = occupied[occupied.length - 1];
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else occupied.push([start, end]);
+  }
+  const gaps = occupied
+    .slice(1)
+    .map((span, i): [number, number] => [occupied[i][1], span[0]])
+    .filter(([start, end]) => end - start >= STRAP_MIN_GAP_WIDTH_CM);
+
+  const positionsCm = Array.from({ length: count }, (_, i) => {
+    const ideal = ((i + 0.5) / count) * loadLengthCm;
+    let best = ideal;
+    let bestDist = STRAP_GAP_SNAP_CM;
+    for (const [gapStart, gapEnd] of gaps) {
+      const gapCenter = (gapStart + gapEnd) / 2;
+      const dist = Math.abs(gapCenter - ideal);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = gapCenter;
+      }
+    }
+    return Math.round(best * 10) / 10;
+  });
+
+  return { count, lengthCm: Math.round(2 * loadHeightCm + truck.widthCm + STRAP_SLACK_CM), positionsCm };
+}
+
 function packOneLevel(
   boxes: PackBox[],
   floorLengthCm: number,

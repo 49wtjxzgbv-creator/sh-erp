@@ -1017,6 +1017,7 @@
     "loadPlanTruckNumber": "Фура №{index}",
     "loadPlanVolumeUsed": "обʼєму зайнято",
     "loadPlanOverflowWarning": "{count} коробок не влізло в цю фуру — перенесіть щось в іншу.",
+    "loadPlanStrapRecommendation": "Рекомендовано: {count} ременів для кріплення, довжина кожного ~{length} см (через стелаж, від борта до борта).",
     "loadPlanFocusedHint": "Камера наближена лише на обраний виріб.",
     "loadPlanShowWholeLoad": "Показати все завантаження",
     "loadPlanNewTruck": "+ Нова фура",
