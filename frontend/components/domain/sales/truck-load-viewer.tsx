@@ -27,23 +27,41 @@ export interface TruckLoadViewerProps {
   focusedAssemblyId?: string | null;
 }
 
+const AXIS_UNIT_VECTORS: Record<'x' | 'y' | 'z', THREE.Vector3> = {
+  x: new THREE.Vector3(1, 0, 0),
+  y: new THREE.Vector3(0, 1, 0),
+  z: new THREE.Vector3(0, 0, 1),
+};
+
 /**
  * Loads `glbUrl` and returns a group whose contents are re-centered on
- * their own bounding-box center and scaled UNIFORMLY (same factor on all
- * three axes) so the model's longest extent matches the longest of
- * `targetCm`'s three dimensions. Deliberately NOT a per-axis stretch to
- * fill the packed slot exactly — the slot's length/width/height come from
- * a sorted-descending heuristic in computeGlbDimensions that has no fixed
- * correspondence to the model's native X/Y/Z, so a per-axis fit silently
- * squashes thin parts (a conveyor belt's thin profile, for example) into
- * an unrecognizable sliver. A uniform scale keeps the model's real
- * proportions intact — recognizable shape over exact bounding-box fill,
- * since this is a visual aid, not an engineering drawing (2026-10-28,
- * "не видно в фурі глб моделей виробів як вони складені" — the per-axis
- * version was technically present but visually illegible). Mirrors the
- * same `loadGlb` + `Box3` + `linearUnitScaleToMm` normalization
- * `computeGlbDimensions`/`computeGlbVolume` already use. Returns `null` if
- * the file has no real geometry.
+ * their own bounding-box center, ROTATED so the model's native longest/
+ * middle/shortest axes land on world length/width/height, and scaled
+ * UNIFORMLY (same factor on all three, once aligned) to match `targetCm`.
+ *
+ * The box slot's own length/width/height ALREADY come from sorting the
+ * model's three measured extents descending (computeGlbDimensions) — but
+ * until this fix, the model itself kept rendering in its own native
+ * (unrotated) axis order, with only a single uniform scale applied. For a
+ * model whose native axes already happen to run longest/middle/shortest
+ * in X/Y/Z order (like a conveyor beam, X already its long axis) that's
+ * invisible; for one where they don't (e.g. native Y, "up" in the
+ * original file, is actually the model's SECOND-longest extent, not its
+ * shortest), the model would overflow the box along one world axis and
+ * visibly float inside it on another — exactly what inspecting this live
+ * showed (2026-10-28, "всередині коробки фури є коробки виробів і вони
+ * більші набагато за глб файли виробів"). Aligning first makes the
+ * model's own measured extents coincide with the box's length/width/
+ * height on the SAME world axes the box itself is drawn on, so a single
+ * uniform scale afterward fits all three dimensions at once, not just the
+ * longest. Still deliberately uniform, not a per-axis stretch — see
+ * `loadGlbScaledToBox`'s own earlier note on why a non-uniform stretch
+ * was rejected (squashes thin parts unrecognizably); this fixes the
+ * axis-ORDER mismatch, not the "faithful stretch vs. true proportions"
+ * tradeoff, which stands. Mirrors the same `loadGlb` + `Box3` +
+ * `linearUnitScaleToMm` normalization `computeGlbDimensions`/
+ * `computeGlbVolume` already use. Returns `null` if the file has no real
+ * geometry.
  */
 async function loadGlbScaledToBox(
   glbUrl: string,
@@ -60,10 +78,34 @@ async function loadGlbScaledToBox(
   const targetMaxDim = Math.max(targetCm.lengthCm, targetCm.widthCm, targetCm.heightCm);
   const scale = targetMaxDim / (rawMaxDim * rawToCm);
 
+  // Same sort computeGlbDimensions itself uses to assign length/width/
+  // height — reapplied here against the native AXES (not just the bare
+  // numbers) so we know which native axis is this model's longest,
+  // middle, and shortest extent.
+  const byDescendingSize = (['x', 'y', 'z'] as const).map((axis) => ({ axis, size: size[axis] })).sort((a, b) => b.size - a.size);
+  const [longest, middle, shortest] = byDescendingSize;
+  // World convention this whole viewer already draws boxes in (see the
+  // packed-box loop below): X = length, Y = height (up), Z = width.
+  const permutation = new THREE.Matrix4().set(
+    ...AXIS_UNIT_VECTORS[longest.axis].toArray(), 0,
+    ...AXIS_UNIT_VECTORS[shortest.axis].toArray(), 0,
+    ...AXIS_UNIT_VECTORS[middle.axis].toArray(), 0,
+    0, 0, 0, 1,
+  );
+  const permutationQuaternion = new THREE.Quaternion();
+  const permutationScale = new THREE.Vector3();
+  const unusedPosition = new THREE.Vector3();
+  // `decompose` handles both a proper rotation (determinant +1 — a cyclic
+  // axis swap) and an improper one (determinant -1 — swapping exactly two
+  // axes) by folding the sign into `permutationScale`, so this works
+  // regardless of which permutation this particular model needs.
+  permutation.decompose(unusedPosition, permutationQuaternion, permutationScale);
+
   const wrapper = new THREE.Group();
   raw.position.sub(center);
   wrapper.add(raw);
-  wrapper.scale.setScalar(scale);
+  wrapper.quaternion.copy(permutationQuaternion);
+  wrapper.scale.copy(permutationScale).multiplyScalar(scale);
   return wrapper;
 }
 
@@ -164,21 +206,39 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     // Semi-transparent cargo body (2026-10-28, "короб завантаження має бути
     // напівпрозорим") — a real solid mesh, not just edges, so the truck
     // reads as an actual container while still letting what's loaded
-    // inside show through.
+    // inside show through. Skipped entirely in focus mode (2026-10-28,
+    // "не розумію тоді чому в зд моделі фури ті коробки набагато більші за
+    // самі вироби" — confirmed live: what read as "a huge box around the
+    // item" was actually this same huge wall, filling the frame because a
+    // focused item sitting flush against the truck's own side puts the
+    // tight close-up camera right up against that wall too. There's
+    // nothing useful this translucent shell adds at that zoom level, only
+    // a giant pale panel competing with the one item the user asked to see
+    // — the item's own boxEdges below are enough to orient it).
     const truckGeometry = new THREE.BoxGeometry(truckDims.lengthCm, truckDims.heightCm, truckDims.widthCm);
-    const truckMaterial = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      transparent: true,
-      opacity: 0.12,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const truckMesh = new THREE.Mesh(truckGeometry, truckMaterial);
-    truckMesh.position.set(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
-    group.add(truckMesh);
-    const truckOutline = new THREE.LineSegments(new THREE.EdgesGeometry(truckGeometry), new THREE.LineBasicMaterial({ color: 0x334155 }));
-    truckOutline.position.copy(truckMesh.position);
+    if (!focusedBox) {
+      const truckMaterial = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const truckMesh = new THREE.Mesh(truckGeometry, truckMaterial);
+      truckMesh.position.set(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
+      group.add(truckMesh);
+    }
+    const truckOutline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(truckGeometry),
+      new THREE.LineBasicMaterial({ color: 0x334155, transparent: true, opacity: focusedBox ? 0.15 : 1 }),
+    );
+    truckOutline.position.set(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
     group.add(truckOutline);
+    // `EdgesGeometry` derives its own geometry rather than referencing
+    // `truckGeometry` — when the solid mesh above was skipped (focus
+    // mode), nothing else owns `truckGeometry` for the cleanup traversal
+    // below to find and dispose.
+    if (focusedBox) truckGeometry.dispose();
 
     for (const box of placedBoxes) {
       const slotPosition = new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2);
