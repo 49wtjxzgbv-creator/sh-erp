@@ -598,11 +598,17 @@ export interface LoadPlanTruck {
   totalWeightKg: number;
   volumeUsedPercent: number;
 }
+export interface LoadPlanSkippedAssembly {
+  id: string;
+  name: string;
+}
 export interface LoadPlan {
   id: string;
   transportUnitTypeId: string;
   transportUnitTypeName: string;
   trucks: LoadPlanTruck[];
+  /** Order lines left out of `trucks` because their assembly is still missing box dimensions — the plan covers everything it CAN rather than refusing to generate at all. */
+  skippedAssemblies: LoadPlanSkippedAssembly[];
 }
 
 export function getLoadPlan(customerOrderId: string): Promise<LoadPlan | null> {

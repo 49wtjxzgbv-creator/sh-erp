@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { LoadPlanService } from './load-plan.service';
 
 describe('LoadPlanService', () => {
@@ -45,14 +45,29 @@ describe('LoadPlanService', () => {
       await expect(service.generate(user, 'order-1', 'type-1')).rejects.toThrow(ConflictException);
     });
 
-    it('rejects when an order line has no box packaging set on its assembly', async () => {
+    it('skips a line with no box packaging rather than blocking the whole plan', async () => {
+      // "хай план всерівно генерує але без урахування того що нема"
+      // (2026-10-28): a1 is packable, a2 is not — a2 must be left out of
+      // every create() call, never referenced in any LoadPlanItem row.
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'order-1' });
       transportUnitTypes.findOne.mockResolvedValue({ id: 'type-1', maxWeightKg: 20000, lengthCm: 500, widthCm: 200, heightCm: 200 });
       prisma.tenant.customerOrderItem.findMany.mockResolvedValue([
-        { id: 'item-1', assemblyId: 'a1', qty: '5', assembly: { id: 'a1', name: 'Widget', unitsPerBox: null, boxLengthCm: null, boxWidthCm: null, boxHeightCm: null } },
+        { id: 'item-1', assemblyId: 'a1', qty: '1', assembly: { id: 'a1', name: 'Packable', unitsPerBox: 1, boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
+        { id: 'item-2', assemblyId: 'a2', qty: '5', assembly: { id: 'a2', name: 'No packaging yet', unitsPerBox: null, boxLengthCm: null, boxWidthCm: null, boxHeightCm: null } },
       ]);
+      assemblies.calculateWeight.mockResolvedValue({ weightPerUnitKg: 5, complete: true, breakdown: [] });
+      prisma.tenant.loadPlan.deleteMany.mockResolvedValue({ count: 0 });
+      prisma.tenant.loadPlan.create.mockResolvedValue({ id: 'plan-1' });
+      prisma.tenant.loadPlanTruck.create.mockResolvedValue({ id: 'truck-1' });
+      prisma.tenant.loadPlanItem.createMany.mockResolvedValue({ count: 1 });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
 
-      await expect(service.generate(user, 'order-1', 'type-1')).rejects.toThrow(ConflictException);
+      await service.generate(user, 'order-1', 'type-1');
+
+      expect(prisma.tenant.loadPlanTruck.create).toHaveBeenCalledTimes(1);
+      expect(prisma.tenant.loadPlanItem.createMany).toHaveBeenCalledWith({
+        data: [{ loadPlanTruckId: 'truck-1', customerOrderItemId: 'item-1', assemblyId: 'a1', unitsQty: 1 }],
+      });
     });
 
     it('rejects when an order has no line items', async () => {
@@ -121,6 +136,9 @@ describe('LoadPlanService', () => {
       prisma.tenant.assembly.findMany.mockResolvedValue([
         { id: 'a1', name: 'Widget', unitsPerBox: 1, boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' },
       ]);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([
+        { id: 'item-1', assemblyId: 'a1', assembly: { id: 'a1', name: 'Widget', boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
+      ]);
       assemblies.calculateWeight.mockResolvedValue({ weightPerUnitKg: 5, complete: true, breakdown: [] });
 
       const view = await service.get(user, 'order-1');
@@ -133,6 +151,25 @@ describe('LoadPlanService', () => {
       expect(truck.overflowBoxCount).toBe(0);
       expect(truck.totalWeightKg).toBe(10);
       expect(truck.volumeUsedPercent).toBeGreaterThan(0);
+      expect(view!.skippedAssemblies).toEqual([]);
+    });
+
+    it('lists order lines still missing box dimensions as skippedAssemblies, independent of what is already in the plan', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        transportUnitTypeId: 'type-1',
+        transportUnitType: { id: 'type-1', name: 'Тент 20т', lengthCm: '500', widthCm: '200', heightCm: '200', maxWeightKg: '20000' },
+        trucks: [],
+      });
+      prisma.tenant.assembly.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([
+        { id: 'item-1', assemblyId: 'a1', assembly: { id: 'a1', name: 'Packable', boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' } },
+        { id: 'item-2', assemblyId: 'a2', assembly: { id: 'a2', name: 'No packaging yet', boxLengthCm: null, boxWidthCm: null, boxHeightCm: null } },
+      ]);
+
+      const view = await service.get(user, 'order-1');
+
+      expect(view!.skippedAssemblies).toEqual([{ id: 'a2', name: 'No packaging yet' }]);
     });
   });
 

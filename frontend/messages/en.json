@@ -908,6 +908,7 @@
     "loadPlanOverflowWarning": "{count} boxes didn't fit in this truck — move something to another one.",
     "loadPlanNewTruck": "+ New truck",
     "loadPlanMissingPackagingTitle": "Missing packaging for these items",
+    "loadPlanSkippedWarning": "The plan was generated without these items, due to missing dimensions.",
     "loadPlanBulkFillFromModels": "Calculate everything from GLB models",
     "loadPlanBulkFillDone": "Done",
     "loadPlanBulkFillNoModel": "No 3D model — enter manually",

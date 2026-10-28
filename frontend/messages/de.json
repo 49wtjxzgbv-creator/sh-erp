@@ -908,6 +908,7 @@
     "loadPlanOverflowWarning": "{count} Kartons passten nicht in diesen LKW — verschieben Sie etwas in einen anderen.",
     "loadPlanNewTruck": "+ Neuer LKW",
     "loadPlanMissingPackagingTitle": "Fehlende Verpackungsdaten für diese Artikel",
+    "loadPlanSkippedWarning": "Der Plan wurde ohne diese Positionen erstellt, da die Abmessungen fehlen.",
     "loadPlanBulkFillFromModels": "Alles aus GLB-Modellen berechnen",
     "loadPlanBulkFillDone": "Fertig",
     "loadPlanBulkFillNoModel": "Kein 3D-Modell — manuell eingeben",

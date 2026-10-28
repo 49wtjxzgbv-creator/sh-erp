@@ -1012,6 +1012,7 @@
     "loadPlanOverflowWarning": "{count} коробок не влізло в цю фуру — перенесіть щось в іншу.",
     "loadPlanNewTruck": "+ Нова фура",
     "loadPlanMissingPackagingTitle": "Не вистачає упаковки для розрахунку",
+    "loadPlanSkippedWarning": "План згенеровано без урахування цих позицій через відсутність розмірів.",
     "loadPlanBulkFillFromModels": "Порахувати все з GLB-моделей",
     "loadPlanBulkFillDone": "Готово",
     "loadPlanBulkFillNoModel": "Немає 3D-моделі — введіть вручну",

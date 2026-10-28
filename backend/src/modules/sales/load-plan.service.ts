@@ -22,6 +22,16 @@ export interface LoadPlanView {
   transportUnitTypeId: string;
   transportUnitTypeName: string;
   trucks: LoadPlanTruckView[];
+  /**
+   * Order lines whose assembly is still missing box dimensions, so they
+   * were left out of `trucks` entirely — the plan covers everything it
+   * CAN, rather than refusing to generate at all over a few incomplete
+   * lines. Recomputed fresh on every `get()` from the order's CURRENT
+   * items/assemblies (not frozen at generate() time), so filling in
+   * packaging later makes an item disappear from this list without
+   * needing to regenerate.
+   */
+  skippedAssemblies: { id: string; name: string }[];
 }
 
 /**
@@ -64,12 +74,15 @@ export class LoadPlanService {
       throw new CodedConflictException('LOAD_PLAN_NO_ITEMS', 'This order has no line items to plan.');
     }
 
-    const missingPackaging: { id: string; name: string }[] = [];
+    // Lines whose assembly has no box dimensions are left OUT of the pack
+    // rather than blocking the whole plan — "ген план все одно, але без
+    // урахування того що нема, і пиши що план згенеровано без урахування
+    // цих позицій" (2026-10-28). `get()` below recomputes the skipped list
+    // fresh every time, so this loop doesn't need to collect/return it.
     const packBoxes: PackBox[] = [];
     for (const item of items as any[]) {
       const assembly = item.assembly;
       if (assembly.boxLengthCm == null || assembly.boxWidthCm == null || assembly.boxHeightCm == null) {
-        missingPackaging.push({ id: assembly.id, name: assembly.name });
         continue;
       }
       const weight = await this.assembliesService.calculateWeight(user, item.assemblyId);
@@ -91,18 +104,6 @@ export class LoadPlanService {
         });
       }
     }
-    if (missingPackaging.length > 0) {
-      throw new CodedConflictException(
-        'LOAD_PLAN_PACKAGING_INCOMPLETE',
-        `Add box dimensions before generating a load plan for: ${missingPackaging.map((a) => a.name).join(', ')}.`,
-        // Lets the frontend offer "обчислити все з GLB-моделей" instead of
-        // sending the user to click through each assembly's BOM card by
-        // hand — see PackagingDimensionsFromModelCalculator's single-
-        // assembly counterpart in assembly-form.tsx.
-        { missingAssemblies: missingPackaging },
-      );
-    }
-
     const truckDims: TruckDims = {
       lengthCm: Number(transportType.lengthCm),
       widthCm: Number(transportType.widthCm),
@@ -226,12 +227,35 @@ export class LoadPlanService {
       });
     }
 
+    const skippedAssemblies = await this.findSkippedAssemblies(customerOrderId);
+
     return {
       id: plan.id,
       transportUnitTypeId: plan.transportUnitTypeId,
       transportUnitTypeName: transportType.name,
       trucks,
+      skippedAssemblies,
     };
+  }
+
+  /** Order lines whose assembly currently has no box dimensions — same check `generate()` uses to decide what to leave out of the pack, re-run live against the order's CURRENT items/assemblies (not frozen at generate() time). */
+  private async findSkippedAssemblies(customerOrderId: string): Promise<{ id: string; name: string }[]> {
+    const items = await this.prisma.tenant.customerOrderItem.findMany({
+      where: { customerOrderId },
+      include: { assembly: true },
+    });
+    const seen = new Set<string>();
+    const skipped: { id: string; name: string }[] = [];
+    for (const item of items as any[]) {
+      const assembly = item.assembly;
+      if (assembly.boxLengthCm == null || assembly.boxWidthCm == null || assembly.boxHeightCm == null) {
+        if (!seen.has(assembly.id)) {
+          seen.add(assembly.id);
+          skipped.push({ id: assembly.id, name: assembly.name });
+        }
+      }
+    }
+    return skipped;
   }
 
   async moveItem(user: RequestUser, customerOrderId: string, itemId: string, toTruckIndex: number) {

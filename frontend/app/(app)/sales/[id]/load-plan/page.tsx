@@ -7,7 +7,6 @@ import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppabl
 import { useTransportUnitTypes } from '@/lib/hooks/use-logistics';
 import { useLoadPlan, useGenerateLoadPlan, useMoveLoadPlanItem } from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import { ApiError } from '@/lib/api-client/types';
 import type { LoadPlanTruck, LoadPlanTruckItem } from '@/lib/api-client/sales';
 import { updateAssembly } from '@/lib/api-client/bom';
 import { listFilesForEntities } from '@/lib/api-client/files';
@@ -19,10 +18,6 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { TruckLoadViewer, colorForAssembly } from '@/components/domain/sales/truck-load-viewer';
 
-interface MissingAssembly {
-  id: string;
-  name: string;
-}
 type BulkFillStatus = 'done' | 'no-model' | 'error';
 
 export default function LoadPlanPage() {
@@ -41,9 +36,9 @@ export default function LoadPlanPage() {
   const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>(undefined);
   const [selectedTruckIndex, setSelectedTruckIndex] = useState<number | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
-  const [missingAssemblies, setMissingAssemblies] = useState<MissingAssembly[] | null>(null);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
+  const missingAssemblies = plan?.skippedAssemblies ?? [];
 
   useEffect(() => {
     if (!selectedTypeId && plan) setSelectedTypeId(plan.transportUnitTypeId);
@@ -79,28 +74,31 @@ export default function LoadPlanPage() {
   async function handleGenerate() {
     if (!selectedTypeId) return;
     setGenerateError(null);
-    setMissingAssemblies(null);
     setBulkResults(null);
     try {
       await generatePlan.mutateAsync(selectedTypeId);
     } catch (err) {
       setGenerateError(apiErrorMessage(err, tc('error')));
-      const missing = err instanceof ApiError ? (err.body as { missingAssemblies?: MissingAssembly[] } | undefined)?.missingAssemblies : undefined;
-      if (missing && missing.length > 0) setMissingAssemblies(missing);
     }
   }
 
-  // "у нас же є модель кожного виробу" (2026-10-28): rather than sending
-  // the user to click through every missing-packaging assembly's own BOM
-  // card one at a time (PackagingDimensionsFromModelCalculator there does
-  // the same computation for a single assembly), this does it for all of
-  // them at once — looks up each one's attached .glb (ASSEMBLY_DOCUMENT),
+  // "хай план всерівно генерує але без урахування того що нема і пише що
+  // план згенеровано без урахування цих позицій через відсутність розмірів"
+  // (2026-10-28): generate() no longer blocks on missing packaging — it
+  // leaves those lines out and `get()` reports them back as
+  // `skippedAssemblies` every time, live, whether or not they've just been
+  // regenerated. "у нас же є модель кожного виробу": rather than sending
+  // the user to click through every one of those assemblies' own BOM card
+  // one at a time (PackagingDimensionsFromModelCalculator there does the
+  // same computation for a single assembly), this does it for all of them
+  // at once — looks up each one's attached .glb (ASSEMBLY_DOCUMENT),
   // measures it, and saves the result directly. Assemblies with no .glb
   // attached are reported as `no-model` so the user knows exactly which
   // ones still need a manual measurement, instead of a silent partial
-  // success. Auto-retries generate() once every assembly succeeded.
+  // success. Re-generates once every assembly succeeded, so the newly-
+  // packaged lines join the plan.
   async function handleBulkFillFromModels() {
-    if (!missingAssemblies) return;
+    if (missingAssemblies.length === 0) return;
     setBulkFilling(true);
     const results: Record<string, BulkFillStatus> = {};
     try {
@@ -204,12 +202,13 @@ export default function LoadPlanPage() {
           )}
         </Card>
 
-        {missingAssemblies && missingAssemblies.length > 0 && (
+        {missingAssemblies.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{t('loadPlanMissingPackagingTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-sm text-amber-600 dark:text-amber-500">{t('loadPlanSkippedWarning')}</p>
               <ul className="space-y-1 text-sm">
                 {missingAssemblies.map((a) => {
                   const status = bulkResults?.[a.id];
