@@ -34,6 +34,12 @@ export default function CustomerOrdersPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<CustomerOrderStatus | undefined>(undefined);
   const [offset, setOffset] = useState(0);
+  // "можна якось в продажах обирати декілька різних замовлень і з них
+  // робити заявку постачальникам щоб не на кожне окремо" (2026-10-28) —
+  // selection survives across pages/filters (a plain id Set, not tied to
+  // `data.items`), so picking a few orders, then searching for more to add,
+  // doesn't lose the earlier picks.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useCustomerOrders({ search: search || undefined, status, limit: PAGE_SIZE, offset });
 
@@ -115,12 +121,22 @@ export default function CustomerOrdersPage() {
         </div>
         <LearnThisButton courseId="sales-order" label="Як створити замовлення" />
         {useHasPermission('customer-orders:manage') && (
-          <Button asChild>
-            <Link href="/sales/new" data-tour="sales-new-button">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('newOrder')}
-            </Link>
-          </Button>
+          <>
+            {selectedIds.size > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => router.push(`/sales/shortage-bulk?orders=${[...selectedIds].join(',')}`)}
+              >
+                {t('bulkShortageButton', { count: selectedIds.size })}
+              </Button>
+            )}
+            <Button asChild>
+              <Link href="/sales/new" data-tour="sales-new-button">
+                <Plus className="mr-2 h-4 w-4" />
+                {t('newOrder')}
+              </Link>
+            </Button>
+          </>
         )}
       </div>
 
@@ -130,6 +146,7 @@ export default function CustomerOrdersPage() {
         isLoading={isLoading}
         onRowClick={(order) => router.push(`/sales/${order.id}`)}
         pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
+        selection={{ selectedIds, onSelectionChange: setSelectedIds, getRowId: (order) => order.id }}
       />
     </div>
   );
