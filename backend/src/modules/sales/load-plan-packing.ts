@@ -15,6 +15,9 @@ import { CodedBadRequestException } from '../../common/api-exceptions';
  *      tallest-first, each level is a 2D Next-Fit-Decreasing-Height shelf
  *      pack of the truck's floor (L×W) using only boxes short enough to
  *      share that level without wasting more vertical space than needed.
+ *      A single row never mixes two different assemblies (see
+ *      `packOneLevel`'s own comment) — same-SKU boxes always end up
+ *      grouped, even if that leaves a little unused length at a row's end.
  *   2. Weight budget (`maxWeightKg`) is enforced on top, in placement
  *      order — a box that would push the running total over budget
  *      overflows to the next truck even if it geometrically fit.
@@ -213,13 +216,28 @@ function packOneLevel(
   let y = 0;
   let rowDepth = 0;
   let levelHeightCm = 0;
+  let rowAssemblyId: string | null = null;
 
   for (const box of boxes) {
-    if (x + box.lengthCm > floorLengthCm) {
-      // next row
+    // "чому воно розкладає не логічно" (2026-10-29) — found live: 3 copies
+    // of the same assembly ended up split, 2 in one row and 1 tacked onto
+    // the tail of an unrelated, much longer item's row, just because that
+    // leftover length happened to fit it. Geometrically optimal, but no
+    // warehouse worker would actually load it that way — identical items
+    // belong together, easier to find, strap, and unload as one group.
+    // Forcing a row break whenever the next box is a DIFFERENT assembly
+    // than the one already occupying this row (not just on a pure length
+    // overflow) keeps every row single-SKU, at the cost of some wasted
+    // leftover length in a row that ends before the floor's own edge —
+    // the same "practical over optimal" tradeoff this whole module
+    // already makes elsewhere.
+    const rowFull = x + box.lengthCm > floorLengthCm;
+    const rowSwitchesAssembly = x > 0 && rowAssemblyId !== null && box.assemblyId !== rowAssemblyId;
+    if (rowFull || rowSwitchesAssembly) {
       x = 0;
       y += rowDepth;
       rowDepth = 0;
+      rowAssemblyId = null;
     }
     if (y + box.widthCm > floorWidthCm) {
       unplaced.push(box);
@@ -229,6 +247,7 @@ function packOneLevel(
     x += box.lengthCm;
     rowDepth = Math.max(rowDepth, box.widthCm);
     levelHeightCm = Math.max(levelHeightCm, box.heightCm);
+    rowAssemblyId = box.assemblyId;
   }
 
   return { placed, unplaced, levelHeightCm };

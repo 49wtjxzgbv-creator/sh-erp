@@ -78,6 +78,26 @@ describe('packBoxesIntoTrucks', () => {
     expect(new Set(placed.map((p) => p.truckIndex)).size).toBe(20);
   });
 
+  it('never mixes two different assemblies within the same row, even when one would still fit after the other', () => {
+    // Reproduces a real production layout (2026-10-29, "чому воно розкладає
+    // не логічно"): 3 long belts end-to-end leave just enough row length
+    // for one short motor box to also fit — without the fix, that one
+    // motor box got tacked onto the belts' row while its other two copies
+    // started a fresh row, splitting one assembly's 3 identical boxes
+    // across two disconnected spots.
+    const truck: TruckDims = { lengthCm: 1360, widthCm: 245, heightCm: 260, maxWeightKg: 10000 };
+    const belts = Array.from({ length: 3 }, () => box({ assemblyId: 'belt', lengthCm: 428.8, widthCm: 32.2, heightCm: 23.6 }));
+    const motors = Array.from({ length: 3 }, () => box({ assemblyId: 'motor', lengthCm: 39, widthCm: 22.9, heightCm: 20.9 }));
+
+    const placed = packBoxesIntoTrucks([...belts, ...motors], truck);
+    const motorYs = placed.filter((p) => p.assemblyId === 'motor').map((p) => p.y);
+
+    // All 3 motor boxes should share the same row (same y) — not 2 in one row and 1 tacked onto the belts' row.
+    expect(new Set(motorYs).size).toBe(1);
+    const beltYs = placed.filter((p) => p.assemblyId === 'belt').map((p) => p.y);
+    expect(new Set(beltYs)).not.toEqual(new Set(motorYs));
+  });
+
   it('throws when a single box does not fit inside the truck even empty', () => {
     const smallTruck: TruckDims = { lengthCm: 40, widthCm: 40, heightCm: 40, maxWeightKg: 10000 };
     const boxes = [box({ lengthCm: 50, widthCm: 40, heightCm: 30 })];
