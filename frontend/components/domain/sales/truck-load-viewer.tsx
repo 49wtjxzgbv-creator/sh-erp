@@ -112,12 +112,18 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     // "неипоказує там реальні глб вироби просто прямокутники"). Falls back
     // to the truck's own envelope when there's nothing loaded yet.
     const truckCenterLocal = new THREE.Vector3(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
-    // A focused assembly narrows the framing box down to just ITS OWN
-    // placed boxes — falls through to the full-cargo box below when
-    // nothing is focused, or when the focused id isn't actually in this
-    // truck (e.g. it got moved to another truck while focused).
-    const focusedBoxes = focusedAssemblyId ? placedBoxes.filter((b) => b.assemblyId === focusedAssemblyId) : [];
-    const framingBoxes = focusedBoxes.length > 0 ? focusedBoxes : placedBoxes;
+    // A focused assembly narrows the framing box down to just ONE of its
+    // own placed copies — not every copy's combined span, which for an
+    // assembly packed in several separate spots (its own boxes didn't all
+    // fit on the same shelf/row) could still stretch most of the truck's
+    // length and defeat the whole point of focusing (2026-10-28, found
+    // live: an assembly placed once far down the truck and twice near the
+    // front still framed as a long sliver). Falls through to the
+    // full-cargo box below when nothing is focused, or when the focused id
+    // isn't actually in this truck (e.g. it got moved to another truck
+    // while focused).
+    const focusedBox = focusedAssemblyId ? placedBoxes.find((b) => b.assemblyId === focusedAssemblyId) : undefined;
+    const framingBoxes = focusedBox ? [focusedBox] : placedBoxes;
     const cargoBox = new THREE.Box3();
     for (const box of framingBoxes) {
       cargoBox.expandByPoint(new THREE.Vector3(box.x, box.z, box.y));
