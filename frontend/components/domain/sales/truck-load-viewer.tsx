@@ -91,11 +91,32 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: Tru
     dirLight.position.set(maxDim, maxDim, maxDim);
     scene.add(dirLight);
 
+    // Frame the camera on the actual LOADED CARGO, not the full (often
+    // mostly-empty) truck envelope — a lightly-loaded truck used to leave
+    // every item a tiny sliver in the middle of the frame, barely large
+    // enough to tell a real model apart from a plain block (2026-10-28,
+    // "неипоказує там реальні глб вироби просто прямокутники"). Falls back
+    // to the truck's own envelope when there's nothing loaded yet.
+    const truckCenterLocal = new THREE.Vector3(truckDims.lengthCm / 2, truckDims.heightCm / 2, truckDims.widthCm / 2);
+    const cargoBox = new THREE.Box3();
+    for (const box of placedBoxes) {
+      cargoBox.expandByPoint(new THREE.Vector3(box.x, box.z, box.y));
+      cargoBox.expandByPoint(new THREE.Vector3(box.x + box.lengthCm, box.z + box.heightCm, box.y + box.widthCm));
+    }
+    const hasCargo = placedBoxes.length > 0;
+    const cargoCenterLocal = hasCargo ? cargoBox.getCenter(new THREE.Vector3()) : truckCenterLocal.clone();
+    const cargoSize = hasCargo ? cargoBox.getSize(new THREE.Vector3()) : new THREE.Vector3(truckDims.lengthCm, truckDims.heightCm, truckDims.widthCm);
+    const cargoMaxDim = Math.max(cargoSize.x, cargoSize.y, cargoSize.z, 1);
+    // Truck-local coords recenter on the truck's own middle (see `group`
+    // below) — the camera target has to be expressed in that same
+    // recentered world space, not raw truck-local coordinates.
+    const targetWorld = cargoCenterLocal.clone().sub(truckCenterLocal);
+
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
     const camera = new THREE.PerspectiveCamera(45, width / height, maxDim / 1000, maxDim * 100);
-    camera.position.set(maxDim * 1.3, maxDim * 1.1, maxDim * 1.3);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(targetWorld.x + cargoMaxDim * 1.3, targetWorld.y + cargoMaxDim * 1.1, targetWorld.z + cargoMaxDim * 1.3);
+    camera.lookAt(targetWorld);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -104,7 +125,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls }: Tru
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.target.set(0, 0, 0);
+    controls.target.copy(targetWorld);
 
     // Truck-local coords have their origin at a floor corner; re-centering
     // the whole group on the truck's own geometric center (same framing
