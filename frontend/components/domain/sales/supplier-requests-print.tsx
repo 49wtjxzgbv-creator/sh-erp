@@ -22,6 +22,8 @@ export interface SupplierRequestLineForPrint {
   /** Own article/SKU, printed as its own column right after the photo (2026-09-23 user request) — null/undefined when genuinely unset. */
   article?: string | null;
   qty: number;
+  /** Which customer order this line came from — only ever set on the multi-order bulk request page (`/sales/shortage-bulk`), where one supplier's printed request can genuinely cover several different orders at once and the recipient needs to know which. Undefined on the single-order page, where every line already belongs to the one order the whole document is for — the column simply doesn't render there. */
+  orderNumber?: string;
   /** The resolved supplier's price, null/undefined when unknown — printed only when the "Ціна" column is selected. */
   price?: number | null;
 }
@@ -166,6 +168,8 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
       .reduce((sum, l) => sum + (l.price as number) * l.qty, 0);
   }
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
+  /** "вказуй до якого саме замовлення чи замовлень відноситься ця заявка" (2026-10-28) — present only on the bulk multi-order page's lines, so this stays invisible (and the single-order page's printed layout stays byte-identical) everywhere else. */
+  const hasOrderColumn = printable.some((g) => g.lines.some((l) => l.orderNumber));
 
   const documentItems = useMemo(
     () =>
@@ -231,6 +235,11 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
         {printable.map((group, gi) => (
           <div key={group.supplierId ?? `none-${gi}`} className={gi < printable.length - 1 ? 'print-page-break' : ''}>
             <h2 className="mb-2 font-semibold">{tp('requestTo')}: {group.supplierName}</h2>
+            {hasOrderColumn && (
+              <p className="mb-2 text-sm">
+                {t('orderNumber')}: {Array.from(new Set(group.lines.map((l) => l.orderNumber).filter(Boolean))).join(', ')}
+              </p>
+            )}
             <table className="mb-6">
               <thead>
                 <tr>
@@ -238,6 +247,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
                   <th>{t('article')}</th>
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
+                  {hasOrderColumn && <th>{t('orderNumber')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
                   {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
                   {printOptions.isColumnVisible('price') && <th>{t('expectedPrice')}</th>}
@@ -256,6 +266,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                       )}
                       <td className="font-bold">{line.article ?? ''}</td>
                       {printOptions.isColumnVisible('description') && <td>{descriptionWithoutArticle(line)}</td>}
+                      {hasOrderColumn && <td>{line.orderNumber ?? ''}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                       {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
                       {printOptions.isColumnVisible('price') && (
@@ -273,6 +284,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                         1 + // article — always shown, see the header <th> above
                         (printOptions.includePhotos ? 1 : 0) +
                         (printOptions.isColumnVisible('description') ? 1 : 0) +
+                        (hasOrderColumn ? 1 : 0) +
                         (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
                         (printOptions.isColumnVisible('unitPrice') ? 1 : 0)
                       }

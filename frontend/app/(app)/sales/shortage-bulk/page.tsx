@@ -18,6 +18,22 @@ import { Avatar } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
+import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
+
+const ALL_SUPPLIERS = 'all';
+const NO_SUPPLIER = '__none__';
+
+function parseQtyParam(raw: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const pair of raw.split(',')) {
+    const idx = pair.lastIndexOf(':');
+    if (idx === -1) continue;
+    const id = pair.slice(0, idx);
+    const qty = Number(pair.slice(idx + 1));
+    if (id && !Number.isNaN(qty)) map.set(id, qty);
+  }
+  return map;
+}
 
 interface EditableLine extends ShortageLine {
   orderId: string;
@@ -102,6 +118,20 @@ function BulkShortagePageInner() {
   const [createdCount, setCreatedCount] = useState<number | null>(null);
   const [sendingGroupIdx, setSendingGroupIdx] = useState<number | null>(null);
   const [sendingAll, setSendingAll] = useState(false);
+  const [printSupplierId, setPrintSupplierId] = useState<string>(ALL_SUPPLIERS);
+
+  // A preview tab (opened by handlePreview below) carries the supplier
+  // filter and the live-typed quantities the opener had at that moment —
+  // same reasoning as the single-order shortage page's own `isPreview`
+  // handling (a fresh load here would otherwise only ever see the raw,
+  // unedited per-order previews).
+  const isPreview = searchParams.get('print') === '1';
+  const previewSupplierParam = isPreview ? searchParams.get('supplier') : null;
+  const previewQtyOverrides = useMemo(() => {
+    if (!isPreview) return null;
+    const raw = searchParams.get('qty');
+    return raw ? parseQtyParam(raw) : null;
+  }, [isPreview, searchParams]);
 
   useEffect(() => {
     if (hydrated.current || isLoading || orderIds.length === 0) return;
@@ -123,7 +153,10 @@ function BulkShortagePageInner() {
       for (const g of preview.groups) {
         const target = getGroup(g.supplierId ?? undefined, g.supplierName);
         for (const line of g.lines) {
-          target.lines.push({ ...line, orderId, orderNumber, qty: line.qtyToPurchase ?? line.neededQty });
+          const editable: EditableLine = { ...line, orderId, orderNumber, qty: line.qtyToPurchase ?? line.neededQty };
+          const override = previewQtyOverrides?.get(lineId(editable));
+          if (override != null) editable.qty = override;
+          target.lines.push(editable);
         }
       }
       for (const line of preview.ambiguousLines) {
@@ -141,7 +174,8 @@ function BulkShortagePageInner() {
     originalDataRef.current = { groups: hydratedGroups, ambiguousLines: ambiguous };
     setGroups(hydratedGroups);
     setAmbiguousLines(ambiguous);
-  }, [isLoading, orderIds, orderNumberById, previewQueries]);
+    if (previewSupplierParam && previewSupplierParam !== ALL_SUPPLIERS) setPrintSupplierId(previewSupplierParam);
+  }, [isLoading, orderIds, orderNumberById, previewQueries, previewSupplierParam, previewQtyOverrides]);
 
   const allLines = useMemo(() => [...groups.flatMap((g) => g.lines), ...ambiguousLines], [groups, ambiguousLines]);
   const productIds = useMemo(
@@ -245,6 +279,23 @@ function BulkShortagePageInner() {
     }
   }
 
+  const printGroups = groups.filter((g) => printSupplierId === ALL_SUPPLIERS || (g.supplierId ?? NO_SUPPLIER) === printSupplierId);
+
+  /** Same same-URL-reopen trick the single-order page uses — serializes the supplier filter and the current (possibly hand-edited) quantities into the URL so the preview tab shows exactly what's about to be sent, not a fresh unedited preview. `orders=` is already part of `window.location.href` here, so it carries over for free. */
+  function handlePreview() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('print', '1');
+    url.searchParams.set('supplier', printSupplierId);
+    const qtyPayload = printGroups
+      .flatMap((g) => g.lines)
+      .filter((l) => l.qty > 0)
+      .map((l) => `${lineId(l)}:${l.qty}`)
+      .join(',');
+    if (qtyPayload) url.searchParams.set('qty', qtyPayload);
+    else url.searchParams.delete('qty');
+    window.open(url.toString(), '_blank', 'noopener');
+  }
+
   if (orderIds.length === 0) {
     return <p className="text-sm text-muted-foreground">{t('bulkShortageNoOrders')}</p>;
   }
@@ -256,20 +307,51 @@ function BulkShortagePageInner() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{t('bulkShortageTitle', { count: orderIds.length })}</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={ignoreStock} onCheckedChange={toggleIgnoreStock} />
-            {t('shortageIgnoreStock')}
-          </label>
-          {groups.length > 0 && (
-            <Button loading={sendingAll} onClick={handleSendAll}>
-              {t('sendAllRequests')}
-            </Button>
-          )}
-        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={ignoreStock} onCheckedChange={toggleIgnoreStock} />
+          {t('shortageIgnoreStock')}
+        </label>
       </div>
 
       <p className="text-sm text-muted-foreground">{[...orderNumberById.values()].join(', ')}</p>
+
+      {groups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={printSupplierId} onValueChange={setPrintSupplierId}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_SUPPLIERS}>{t('allSuppliersPrint')}</SelectItem>
+              {groups.map((g, gi) => (
+                <SelectItem key={g.supplierId ?? `none-${gi}`} value={g.supplierId ?? NO_SUPPLIER}>
+                  {g.supplierName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SupplierRequestsPrint
+            groups={printGroups.map((g) => ({
+              supplierId: g.supplierId,
+              supplierName: g.supplierName,
+              lines: g.lines.map((l) => ({
+                kind: l.kind,
+                productId: l.productId,
+                subAssemblyId: l.subAssemblyId,
+                description: l.description,
+                article: l.article,
+                qty: l.qty,
+                price: l.price,
+                orderNumber: l.orderNumber,
+              })),
+            }))}
+            onPreview={handlePreview}
+          />
+          <Button loading={sendingAll} onClick={handleSendAll}>
+            {t('sendAllRequests')}
+          </Button>
+        </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {createdCount !== null && <p className="text-sm text-success">{t('purchaseOrdersCreated', { count: createdCount })}</p>}
