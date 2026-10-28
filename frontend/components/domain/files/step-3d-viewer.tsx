@@ -1875,6 +1875,39 @@ export interface GlbPartAnalysis {
  * `null` for an empty/degenerate model instead of `0`, so a caller can
  * tell "no usable geometry" apart from "a genuinely weightless sliver".
  */
+/**
+ * Load-plan module (2026-10-28): headless bounding-box counterpart to
+ * `computeGlbVolume` right below — same `loadGlb` + `Box3` + per-file unit
+ * normalization (`linearUnitScaleToMm`, see its own header comment for why
+ * this is resolved per-FILE from the whole group's bounding box, not
+ * per-part), just returning the three real-world sizes in cm instead of
+ * the derived volume. There is no reliable way to know which axis a CAD
+ * export calls "length" vs "width" vs "height" — this simply sorts the
+ * three bounding-box sizes descending and labels them in that order
+ * (longest = length, shortest = height), the same convention a person
+ * reading off calipers would default to. Always still a hand-editable
+ * suggestion afterward (same "calculate -> prefill -> user can override"
+ * idiom as `MaterialWeightPicker`/`GermanPriceFromBomCalculator`), never
+ * silently authoritative.
+ */
+export async function computeGlbDimensions(glbUrl: string): Promise<{ lengthCm: number; widthCm: number; heightCm: number } | null> {
+  const group = await loadGlb(glbUrl);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const scaleToMm = linearUnitScaleToMm(maxDim);
+  const hasGeometry = meshesUnder(group).length > 0 && maxDim > 0;
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      for (const mat of Array.isArray(o.material) ? o.material : [o.material]) mat.dispose();
+    }
+  });
+  if (!hasGeometry) return null;
+  const [lengthMm, widthMm, heightMm] = [size.x, size.y, size.z].map((v) => v * scaleToMm).sort((a, b) => b - a);
+  return { lengthCm: lengthMm / 10, widthCm: widthMm / 10, heightCm: heightMm / 10 };
+}
+
 export async function computeGlbVolume(glbUrl: string): Promise<number | null> {
   const group = await loadGlb(glbUrl);
   const box = new THREE.Box3().setFromObject(group);

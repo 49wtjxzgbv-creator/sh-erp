@@ -378,6 +378,8 @@
     "boxWidth": "Szerokość",
     "boxHeight": "Wysokość",
     "packagingHint": "Używane do automatycznego obliczania liczby miejsc ładunkowych i objętości przy wysyłce.",
+    "packagingDimensionsFromModel": "Oblicz z modelu 3D (GLB)",
+    "packagingDimensionsNoModel": "Nie udało się określić wymiarów na podstawie tego modelu 3D.",
     "pricingHeader": "Wycena",
     "baseSalePriceEur": "Cena bazowa sprzedaÅ¼y, â¬",
     "baseSalePriceEurHint": "UÅ¼ywana jako cena wyjÅciowa przy wyborze metody âCena bazowaâ w ofertach handlowych. To NIE jest koszt â osobne pole dla ceny sprzedaÅ¼y.",

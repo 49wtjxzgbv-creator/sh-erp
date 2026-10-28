@@ -378,6 +378,8 @@
     "boxWidth": "Breite",
     "boxHeight": "Höhe",
     "packagingHint": "Wird verwendet, um die Anzahl der Frachtstücke und das Volumen beim Versand automatisch zu berechnen.",
+    "packagingDimensionsFromModel": "Aus 3D-Modell berechnen (GLB)",
+    "packagingDimensionsNoModel": "Abmessungen konnten aus diesem 3D-Modell nicht ermittelt werden.",
     "pricingHeader": "Preisgestaltung",
     "baseSalePriceEur": "Basisverkaufspreis, â¬",
     "baseSalePriceEurHint": "Wird als Ausgangspreis verwendet, wenn in Angeboten die Preismethode âBasispreisâ gewÃ¤hlt wird. Dies sind NICHT die Kosten â ein separates Feld fÃ¼r den Verkaufspreis.",

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -18,11 +19,28 @@ import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
 import { EntityDocumentsField, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { listFilesForEntities, getFileDownloadUrl, uploadFile } from '@/lib/api-client/files';
+import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { toast } from '@/lib/hooks/use-toast';
 import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
 import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
+
+// `z.coerce.number().min(0).optional().or(z.literal(''))` has a real bug for
+// a `min(0)` field specifically (caught in product-form.tsx 2026-10-08,
+// repeated here for boxLengthCm/boxWidthCm/boxHeightCm until this fix):
+// `z.coerce.number()` on a blank '' input parses to `Number('') === 0`, a
+// *successful* parse that then passes `.min(0)` — so the union's first
+// branch already succeeds with a confirmed `0`, and `.or(z.literal(''))`
+// never even gets tried. A cleared box-dimension field would silently save
+// as "confirmed 0cm", not "unset" — the exact distinction
+// LoadPlanService#generate's packaging-completeness check depends on.
+// Preprocessing blank/null to `undefined` BEFORE the number schema sees it
+// sidesteps the coercion entirely.
+const optionalNonNegativeNumber = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.coerce.number().min(0).optional(),
+);
 
 const assemblySchema = z.object({
   name: z.string().min(1),
@@ -36,9 +54,9 @@ const assemblySchema = z.object({
   germanPriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
   unitsPerBox: z.coerce.number().int().min(1).optional().or(z.literal('')),
   boxesPerPallet: z.coerce.number().int().min(1).optional().or(z.literal('')),
-  boxLengthCm: z.coerce.number().min(0).optional().or(z.literal('')),
-  boxWidthCm: z.coerce.number().min(0).optional().or(z.literal('')),
-  boxHeightCm: z.coerce.number().min(0).optional().or(z.literal('')),
+  boxLengthCm: optionalNonNegativeNumber,
+  boxWidthCm: optionalNonNegativeNumber,
+  boxHeightCm: optionalNonNegativeNumber,
 });
 export type AssemblyFormValues = z.infer<typeof assemblySchema>;
 
@@ -335,6 +353,18 @@ export function AssemblyForm({
               <Input id="boxHeightCm" type="number" step="any" placeholder={t('boxHeight')} {...register('boxHeightCm')} />
             </div>
           </div>
+          {assembly && !readOnly && (
+            <div className="sm:col-span-2">
+              <PackagingDimensionsFromModelCalculator
+                assemblyId={assembly.id}
+                onApply={(dims) => {
+                  setValue('boxLengthCm', Math.round(dims.lengthCm * 10) / 10);
+                  setValue('boxWidthCm', Math.round(dims.widthCm * 10) / 10);
+                  setValue('boxHeightCm', Math.round(dims.heightCm * 10) / 10);
+                }}
+              />
+            </div>
+          )}
           <p className="text-xs text-muted-foreground sm:col-span-2">{t('packagingHint')}</p>
         </CardContent>
       </Card>
@@ -404,6 +434,61 @@ function GermanPriceFromBomCalculator({ assemblyId, onApply }: { assemblyId: str
       >
         {t('germanPriceFromBomApply')}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Load-plan module (2026-10-28 — "розміри є у кожній 3д моделі
+ * специфікації, у нас ж є модель кожного виробу"): headless counterpart to
+ * product-form.tsx's own `ModelWeightCalculator` — renders nothing without
+ * a `.glb` attached under this assembly's own "Документи"
+ * (`ASSEMBLY_DOCUMENT`), measures it (`computeGlbDimensions`, dynamically
+ * imported — three.js is a heavy client-only dependency not worth pulling
+ * into the BOM bundle for the common case where this is never clicked)
+ * only on click, and hands the three box dimensions back as one suggestion
+ * — always still hand-editable afterward in the inputs right above, never
+ * silently authoritative (see `computeGlbDimensions`'s own header comment
+ * on why "length/width/height" is just the three sizes sorted descending,
+ * a judgment call the user can override).
+ */
+function PackagingDimensionsFromModelCalculator({
+  assemblyId,
+  onApply,
+}: {
+  assemblyId: string;
+  onApply: (dims: { lengthCm: number; widthCm: number; heightCm: number }) => void;
+}) {
+  const t = useTranslations('bom');
+  const tc = useTranslations('common');
+  const { data: byEntity } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_DOCUMENT');
+  const glbFile = (byEntity?.[assemblyId] ?? []).find((f) => isGlbFile(f.originalName));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!glbFile) return null;
+
+  async function computeDims() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { computeGlbDimensions } = await import('@/components/domain/files/step-3d-viewer');
+      const dims = await computeGlbDimensions(glbFile!.downloadUrl);
+      if (!dims) setError(t('packagingDimensionsNoModel'));
+      else onApply(dims);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tc('error'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Button type="button" variant="outline" size="sm" loading={loading} onClick={computeDims}>
+        {t('packagingDimensionsFromModel')}
+      </Button>
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

@@ -378,6 +378,8 @@
     "boxWidth": "Width",
     "boxHeight": "Height",
     "packagingHint": "Used to automatically calculate the number of cargo places and volume when shipping.",
+    "packagingDimensionsFromModel": "Calculate from 3D model (GLB)",
+    "packagingDimensionsNoModel": "Couldn't determine dimensions from this 3D model.",
     "pricingHeader": "Pricing",
     "baseSalePriceEur": "Base sale price, â¬",
     "baseSalePriceEurHint": "Used as the starting price when \"Base price\" is chosen as the pricing method in quotations. This is NOT the cost â a separate field for the sale price.",
