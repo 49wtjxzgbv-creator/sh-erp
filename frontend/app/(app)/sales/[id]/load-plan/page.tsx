@@ -7,13 +7,23 @@ import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppabl
 import { useTransportUnitTypes } from '@/lib/hooks/use-logistics';
 import { useLoadPlan, useGenerateLoadPlan, useMoveLoadPlanItem } from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { ApiError } from '@/lib/api-client/types';
 import type { LoadPlanTruck, LoadPlanTruckItem } from '@/lib/api-client/sales';
+import { updateAssembly } from '@/lib/api-client/bom';
+import { listFilesForEntities } from '@/lib/api-client/files';
+import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { TruckLoadViewer, colorForAssembly } from '@/components/domain/sales/truck-load-viewer';
+
+interface MissingAssembly {
+  id: string;
+  name: string;
+}
+type BulkFillStatus = 'done' | 'no-model' | 'error';
 
 export default function LoadPlanPage() {
   const { id: orderId } = useParams<{ id: string }>();
@@ -31,6 +41,9 @@ export default function LoadPlanPage() {
   const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>(undefined);
   const [selectedTruckIndex, setSelectedTruckIndex] = useState<number | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [missingAssemblies, setMissingAssemblies] = useState<MissingAssembly[] | null>(null);
+  const [bulkFilling, setBulkFilling] = useState(false);
+  const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
 
   useEffect(() => {
     if (!selectedTypeId && plan) setSelectedTypeId(plan.transportUnitTypeId);
@@ -66,10 +79,65 @@ export default function LoadPlanPage() {
   async function handleGenerate() {
     if (!selectedTypeId) return;
     setGenerateError(null);
+    setMissingAssemblies(null);
+    setBulkResults(null);
     try {
       await generatePlan.mutateAsync(selectedTypeId);
     } catch (err) {
       setGenerateError(apiErrorMessage(err, tc('error')));
+      const missing = err instanceof ApiError ? (err.body as { missingAssemblies?: MissingAssembly[] } | undefined)?.missingAssemblies : undefined;
+      if (missing && missing.length > 0) setMissingAssemblies(missing);
+    }
+  }
+
+  // "у нас же є модель кожного виробу" (2026-10-28): rather than sending
+  // the user to click through every missing-packaging assembly's own BOM
+  // card one at a time (PackagingDimensionsFromModelCalculator there does
+  // the same computation for a single assembly), this does it for all of
+  // them at once — looks up each one's attached .glb (ASSEMBLY_DOCUMENT),
+  // measures it, and saves the result directly. Assemblies with no .glb
+  // attached are reported as `no-model` so the user knows exactly which
+  // ones still need a manual measurement, instead of a silent partial
+  // success. Auto-retries generate() once every assembly succeeded.
+  async function handleBulkFillFromModels() {
+    if (!missingAssemblies) return;
+    setBulkFilling(true);
+    const results: Record<string, BulkFillStatus> = {};
+    try {
+      const filesByEntity = await listFilesForEntities(
+        'Assembly',
+        missingAssemblies.map((a) => a.id),
+        'ASSEMBLY_DOCUMENT',
+      );
+      const { computeGlbDimensions } = await import('@/components/domain/files/step-3d-viewer');
+      for (const assembly of missingAssemblies) {
+        const glbFile = (filesByEntity[assembly.id] ?? []).find((f) => isGlbFile(f.originalName));
+        if (!glbFile) {
+          results[assembly.id] = 'no-model';
+          continue;
+        }
+        try {
+          const dims = await computeGlbDimensions(glbFile.downloadUrl);
+          if (!dims) {
+            results[assembly.id] = 'no-model';
+            continue;
+          }
+          await updateAssembly(assembly.id, {
+            boxLengthCm: Math.round(dims.lengthCm * 10) / 10,
+            boxWidthCm: Math.round(dims.widthCm * 10) / 10,
+            boxHeightCm: Math.round(dims.heightCm * 10) / 10,
+          });
+          results[assembly.id] = 'done';
+        } catch {
+          results[assembly.id] = 'error';
+        }
+      }
+    } finally {
+      setBulkResults(results);
+      setBulkFilling(false);
+    }
+    if (missingAssemblies.every((a) => results[a.id] === 'done')) {
+      handleGenerate();
     }
   }
 
@@ -135,6 +203,32 @@ export default function LoadPlanPage() {
             </CardContent>
           )}
         </Card>
+
+        {missingAssemblies && missingAssemblies.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('loadPlanMissingPackagingTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <ul className="space-y-1 text-sm">
+                {missingAssemblies.map((a) => {
+                  const status = bulkResults?.[a.id];
+                  return (
+                    <li key={a.id} className="flex items-center justify-between gap-2">
+                      <span>{a.name}</span>
+                      {status === 'done' && <span className="text-xs text-emerald-600 dark:text-emerald-500">{t('loadPlanBulkFillDone')}</span>}
+                      {status === 'no-model' && <span className="text-xs text-amber-600 dark:text-amber-500">{t('loadPlanBulkFillNoModel')}</span>}
+                      {status === 'error' && <span className="text-xs text-destructive">{tc('error')}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <Button type="button" onClick={handleBulkFillFromModels} loading={bulkFilling}>
+                {t('loadPlanBulkFillFromModels')}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {planLoading || generatePlan.isPending ? (
           <LoadingBlock />

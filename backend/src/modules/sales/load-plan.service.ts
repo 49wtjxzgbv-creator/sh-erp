@@ -64,12 +64,12 @@ export class LoadPlanService {
       throw new CodedConflictException('LOAD_PLAN_NO_ITEMS', 'This order has no line items to plan.');
     }
 
-    const missingPackaging: string[] = [];
+    const missingPackaging: { id: string; name: string }[] = [];
     const packBoxes: PackBox[] = [];
     for (const item of items as any[]) {
       const assembly = item.assembly;
       if (assembly.boxLengthCm == null || assembly.boxWidthCm == null || assembly.boxHeightCm == null) {
-        missingPackaging.push(assembly.name);
+        missingPackaging.push({ id: assembly.id, name: assembly.name });
         continue;
       }
       const weight = await this.assembliesService.calculateWeight(user, item.assemblyId);
@@ -94,7 +94,12 @@ export class LoadPlanService {
     if (missingPackaging.length > 0) {
       throw new CodedConflictException(
         'LOAD_PLAN_PACKAGING_INCOMPLETE',
-        `Add box dimensions before generating a load plan for: ${missingPackaging.join(', ')}.`,
+        `Add box dimensions before generating a load plan for: ${missingPackaging.map((a) => a.name).join(', ')}.`,
+        // Lets the frontend offer "обчислити все з GLB-моделей" instead of
+        // sending the user to click through each assembly's BOM card by
+        // hand — see PackagingDimensionsFromModelCalculator's single-
+        // assembly counterpart in assembly-form.tsx.
+        { missingAssemblies: missingPackaging },
       );
     }
 
