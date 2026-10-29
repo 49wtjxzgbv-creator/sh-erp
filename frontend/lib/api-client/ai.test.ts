@@ -7,6 +7,7 @@ import {
   recognizeInvoice,
   getAiSettings,
   updateAiSettings,
+  translateJson,
 } from './ai';
 import { apiClient } from './http';
 
@@ -80,6 +81,28 @@ describe('recognizeInvoice', () => {
     expect(mockedApiClient.post).toHaveBeenCalledWith('ai/recognize-invoice', {
       base64Image: 'base64data',
       mimeType: 'image/jpeg',
+    });
+  });
+});
+
+describe('translateJson', () => {
+  it('posts fields/targetLocale, and documentKind only when given (Supplier Requests language switcher, 2026-10-29)', async () => {
+    (mockedApiClient.post as jest.Mock).mockResolvedValue({ description: 'Bolt M8' });
+    await translateJson({ description: 'Болт М8' }, 'en', 'заявки постачальнику (назви й описи товарних позицій)');
+    expect(mockedApiClient.post).toHaveBeenCalledWith('ai/translate-json', {
+      fields: { description: 'Болт М8' },
+      targetLocale: 'en',
+      documentKind: 'заявки постачальнику (назви й описи товарних позицій)',
+    });
+  });
+
+  it('omits documentKind (undefined) when not given — backend falls back to its own default', async () => {
+    (mockedApiClient.post as jest.Mock).mockResolvedValue({ notes: 'Thanks' });
+    await translateJson({ notes: 'Дякуємо' }, 'en');
+    expect(mockedApiClient.post).toHaveBeenCalledWith('ai/translate-json', {
+      fields: { notes: 'Дякуємо' },
+      targetLocale: 'en',
+      documentKind: undefined,
     });
   });
 });

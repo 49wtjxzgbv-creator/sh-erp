@@ -11,6 +11,7 @@ import { AskHelpDto } from './dto/ask-help.dto';
 import { CancelAiActionDto, ConfirmAiActionDto } from './dto/confirm-ai-action.dto';
 import { UpdateCompanyAiSettingsDto } from './dto/company-ai-settings.dto';
 import { RecognizeInvoiceDto } from './dto/recognize-invoice.dto';
+import { TranslateJsonDto } from './dto/translate-json.dto';
 
 /**
  * AI module (Phase 1 §3.7 / Phase 2 §8). All routes require ordinary
@@ -55,6 +56,16 @@ export class AiController {
   @ApiOperation({ summary: 'Executes a previously-proposed critical action (e.g. adjustProductStock) after explicit user confirmation.' })
   async confirmAction(@CurrentUser() user: RequestUser, @Body() dto: ConfirmAiActionDto) {
     return this.aiService.confirmAction(user, dto.pendingActionId);
+  }
+
+  @Post('translate-json')
+  @RequirePermissions('ai:use')
+  @ApiOperation({
+    summary:
+      'Generic batch text translation — the same engine the Quotations language switcher uses (AiService#translateJson), reusable by any feature that needs a print/document view in a language other than the user\'s own UI locale (e.g. Supplier Requests).',
+  })
+  async translateJson(@CurrentUser() user: RequestUser, @Body() dto: TranslateJsonDto) {
+    return this.aiService.translateJson(user, dto.fields, dto.targetLocale, dto.documentKind);
   }
 
   @Post('cancel-action')

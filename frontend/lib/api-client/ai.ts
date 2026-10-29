@@ -158,3 +158,18 @@ export function getAiSettings(): Promise<CompanyAiSettings> {
 export function updateAiSettings(dto: UpdateCompanyAiSettingsInput): Promise<CompanyAiSettings> {
   return apiClient.put<CompanyAiSettings>('ai/settings', dto);
 }
+
+/**
+ * Generic batch text translation (2026-10-29) — the same engine the
+ * Quotations language switcher uses (translateQuotation in this same
+ * file), reusable by any print/document view that needs to show its
+ * content in a language other than the user's own UI locale (e.g.
+ * Supplier Requests — see SupplierRequestsPrint's own header comment).
+ * `documentKind` is a short Ukrainian noun phrase naming what the text IS
+ * ("заявки постачальнику (назви й описи товарних позицій)") — frames the
+ * AI prompt's register; omit to fall back to the backend's
+ * Quotations-flavored default.
+ */
+export function translateJson(fields: Record<string, string | null>, targetLocale: string, documentKind?: string): Promise<Record<string, string | null>> {
+  return apiClient.post<Record<string, string | null>>('ai/translate-json', { fields, targetLocale, documentKind });
+}

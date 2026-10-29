@@ -260,5 +260,15 @@ describe('AiService', () => {
       provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'not json at all' }] } });
       await expect(service.translateJson(user, { notes: 'Дякуємо' }, 'en')).rejects.toThrow(BadRequestException);
     });
+
+    it("lets a non-Quotations caller (e.g. Supplier Requests) override documentKind/usageFeature so the prompt framing and usage log aren't mislabeled as a quotation", async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '{"description":"Bolt M8"}' }] } });
+
+      await service.translateJson(user, { description: 'Болт М8' }, 'en', 'заявки постачальнику (назви й описи товарних позицій)', 'supplier-request-translate');
+
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[0].text).toContain('Це текст заявки постачальнику');
+      expect(actionsService.logUsage).toHaveBeenCalledWith(user, 'supplier-request-translate', undefined);
+    });
   });
 });

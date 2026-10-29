@@ -10,6 +10,7 @@ import {
   recognizeInvoice,
   getAiSettings,
   updateAiSettings,
+  translateJson,
   type AskFullAssistantInput,
   type UpdateCompanyAiSettingsInput,
 } from '@/lib/api-client/ai';
@@ -55,6 +56,13 @@ const aiSettingsKey = ['ai-settings'] as const;
 
 export function useAiSettings() {
   return useQuery({ queryKey: aiSettingsKey, queryFn: () => getAiSettings() });
+}
+
+export function useTranslateJson() {
+  return useMutation({
+    mutationFn: ({ fields, targetLocale, documentKind }: { fields: Record<string, string | null>; targetLocale: string; documentKind?: string }) =>
+      translateJson(fields, targetLocale, documentKind),
+  });
 }
 
 export function useUpdateAiSettings() {

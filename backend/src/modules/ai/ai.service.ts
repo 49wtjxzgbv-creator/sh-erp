@@ -334,15 +334,25 @@ export class AiService {
 
   /**
    * Generic "translate this batch of free text" helper (2026-09-06,
-   * Quotations language switcher) — a flat `{key: string|null}` object in,
-   * the same shape translated back out. One request for every field on a
-   * QuotationVersion instead of N (name/description/unit per item, plus
-   * terms/notes) — same "batch it into one JSON round-trip" reasoning as
-   * `recognizeInvoice`. Null/empty values are filtered out before the call
-   * (nothing to translate) and re-inserted as-is afterward, so the caller
-   * never has to special-case them.
+   * Quotations language switcher; generalized 2026-10-29 for the Supplier
+   * Requests language switcher — see AiController's own `translate-json`
+   * endpoint) — a flat `{key: string|null}` object in, the same shape
+   * translated back out. One request for every field on a document instead
+   * of N (name/description/unit per item, plus terms/notes) — same "batch
+   * it into one JSON round-trip" reasoning as `recognizeInvoice`. Null/empty
+   * values are filtered out before the call (nothing to translate) and
+   * re-inserted as-is afterward, so the caller never has to special-case
+   * them. `documentKind`/`usageFeature` let each caller frame the AI prompt
+   * and the usage-log entry accurately for ITS OWN document type, rather
+   * than every caller's usage showing up mislabeled as a quotation.
    */
-  async translateJson(user: RequestUser, fields: Record<string, string | null>, targetLocale: string): Promise<Record<string, string | null>> {
+  async translateJson(
+    user: RequestUser,
+    fields: Record<string, string | null>,
+    targetLocale: string,
+    documentKind = 'комерційної пропозиції (умови оплати/доставки/монтажу, примітки, назви й описи товарних позицій)',
+    usageFeature = 'quotation-translate',
+  ): Promise<Record<string, string | null>> {
     const entries = Object.entries(fields).filter(([, v]) => v != null && v.trim() !== '') as [string, string][];
     if (entries.length === 0) return fields;
 
@@ -354,13 +364,13 @@ export class AiService {
     const prompt =
       `Переклади значення цього JSON-об'єкта на мову з кодом ISO 639-1 "${targetLocale}". ` +
       'Ключі залишай ТОЧНО такими самими, зміни лише значення. ' +
-      'Це текст комерційної пропозиції (умови оплати/доставки/монтажу, примітки, назви й описи товарних позицій) — перекладай по-діловому, природно, без дослівщини. ' +
+      `Це текст ${documentKind} — перекладай по-діловому, природно, без дослівщини. ` +
       'Якщо значення — власна назва, артикул чи не потребує перекладу, залиш його без змін. ' +
       'Поверни СУВОРО валідний JSON-об\'єкт з тими самими ключами, без жодного тексту до чи після нього, без markdown-огортання.\n\n' +
       JSON.stringify(input);
 
     const result = await this.generateContentOrThrow(provider, [{ role: 'user', parts: [{ text: prompt }] }], apiKey);
-    await this.actionsService.logUsage(user, 'quotation-translate', result.usage);
+    await this.actionsService.logUsage(user, usageFeature, result.usage);
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text ?? '';
     const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();

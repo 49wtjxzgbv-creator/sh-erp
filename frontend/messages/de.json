@@ -1316,6 +1316,8 @@
     "totalEvents": "{count} total events"
   },
   "print": {
+    "documentLanguage": "Dokumentsprache",
+    "translatingDocument": "Dokument wird übersetzt…",
     "printPickList": "Print pick list",
     "pickListTitle": "Warehouse issue sheet",
     "units": "units",

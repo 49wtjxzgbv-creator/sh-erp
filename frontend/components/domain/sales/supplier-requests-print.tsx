@@ -1,19 +1,24 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+import { useTranslations, NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
-import { ExternalLink, FileText } from 'lucide-react';
+import { ExternalLink, FileText, Languages } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { generateSupplierRequestDocumentsPdf } from '@/lib/api-client/sales';
+import { useTranslateJson } from '@/lib/hooks/use-ai';
+import { loadLocaleMessages } from '@/lib/load-locale-messages';
+import { locales, type Locale } from '@/lib/i18n-locales';
+import { LOCALE_LABELS } from '@/components/domain/shell/language-switcher';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption } from '@/components/domain/print/print-options';
 import { AssemblyCompositionSection } from '@/components/domain/bom/assembly-spec-print';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export interface SupplierRequestLineForPrint {
   kind?: 'PRODUCT' | 'ASSEMBLY';
@@ -98,6 +103,26 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   const tp = useTranslations('print');
   const printable = groups.filter((g) => g.lines.some((l) => l.qty > 0));
 
+  // "додай можливість... змінювати мову цієї заявки типу як ми зробили з
+  // комерційками" (2026-10-29) — two levels, same as the Quotations
+  // language switcher: (1) the static document labels (column headers,
+  // "Заявка постачальнику: ..."), switched by rendering the printed
+  // content under its own nested NextIntlClientProvider (next-intl's own
+  // documented pattern for overriding locale on part of a tree — see
+  // SupplierRequestsPrintContent below, the child that actually calls
+  // useTranslations and so is the one that needs to sit INSIDE that nested
+  // provider); (2) the real catalog text (product/assembly descriptions),
+  // AI-translated via the same generic engine the Quotations switcher uses
+  // (AiService#translateJson, now exposed as POST /ai/translate-json — see
+  // that endpoint's own comment for why it was generalized out of
+  // Quotations). `printLocale: null` means "ambient" — the staff member's
+  // own UI locale, no override, no translation call, matching this
+  // component's behavior before this feature existed byte-for-byte.
+  const [printLocale, setPrintLocale] = useState<Locale | null>(null);
+  const [printMessages, setPrintMessages] = useState<AbstractIntlMessages | null>(null);
+  const [translatedDescriptions, setTranslatedDescriptions] = useState<Record<string, string>>({});
+  const translateJson = useTranslateJson();
+
   const productIds = useMemo(
     () => Array.from(new Set(printable.flatMap((g) => g.lines).filter((l) => l.kind === 'PRODUCT' && l.productId).map((l) => l.productId as string))),
     [printable],
@@ -160,6 +185,48 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     return line.description;
   }
 
+  /**
+   * Keyed `${groupIndex}-${lineIndex}` over the SAME `printable`/`.filter(l
+   * => l.qty > 0)` shape the actual render below iterates — must stay in
+   * lockstep with that render's own `gi`/`li`, or a translated description
+   * would land on the wrong row.
+   */
+  const descriptionEntries = useMemo(() => {
+    const entries: [string, string][] = [];
+    printable.forEach((group, gi) => {
+      group.lines
+        .filter((l) => l.qty > 0)
+        .forEach((line, li) => entries.push([`${gi}-${li}`, descriptionWithoutArticle(line)]));
+    });
+    return entries;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- descriptionWithoutArticle is a pure function of its own argument, not a real dep.
+  }, [printable]);
+
+  async function handleSelectLocale(locale: Locale) {
+    if (locale === 'uk') {
+      // "uk" is this app's own content language (catalog data is always
+      // entered in Ukrainian) — resetting to ambient is a true no-op, same
+      // rendering as before this feature existed, no AI call needed.
+      setPrintLocale(null);
+      setPrintMessages(null);
+      setTranslatedDescriptions({});
+      return;
+    }
+    setPrintLocale(locale);
+    const [messages, translated] = await Promise.all([
+      loadLocaleMessages(locale),
+      descriptionEntries.length > 0
+        ? translateJson.mutateAsync({
+            fields: Object.fromEntries(descriptionEntries),
+            targetLocale: locale,
+            documentKind: 'заявки постачальнику (назви й описи товарних позицій)',
+          })
+        : Promise.resolve({}),
+    ]);
+    setPrintMessages(messages);
+    setTranslatedDescriptions(translated as Record<string, string>);
+  }
+
   /** "вказуй до якого саме замовлення чи замовлень відноситься ця заявка" (2026-10-28) — present only on the bulk multi-order page's lines; the single-order page's lines never carry `orderNumber`, so this column option doesn't even exist there and the printed layout stays byte-identical. */
   const hasOrderData = printable.some((g) => g.lines.some((l) => l.orderNumber));
 
@@ -209,6 +276,21 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     },
   });
 
+  const printContent = (
+    <PrintArea printAreaId={printOptions.printAreaId}>
+      <SupplierRequestsPrintContent
+        printable={printable}
+        printOptions={printOptions}
+        hasOrderColumn={hasOrderColumn}
+        lineDownloadUrl={lineDownloadUrl}
+        lineManufacturerCode={lineManufacturerCode}
+        descriptionWithoutArticle={descriptionWithoutArticle}
+        groupTotal={groupTotal}
+        translatedDescriptions={translatedDescriptions}
+      />
+    </PrintArea>
+  );
+
   return (
     <>
       <div className="flex gap-2">
@@ -220,6 +302,21 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
           onConfirm={printOptions.confirm}
           triggerLabel={tp('printPurchaseRequest')}
         />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" loading={translateJson.isPending} title={tp('documentLanguage')}>
+              <Languages className="mr-2 h-4 w-4" />
+              {translateJson.isPending ? tp('translatingDocument') : LOCALE_LABELS[printLocale ?? 'uk']}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {locales.filter((l) => l !== (printLocale ?? 'uk')).map((l) => (
+              <DropdownMenuItem key={l} onClick={() => handleSelectLocale(l)}>
+                {LOCALE_LABELS[l]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {onPreview ? (
           <Button type="button" variant="outline" size="sm" onClick={onPreview}>
             <ExternalLink className="mr-2 h-4 w-4" />
@@ -241,96 +338,144 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
           </Button>
         )}
       </div>
-      <PrintArea printAreaId={printOptions.printAreaId}>
-        <PrintDocumentHeader title={tp('supplierRequestsTitle')} />
-        {printable.map((group, gi) => (
-          <div key={group.supplierId ?? `none-${gi}`} className={gi < printable.length - 1 ? 'print-page-break' : ''}>
-            <h2 className="mb-2 font-semibold">{tp('requestTo')}: {group.supplierName}</h2>
-            {hasOrderColumn && (
-              <p className="mb-2 text-sm">
-                {t('orderNumber')}: {Array.from(new Set(group.lines.map((l) => l.orderNumber).filter(Boolean))).join(', ')}
-              </p>
-            )}
-            <table className="mb-6">
-              <thead>
-                <tr>
-                  <th className="print-index-col">#</th>
-                  {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
-                  <th>{t('article')}</th>
-                  {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
-                  {printOptions.isColumnVisible('manufacturerCode') && <th>{t('manufacturerCode')}</th>}
-                  {hasOrderColumn && <th>{t('orderNumber')}</th>}
-                  {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
-                  {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
-                  {printOptions.isColumnVisible('price') && <th>{t('expectedPrice')}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {group.lines
-                  .filter((l) => l.qty > 0)
-                  .map((line, li) => (
-                    <tr key={li}>
-                      <td className="print-index-col">{li + 1}</td>
-                      {printOptions.includePhotos && (
-                        <td>
-                          <Avatar src={lineDownloadUrl(line)} size="lg" />
-                        </td>
-                      )}
-                      <td className="font-bold">{line.article ?? ''}</td>
-                      {printOptions.isColumnVisible('description') && <td>{descriptionWithoutArticle(line)}</td>}
-                      {printOptions.isColumnVisible('manufacturerCode') && <td>{lineManufacturerCode(line) ?? ''}</td>}
-                      {hasOrderColumn && <td>{line.orderNumber ?? ''}</td>}
-                      {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
-                      {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
-                      {printOptions.isColumnVisible('price') && (
-                        <td>{line.price != null ? formatEur(line.price * line.qty) : '—'}</td>
-                      )}
-                    </tr>
-                  ))}
-              </tbody>
-              {printOptions.isColumnVisible('price') && (
-                <tfoot>
-                  <tr>
-                    <td
-                      colSpan={
-                        1 + // #
-                        1 + // article — always shown, see the header <th> above
-                        (printOptions.includePhotos ? 1 : 0) +
-                        (printOptions.isColumnVisible('description') ? 1 : 0) +
-                        (printOptions.isColumnVisible('manufacturerCode') ? 1 : 0) +
-                        (hasOrderColumn ? 1 : 0) +
-                        (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
-                        (printOptions.isColumnVisible('unitPrice') ? 1 : 0)
-                      }
-                      style={{ textAlign: 'right', fontWeight: 600 }}
-                    >
-                      {tp('supplierRequestTotal')}
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{formatEur(groupTotal(group))}</td>
+      {printLocale && printMessages ? (
+        <NextIntlClientProvider locale={printLocale} messages={printMessages}>
+          {printContent}
+        </NextIntlClientProvider>
+      ) : (
+        printContent
+      )}
+    </>
+  );
+}
+
+interface SupplierRequestsPrintContentProps {
+  printable: SupplierRequestGroupForPrint[];
+  printOptions: ReturnType<typeof usePrintOptions>;
+  hasOrderColumn: boolean;
+  lineDownloadUrl: (line: SupplierRequestLineForPrint) => string | undefined;
+  lineManufacturerCode: (line: SupplierRequestLineForPrint) => string | null;
+  descriptionWithoutArticle: (line: SupplierRequestLineForPrint) => string;
+  groupTotal: (group: SupplierRequestGroupForPrint) => number;
+  /** AI-translated descriptions keyed `${groupIndex}-${lineIndex}` (see handleSelectLocale above) — falls back to the real (Ukrainian) description when a key is missing, same as before this feature existed. */
+  translatedDescriptions: Record<string, string>;
+}
+
+/**
+ * The actual printed table — split out from `SupplierRequestsPrint` into
+ * its own component SPECIFICALLY so its `useTranslations` calls below
+ * resolve against whichever `NextIntlClientProvider` is nearest ABOVE this
+ * component in the tree. A locale override only reaches descendants that
+ * call `useTranslations` themselves — the parent's own already-bound `t`/
+ * `tp` (called once, in the OUTER provider, before any nested provider
+ * exists) would stay in the ambient language no matter what gets rendered
+ * below them, which is exactly the bug this split avoids.
+ */
+function SupplierRequestsPrintContent({
+  printable,
+  printOptions,
+  hasOrderColumn,
+  lineDownloadUrl,
+  lineManufacturerCode,
+  descriptionWithoutArticle,
+  groupTotal,
+  translatedDescriptions,
+}: SupplierRequestsPrintContentProps) {
+  const t = useTranslations('sales');
+  const tp = useTranslations('print');
+
+  return (
+    <>
+      <PrintDocumentHeader title={tp('supplierRequestsTitle')} />
+      {printable.map((group, gi) => (
+        <div key={group.supplierId ?? `none-${gi}`} className={gi < printable.length - 1 ? 'print-page-break' : ''}>
+          <h2 className="mb-2 font-semibold">{tp('requestTo')}: {group.supplierName}</h2>
+          {hasOrderColumn && (
+            <p className="mb-2 text-sm">
+              {t('orderNumber')}: {Array.from(new Set(group.lines.map((l) => l.orderNumber).filter(Boolean))).join(', ')}
+            </p>
+          )}
+          <table className="mb-6">
+            <thead>
+              <tr>
+                <th className="print-index-col">#</th>
+                {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
+                <th>{t('article')}</th>
+                {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
+                {printOptions.isColumnVisible('manufacturerCode') && <th>{t('manufacturerCode')}</th>}
+                {hasOrderColumn && <th>{t('orderNumber')}</th>}
+                {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
+                {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
+                {printOptions.isColumnVisible('price') && <th>{t('expectedPrice')}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {group.lines
+                .filter((l) => l.qty > 0)
+                .map((line, li) => (
+                  <tr key={li}>
+                    <td className="print-index-col">{li + 1}</td>
+                    {printOptions.includePhotos && (
+                      <td>
+                        <Avatar src={lineDownloadUrl(line)} size="lg" />
+                      </td>
+                    )}
+                    <td className="font-bold">{line.article ?? ''}</td>
+                    {printOptions.isColumnVisible('description') && (
+                      <td>{translatedDescriptions[`${gi}-${li}`] ?? descriptionWithoutArticle(line)}</td>
+                    )}
+                    {printOptions.isColumnVisible('manufacturerCode') && <td>{lineManufacturerCode(line) ?? ''}</td>}
+                    {hasOrderColumn && <td>{line.orderNumber ?? ''}</td>}
+                    {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
+                    {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
+                    {printOptions.isColumnVisible('price') && (
+                      <td>{line.price != null ? formatEur(line.price * line.qty) : '—'}</td>
+                    )}
                   </tr>
-                </tfoot>
-              )}
-            </table>
-            {printOptions.isColumnVisible('composition') && (
-              <>
-                {group.lines
-                  .filter((l): l is SupplierRequestLineForPrint & { subAssemblyId: string } => l.kind === 'ASSEMBLY' && l.qty > 0 && Boolean(l.subAssemblyId))
-                  .map((line, li) => (
-                    <div key={li} className="mt-4">
-                      <h3 className="mb-1 text-sm font-semibold">{line.description} — {t('fullComposition')}</h3>
-                      <AssemblyCompositionSection
-                        assemblyId={line.subAssemblyId}
-                        qty={line.qty}
-                        depth={1}
-                        showPrice={printOptions.isColumnVisible('unitPrice')}
-                      />
-                    </div>
-                  ))}
-              </>
+                ))}
+            </tbody>
+            {printOptions.isColumnVisible('price') && (
+              <tfoot>
+                <tr>
+                  <td
+                    colSpan={
+                      1 + // #
+                      1 + // article — always shown, see the header <th> above
+                      (printOptions.includePhotos ? 1 : 0) +
+                      (printOptions.isColumnVisible('description') ? 1 : 0) +
+                      (printOptions.isColumnVisible('manufacturerCode') ? 1 : 0) +
+                      (hasOrderColumn ? 1 : 0) +
+                      (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
+                      (printOptions.isColumnVisible('unitPrice') ? 1 : 0)
+                    }
+                    style={{ textAlign: 'right', fontWeight: 600 }}
+                  >
+                    {tp('supplierRequestTotal')}
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{formatEur(groupTotal(group))}</td>
+                </tr>
+              </tfoot>
             )}
-          </div>
-        ))}
-      </PrintArea>
+          </table>
+          {printOptions.isColumnVisible('composition') && (
+            <>
+              {group.lines
+                .filter((l): l is SupplierRequestLineForPrint & { subAssemblyId: string } => l.kind === 'ASSEMBLY' && l.qty > 0 && Boolean(l.subAssemblyId))
+                .map((line, li) => (
+                  <div key={li} className="mt-4">
+                    <h3 className="mb-1 text-sm font-semibold">{line.description} — {t('fullComposition')}</h3>
+                    <AssemblyCompositionSection
+                      assemblyId={line.subAssemblyId}
+                      qty={line.qty}
+                      depth={1}
+                      showPrice={printOptions.isColumnVisible('unitPrice')}
+                    />
+                  </div>
+                ))}
+            </>
+          )}
+        </div>
+      ))}
     </>
   );
 }

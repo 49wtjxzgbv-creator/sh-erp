@@ -1453,6 +1453,8 @@
     "totalEvents": "Всього подій: {count}"
   },
   "print": {
+    "documentLanguage": "Мова документа",
+    "translatingDocument": "Перекладаємо документ…",
     "printPickList": "Друк аркуша видачі",
     "pickListTitle": "Аркуш видачі зі складу",
     "units": "од.",
