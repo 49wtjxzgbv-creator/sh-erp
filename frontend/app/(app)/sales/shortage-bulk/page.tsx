@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
+import { openInPopup } from '@/components/domain/print/print-area';
 
 const ALL_SUPPLIERS = 'all';
 const NO_SUPPLIER = '__none__';
@@ -333,7 +334,7 @@ function BulkShortagePageInner() {
       .join(',');
     if (qtyPayload) url.searchParams.set('qty', qtyPayload);
     else url.searchParams.delete('qty');
-    window.open(url.toString(), '_blank', 'noopener');
+    openInPopup(url.toString());
   }
 
   if (orderIds.length === 0) {

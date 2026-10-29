@@ -158,6 +158,32 @@ export function PrintButton({ label, className }: { label: string; className?: s
 }
 
 /**
+ * "воно відкриває в новому вікні типу як в додатку і тоді пише те що
+ * скидав [ERR_CONNECTION_CLOSED]" (2026-10-29) — on a machine with SH ERP
+ * installed as a desktop/PWA app, Chrome's Link Capturing intercepts a
+ * plain `window.open(url, '_blank', 'noopener')` to an in-scope URL and
+ * hands it to the installed app's own chromeless window instead of a
+ * normal tab; confirmed live via nginx access logs — the exact moment the
+ * user clicked showed FOUR aborted connections from their IP (`"-" 000 0`,
+ * opened then immediately dropped, no request ever sent) right as that
+ * handoff happened. The manifest's own `capture_links: 'none'` (manifest.ts)
+ * is the correct long-term fix but only takes effect once Chrome re-reads
+ * the manifest for an ALREADY-installed app, which isn't immediate. Passing
+ * explicit popup window features (width/height/position, no `menubar`/
+ * `toolbar`/etc.) makes Chrome open a genuine popup-type window rather than
+ * a tab-like navigation — Link Capturing only intercepts the latter, so
+ * this sidesteps the whole mechanism regardless of when the manifest change
+ * actually lands for a given installed app.
+ */
+export function openInPopup(url: string) {
+  const width = Math.min(1100, window.screen.availWidth - 80);
+  const height = Math.min(900, window.screen.availHeight - 80);
+  const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2));
+  window.open(url, '_blank', `noopener,width=${width},height=${height},left=${left},top=${top}`);
+}
+
+/**
  * Opens THIS same page with `?print=1` in a new tab — see PrintArea's own
  * comment for why this reuses the current route instead of a separate
  * print-preview route. `printAreaId` (optional, same id passed to the
@@ -173,7 +199,7 @@ export function PreviewButton({ className, printAreaId }: { className?: string; 
     url.searchParams.set('print', '1');
     if (printAreaId) url.searchParams.set('printAreaId', printAreaId);
     else url.searchParams.delete('printAreaId');
-    window.open(url.toString(), '_blank', 'noopener');
+    openInPopup(url.toString());
   }
   return (
     <Button type="button" variant="outline" size="sm" className={className} onClick={openPreview}>

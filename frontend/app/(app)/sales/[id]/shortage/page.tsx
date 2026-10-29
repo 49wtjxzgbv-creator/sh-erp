@@ -16,6 +16,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Avatar } from '@/components/ui/avatar';
 import { SupplierRequestsPrint } from '@/components/domain/sales/supplier-requests-print';
+import { openInPopup } from '@/components/domain/print/print-area';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 
@@ -308,7 +309,7 @@ function ShortagePreviewPageInner() {
       .join(',');
     if (qtyPayload) url.searchParams.set('qty', qtyPayload);
     else url.searchParams.delete('qty');
-    window.open(url.toString(), '_blank', 'noopener');
+    openInPopup(url.toString());
   }
 
   if (isLoading || !preview) {

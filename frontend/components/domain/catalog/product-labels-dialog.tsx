@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ExternalLink, X } from 'lucide-react';
 import { useProducts } from '@/lib/hooks/use-catalog';
-import { PrintArea, PrintButton } from '@/components/domain/print/print-area';
+import { PrintArea, PrintButton, openInPopup } from '@/components/domain/print/print-area';
 import { ProductLabelsPrintContent } from './product-labels-print-content';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -87,7 +87,7 @@ export function ProductLabelsDialog({ open, onOpenChange }: ProductLabelsDialogP
     const url = new URL(window.location.origin + '/catalog');
     url.searchParams.set('print', '1');
     url.searchParams.set('labels', payload);
-    window.open(url.toString(), '_blank', 'noopener');
+    openInPopup(url.toString());
   }
 
   return (
