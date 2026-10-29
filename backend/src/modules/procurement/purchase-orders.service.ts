@@ -5,6 +5,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { DeliverySchedulesService } from './delivery-schedules.service';
 import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
@@ -31,9 +32,13 @@ export class PurchaseOrdersService {
     private readonly stockService: StockService,
     private readonly deliverySchedulesService: DeliverySchedulesService,
     private readonly commentsService: PurchaseOrderCommentsService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
+    // Multi-currency module phase 4 (2026-10-29) — defaults to this
+    // company's own base currency, not a hardcoded EUR.
+    const currency = dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId));
     const order = await this.prisma.tenant.purchaseOrder.create({
       data: {
         supplierId: dto.supplierId,
@@ -41,6 +46,7 @@ export class PurchaseOrdersService {
         expectedDeliveryDate: dto.expectedDeliveryDate,
         comment: dto.comment,
         sourceCustomerOrderId: dto.sourceCustomerOrderId,
+        currency,
         status: 'ORDERED',
         createdById: user.userId,
         items: {

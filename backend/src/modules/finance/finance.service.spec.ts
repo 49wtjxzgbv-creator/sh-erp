@@ -27,6 +27,7 @@ describe('FinanceService', () => {
   let service: FinanceService;
   let prisma: any;
   let audit: any;
+  let exchangeRatesService: any;
 
   const order = (overrides: Partial<any> = {}) => ({
     id: 'po1',
@@ -49,7 +50,8 @@ describe('FinanceService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new FinanceService(prisma, audit);
+    exchangeRatesService = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
+    service = new FinanceService(prisma, audit, exchangeRatesService);
   });
 
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.c', roleId: 'r1' };
@@ -327,6 +329,44 @@ describe('FinanceService', () => {
       setup([{ qtyOrdered: 2, expectedPrice: 100, actualPrice: 90 }], [], [], []);
       const s = await service.getSummary(user, 'po1');
       expect(s.goodsCost).toBe(180);
+    });
+
+    it("uses this company's own base currency as primaryCurrency, not a hardcoded EUR (2026-10-29 multi-currency phase 4)", async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po1',
+        currency: 'USD',
+        items: [{ qtyOrdered: 1, expectedPrice: 100, actualPrice: null }],
+      });
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([{ createdAt: new Date(), currency: 'USD', amount: 20 }]);
+      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      exchangeRatesService.getBaseCurrency.mockResolvedValue('USD');
+
+      const s = await service.getSummary(user, 'po1');
+      expect(exchangeRatesService.getBaseCurrency).toHaveBeenCalledWith(user.companyId);
+      expect(s.primaryCurrency).toBe('USD');
+      expect(s.goodsCost).toBe(100); // USD -> USD, no conversion needed
+      expect(s.additionalExpenses).toBe(20); // the USD expense now lands in the primary bucket, not otherCurrencies
+      expect(s.otherCurrencies).toEqual([]);
+    });
+
+    it('converts goodsCost to EUR via the PO\'s own currency before adding it to actualCost (2026-10-29 multi-currency)', async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po1',
+        currency: 'USD',
+        items: [{ qtyOrdered: 1, expectedPrice: 100, actualPrice: null }],
+      });
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 0.9),
+      );
+
+      const s = await service.getSummary(user, 'po1');
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(100, 'USD', 'EUR', user.companyId, expect.any(Date));
+      expect(s.goodsCost).toBe(90); // 100 USD -> EUR
+      expect(s.actualCost).toBe(90);
     });
 
     it('buckets a different currency separately instead of blending it into the primary EUR sum', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { MonthlyProductionRollupQueryDto, ReorderSuggestionsQueryDto } from './dto/report-queries.dto';
 
 export interface ReorderSuggestion {
@@ -52,7 +53,10 @@ export interface MonthlyProductionRollupLine {
  */
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly exchangeRatesService: ExchangeRatesService,
+  ) {}
 
   /**
    * Reservations mirror exactly what `ProductionOrdersService.start()`
@@ -126,6 +130,17 @@ export class ReportsService {
     const byCategory = new Map<string | null, CategoryValuation>();
     const grandTotal: CategoryValuation = { category: null, productCount: 0, totalValue: 0 };
 
+    // Multi-currency module (2026-10-29, phase 4) — `totalValue` is always
+    // this company's own base currency (CompanySettings.baseCurrency, not
+    // a hardcoded EUR): each product's own sellPriceEur is in ITS OWN
+    // `currency`, which may differ product to product, so every line is
+    // converted "as of today" before being summed into one grand/category
+    // total — there's no single "report currency" to ask the caller for,
+    // unlike a Quotation/CustomerOrder/PurchaseOrder which each carry
+    // their own.
+    const today = new Date();
+    const baseCurrency = await this.exchangeRatesService.getBaseCurrency(user.companyId);
+
     for (const product of products as any[]) {
       const qty = Number(product.qty);
       const category = product.category ?? null;
@@ -135,7 +150,9 @@ export class ReportsService {
       const line = byCategory.get(category)!;
 
       // sellPriceEur only — see CategoryValuation's own comment.
-      const value = qty * Number(product.sellPriceEur ?? 0);
+      const rawUnitPrice = Number(product.sellPriceEur ?? 0);
+      const unitPriceBase = await this.exchangeRatesService.convert(rawUnitPrice, product.currency ?? 'EUR', baseCurrency, user.companyId, today);
+      const value = qty * unitPriceBase;
 
       line.productCount += 1;
       line.totalValue += value;

@@ -35,7 +35,8 @@ describe('PurchaseOrdersService', () => {
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
     const deliverySchedules = {} as any;
     const comments = {} as any;
-    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules, comments);
+    const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
+    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules, comments, exchangeRatesService);
   });
 
   describe('create', () => {

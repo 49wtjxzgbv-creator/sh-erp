@@ -236,6 +236,7 @@
   "settings": {
     "title": "Ustawienia firmy",
     "vatRate": "Stawka VAT (%)",
+    "baseCurrency": "Waluta bazowa",
     "dailyDigestEmail": "E-mail dziennego podsumowania",
     "dailyDigestEnabled": "WysyÅaj dzienne podsumowanie niskich stanÃ³w",
     "saveSuccess": "Ustawienia zapisane",

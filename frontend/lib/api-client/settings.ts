@@ -8,12 +8,17 @@ import type { DecimalString } from './decimal';
  * schema.prisma's CompanySettings/CompanyBranding models.
  */
 
+/** Mirrors prisma.Currency (schema.prisma) — kept as a plain string union here rather than importing the generated enum, same as every other api-client type in this file. */
+export type Currency = 'EUR' | 'UAH' | 'USD' | 'PLN';
+
 export interface CompanySettings {
   companyId: string;
   vatRatePercent: DecimalString;
   dashboardWidgets: string[];
   dailyDigestEmail: string | null;
   dailyDigestEnabled: boolean;
+  /** Multi-currency module phase 4 (2026-10-29) — this company's own base/reporting currency. New Assembly/Product/CustomerOrder/PurchaseOrder/Quotation rows default to this, and Finance/warehouse-valuation totals are reported in it. */
+  baseCurrency: Currency;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +28,7 @@ export interface UpdateCompanySettingsInput {
   dashboardWidgets?: string[];
   dailyDigestEmail?: string;
   dailyDigestEnabled?: boolean;
+  baseCurrency?: Currency;
 }
 
 export function getCompanySettings(): Promise<CompanySettings> {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Currency, Prisma } from '@prisma/client';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -8,6 +8,7 @@ import { AssembliesService } from '../bom/assemblies.service';
 import { CustomerOrdersService } from '../sales/customer-orders.service';
 import { FilesService } from '../files/files.service';
 import { AiService } from '../ai/ai.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { DocumentNumberingService } from './document-numbering.service';
 import { QuotationPricingService } from './quotation-pricing.service';
 import { QuotationPdfService } from './quotation-pdf.service';
@@ -52,6 +53,7 @@ export class QuotationsService {
     private readonly rendererService: QuotationRendererService,
     private readonly filesService: FilesService,
     private readonly aiService: AiService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   async create(user: RequestUser, dto: CreateQuotationDto) {
@@ -71,7 +73,9 @@ export class QuotationsService {
         quotationId: quotation.id,
         versionNumber: 1,
         validUntil: dto.validUntil,
-        currency: dto.currency ?? 'EUR',
+        // Multi-currency module phase 4 (2026-10-29) — defaults to this
+        // company's own base currency, not a hardcoded EUR.
+        currency: dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId)),
         paymentTerms: dto.paymentTerms,
         deliveryTerms: dto.deliveryTerms,
         installationTerms: dto.installationTerms,
@@ -360,32 +364,58 @@ export class QuotationsService {
     let germanPriceInclVat: number | null = null;
     let germanPrice: number | null = null;
 
+    // Multi-currency module (2026-10-29) — every raw value read off
+    // Assembly/Product below is in THAT row's own `currency` (or, for the
+    // german* fields, always EUR — see schema.prisma's own comment on
+    // Assembly.currency/Product.currency for that exception), never
+    // necessarily this version's own `currency`. Converted "as of today"
+    // before it ever reaches pricingService, same "compute live, never
+    // store" convention as AssembliesService#calcAssemblyCostRecursive and
+    // CustomerOrdersService#withPriceTotals this builds on.
+    const today = new Date();
+    const versionCurrency = currency as Currency;
+
     if (dto.kind === 'ASSEMBLY') {
       if (!dto.assemblyId) throw new CodedBadRequestException('QUOTATION_ITEM_ASSEMBLY_ID_REQUIRED', 'assemblyId is required for kind=ASSEMBLY.');
       const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
       if (!assembly) throw new CodedNotFoundException('QUOTATION_ITEM_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
       nameSnapshot = nameSnapshot ?? assembly.name;
-      basePrice = assembly.baseSalePriceEur !== null ? Number(assembly.baseSalePriceEur) : null;
-      laborCost = Number(assembly.laborCostPerUnit);
+      const assemblyCurrency = assembly.currency ?? 'EUR';
+      basePrice =
+        assembly.baseSalePriceEur !== null
+          ? await this.exchangeRatesService.convert(Number(assembly.baseSalePriceEur), assemblyCurrency, versionCurrency, user.companyId, today)
+          : null;
+      laborCost = await this.exchangeRatesService.convert(Number(assembly.laborCostPerUnit), assemblyCurrency, versionCurrency, user.companyId, today);
       // "коли в комерційку додаю виріб то має бути можливість обрати ціна
       // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math
-      // (see PricingSource.GERMAN_PRICE's own schema comment).
-      germanPrice = assembly.germanPriceEur !== null ? Number(assembly.germanPriceEur) : null;
+      // (see PricingSource.GERMAN_PRICE's own schema comment). Always
+      // EUR-denominated regardless of assemblyCurrency (see schema).
+      germanPrice =
+        assembly.germanPriceEur !== null
+          ? await this.exchangeRatesService.convert(Number(assembly.germanPriceEur), 'EUR', versionCurrency, user.companyId, today)
+          : null;
       const costResult = await this.assembliesService.calculateCost(user, dto.assemblyId);
-      cost = costResult.costPerUnit;
+      cost = await this.exchangeRatesService.convert(costResult.costPerUnit, costResult.currency, versionCurrency, user.companyId, today);
     } else if (dto.kind === 'PRODUCT') {
       if (!dto.productId) throw new CodedBadRequestException('QUOTATION_ITEM_PRODUCT_ID_REQUIRED', 'productId is required for kind=PRODUCT.');
       const product = await this.prisma.tenant.product.findUnique({ where: { id: dto.productId } });
       if (!product) throw new CodedNotFoundException('QUOTATION_ITEM_PRODUCT_NOT_FOUND', 'Product not found.');
       nameSnapshot = nameSnapshot ?? product.name;
-      cost = product.sellPriceEur !== null ? Number(product.sellPriceEur) : null;
+      cost =
+        product.sellPriceEur !== null
+          ? await this.exchangeRatesService.convert(Number(product.sellPriceEur), product.currency ?? 'EUR', versionCurrency, user.companyId, today)
+          : null;
       // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
       // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
       // field actually LABELED "з ПДВ"; Assembly.germanPriceEur's own label
       // never says VAT at all, so GERMAN_PRICE_INCL_VAT reads from here,
       // PRODUCT lines only (see PricingSource.GERMAN_PRICE_INCL_VAT's own
-      // schema comment for the full history).
-      germanPriceInclVat = product.germanPriceInclVat !== null ? Number(product.germanPriceInclVat) : null;
+      // schema comment for the full history). Always EUR-denominated,
+      // same exception as Assembly.germanPriceEur above.
+      germanPriceInclVat =
+        product.germanPriceInclVat !== null
+          ? await this.exchangeRatesService.convert(Number(product.germanPriceInclVat), 'EUR', versionCurrency, user.companyId, today)
+          : null;
     } else if (!nameSnapshot) {
       throw new CodedBadRequestException('QUOTATION_ITEM_NAME_REQUIRED', `nameSnapshot is required for kind=${dto.kind}.`);
     }

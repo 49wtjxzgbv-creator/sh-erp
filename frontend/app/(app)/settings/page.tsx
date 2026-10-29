@@ -21,6 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import type { Currency } from '@/lib/api-client/settings';
 import { FileUploadField } from '@/components/domain/files/file-upload-field';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 
@@ -273,6 +275,7 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
   const updateSettings = useUpdateCompanySettings();
 
   const [vatRatePercent, setVatRatePercent] = useState('');
+  const [baseCurrency, setBaseCurrency] = useState<Currency>('EUR');
   const [dashboardWidgets, setDashboardWidgets] = useState('');
   const [dailyDigestEmail, setDailyDigestEmail] = useState('');
   const [dailyDigestEnabled, setDailyDigestEnabled] = useState(false);
@@ -282,6 +285,7 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
   useEffect(() => {
     if (!settings) return;
     setVatRatePercent(String(toNumber(settings.vatRatePercent) ?? ''));
+    setBaseCurrency(settings.baseCurrency);
     setDashboardWidgets(settings.dashboardWidgets.join(', '));
     setDailyDigestEmail(settings.dailyDigestEmail ?? '');
     setDailyDigestEnabled(settings.dailyDigestEnabled);
@@ -294,6 +298,7 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
     try {
       await updateSettings.mutateAsync({
         vatRatePercent: vatRatePercent === '' ? undefined : Number(vatRatePercent),
+        baseCurrency,
         dashboardWidgets: dashboardWidgets
           .split(',')
           .map((s) => s.trim())
@@ -330,6 +335,20 @@ function GeneralSettingsCard({ t, tc }: { t: ReturnType<typeof useTranslations>;
               onChange={(e) => setVatRatePercent(e.target.value)}
               className="max-w-[160px]"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="baseCurrency">{t('baseCurrency')}</Label>
+            <Select value={baseCurrency} onValueChange={(v) => setBaseCurrency(v as Currency)}>
+              <SelectTrigger id="baseCurrency" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="dailyDigestEmail">{t('dailyDigestEmail')}</Label>

@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { ComponentType, Prisma } from '@prisma/client';
+import { ComponentType, Currency, Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../inventory/stock.service';
 import { SubAssemblyReservationService, SubAssemblyReservationBreakdownLine } from '../inventory/sub-assembly-reservation.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { AssemblyComponentLineDto, SetAssemblyComponentsDto } from './dto/assembly-component.dto';
 import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
@@ -24,6 +25,8 @@ export interface CostBreakdownLine {
 export interface AssemblyCostResult {
   assemblyId: string;
   costPerUnit: number;
+  /** The currency `costPerUnit` (and every `breakdown[].lineCost`) is actually expressed in — this assembly's own `currency`. A caller combining this with another assembly's cost (e.g. a parent summing a sub-assembly's result) MUST convert first if the two differ; nothing upstream of this method does that conversion for you. */
+  currency: Currency;
   breakdown: CostBreakdownLine[];
 }
 
@@ -231,6 +234,7 @@ export class AssembliesService {
     private readonly auditService: AuditService,
     private readonly stockService: StockService,
     private readonly subAssemblyReservationService: SubAssemblyReservationService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   // ============================================================
@@ -238,7 +242,11 @@ export class AssembliesService {
   // ============================================================
 
   async create(user: RequestUser, dto: CreateAssemblyDto) {
-    const assembly = await this.prisma.tenant.assembly.create({ data: dto as any });
+    // Multi-currency module phase 4 (2026-10-29) — defaults to this
+    // company's own base currency, not a hardcoded EUR, when the caller
+    // doesn't specify one explicitly.
+    const currency = dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId));
+    const assembly = await this.prisma.tenant.assembly.create({ data: { ...dto, currency } as any });
     await this.auditService.record({
       companyId: user.companyId,
       actorUserId: user.userId,
@@ -611,7 +619,7 @@ export class AssembliesService {
     // mockResolvedValueOnce sequencing, since the redundant call shifts
     // every subsequent recursive fetch's mocked response by one — a real,
     // if usually harmless against an actual database, wasted round trip).
-    return this.calcAssemblyCostRecursive(assemblyId, new Set());
+    return this.calcAssemblyCostRecursive(user, assemblyId, new Set());
   }
 
   /**
@@ -622,6 +630,7 @@ export class AssembliesService {
    * cycle; only a genuine ancestor-reappearing-as-its-own-descendant is.
    */
   private async calcAssemblyCostRecursive(
+    user: RequestUser,
     assemblyId: string,
     visited: Set<string>,
   ): Promise<AssemblyCostResult> {
@@ -662,6 +671,13 @@ export class AssembliesService {
 
     let costPerUnit = ownCost;
     const breakdown: CostBreakdownLine[] = [];
+    // Multi-currency module (2026-10-29) — a component's own price/cost is
+    // computed in ITS OWN currency (Product.currency / the sub-assembly's
+    // own Assembly.currency), which may differ from this assembly's. Always
+    // converted "as of today" before folding into `costPerUnit`, matching
+    // this whole method's own "compute live, never store" convention —
+    // there's no persisted cost to freeze a historical rate against.
+    const today = new Date();
 
     for (const line of assembly.components) {
       const qtyPerUnit = Number(line.qtyPerUnit);
@@ -669,7 +685,8 @@ export class AssembliesService {
       if (line.componentType === 'PRODUCT' && line.productId) {
         const product = await this.prisma.tenant.product.findUnique({ where: { id: line.productId } });
         if (!product) throw new CodedNotFoundException('BOM_COMPONENT_PRODUCT_NOT_FOUND', `Component product ${line.productId} not found.`);
-        const unitCost = Number(product.sellPriceEur ?? 0);
+        const rawUnitCost = Number(product.sellPriceEur ?? 0);
+        const unitCost = await this.exchangeRatesService.convert(rawUnitCost, product.currency ?? 'EUR', assembly.currency ?? 'EUR', user.companyId, today);
         costPerUnit += unitCost * qtyPerUnit;
         breakdown.push({
           componentType: 'PRODUCT',
@@ -679,20 +696,21 @@ export class AssembliesService {
           lineCost: unitCost * qtyPerUnit,
         });
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
-        const sub = await this.calcAssemblyCostRecursive(line.subAssemblyId, visited);
-        costPerUnit += sub.costPerUnit * qtyPerUnit;
+        const sub = await this.calcAssemblyCostRecursive(user, line.subAssemblyId, visited);
+        const unitCost = await this.exchangeRatesService.convert(sub.costPerUnit, sub.currency, assembly.currency ?? 'EUR', user.companyId, today);
+        costPerUnit += unitCost * qtyPerUnit;
         breakdown.push({
           componentType: 'ASSEMBLY',
           subAssemblyId: line.subAssemblyId,
           qtyPerUnit,
-          unitCost: sub.costPerUnit,
-          lineCost: sub.costPerUnit * qtyPerUnit,
+          unitCost,
+          lineCost: unitCost * qtyPerUnit,
         });
       }
     }
 
     visited.delete(assemblyId);
-    return { assemblyId, costPerUnit, breakdown };
+    return { assemblyId, costPerUnit, currency: assembly.currency ?? 'EUR', breakdown };
   }
 
   // ============================================================

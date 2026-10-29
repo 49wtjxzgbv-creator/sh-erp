@@ -826,6 +826,12 @@ model Product {
   germanPriceInclVat Decimal? @db.Decimal(14, 2)
   sellPriceEur       Decimal? @db.Decimal(14, 2)
 
+  // Multi-currency module (2026-10-29) — covers `localPrice*`/
+  // `sellPriceEur` only, same "german* is always a EUR benchmark"
+  // exception Assembly.currency documents just above its own
+  // `germanPriceEur` field.
+  currency Currency @default(EUR)
+
   weightPerUnitKg  Decimal? @db.Decimal(10, 3)
   warrantyMonths   String?
   status           String?
@@ -1481,6 +1487,16 @@ model Assembly {
   packagingCostPerUnit Decimal @default(0) @db.Decimal(14, 2)
   deliveryCostPerUnit  Decimal @default(0) @db.Decimal(14, 2)
   otherCostPerUnit     Decimal @default(0) @db.Decimal(14, 2)
+
+  // Multi-currency module (2026-10-29) — ONE currency for all four cost
+  // fields above AND `baseSalePriceEur` below (a human enters an
+  // assembly's own cost/price in a single currency at a time, the same
+  // "one currency per row" convention the Finance module already uses).
+  // Deliberately does NOT cover `germanPriceEur` just below — that field
+  // is, by its own definition, always a EUR-denominated German-market
+  // benchmark regardless of what currency this assembly's OWN costs are
+  // tracked in.
+  currency Currency @default(EUR)
 
   // Quotations module (2026-08-27): the customer-facing SALE price —
   // deliberately separate from the four *CostPerUnit fields above (which
@@ -2189,6 +2205,12 @@ model CustomerOrder {
   // whatever reads them both side by side, never computed/stored here).
   salePrice Decimal? @db.Decimal(14, 2)
 
+  // Multi-currency module (2026-10-29) — one currency for deliveryCost/
+  // transportRiggingCost/otherCost/salePrice above. Does NOT cover
+  // estimatedTotal/actualTotal (not real columns — computed live in
+  // withPriceTotals, see that method's own currency-conversion comment).
+  currency Currency @default(EUR)
+
   legacyId String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -2463,6 +2485,12 @@ model PurchaseOrder {
   comment                       String?
   sourceCustomerOrderId         String?   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   createdById                   String    @db.Uuid
+
+  // Multi-currency module (2026-10-29) — lives on the PO HEADER, not each
+  // PurchaseOrderItem: a supplier invoices a whole order in one currency,
+  // not a different one per line. Covers every `PurchaseOrderItem.
+  // expectedPrice/actualPrice/supplierConfirmedPrice` under this order.
+  currency Currency @default(EUR)
 
   legacyId String?
 
@@ -2769,6 +2797,7 @@ enum Currency {
   EUR
   UAH
   USD
+  PLN
 }
 
 model NbuExchangeRate {
@@ -3292,6 +3321,14 @@ model CompanySettings {
   dashboardWidgets   Json    @default("[]")
   dailyDigestEmail   String?
   dailyDigestEnabled Boolean @default(false)
+
+  // Multi-currency module (2026-10-29) — this company's own base/reporting
+  // currency. New Assembly/Product/CustomerOrder/PurchaseOrder/Quotation
+  // rows default to THIS instead of a hardcoded EUR when no currency is
+  // given explicitly, and FinanceService/ReportsService convert their
+  // aggregate totals into this instead of always EUR — see
+  // ExchangeRatesService#getBaseCurrency, the one place that reads this.
+  baseCurrency Currency @default(EUR)
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

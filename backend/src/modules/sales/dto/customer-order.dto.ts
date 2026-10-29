@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDate,
+  IsEnum,
   IsIn,
   IsInt,
   IsNumber,
@@ -14,6 +15,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { Currency } from '@prisma/client';
 
 /** Same fields on both Create and the header-only Update DTO below — factored out once instead of duplicated. */
 class ExtraCostsDto {
@@ -49,6 +51,11 @@ class ExtraCostsDto {
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  @ApiPropertyOptional({ enum: Currency, default: 'EUR', description: 'Multi-currency module (2026-10-29) — one currency for deliveryCost/transportRiggingCost/otherCost/salePrice above.' })
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 }
 
 export class SubAssemblyToProduceDto {

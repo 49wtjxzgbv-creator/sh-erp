@@ -237,6 +237,7 @@
   "settings": {
     "title": "Налаштування компанії",
     "vatRate": "Ставка ПДВ (%)",
+    "baseCurrency": "Базова валюта",
     "dailyDigestEmail": "Email для щоденного дайджесту",
     "dailyDigestEnabled": "Надсилати щоденний дайджест про низькі залишки",
     "saveSuccess": "Налаштування збережено",

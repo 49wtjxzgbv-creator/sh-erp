@@ -236,6 +236,7 @@
   "settings": {
     "title": "Company settings",
     "vatRate": "VAT rate (%)",
+    "baseCurrency": "Base currency",
     "dailyDigestEmail": "Daily digest email",
     "dailyDigestEnabled": "Send daily low-stock digest",
     "saveSuccess": "Settings saved",

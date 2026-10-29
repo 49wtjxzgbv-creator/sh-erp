@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -9,6 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Currency } from '@prisma/client';
 
 // Preserves every column from the old Products sheet (Phase 1 data
 // dictionary) verbatim — see schema.prisma's Product model for the field
@@ -126,6 +128,16 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   sellPriceEur?: number;
+
+  @ApiPropertyOptional({
+    enum: Currency,
+    default: 'EUR',
+    description:
+      'Multi-currency module (2026-10-29) — covers localPrice*/sellPriceEur only. Does NOT cover germanPrice*, which is always a EUR-denominated German-market benchmark regardless of this.',
+  })
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 
   @ApiPropertyOptional()
   @IsOptional()

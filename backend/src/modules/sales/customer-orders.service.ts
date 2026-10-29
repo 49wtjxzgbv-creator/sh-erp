@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
-import { Prisma } from '@prisma/client';
+import { Currency, Prisma } from '@prisma/client';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService, ProductionTreeNode } from '../bom/assemblies.service';
@@ -10,6 +10,7 @@ import { SubAssemblyReservationService } from '../inventory/sub-assembly-reserva
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { PayrollArticleLine } from '../hr/payroll.service';
 import { FinanceService } from '../finance/finance.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { CustomerOrderShortageService } from './customer-order-shortage.service';
 import {
   AddCustomerOrderItemDto,
@@ -97,6 +98,7 @@ export class CustomerOrdersService {
     private readonly subAssemblyReservationService: SubAssemblyReservationService,
     private readonly shortageService: CustomerOrderShortageService,
     private readonly financeService: FinanceService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   /**
@@ -124,6 +126,9 @@ export class CustomerOrdersService {
         transportRiggingCost: dto.transportRiggingCost,
         otherCost: dto.otherCost,
         salePrice: dto.salePrice,
+        // Multi-currency module phase 4 (2026-10-29) — defaults to this
+        // company's own base currency, not a hardcoded EUR.
+        currency: dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId)),
         comment: dto.comment,
         status: 'NEW',
         createdById: user.userId,
@@ -361,6 +366,7 @@ export class CustomerOrdersService {
     user: RequestUser,
     orders: Array<{
       id: string;
+      currency?: Currency | null;
       items: { id: string; assemblyId: string; qty: Prisma.Decimal }[];
       deliveryCost?: Prisma.Decimal | null;
       transportRiggingCost?: Prisma.Decimal | null;
@@ -368,14 +374,20 @@ export class CustomerOrdersService {
     }>,
   ) {
     const allItems = orders.flatMap((o) => o.items);
+    // Multi-currency module (2026-10-29) — computed live, converted "as of
+    // today" into each order's OWN currency (`order.currency`), same
+    // "compute, don't store" reasoning as AssembliesService's own
+    // calcAssemblyCostRecursive this builds on — there's no persisted total
+    // to freeze a historical rate against.
+    const today = new Date();
 
     const uniqueAssemblyIds = Array.from(new Set(allItems.map((i) => i.assemblyId)));
-    const costByAssembly = new Map<string, number>();
+    const costByAssembly = new Map<string, { costPerUnit: number; currency: Currency }>();
     await Promise.all(
       uniqueAssemblyIds.map(async (assemblyId) => {
         try {
           const cost = await this.assembliesService.calculateCost(user, assemblyId);
-          costByAssembly.set(assemblyId, cost.costPerUnit);
+          costByAssembly.set(assemblyId, { costPerUnit: cost.costPerUnit, currency: cost.currency });
         } catch {
           // e.g. assembly has no saved BOM version yet — left out of the map, treated as "no estimate" below
         }
@@ -385,7 +397,10 @@ export class CustomerOrdersService {
     // Actual cost is now summed across every batch (ProductionOrder) linked
     // to a line via customerOrderItemId — a line can have several once
     // split into batches (План-графік §1), unlike the old 1:1
-    // productionOrderId this replaces.
+    // productionOrderId this replaces. ProductionOrder has no `currency` of
+    // its own (deliberately — see schema.prisma's own comment on it being
+    // treated as always company-base-currency EUR), so every value read
+    // from it here is EUR, converted below same as everything else.
     const itemIds = allItems.map((i) => i.id);
     const productionOrders = itemIds.length
       ? await this.prisma.tenant.productionOrder.findMany({ where: { customerOrderItemId: { in: itemIds } } })
@@ -397,20 +412,22 @@ export class CustomerOrdersService {
       }
     }
 
-    return orders.map((order) => {
+    return Promise.all(orders.map(async (order) => {
+      const orderCurrency = order.currency ?? 'EUR';
       let estimatedTotal = 0;
       let hasEstimate = false;
       let actualTotal = 0;
       let hasActual = false;
       for (const item of order.items) {
-        const unitCost = costByAssembly.get(item.assemblyId);
-        if (unitCost != null) {
+        const cost = costByAssembly.get(item.assemblyId);
+        if (cost != null) {
+          const unitCost = await this.exchangeRatesService.convert(cost.costPerUnit, cost.currency, orderCurrency, user.companyId, today);
           estimatedTotal += unitCost * Number(item.qty);
           hasEstimate = true;
         }
-        const actual = actualCostByItem.get(item.id);
-        if (actual != null) {
-          actualTotal += actual;
+        const actualEur = actualCostByItem.get(item.id);
+        if (actualEur != null) {
+          actualTotal += await this.exchangeRatesService.convert(actualEur, 'EUR', orderCurrency, user.companyId, today);
           hasActual = true;
         }
       }
@@ -419,7 +436,9 @@ export class CustomerOrdersService {
       // directly by staff, not derived) count toward the order total
       // regardless of production progress — added to both estimated and
       // actual rather than gated behind whether every line resolved a BOM
-      // cost, since these are known the moment they're entered.
+      // cost, since these are known the moment they're entered. Already in
+      // `orderCurrency` (CustomerOrder.currency covers exactly these three
+      // fields) — no conversion needed.
       const extraCosts =
         Number(order.deliveryCost ?? 0) + Number(order.transportRiggingCost ?? 0) + Number(order.otherCost ?? 0);
       const hasExtraCosts = order.deliveryCost != null || order.transportRiggingCost != null || order.otherCost != null;
@@ -432,7 +451,7 @@ export class CustomerOrdersService {
 
       const { items, ...header } = order as any;
       return { ...header, estimatedTotal: hasEstimate ? estimatedTotal : null, actualTotal: hasActual ? actualTotal : null };
-    });
+    }));
   }
 
   /** Header-only — item lines are immutable once created (see the DTO's own comment). */

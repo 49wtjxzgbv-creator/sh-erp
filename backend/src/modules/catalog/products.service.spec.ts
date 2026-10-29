@@ -28,6 +28,7 @@ describe('ProductsService', () => {
           create: jest.fn(),
           update: jest.fn(),
           findUnique: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue(null),
           findMany: jest.fn().mockResolvedValue([]),
           count: jest.fn().mockResolvedValue(0),
         },
@@ -38,7 +39,8 @@ describe('ProductsService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new ProductsService(prisma, audit);
+    const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
+    service = new ProductsService(prisma, audit, exchangeRatesService);
   });
 
   it('create() persists the product and logs an audit event with the created row as `after`', async () => {

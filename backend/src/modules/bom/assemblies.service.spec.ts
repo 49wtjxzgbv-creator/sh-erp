@@ -8,6 +8,7 @@ describe('AssembliesService', () => {
   let audit: any;
   let stock: any;
   let subAssemblyReservationService: any;
+  let exchangeRatesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -41,7 +42,13 @@ describe('AssembliesService', () => {
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn() };
     subAssemblyReservationService = { getBreakdown: jest.fn().mockResolvedValue([]), getClaimedIncludingConsumedForOrder: jest.fn().mockResolvedValue(0) };
-    service = new AssembliesService(prisma, audit, stock, subAssemblyReservationService);
+    // Default: identity conversion (same currency in/out) — exercises the
+    // exact same code path real same-currency fixtures hit, since none of
+    // this spec's mocked assembly/product rows set `currency` explicitly
+    // (both sides resolve to the 'EUR' fallback and never actually call
+    // this mock in practice, but it's wired in case a future test does).
+    exchangeRatesService = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
+    service = new AssembliesService(prisma, audit, stock, subAssemblyReservationService, exchangeRatesService);
   });
 
   describe('setComponents — validation, versioning, cycle detection', () => {
@@ -243,6 +250,59 @@ describe('AssembliesService', () => {
       const result = await service.calculateCost(user, 'parent');
 
       expect(result.costPerUnit).toBe(10); // child costs 5/unit, parent needs 2
+    });
+
+    it('converts a sub-assembly\'s cost into the parent\'s own currency before summing (2026-10-29 multi-currency)', async () => {
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({
+          id: 'parent',
+          currency: 'UAH',
+          laborCostPerUnit: 0,
+          packagingCostPerUnit: 0,
+          deliveryCostPerUnit: 0,
+          otherCostPerUnit: 0,
+          components: [{ componentType: 'ASSEMBLY', subAssemblyId: 'child', qtyPerUnit: 1 }],
+        })
+        .mockResolvedValueOnce({
+          id: 'child',
+          currency: 'EUR',
+          laborCostPerUnit: 10,
+          packagingCostPerUnit: 0,
+          deliveryCostPerUnit: 0,
+          otherCostPerUnit: 0,
+          components: [],
+        });
+      // 1 EUR = 50 UAH, child costs 10 EUR -> should contribute 500 UAH to parent.
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 50),
+      );
+
+      const result = await service.calculateCost(user, 'parent');
+
+      expect(result.currency).toBe('UAH');
+      expect(result.costPerUnit).toBe(500);
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(10, 'EUR', 'UAH', user.companyId, expect.any(Date));
+    });
+
+    it('converts a PRODUCT component\'s sellPriceEur into the assembly\'s own currency before summing (2026-10-29 multi-currency)', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({
+        id: 'a1',
+        currency: 'UAH',
+        laborCostPerUnit: 0,
+        packagingCostPerUnit: 0,
+        deliveryCostPerUnit: 0,
+        otherCostPerUnit: 0,
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 2 }],
+      });
+      prisma.tenant.product.findUnique.mockResolvedValue({ sellPriceEur: 5, currency: 'EUR' });
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 50),
+      );
+
+      const result = await service.calculateCost(user, 'a1');
+
+      // 5 EUR -> 250 UAH per unit, x 2 qty -> 500 UAH
+      expect(result.costPerUnit).toBe(500);
     });
 
     it('throws ConflictException on a circular BOM rather than looping forever', async () => {

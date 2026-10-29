@@ -158,6 +158,7 @@ function makeService() {
   const pricing = new QuotationPricingService();
   const assemblies = { calculateCost: jest.fn() };
   const pdf = { generateAndStore: jest.fn().mockResolvedValue('pdf-file-1') };
+  const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
 
   db.company.set('c1', { id: 'c1', name: 'Acme' });
   // full permission grant by default — tests that need the stripped view override this role's permissions directly
@@ -190,8 +191,8 @@ function makeService() {
     }),
   };
 
-  const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any, ai as any);
-  return { service, db, prisma, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, ai, nextId };
+  const service = new QuotationsService(prisma as any, audit as any, numbering as any, pricing, assemblies as any, pdf as any, customerOrdersService as any, renderer as any, files as any, ai as any, exchangeRatesService as any);
+  return { service, db, prisma, audit, numbering, assemblies, pdf, customerOrdersService, renderer, files, ai, exchangeRatesService, nextId };
 }
 
 describe('QuotationsService', () => {
@@ -289,6 +290,31 @@ describe('QuotationsService', () => {
       expect(Number(item.basePriceSnapshot)).toBe(12000);
       expect(Number(item.unitPrice)).toBe(10000); // 8000 * 1.25 — markup, not margin
       expect(saved.currentVersion.total).toBe(10000);
+    });
+
+    it('converts basePrice/cost/laborCost/germanPrice into the version\'s own currency before pricing (2026-10-29 multi-currency)', async () => {
+      const { service, db, assemblies, exchangeRatesService } = makeService();
+      // Assembly priced in USD; this version is EUR — everything read off
+      // the assembly must be converted USD -> EUR before pricingService
+      // ever sees it, except germanPriceEur which is always EUR already.
+      db.assembly.set('asm-1', { id: 'asm-1', name: 'Cabinet X', currency: 'USD', baseSalePriceEur: 100, laborCostPerUnit: 10, germanPriceEur: 50 });
+      assemblies.calculateCost.mockResolvedValue({ assemblyId: 'asm-1', costPerUnit: 80, currency: 'USD', breakdown: [] });
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 0.9),
+      );
+
+      const q = await service.create(user, { customerId: 'cust-1' } as any);
+      const saved = await service.saveItems(user, q.id, {
+        items: [{ kind: 'ASSEMBLY', assemblyId: 'asm-1', quantity: 1, pricingSource: 'BASE_PRICE' }],
+      } as any);
+
+      const item = saved.currentVersion.items[0];
+      expect(Number(item.basePriceSnapshot)).toBe(90); // 100 USD -> EUR
+      expect(Number(item.costSnapshot)).toBe(72); // 80 USD -> EUR
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(100, 'USD', 'EUR', user.companyId, expect.any(Date));
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(10, 'USD', 'EUR', user.companyId, expect.any(Date));
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(80, 'USD', 'EUR', user.companyId, expect.any(Date));
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(50, 'EUR', 'EUR', user.companyId, expect.any(Date));
     });
 
     it('LABOR_MARKUP_PERCENT prices off Assembly.laborCostPerUnit, not the full assembly cost', async () => {

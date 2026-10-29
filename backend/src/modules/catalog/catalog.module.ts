@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InventoryModule } from '../inventory/inventory.module';
 import { FilesModule } from '../files/files.module';
+import { FinanceModule } from '../finance/finance.module';
 import { CompanyUnitsController } from './company-units.controller';
 import { CompanyUnitsService } from './company-units.service';
 import { ProductsController } from './products.controller';
@@ -16,7 +17,7 @@ import { GermanPriceImportService } from './import-export/german-price-import.se
   // pattern, see their own module files). FilesModule: for FilesService —
   // an Excel row's embedded image (if any) is ingested as the product's
   // PRODUCT_PHOTO the same way legacy-import's photo migration does.
-  imports: [InventoryModule, FilesModule],
+  imports: [InventoryModule, FilesModule, FinanceModule], // FinanceModule: ExchangeRatesService#getBaseCurrency — ProductsService.create() defaults currency to the company's own base currency (2026-10-29 multi-currency)
   controllers: [ProductsController, CompanyUnitsController],
   providers: [ProductsService, CompanyUnitsService, ProductsImportExportService, GermanPriceImportService],
   exports: [ProductsService, CompanyUnitsService],

@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Currency, Prisma } from '@prisma/client';
 import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ExchangeRatesService } from './exchange-rates.service';
 import { CreatePurchaseOrderDocumentDto, QueryFinancePurchaseOrdersDto, UpdatePurchaseOrderDocumentDto } from './dto/finance-document.dto';
 import { CreatePurchaseOrderPaymentDto, UpdatePurchaseOrderPaymentDto } from './dto/finance-payment.dto';
 import { CreatePurchaseOrderExpenseDto, UpdatePurchaseOrderExpenseDto } from './dto/finance-expense.dto';
@@ -125,17 +126,23 @@ function mergeCurrencyContributions(contributions: CurrencyContribution[]): Fina
  * can exist before its confirming document/invoice ever arrives — see
  * PurchaseOrderFinanceSummary's own field comments.
  *
- * No FX conversion anywhere (audit confirmed none exists in this schema at
- * all) — sums are only ever computed within one currency; anything else is
- * surfaced as its own `otherCurrencies` bucket, never blended in.
+ * No FX conversion on documents/expenses/payments — those sums are only
+ * ever computed within one currency; anything other than `primaryCurrency`
+ * is surfaced as its own `otherCurrencies` bucket, never blended in.
+ * `goodsCost` is the one exception (multi-currency module, 2026-10-29):
+ * PurchaseOrderItem prices live in their PO's own `currency`, which may not
+ * be EUR, so goodsCost is converted to `primaryCurrency` via
+ * ExchangeRatesService (manual company override first, else NBU — see that
+ * service's own `getRate` resolution order) before it's ever added to
+ * additionalExpenses for `actualCost` — otherwise a non-EUR PO's goods cost
+ * would silently get treated as if it were already EUR.
  */
 @Injectable()
 export class FinanceService {
-  private readonly primaryCurrency = 'EUR';
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -144,12 +151,13 @@ export class FinanceService {
 
   async getSummary(user: RequestUser, purchaseOrderId: string): Promise<PurchaseOrderFinanceSummary> {
     const order = await this.findOrderWithItemsOrThrow(purchaseOrderId);
-    const [documents, expenses, payments] = await Promise.all([
+    const [documents, expenses, payments, primaryCurrency] = await Promise.all([
       this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId } }),
       this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId } }),
       this.prisma.tenant.purchaseOrderPayment.findMany({ where: { document: { purchaseOrderId } } }),
+      this.exchangeRatesService.getBaseCurrency(user.companyId),
     ]);
-    return this.buildSummary(purchaseOrderId, order.items, documents, expenses, payments);
+    return this.buildSummary(purchaseOrderId, order.items, documents, expenses, payments, order.currency ?? 'EUR', user.companyId, primaryCurrency);
   }
 
   /**
@@ -178,39 +186,45 @@ export class FinanceService {
     });
     const orderIds = orders.map((o) => o.id);
 
-    const [documents, expenses, payments] = await Promise.all([
+    const [documents, expenses, payments, primaryCurrency] = await Promise.all([
       this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: orderIds } } }),
       this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: orderIds } } }),
       this.prisma.tenant.purchaseOrderPayment.findMany({
         where: { document: { purchaseOrderId: { in: orderIds } } },
         include: { document: { select: { purchaseOrderId: true } } },
       }),
+      this.exchangeRatesService.getBaseCurrency(user.companyId),
     ]);
 
     const documentsByOrder = groupBy(documents, (d) => d.purchaseOrderId);
     const expensesByOrder = groupBy(expenses, (e) => e.purchaseOrderId);
     const paymentsByOrder = groupBy(payments, (p) => p.document.purchaseOrderId);
 
-    let rows = orders.map((order) => {
-      const summary = this.buildSummary(
-        order.id,
-        order.items,
-        documentsByOrder.get(order.id) ?? [],
-        expensesByOrder.get(order.id) ?? [],
-        paymentsByOrder.get(order.id) ?? [],
-      );
-      return {
-        purchaseOrder: {
-          id: order.id,
-          supplierNameSnapshot: order.supplierNameSnapshot,
-          supplierId: order.supplierId,
-          status: order.status,
-          orderDate: order.orderDate,
-        },
-        summary,
-        paymentStatus: this.poPaymentStatus(summary),
-      };
-    });
+    let rows = await Promise.all(
+      orders.map(async (order) => {
+        const summary = await this.buildSummary(
+          order.id,
+          order.items,
+          documentsByOrder.get(order.id) ?? [],
+          expensesByOrder.get(order.id) ?? [],
+          paymentsByOrder.get(order.id) ?? [],
+          order.currency ?? 'EUR',
+          user.companyId,
+          primaryCurrency,
+        );
+        return {
+          purchaseOrder: {
+            id: order.id,
+            supplierNameSnapshot: order.supplierNameSnapshot,
+            supplierId: order.supplierId,
+            status: order.status,
+            orderDate: order.orderDate,
+          },
+          summary,
+          paymentStatus: this.poPaymentStatus(summary),
+        };
+      }),
+    );
 
     if (query.paymentStatus) rows = rows.filter((r) => r.paymentStatus === query.paymentStatus);
 
@@ -220,31 +234,42 @@ export class FinanceService {
     return { items: rows.slice(skip, skip + take), total, limit: take, offset: skip };
   }
 
-  private buildSummary(
+  private async buildSummary(
     purchaseOrderId: string,
     items: PoItemForCost[],
     documents: (MoneyRow & TimestampedRow)[],
     expenses: (MoneyRow & TimestampedRow)[],
     payments: (MoneyRow & TimestampedRow)[],
-  ): PurchaseOrderFinanceSummary {
-    const goodsCost = items.reduce((sum, item) => {
+    currency: Currency,
+    companyId: string,
+    primaryCurrency: Currency,
+  ): Promise<PurchaseOrderFinanceSummary> {
+    const rawGoodsCost = items.reduce((sum, item) => {
       const price = item.actualPrice ?? item.expectedPrice;
       return price === null ? sum : sum + Number(price) * Number(item.qtyOrdered);
     }, 0);
+    // Multi-currency module (2026-10-29) — see this class's own header
+    // comment for why goodsCost, alone among these six numbers, DOES go
+    // through ExchangeRatesService: it's the only one of the six whose
+    // source rows (PurchaseOrderItem) don't carry their own `currency`
+    // column, only their parent PO's. `primaryCurrency` is THIS company's
+    // own base currency (CompanySettings.baseCurrency, phase 4), not a
+    // hardcoded EUR.
+    const goodsCost = await this.exchangeRatesService.convert(rawGoodsCost, currency, primaryCurrency, companyId, new Date());
 
     const expensesByCurrency = this.sumByCurrency(expenses);
     const documentsByCurrency = this.sumByCurrency(documents.filter((d) => d.amount !== null));
     const paymentsByCurrency = this.sumByCurrency(payments);
 
-    const currencies = new Set<string>([this.primaryCurrency, ...expensesByCurrency.keys(), ...documentsByCurrency.keys(), ...paymentsByCurrency.keys()]);
+    const currencies = new Set<string>([primaryCurrency, ...expensesByCurrency.keys(), ...documentsByCurrency.keys(), ...paymentsByCurrency.keys()]);
 
     const buckets = new Map<string, FinanceCurrencyBucket>();
-    for (const currency of currencies) {
-      const additionalExpenses = expensesByCurrency.get(currency) ?? 0;
-      const totalDocuments = documentsByCurrency.get(currency) ?? 0;
-      const paid = paymentsByCurrency.get(currency) ?? 0;
-      buckets.set(currency, {
-        currency,
+    for (const bucketCurrency of currencies) {
+      const additionalExpenses = expensesByCurrency.get(bucketCurrency) ?? 0;
+      const totalDocuments = documentsByCurrency.get(bucketCurrency) ?? 0;
+      const paid = paymentsByCurrency.get(bucketCurrency) ?? 0;
+      buckets.set(bucketCurrency, {
+        currency: bucketCurrency,
         additionalExpenses: round2(additionalExpenses),
         totalDocuments: round2(totalDocuments),
         paid: round2(paid),
@@ -252,8 +277,8 @@ export class FinanceService {
       });
     }
 
-    const primary = buckets.get(this.primaryCurrency)!;
-    const otherCurrencies = [...buckets.values()].filter((b) => b.currency !== this.primaryCurrency);
+    const primary = buckets.get(primaryCurrency)!;
+    const otherCurrencies = [...buckets.values()].filter((b) => b.currency !== primaryCurrency);
 
     const lastActivityAt = [...documents, ...expenses, ...payments]
       .map((r) => r.createdAt)
@@ -261,7 +286,7 @@ export class FinanceService {
 
     return {
       purchaseOrderId,
-      primaryCurrency: this.primaryCurrency,
+      primaryCurrency,
       goodsCost: round2(goodsCost),
       additionalExpenses: primary.additionalExpenses,
       actualCost: round2(goodsCost + primary.additionalExpenses),
@@ -631,12 +656,14 @@ export class FinanceService {
   async getCustomerOrderSummary(user: RequestUser, customerOrderId: string): Promise<CustomerOrderFinanceSummary> {
     await this.findCustomerOrderOrThrow(customerOrderId);
 
+    const primaryCurrency = await this.exchangeRatesService.getBaseCurrency(user.companyId);
+
     const linkedPOs = await this.prisma.tenant.purchaseOrder.findMany({
       where: { sourceCustomerOrderId: customerOrderId },
       include: { items: { select: { qtyOrdered: true, expectedPrice: true, actualPrice: true } } },
       orderBy: { orderDate: 'desc' },
     });
-    const poRollups = await this.buildPurchaseOrderRollups(linkedPOs);
+    const poRollups = await this.buildPurchaseOrderRollups(linkedPOs, user.companyId, primaryCurrency);
 
     const [directDocuments, directExpenses, directPayments] = await Promise.all([
       this.prisma.tenant.customerOrderDocument.findMany({ where: { customerOrderId } }),
@@ -644,20 +671,25 @@ export class FinanceService {
       this.prisma.tenant.customerOrderPayment.findMany({ where: { document: { customerOrderId } } }),
     ]);
     // Reuses buildSummary as-is with an empty `items` array — goodsCost is
-    // always 0 for the "direct" part. additionalExpenses/actualCost = the
-    // direct Expense rows PLUS any direct Document's own amount that isn't
-    // already cited by one of those Expenses (see
-    // withUnlinkedDocumentsAsExpenses's own header comment), with the same
-    // per-currency separation buildSummary already guarantees.
-    const directSummary = this.buildSummary(
+    // always 0 for the "direct" part (no PO, so no currency to even
+    // consider — primaryCurrency passed below is a no-op short-circuit in
+    // convert()). additionalExpenses/actualCost = the direct Expense rows
+    // PLUS any direct Document's own amount that isn't already cited by
+    // one of those Expenses (see withUnlinkedDocumentsAsExpenses's own
+    // header comment), with the same per-currency separation buildSummary
+    // already guarantees.
+    const directSummary = await this.buildSummary(
       customerOrderId,
       [],
       directDocuments,
       this.withUnlinkedDocumentsAsExpenses(directDocuments, directExpenses),
       directPayments,
+      primaryCurrency,
+      user.companyId,
+      primaryCurrency,
     );
 
-    return this.mergeCustomerOrderSummary(customerOrderId, poRollups, directSummary, directDocuments.length);
+    return this.mergeCustomerOrderSummary(customerOrderId, poRollups, directSummary, directDocuments.length, primaryCurrency);
   }
 
   /**
@@ -678,7 +710,7 @@ export class FinanceService {
       return { items: [], total: 0, limit: query.limit ?? 50, offset: query.offset ?? 0 };
     }
 
-    const [linkedPOs, directDocuments, directExpenses, directPayments] = await Promise.all([
+    const [linkedPOs, directDocuments, directExpenses, directPayments, primaryCurrency] = await Promise.all([
       this.prisma.tenant.purchaseOrder.findMany({
         where: { sourceCustomerOrderId: { in: orderIds } },
         include: { items: { select: { qtyOrdered: true, expectedPrice: true, actualPrice: true } } },
@@ -689,6 +721,7 @@ export class FinanceService {
         where: { document: { customerOrderId: { in: orderIds } } },
         include: { document: { select: { customerOrderId: true } } },
       }),
+      this.exchangeRatesService.getBaseCurrency(user.companyId),
     ]);
 
     const poIds = linkedPOs.map((p) => p.id);
@@ -711,28 +744,35 @@ export class FinanceService {
     const directExpByOrder = groupBy(directExpenses, (e) => e.customerOrderId);
     const directPayByOrder = groupBy(directPayments, (p) => p.document.customerOrderId);
 
-    let rows = orders.map((order) => {
-      const pos = posByCustomerOrder.get(order.id) ?? [];
-      const poRollups: CustomerOrderPurchaseOrderRollup[] = pos.map((po) => ({
-        purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
-        summary: this.buildSummary(po.id, po.items, poDocsByPo.get(po.id) ?? [], poExpByPo.get(po.id) ?? [], poPayByPo.get(po.id) ?? []),
-      }));
-      const directDocs = directDocsByOrder.get(order.id) ?? [];
-      const directSummary = this.buildSummary(
-        order.id,
-        [],
-        directDocs,
-        this.withUnlinkedDocumentsAsExpenses(directDocs, directExpByOrder.get(order.id) ?? []),
-        directPayByOrder.get(order.id) ?? [],
-      );
-      const summary = this.mergeCustomerOrderSummary(order.id, poRollups, directSummary, directDocs.length);
+    let rows = await Promise.all(
+      orders.map(async (order) => {
+        const pos = posByCustomerOrder.get(order.id) ?? [];
+        const poRollups: CustomerOrderPurchaseOrderRollup[] = await Promise.all(
+          pos.map(async (po) => ({
+            purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
+            summary: await this.buildSummary(po.id, po.items, poDocsByPo.get(po.id) ?? [], poExpByPo.get(po.id) ?? [], poPayByPo.get(po.id) ?? [], po.currency ?? 'EUR', user.companyId, primaryCurrency),
+          })),
+        );
+        const directDocs = directDocsByOrder.get(order.id) ?? [];
+        const directSummary = await this.buildSummary(
+          order.id,
+          [],
+          directDocs,
+          this.withUnlinkedDocumentsAsExpenses(directDocs, directExpByOrder.get(order.id) ?? []),
+          directPayByOrder.get(order.id) ?? [],
+          primaryCurrency,
+          user.companyId,
+          primaryCurrency,
+        );
+        const summary = this.mergeCustomerOrderSummary(order.id, poRollups, directSummary, directDocs.length, primaryCurrency);
 
-      return {
-        customerOrder: { id: order.id, clientName: order.clientName, orderNumber: order.orderNumber, status: order.status, createdAt: order.createdAt },
-        summary,
-        paymentStatus: this.poPaymentStatus(summary),
-      };
-    });
+        return {
+          customerOrder: { id: order.id, clientName: order.clientName, orderNumber: order.orderNumber, status: order.status, createdAt: order.createdAt },
+          summary,
+          paymentStatus: this.poPaymentStatus(summary),
+        };
+      }),
+    );
 
     if (query.paymentStatus) rows = rows.filter((r) => r.paymentStatus === query.paymentStatus);
 
@@ -743,7 +783,9 @@ export class FinanceService {
   }
 
   private async buildPurchaseOrderRollups(
-    linkedPOs: Array<{ id: string; supplierNameSnapshot: string; status: string; orderDate: Date; items: PoItemForCost[] }>,
+    linkedPOs: Array<{ id: string; supplierNameSnapshot: string; status: string; orderDate: Date; currency: Currency; items: PoItemForCost[] }>,
+    companyId: string,
+    primaryCurrency: Currency,
   ): Promise<CustomerOrderPurchaseOrderRollup[]> {
     const poIds = linkedPOs.map((p) => p.id);
     const [poDocuments, poExpenses, poPayments] = await Promise.all([
@@ -760,10 +802,12 @@ export class FinanceService {
     const expByPo = groupBy(poExpenses, (e) => e.purchaseOrderId);
     const payByPo = groupBy(poPayments, (p) => p.document.purchaseOrderId);
 
-    return linkedPOs.map((po) => ({
-      purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
-      summary: this.buildSummary(po.id, po.items, docsByPo.get(po.id) ?? [], expByPo.get(po.id) ?? [], payByPo.get(po.id) ?? []),
-    }));
+    return Promise.all(
+      linkedPOs.map(async (po) => ({
+        purchaseOrder: { id: po.id, supplierNameSnapshot: po.supplierNameSnapshot, status: po.status, orderDate: po.orderDate },
+        summary: await this.buildSummary(po.id, po.items, docsByPo.get(po.id) ?? [], expByPo.get(po.id) ?? [], payByPo.get(po.id) ?? [], po.currency ?? 'EUR', companyId, primaryCurrency),
+      })),
+    );
   }
 
   /** Merges N linked-PO rollups + this order's own direct documents/expenses/payments into the final 6-metric CustomerOrderFinanceSummary — see that type's own field comments for what each number means and why they stay separate. */
@@ -772,24 +816,25 @@ export class FinanceService {
     poRollups: CustomerOrderPurchaseOrderRollup[],
     directSummary: PurchaseOrderFinanceSummary,
     directDocumentCount: number,
+    primaryCurrency: Currency,
   ): CustomerOrderFinanceSummary {
     const purchaseCost = poRollups.reduce((sum, p) => sum + p.summary.actualCost, 0);
 
     const contributions: CurrencyContribution[] = [
-      { currency: this.primaryCurrency, additionalExpenses: directSummary.additionalExpenses, totalDocuments: directSummary.totalDocuments, paid: directSummary.paid },
-      ...poRollups.map((p) => ({ currency: this.primaryCurrency, additionalExpenses: 0, totalDocuments: p.summary.totalDocuments, paid: p.summary.paid })),
+      { currency: primaryCurrency, additionalExpenses: directSummary.additionalExpenses, totalDocuments: directSummary.totalDocuments, paid: directSummary.paid },
+      ...poRollups.map((p) => ({ currency: primaryCurrency, additionalExpenses: 0, totalDocuments: p.summary.totalDocuments, paid: p.summary.paid })),
       ...directSummary.otherCurrencies.map((b) => ({ currency: b.currency, additionalExpenses: b.additionalExpenses, totalDocuments: b.totalDocuments, paid: b.paid })),
       ...poRollups.flatMap((p) => p.summary.otherCurrencies.map((b) => ({ currency: b.currency, additionalExpenses: 0, totalDocuments: b.totalDocuments, paid: b.paid }))),
     ];
     const merged = mergeCurrencyContributions(contributions);
-    const primary = merged.find((b) => b.currency === this.primaryCurrency) ?? {
-      currency: this.primaryCurrency,
+    const primary = merged.find((b) => b.currency === primaryCurrency) ?? {
+      currency: primaryCurrency,
       additionalExpenses: 0,
       totalDocuments: 0,
       paid: 0,
       unpaidPerDocuments: 0,
     };
-    const otherCurrencies = merged.filter((b) => b.currency !== this.primaryCurrency);
+    const otherCurrencies = merged.filter((b) => b.currency !== primaryCurrency);
 
     const documentCount = directDocumentCount + poRollups.reduce((sum, p) => sum + p.summary.documentCount, 0);
     const lastActivityAt =
@@ -799,7 +844,7 @@ export class FinanceService {
 
     return {
       customerOrderId,
-      primaryCurrency: this.primaryCurrency,
+      primaryCurrency,
       purchaseCost: round2(purchaseCost),
       additionalExpenses: primary.additionalExpenses,
       actualCost: round2(purchaseCost + primary.additionalExpenses),

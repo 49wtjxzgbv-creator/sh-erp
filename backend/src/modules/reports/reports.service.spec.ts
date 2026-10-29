@@ -3,6 +3,7 @@ import { ReportsService } from './reports.service';
 describe('ReportsService', () => {
   let service: ReportsService;
   let prisma: any;
+  let exchangeRatesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -14,7 +15,8 @@ describe('ReportsService', () => {
         assembly: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
-    service = new ReportsService(prisma);
+    exchangeRatesService = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
+    service = new ReportsService(prisma, exchangeRatesService);
   });
 
   describe('getReorderSuggestions — reservations batched from PLANNED orders only (Phase 1 §3.6)', () => {
@@ -96,6 +98,35 @@ describe('ReportsService', () => {
 
       expect(grandTotal.productCount).toBe(3);
       expect(grandTotal.totalValue).toBe(90 + 1 * 40); // 130
+    });
+
+    it('converts each product\'s own-currency sellPriceEur to EUR before summing (2026-10-29 multi-currency)', async () => {
+      prisma.tenant.product.findMany.mockResolvedValue([
+        { id: 'p1', category: 'Electronics', qty: 10, currency: 'USD', sellPriceEur: 5 },
+      ]);
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 0.9),
+      );
+
+      const { grandTotal } = await service.getWarehouseValuation(user);
+
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(5, 'USD', 'EUR', user.companyId, expect.any(Date));
+      expect(grandTotal.totalValue).toBe(10 * (5 * 0.9)); // 45
+    });
+
+    it("converts into this company's own base currency, not a hardcoded EUR (2026-10-29 multi-currency phase 4)", async () => {
+      prisma.tenant.product.findMany.mockResolvedValue([
+        { id: 'p1', category: 'Electronics', qty: 10, currency: 'USD', sellPriceEur: 5 },
+      ]);
+      exchangeRatesService.getBaseCurrency.mockResolvedValue('UAH');
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 40),
+      );
+
+      await service.getWarehouseValuation(user);
+
+      expect(exchangeRatesService.getBaseCurrency).toHaveBeenCalledWith(user.companyId);
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(5, 'USD', 'UAH', user.companyId, expect.any(Date));
     });
 
     it('groups products with no category under a null bucket rather than dropping them', async () => {

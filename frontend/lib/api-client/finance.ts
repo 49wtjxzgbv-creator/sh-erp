@@ -358,7 +358,7 @@ export function deleteFinanceCustomerOrderExpense(id: string): Promise<{ ok: tru
  * company's own correction for that date, which always wins over an NBU
  * rate for the same currency/date.
  */
-export type Currency = 'EUR' | 'UAH' | 'USD';
+export type Currency = 'EUR' | 'UAH' | 'USD' | 'PLN';
 
 export interface ExchangeRateRow {
   currency: Currency;

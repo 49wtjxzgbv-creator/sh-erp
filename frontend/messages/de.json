@@ -236,6 +236,7 @@
   "settings": {
     "title": "Unternehmenseinstellungen",
     "vatRate": "MwSt.-Satz (%)",
+    "baseCurrency": "Basiswährung",
     "dailyDigestEmail": "E-Mail fÃ¼r tÃ¤gliche Zusammenfassung",
     "dailyDigestEnabled": "TÃ¤gliche Zusammenfassung niedriger BestÃ¤nde senden",
     "saveSuccess": "Einstellungen gespeichert",

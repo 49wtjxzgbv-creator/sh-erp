@@ -11,6 +11,7 @@ describe('CustomerOrdersService', () => {
   let subAssemblyReservationService: any;
   let shortageService: any;
   let financeService: any;
+  let exchangeRatesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -71,13 +72,17 @@ describe('CustomerOrdersService', () => {
     audit = { record: jest.fn() };
     productionOrdersService = { create: jest.fn() };
     assembliesService = {
-      calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, breakdown: [] }),
+      calculateCost: jest.fn().mockResolvedValue({ costPerUnit: 0, currency: 'EUR', breakdown: [] }),
       getProductionTree: jest.fn(),
     };
     stockReservationService = { releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     subAssemblyReservationService = { reserve: jest.fn().mockResolvedValue(undefined), releaseAllForOrder: jest.fn().mockResolvedValue(undefined) };
     shortageService = { ensureRequirementsAndAutoReserve: jest.fn().mockResolvedValue(undefined) };
     financeService = { getCustomerOrderSummary: jest.fn().mockResolvedValue({ additionalExpenses: 0 }) };
+    // Default: identity conversion — matches every fixture here implicitly
+    // being EUR-only (same reasoning as assemblies.service.spec.ts's own
+    // default mock).
+    exchangeRatesService = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
     service = new CustomerOrdersService(
       prisma,
       audit,
@@ -87,6 +92,7 @@ describe('CustomerOrdersService', () => {
       subAssemblyReservationService,
       shortageService,
       financeService,
+      exchangeRatesService,
     );
 
     // Default baseline matching `order` above: item2 already has its full
@@ -119,6 +125,19 @@ describe('CustomerOrdersService', () => {
         data: expect.objectContaining({ customerOrderId: 'co1', assemblyId: 'a1', qty: 3 }),
       });
       expect(result.items).toEqual([{ id: 'item1', assemblyId: 'a1', qty: 3 }]);
+    });
+
+    it('defaults currency to this company\'s own base currency, not a hardcoded EUR, when none is given (2026-10-29 multi-currency phase 4)', async () => {
+      prisma.tenant.customerOrder.create.mockResolvedValue({ id: 'co1', status: 'NEW' });
+      prisma.tenant.customerOrderItem.create.mockResolvedValue({ id: 'item1', assemblyId: 'a1', qty: 3 });
+      exchangeRatesService.getBaseCurrency.mockResolvedValue('USD');
+
+      await service.create(user, { clientName: 'Acme Client', items: [{ assemblyId: 'a1', qty: 3 }] });
+
+      expect(exchangeRatesService.getBaseCurrency).toHaveBeenCalledWith(user.companyId);
+      expect(prisma.tenant.customerOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ currency: 'USD' }) }),
+      );
     });
 
     it('§ simplified spec: auto-reserves available raw materials by default, no manual decision required', async () => {
@@ -749,6 +768,33 @@ describe('CustomerOrdersService', () => {
       // actual: only po-started has a frozen cost (25); po-not-started (PLANNED, totalLocalCostEur null) contributes nothing
       expect(items[0].actualTotal).toBe(25);
       expect(items[0].items).toBeUndefined(); // raw item rows aren't part of the list payload, only the aggregated totals
+    });
+
+    it('converts each assembly\'s cost into the order\'s own currency before summing (2026-10-29 multi-currency)', async () => {
+      prisma.tenant.customerOrder.findMany.mockResolvedValue([
+        {
+          id: 'co1',
+          currency: 'UAH',
+          items: [{ id: 'line1', assemblyId: 'a1', qty: 2 }],
+        },
+      ]);
+      prisma.tenant.customerOrder.count.mockResolvedValue(1);
+      // Assembly priced in EUR, order is in UAH.
+      assembliesService.calculateCost.mockResolvedValue({ costPerUnit: 10, currency: 'EUR', breakdown: [] });
+      mockProductionOrdersFindMany([{ id: 'po1', customerOrderItemId: 'line1', totalLocalCostEur: 8 }]);
+      // 1 EUR = 50 UAH.
+      exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
+        Promise.resolve(from === to ? amount : amount * 50),
+      );
+
+      const { items } = await service.query(user, {});
+
+      // estimated: 10 EUR -> 500 UAH per unit, x 2 qty = 1000 UAH
+      expect(items[0].estimatedTotal).toBe(1000);
+      // actual: 8 EUR (from ProductionOrder.totalLocalCostEur, always EUR) -> 400 UAH
+      expect(items[0].actualTotal).toBe(400);
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(10, 'EUR', 'UAH', user.companyId, expect.any(Date));
+      expect(exchangeRatesService.convert).toHaveBeenCalledWith(8, 'EUR', 'UAH', user.companyId, expect.any(Date));
     });
 
     it('reports null totals (not 0) when no line has a determined price yet', async () => {

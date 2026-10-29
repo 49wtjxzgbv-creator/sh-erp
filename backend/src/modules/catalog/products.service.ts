@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
+import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { SetProductSuppliersDto } from './dto/product-supplier.dto';
@@ -13,6 +14,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
   async create(user: RequestUser, dto: CreateProductDto) {
@@ -36,7 +38,11 @@ export class ProductsService {
       });
       const product = deleted
         ? await this.prisma.tenant.product.update({ where: { id: deleted.id }, data: { ...(dto as any), deletedAt: null } })
-        : await this.prisma.tenant.product.create({ data: dto as any });
+        : await this.prisma.tenant.product.create({
+            // Multi-currency module phase 4 (2026-10-29) — defaults to this
+            // company's own base currency, not a hardcoded EUR.
+            data: { ...dto, currency: dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId)) } as any,
+          });
       await this.auditService.record({
         companyId: user.companyId,
         actorUserId: user.userId,

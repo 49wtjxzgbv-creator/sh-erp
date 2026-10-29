@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { Currency } from '@prisma/client';
 
 // Mirrors the old Assemblies sheet's header columns (Phase 1 §3.3) 1:1 —
 // see schema.prisma's Assembly model for the field list this DTO mirrors.
@@ -47,6 +48,16 @@ export class CreateAssemblyDto {
   @IsNumber()
   @Min(0)
   otherCostPerUnit?: number;
+
+  @ApiPropertyOptional({
+    enum: Currency,
+    default: 'EUR',
+    description:
+      'Multi-currency module (2026-10-29) — one currency for the four cost fields above AND baseSalePriceEur below. Does NOT cover germanPriceEur, which is always a EUR-denominated German-market benchmark regardless of this.',
+  })
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 
   @ApiPropertyOptional({
     description:

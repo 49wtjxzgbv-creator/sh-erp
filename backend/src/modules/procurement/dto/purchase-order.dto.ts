@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDate,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -13,6 +14,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { Currency } from '@prisma/client';
 
 export class CreatePurchaseOrderItemDto {
   @ApiPropertyOptional({ description: 'Optional — the legacy system allowed ordering an article not yet entered as a Product (Phase 1 §10.7).' })
@@ -82,6 +84,16 @@ export class CreatePurchaseOrderDto {
   @IsOptional()
   @IsUUID()
   sourceCustomerOrderId?: string;
+
+  @ApiPropertyOptional({
+    enum: Currency,
+    default: 'EUR',
+    description:
+      'Multi-currency module (2026-10-29) — on the PO header, not per item: a supplier invoices a whole order in one currency. Covers every item\'s expectedPrice/actualPrice/supplierConfirmedPrice.',
+  })
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 
   @ApiProperty({ type: [CreatePurchaseOrderItemDto] })
   @IsArray()

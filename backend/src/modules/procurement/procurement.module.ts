@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { InventoryModule } from '../inventory/inventory.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FilesModule } from '../files/files.module';
+import { FinanceModule } from '../finance/finance.module';
 import { PurchaseOrdersController } from './purchase-orders.controller';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestsController } from './purchase-requests.controller';
@@ -18,6 +19,7 @@ import { SuppliersService } from './suppliers.service';
     InventoryModule, // for StockService — PurchaseOrdersService.receive() posts RECEIVE movements through the same ledger as every other stock mutation
     NotificationsModule, // for EmailService — SuppliersService#invitePortal emails the supplier's temp password; also Phase 2 lifecycle notifications
     FilesModule, // for FilesService — PurchaseRequestPdfService#generateAndStore stores the rendered PDF as a FileAsset (no circular-import risk: FilesModule has no imports of its own)
+    FinanceModule, // for ExchangeRatesService#getBaseCurrency — PurchaseOrdersService.create() defaults currency to the company's own base currency (2026-10-29 multi-currency)
   ],
   controllers: [SuppliersController, PurchaseOrdersController, PurchaseRequestsController],
   providers: [

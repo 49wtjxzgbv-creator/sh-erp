@@ -12,9 +12,26 @@ describe('ExchangeRatesService', () => {
       nbuExchangeRate: { findUnique: jest.fn(), upsert: jest.fn() },
       tenant: {
         exchangeRateOverride: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
+        companySettings: { findUnique: jest.fn() },
       },
     };
     service = new ExchangeRatesService(prisma);
+  });
+
+  // ---------------------------------------------------------------------
+  // getBaseCurrency — this company's own base/reporting currency (phase 4, 2026-10-29)
+  // ---------------------------------------------------------------------
+
+  describe('getBaseCurrency', () => {
+    it("returns this company's own CompanySettings.baseCurrency", async () => {
+      prisma.tenant.companySettings.findUnique.mockResolvedValue({ companyId: 'c1', baseCurrency: 'USD' });
+      expect(await service.getBaseCurrency('c1')).toBe('USD');
+    });
+
+    it('falls back to EUR when the settings row somehow has none', async () => {
+      prisma.tenant.companySettings.findUnique.mockResolvedValue(null);
+      expect(await service.getBaseCurrency('c1')).toBe('EUR');
+    });
   });
 
   // ---------------------------------------------------------------------

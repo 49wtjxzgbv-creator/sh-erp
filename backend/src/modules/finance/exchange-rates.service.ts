@@ -9,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 const MAX_LOOKBACK_DAYS = 7;
 
 /** Currencies synced from NBU — UAH itself is never fetched (NBU always quotes 1 <currency> = X UAH, UAH is the implicit base). */
-const SYNCED_CURRENCIES: Currency[] = ['EUR', 'USD'];
+const SYNCED_CURRENCIES: Currency[] = ['EUR', 'USD', 'PLN'];
 
 export interface ResolvedRate {
   rate: number;
@@ -66,6 +66,12 @@ export class ExchangeRatesService {
       'EXCHANGE_RATE_NOT_FOUND',
       `No ${currency} exchange rate found for ${date.toISOString().slice(0, 10)} or the preceding ${MAX_LOOKBACK_DAYS} days — add a manual rate on the Курси валют page.`,
     );
+  }
+
+  /** This company's own base/reporting currency (CompanySettings.baseCurrency, multi-currency module phase 4, 2026-10-29) — the one spot every create()/summary method that used to hardcode 'EUR' now reads from instead. Falls back to EUR if the row somehow doesn't exist yet (shouldn't happen — CompanyService#create always creates one), same defensive fallback as the column's own DB default. */
+  async getBaseCurrency(companyId: string): Promise<Currency> {
+    const settings = await this.prisma.tenant.companySettings.findUnique({ where: { companyId } });
+    return settings?.baseCurrency ?? 'EUR';
   }
 
   /** `from === to` short-circuits without touching the rate tables — a same-currency "conversion" always needs no rate at all. Cross-currency goes through UAH as the bridge, matching how NBU itself only ever quotes <currency>-to-UAH. */
