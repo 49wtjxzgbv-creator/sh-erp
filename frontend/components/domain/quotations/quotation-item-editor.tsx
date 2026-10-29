@@ -22,7 +22,11 @@ function nextDraftId(): string {
 export function newDraftItem(defaultUnit: string): QuotationItemDraft {
   return {
     clientId: nextDraftId(),
-    kind: 'CUSTOM',
+    // "щоб при створенні комерційної пропозиції коли додаєм позиції то за
+    // замовчуванням був виріб а не довільна позиція" (2026-10-29) — ASSEMBLY
+    // is overwhelmingly the common case; CUSTOM stays one click away via the
+    // kind picker.
+    kind: 'ASSEMBLY',
     quantity: 1,
     unit: defaultUnit,
     pricingSource: 'CUSTOM',
