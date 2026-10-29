@@ -888,6 +888,7 @@
     "items": "Позиції",
     "assembly": "Специфікація",
     "article": "Артикул",
+    "manufacturerCode": "Код виробника",
     "qty": "Кількість",
     "estimatedPrice": "Оцінена ціна",
     "actualPrice": "Фактична ціна",

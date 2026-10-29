@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { ExternalLink, FileText } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
+import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { generateSupplierRequestDocumentsPdf } from '@/lib/api-client/sales';
 import { formatEur } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
@@ -112,6 +113,12 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
   const { data: documentsByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_DOCUMENT');
   const { data: documentsByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_DOCUMENT');
+  /** "додай також можливість обирати поле код виробника" (2026-10-29) — only products carry this (catalog.Product.manufacturerCode), never assemblies, so an ASSEMBLY-kind line's column cell is always blank. */
+  const { data: productsById } = useProductsByIds(productIds);
+  function lineManufacturerCode(line: SupplierRequestLineForPrint): string | null {
+    if (line.kind === 'PRODUCT' && line.productId) return productsById?.get(line.productId)?.manufacturerCode ?? null;
+    return null;
+  }
 
   function lineDownloadUrl(line: SupplierRequestLineForPrint): string | undefined {
     if (line.kind === 'PRODUCT' && line.productId) return photosByProduct?.[line.productId]?.[0]?.downloadUrl;
@@ -153,8 +160,13 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
     return line.description;
   }
 
+  /** "вказуй до якого саме замовлення чи замовлень відноситься ця заявка" (2026-10-28) — present only on the bulk multi-order page's lines; the single-order page's lines never carry `orderNumber`, so this column option doesn't even exist there and the printed layout stays byte-identical. */
+  const hasOrderData = printable.some((g) => g.lines.some((l) => l.orderNumber));
+
   const columns: PrintColumnOption[] = [
     { id: 'description', label: t('description') },
+    { id: 'manufacturerCode', label: t('manufacturerCode') },
+    ...(hasOrderData ? [{ id: 'orderNumber', label: t('orderNumber') }] : []),
     { id: 'qtyToOrder', label: t('qtyToOrder') },
     { id: 'unitPrice', label: t('unitPrice') },
     { id: 'price', label: t('expectedPrice') },
@@ -168,8 +180,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
       .reduce((sum, l) => sum + (l.price as number) * l.qty, 0);
   }
   const printOptions = usePrintOptions({ columns, hasPhotos: true });
-  /** "вказуй до якого саме замовлення чи замовлень відноситься ця заявка" (2026-10-28) — present only on the bulk multi-order page's lines, so this stays invisible (and the single-order page's printed layout stays byte-identical) everywhere else. */
-  const hasOrderColumn = printable.some((g) => g.lines.some((l) => l.orderNumber));
+  const hasOrderColumn = hasOrderData && printOptions.isColumnVisible('orderNumber');
 
   const documentItems = useMemo(
     () =>
@@ -247,6 +258,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                   {printOptions.includePhotos && <th className="print-photo-col">{tp('photoColumn')}</th>}
                   <th>{t('article')}</th>
                   {printOptions.isColumnVisible('description') && <th>{t('description')}</th>}
+                  {printOptions.isColumnVisible('manufacturerCode') && <th>{t('manufacturerCode')}</th>}
                   {hasOrderColumn && <th>{t('orderNumber')}</th>}
                   {printOptions.isColumnVisible('qtyToOrder') && <th>{t('qtyToOrder')}</th>}
                   {printOptions.isColumnVisible('unitPrice') && <th>{t('unitPrice')}</th>}
@@ -266,6 +278,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                       )}
                       <td className="font-bold">{line.article ?? ''}</td>
                       {printOptions.isColumnVisible('description') && <td>{descriptionWithoutArticle(line)}</td>}
+                      {printOptions.isColumnVisible('manufacturerCode') && <td>{lineManufacturerCode(line) ?? ''}</td>}
                       {hasOrderColumn && <td>{line.orderNumber ?? ''}</td>}
                       {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                       {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
@@ -284,6 +297,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
                         1 + // article — always shown, see the header <th> above
                         (printOptions.includePhotos ? 1 : 0) +
                         (printOptions.isColumnVisible('description') ? 1 : 0) +
+                        (printOptions.isColumnVisible('manufacturerCode') ? 1 : 0) +
                         (hasOrderColumn ? 1 : 0) +
                         (printOptions.isColumnVisible('qtyToOrder') ? 1 : 0) +
                         (printOptions.isColumnVisible('unitPrice') ? 1 : 0)

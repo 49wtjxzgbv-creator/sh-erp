@@ -792,6 +792,7 @@
     "items": "Items",
     "assembly": "Assembly",
     "article": "Article",
+    "manufacturerCode": "Herstellercode",
     "qty": "Qty",
     "estimatedPrice": "Estimated price",
     "actualPrice": "Actual price",
