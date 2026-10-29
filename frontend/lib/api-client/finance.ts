@@ -350,3 +350,42 @@ export function updateFinanceCustomerOrderExpense(id: string, dto: UpdateCustome
 export function deleteFinanceCustomerOrderExpense(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`finance/customer-order-expenses/${id}`);
 }
+
+/**
+ * Multi-currency module (2026-10-29) — mirrors backend/src/modules/finance/
+ * exchange-rates.service.ts. `source: 'NBU'` rows come from the National
+ * Bank of Ukraine's daily published rate; `'MANUAL'` rows are this
+ * company's own correction for that date, which always wins over an NBU
+ * rate for the same currency/date.
+ */
+export type Currency = 'EUR' | 'UAH' | 'USD';
+
+export interface ExchangeRateRow {
+  currency: Currency;
+  rate: number;
+  asOfDate: string;
+  source: 'NBU' | 'MANUAL';
+}
+
+export function listExchangeRates(from?: string, to?: string): Promise<ExchangeRateRow[]> {
+  return apiClient.get<ExchangeRateRow[]>('exchange-rates', { query: { from, to } as Record<string, string> });
+}
+
+export interface ResolvedExchangeRate {
+  rate: number;
+  source: 'NBU' | 'MANUAL';
+  asOfDate: string;
+}
+
+/** Single resolved rate for one currency/date — what every print view (payroll, BOM specs) should call instead of the old localStorage-only `useEurUahRate`. */
+export function getExchangeRate(currency: Currency, asOfDate: string): Promise<ResolvedExchangeRate> {
+  return apiClient.get<ResolvedExchangeRate>('exchange-rates/rate', { query: { currency, asOfDate } });
+}
+
+export function setExchangeRateOverride(dto: { currency: Currency; rate: number; asOfDate: string }): Promise<{ ok: true }> {
+  return apiClient.post<{ ok: true }>('exchange-rates/override', dto);
+}
+
+export function syncExchangeRates(days?: number): Promise<{ ok: true }> {
+  return apiClient.post<{ ok: true }>('exchange-rates/sync', { days });
+}

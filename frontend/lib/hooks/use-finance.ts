@@ -30,6 +30,11 @@ import {
   createCustomerOrderExpense,
   updateFinanceCustomerOrderExpense,
   deleteFinanceCustomerOrderExpense,
+  listExchangeRates,
+  getExchangeRate,
+  setExchangeRateOverride,
+  syncExchangeRates,
+  type Currency,
   type QueryFinancePurchaseOrdersInput,
   type CreatePurchaseOrderDocumentInput,
   type UpdatePurchaseOrderDocumentInput,
@@ -315,5 +320,44 @@ export function useDeleteCustomerOrderExpense(customerOrderId: string) {
   return useMutation({
     mutationFn: (id: string) => deleteFinanceCustomerOrderExpense(id),
     onSuccess: () => invalidateCustomerOrderFinance(qc, customerOrderId),
+  });
+}
+
+export function useExchangeRates(from?: string, to?: string) {
+  return useQuery({
+    queryKey: ['exchange-rates', from, to] as const,
+    queryFn: () => listExchangeRates(from, to),
+  });
+}
+
+export function useSetExchangeRateOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { currency: Currency; rate: number; asOfDate: string }) => setExchangeRateOverride(dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['exchange-rates'] }),
+  });
+}
+
+export function useSyncExchangeRates() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (days?: number) => syncExchangeRates(days),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['exchange-rates'] }),
+  });
+}
+
+/**
+ * Multi-currency module (2026-10-29) — replaces `useEurUahRate`
+ * (use-eur-uah-rate.ts, removed) everywhere a print view used to ask the
+ * user to retype a EUR->UAH rate from scratch each session. `asOfDate`
+ * (YYYY-MM-DD) should be the date the printed document is actually ABOUT
+ * (e.g. a payroll period's own date), not necessarily "today" — see each
+ * call site's own comment for which date it passes.
+ */
+export function useExchangeRate(currency: Currency, asOfDate: string | undefined) {
+  return useQuery({
+    queryKey: ['exchange-rate', currency, asOfDate] as const,
+    queryFn: () => getExchangeRate(currency, asOfDate as string),
+    enabled: Boolean(asOfDate),
   });
 }

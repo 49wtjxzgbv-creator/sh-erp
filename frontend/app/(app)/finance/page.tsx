@@ -196,7 +196,12 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('title')}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">{t('title')}</h1>
+        <Link href="/finance/exchange-rates" className="text-sm text-primary hover:underline">
+          {t('exchangeRatesLink')}
+        </Link>
+      </div>
       <Tabs defaultValue="customer-orders">
         <TabsList>
           <TabsTrigger value="customer-orders">{t('tabCustomerOrders')}</TabsTrigger>

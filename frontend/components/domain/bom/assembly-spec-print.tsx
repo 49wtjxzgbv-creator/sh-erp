@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssembly, useAssemblyCost, useAssembliesByIds } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { useExchangeRate } from '@/lib/hooks/use-finance';
 import { formatEur, formatUahExact } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions, PrintOptionsDialog, type PrintColumnOption, type PrintRowOption } from '@/components/domain/print/print-options';
@@ -308,7 +308,18 @@ export function AssemblySpecPrint({ assemblyId, qty = 1 }: { assemblyId: string;
   // own doc comment for why this isn't a toggleable column: it's a per-
   // print rate entry, applied to every EUR cell (including recursive
   // "full composition" sections below) via formatUahExact.
-  const [eurUahRate, setEurUahRate] = useEurUahRate();
+  //
+  // Multi-currency module (2026-10-29) — pre-filled from today's real NBU
+  // rate instead of a blank/stale localStorage number (useEurUahRate,
+  // removed); a spec print isn't "about" any particular historical date,
+  // so "today" is the only sensible default — still hand-editable
+  // afterward for a one-off print.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: resolvedRate } = useExchangeRate('EUR', today);
+  const [eurUahRate, setEurUahRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (resolvedRate) setEurUahRate(resolvedRate.rate);
+  }, [resolvedRate]);
 
   if (!assembly || !cost) return null;
 

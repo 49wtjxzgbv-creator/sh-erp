@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { usePayrollSummary, usePayrollEntries } from '@/lib/hooks/use-hr';
 import type { PayrollEntryType, PayrollSummaryLine } from '@/lib/api-client/hr';
-import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { useExchangeRate } from '@/lib/hooks/use-finance';
 import { formatEur, formatUah, uahRoundUp } from '@/lib/utils';
 import { EurUahRateField } from '@/components/domain/sales/eur-uah-rate-field';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -93,12 +93,23 @@ export default function PayrollSummaryPage() {
   const [summaryOrderId, setSummaryOrderId] = useState<string | undefined>(undefined);
   const [summaryOrderLabel, setSummaryOrderLabel] = useState<string | undefined>(undefined);
   // "конвертер курсу як в зарплата по замовленню і саму верхню колонку
-  // зароблено працівниками в євро" (2026-10-13) — same shared
-  // (localStorage-persisted) rate + top "Зароблено працівниками" EUR line
-  // OrderPayrollPrint already has, now also on the main summary's own
-  // print — see that component's own header comment for the UAH-rounding
-  // convention this mirrors exactly.
-  const [eurUahRate, setEurUahRate] = useEurUahRate();
+  // зароблено працівниками в євро" (2026-10-13) — same shared rate + top
+  // "Зароблено працівниками" EUR line OrderPayrollPrint already has, now
+  // also on the main summary's own print — see that component's own
+  // header comment for the UAH-rounding convention this mirrors exactly.
+  //
+  // Multi-currency module (2026-10-29) — the rate used to be a bare
+  // localStorage number re-typed by hand every session (useEurUahRate,
+  // removed). Now pre-filled from the REAL historical NBU rate for the
+  // period's own end date (`to`, falling back to today when no range is
+  // set) — still hand-editable afterward for one-off prints, same UX as
+  // before, just seeded with a real number instead of nothing.
+  const rateAsOfDate = to || new Date().toISOString().slice(0, 10);
+  const { data: resolvedRate } = useExchangeRate('EUR', rateAsOfDate);
+  const [eurUahRate, setEurUahRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (resolvedRate) setEurUahRate(resolvedRate.rate);
+  }, [resolvedRate]);
 
   const { data, isLoading } = usePayrollSummary({ from: from || undefined, to: to || undefined, customerOrderId: summaryOrderId });
 

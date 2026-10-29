@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Printer } from 'lucide-react';
 import { usePayrollFundSummary, useOrderPayrollByEmployee } from '@/lib/hooks/use-sales';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { useExchangeRate } from '@/lib/hooks/use-finance';
 import { formatEur, formatUah, uahRoundUp } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 import { usePrintOptions } from '@/components/domain/print/print-options';
@@ -69,7 +69,15 @@ export function OrderPayrollPrint({ orderId, orderLabel }: { orderId: string; or
   const tp = useTranslations('print');
   const { data: fund } = usePayrollFundSummary(orderId);
   const { data: byEmployee } = useOrderPayrollByEmployee(orderId);
-  const [eurUahRate, setEurUahRate] = useEurUahRate();
+  // Multi-currency module (2026-10-29) — pre-filled from today's real NBU
+  // rate instead of a blank/stale localStorage number (useEurUahRate,
+  // removed); still hand-editable afterward for a one-off print.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: resolvedRate } = useExchangeRate('EUR', today);
+  const [eurUahRate, setEurUahRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (resolvedRate) setEurUahRate(resolvedRate.rate);
+  }, [resolvedRate]);
   const printOptions = usePrintOptions({ columns: [], id: 'order-payroll-print' });
   const assemblyIds = useMemo(() => {
     const ids = new Set<string>();

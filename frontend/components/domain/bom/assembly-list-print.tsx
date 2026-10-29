@@ -1,10 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
-import { useEurUahRate } from '@/lib/hooks/use-eur-uah-rate';
+import { useExchangeRate } from '@/lib/hooks/use-finance';
 import { formatUahExact } from '@/lib/utils';
 import type { Assembly } from '@/lib/api-client/bom';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
@@ -78,7 +79,16 @@ export function AssemblyListPrint({ assemblies }: { assemblies: Assembly[] }) {
   // NOT payroll's round-up-to-100 rule, see that helper's own doc
   // comment). Not part of PrintOptions' column set: it's a per-print rate
   // entry, not a fixed column to toggle.
-  const [eurUahRate, setEurUahRate] = useEurUahRate();
+  //
+  // Multi-currency module (2026-10-29) — pre-filled from today's real NBU
+  // rate instead of a blank/stale localStorage number (useEurUahRate,
+  // removed); still hand-editable afterward for a one-off print.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: resolvedRate } = useExchangeRate('EUR', today);
+  const [eurUahRate, setEurUahRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (resolvedRate) setEurUahRate(resolvedRate.rate);
+  }, [resolvedRate]);
 
   const visibleAssemblies = assemblies.filter((a) => printOptions.isRowVisible(a.id));
 

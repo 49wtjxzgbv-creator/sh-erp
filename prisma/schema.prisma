@@ -163,8 +163,8 @@ model Company {
   shipmentItems                  ShipmentItem[]
   purchaseOrders                 PurchaseOrder[]
   purchaseOrderItems             PurchaseOrderItem[]
-  purchaseRequests                PurchaseRequest[]
-  purchaseRequestItems            PurchaseRequestItem[]
+  purchaseRequests               PurchaseRequest[]
+  purchaseRequestItems           PurchaseRequestItem[]
   deliverySchedules              DeliverySchedule[]
   deliveryScheduleLines          DeliveryScheduleLine[]
   purchaseOrderComments          PurchaseOrderComment[]
@@ -174,6 +174,7 @@ model Company {
   customerOrderDocuments         CustomerOrderDocument[]
   customerOrderPayments          CustomerOrderPayment[]
   customerOrderExpenses          CustomerOrderExpense[]
+  exchangeRateOverrides          ExchangeRateOverride[]
   employees                      Employee[]
   payrollEntries                 PayrollEntry[]
   fileAssets                     FileAsset[]
@@ -261,15 +262,15 @@ model User {
   // in-progress self-submission (if they happen to also be an Employee
   // paired on this exact same chat) collide with their in-progress
   // submit-for-someone-else flow.
-  telegramAdminPendingEmployeeIds        String? // JSON array of Employee ids this submission is FOR
-  telegramAdminPendingProductionOrderId  String? @db.Uuid
-  telegramAdminPendingWorkTaskId         String? @db.Uuid
-  telegramAdminPendingQty                String?
+  telegramAdminPendingEmployeeIds          String? // JSON array of Employee ids this submission is FOR
+  telegramAdminPendingProductionOrderId    String? @db.Uuid
+  telegramAdminPendingWorkTaskId           String? @db.Uuid
+  telegramAdminPendingQty                  String?
   // Manual percent override for the selected employees — see Employee
   // .telegramPendingPercents' own comment for the full rationale (2026-
   // 10-07 user report). JSON `{employeeId: percent}`, null = equal split.
-  telegramAdminPendingPercents           String?
-  telegramAdminAwaitingPercentsInput     Boolean @default(false)
+  telegramAdminPendingPercents             String?
+  telegramAdminAwaitingPercentsInput       Boolean @default(false)
   telegramAdminAwaitingPhotoForExecutionId String? @db.Uuid
   // "📈 Підсумок по працівнику" (2026-10-06 user request): true for exactly
   // one bot turn — set when the admin taps the button, cleared the moment
@@ -279,7 +280,7 @@ model User {
   // pick employee -> pick period -> show report) never needs to persist
   // past that one text message — the employee id and period live only in
   // callback_data from there on, never written back to this row.
-  telegramAdminAwaitingSummaryQuery      Boolean @default(false)
+  telegramAdminAwaitingSummaryQuery        Boolean @default(false)
 
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
@@ -1994,26 +1995,26 @@ model WorkTaskItem {
 // and companyId never is), so both stay single-column FKs, same convention
 // as PayrollEntry.productionOrder above.
 model ProductionExecution {
-  id                String                    @id @default(uuid()) @db.Uuid
-  companyId         String                    @db.Uuid
-  productionOrderId String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  workTaskId        String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
-  performedAt       DateTime                  @db.Timestamptz(3)
-  qtyCompleted      Decimal?                  @db.Decimal(14, 3) // required in practice for PRODUCT (drives totalAmount), optional/informational for GENERAL
-  method            ProductionExecutionMethod
-  teamId            String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation) — reporting tag only, never the fund owner
-  allocationMode    ExecutionAllocationMode
-  totalAmount       Decimal                   @db.Decimal(14, 2) // PRODUCT: server-computed (qtyCompleted / unitsPlanned x laborCostEur), never client input. GENERAL: entered manually, validated against WorkTask.fund
-  status            ProductionExecutionStatus @default(DRAFT)
-  recordedById      String                    @db.Uuid
-  confirmedById     String?                   @db.Uuid
-  confirmedAt       DateTime?                 @db.Timestamptz(3)
-  note              String?
+  id                   String                    @id @default(uuid()) @db.Uuid
+  companyId            String                    @db.Uuid
+  productionOrderId    String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  workTaskId           String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
+  performedAt          DateTime                  @db.Timestamptz(3)
+  qtyCompleted         Decimal?                  @db.Decimal(14, 3) // required in practice for PRODUCT (drives totalAmount), optional/informational for GENERAL
+  method               ProductionExecutionMethod
+  teamId               String?                   @db.Uuid // single-column FK — see header §cross-tenant (optional relation) — reporting tag only, never the fund owner
+  allocationMode       ExecutionAllocationMode
+  totalAmount          Decimal                   @db.Decimal(14, 2) // PRODUCT: server-computed (qtyCompleted / unitsPlanned x laborCostEur), never client input. GENERAL: entered manually, validated against WorkTask.fund
+  status               ProductionExecutionStatus @default(DRAFT)
+  recordedById         String                    @db.Uuid
+  confirmedById        String?                   @db.Uuid
+  confirmedAt          DateTime?                 @db.Timestamptz(3)
+  note                 String?
   // "Подано через Telegram" (2026-10-01) — cosmetic provenance flag only,
   // never read by any fund/payroll math; lets the confirmations queue show
   // a Telegram badge and lets a confirming supervisor see at a glance that
   // nobody at a desk typed this in.
-  submittedViaTelegram Boolean @default(false)
+  submittedViaTelegram Boolean                   @default(false)
 
   // Correction chain: the NEW execution points back at the VOIDED one it
   // replaces. @unique so at most one correction can claim to replace a
@@ -2230,16 +2231,16 @@ enum CustomerOrderStatus {
 }
 
 model CustomerOrderItem {
-  id                   String    @id @default(uuid()) @db.Uuid
-  companyId            String    @db.Uuid
-  customerOrderId      String    @db.Uuid
-  assemblyId           String    @db.Uuid
-  qty                  Decimal   @db.Decimal(14, 3)
+  id                            String    @id @default(uuid()) @db.Uuid
+  companyId                     String    @db.Uuid
+  customerOrderId               String    @db.Uuid
+  assemblyId                    String    @db.Uuid
+  qty                           Decimal   @db.Decimal(14, 3)
   // Optional per-line planning targets, only when they differ from the
   // order's own — never auto-derived (План-графік §4)
-  plannedStartAt       DateTime? @db.Timestamptz(3)
-  plannedEndAt         DateTime? @db.Timestamptz(3)
-  itemDeadline         DateTime? @db.Timestamptz(3)
+  plannedStartAt                DateTime? @db.Timestamptz(3)
+  plannedEndAt                  DateTime? @db.Timestamptz(3)
+  itemDeadline                  DateTime? @db.Timestamptz(3)
   // Sub-assembly production choices made in the "Підвироби" dialog at order
   // creation ({ assemblyId, qty }[]) — recorded here as intent ONLY, no
   // ProductionOrder is created yet. Read back by getItemProductionTree to
@@ -2247,7 +2248,7 @@ model CustomerOrderItem {
   // batch (and the order's IN_PRODUCTION flip) still only happens once
   // staff explicitly confirm that button in "Хід виробництва" (2026-08-27
   // decision: nothing may land in production straight from order creation).
-  plannedSubAssemblies Json?     @db.JsonB
+  plannedSubAssemblies          Json?     @db.JsonB
   // Same "intent only" idea as plannedSubAssemblies above, but for the
   // dialog's "Зі складу" picks ({ assemblyId, qty }[]) — 2026-09-23 user
   // request ("замовлення зі статусом нове не мають нічого їсти зі складу"):
@@ -2257,7 +2258,7 @@ model CustomerOrderItem {
   // only records the choice here; the real claim happens once this order's
   // status flips to IN_PRODUCTION (see giveItemToProduction/
   // giveSubAssemblyToProduction).
-  plannedSubAssembliesFromStock Json? @db.JsonB
+  plannedSubAssembliesFromStock Json?     @db.JsonB
 
   company            Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
   customerOrder      CustomerOrder     @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — an order line has no meaning without its order
@@ -2588,10 +2589,10 @@ model PurchaseRequest {
   // which Quotation's send() requires in the same transaction): this
   // entity stays editable after SENT, so the PDF may legitimately be
   // regenerated more than once as prices come back from the supplier.
-  pdfFileId String? @db.Uuid
+  pdfFileId String?   @db.Uuid
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  company  Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   items    PurchaseRequestItem[]
 
   @@unique([companyId, id]) // composite-FK target for PurchaseRequestItem
@@ -2736,6 +2737,67 @@ model PurchaseOrderComment {
 }
 
 // ============================================================================
+// SECTION: Currency / Exchange Rates  (module: FinanceModule)
+// ============================================================================
+//
+// "мультивалютний облік з історією курсів" (2026-10-29) — the conversion
+// layer the Finance section's own comment below anticipated. Two separate
+// models rather than one table with a nullable companyId:
+//
+//   NbuExchangeRate — the daily official rate from the National Bank of
+//   Ukraine (bank.gov.ua, public, no auth — verified live:
+//   GET /NBUStatService/v1/statdirectory/exchange?valcode=EUR&date=
+//   YYYYMMDD&json). Shared reference data, same category as Plan/the
+//   permission catalogue — NOT tenant-scoped, the EUR/UAH rate is the same
+//   number for every company. Synced by a daily cron + an on-demand
+//   "sync now" trigger, written through a non-tenant Prisma client (never
+//   `prisma.tenant`, which would require a company in request-scoped RLS
+//   context that a background cron job doesn't have).
+//
+//   ExchangeRateOverride — a company's own manual correction for one
+//   currency/date (e.g. a negotiated commercial rate instead of NBU's).
+//   Genuinely tenant-scoped, standard RLS. Takes priority over
+//   NbuExchangeRate for the same currency/date when a rate is looked up.
+//
+// A nullable-companyId single table was rejected deliberately: Postgres
+// treats NULL as distinct from NULL in a unique index, so uniqueness for
+// "the one global row per currency/date" couldn't be enforced the same way
+// as per-company uniqueness without a bespoke partial index — two plain
+// tables with ordinary unique constraints are simpler and need no special-
+// cased RLS policy for NULL company_id rows.
+enum Currency {
+  EUR
+  UAH
+  USD
+}
+
+model NbuExchangeRate {
+  id        String   @id @default(uuid()) @db.Uuid
+  currency  Currency
+  rate      Decimal  @db.Decimal(14, 6) // 1 <currency> = <rate> UAH, matching how NBU itself quotes
+  asOfDate  DateTime @db.Date
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([currency, asOfDate])
+  @@map("nbu_exchange_rates")
+}
+
+model ExchangeRateOverride {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @db.Uuid
+  currency    Currency
+  rate        Decimal  @db.Decimal(14, 6)
+  asOfDate    DateTime @db.Date
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, currency, asOfDate])
+  @@map("exchange_rate_overrides")
+}
+
+// ============================================================================
 // SECTION: Finance — PO Documents / Expenses / Payments  (module: FinanceModule)
 // ============================================================================
 //
@@ -2776,14 +2838,13 @@ model PurchaseOrderComment {
 // wrong, since there's nothing yet to pay).
 //
 // Currency: `currency` lives on all three money entities (Document, Expense,
-// Payment) independently — no FX conversion or exchange-rate concept exists
-// anywhere in this schema (confirmed by audit: every other money field in
-// the app is implicitly EUR). Same-PO sums in the application layer are only
-// ever computed within one currency; a differently-currencied row is
-// surfaced as its own separate figure, never silently added in. This is the
-// first currency-aware corner of the schema — deliberately additive so a
-// real conversion layer can be bolted on later without reshaping these
-// tables.
+// Payment) independently. The conversion layer anticipated below now exists
+// (NbuExchangeRate/ExchangeRateOverride, just above this section) but this
+// module doesn't call into it yet — same-PO sums here are STILL only ever
+// computed within one currency; a differently-currencied row is still
+// surfaced as its own separate figure, never silently added in. Wiring real
+// conversion through these sums is a deliberate, separate follow-up, not
+// part of adding the rate infrastructure itself.
 
 enum PurchaseOrderDocumentType {
   INVOICE
@@ -3009,11 +3070,11 @@ model Employee {
   // BYPASSRLS `telegram_bot_service` Postgres role — see
   // backend/src/prisma/telegram-bot-prisma.service.ts and ADR-0009 for the
   // exact precedent (ImportPairingPrismaService).
-  telegramChatId                String?   @unique
-  telegramLinkedByUserId        String?   @db.Uuid
-  telegramLinkedAt              DateTime? @db.Timestamptz(3)
-  telegramPairingCode           String?   @unique
-  telegramPairingCodeExpiresAt  DateTime? @db.Timestamptz(3)
+  telegramChatId                      String?   @unique
+  telegramLinkedByUserId              String?   @db.Uuid
+  telegramLinkedAt                    DateTime? @db.Timestamptz(3)
+  telegramPairingCode                 String?   @unique
+  telegramPairingCodeExpiresAt        DateTime? @db.Timestamptz(3)
   // Conversation-state fields — the bot's FSM has two steps that must
   // survive between separate webhook calls: (1) "employee tapped this
   // production order, now waiting for them to type a quantity"
@@ -3027,20 +3088,20 @@ model Employee {
   // this is the only state that needs persistence (a backend restart
   // between taps must not lose it); everything else in the bot's flow is
   // stateless (driven entirely by inline-keyboard callback_data).
-  telegramPendingProductionOrderId String? @db.Uuid
-  telegramPendingQty               String?
+  telegramPendingProductionOrderId    String?   @db.Uuid
+  telegramPendingQty                  String?
   // Same idea, for a GENERAL/WorkTask submission instead of a PRODUCT one
   // — XOR with telegramPendingProductionOrderId, never both at once
   // (2026-10-01 "давай все" revision — general-work support in the bot).
   // telegramPendingQty is reused as-is for this path too (it's just "the
   // number", interpreted as totalAmount € instead of qtyCompleted units
   // depending on which of the two parent fields is set).
-  telegramPendingWorkTaskId String? @db.Uuid
+  telegramPendingWorkTaskId           String?   @db.Uuid
   // Colleagues selected for a MULTI_WORKER submission (JSON array of
   // Employee ids, self excluded) — null/"[]" means SOLO. Same reasoning
   // as the other pending fields: must survive between webhook calls while
   // the employee is still picking people.
-  telegramPendingAllocations String?
+  telegramPendingAllocations          String?
   // "Не зрозуміло за якими відсотками йде розподіл" (2026-10-07 user
   // report): manual percent override for a MULTI_WORKER submission, JSON
   // `{employeeId: percent}` covering every current participant (self +
@@ -3049,19 +3110,19 @@ model Employee {
   // team:done after re-toggling colleagues) since a stale map keyed by a
   // DIFFERENT set of ids would silently mis-split; only ever (re)written
   // by handlePercentsMessage, right after the employee types new numbers.
-  telegramPendingPercents String?
+  telegramPendingPercents             String?
   // True for exactly one bot turn — set when "✏️ Відсотки" is tapped on
   // the review card, cleared the moment the next free-text message is
   // consumed as the percent list (success or failure). Same transient-
   // flag shape as User.telegramAdminAwaitingSummaryQuery.
-  telegramAwaitingPercentsInput Boolean @default(false)
+  telegramAwaitingPercentsInput       Boolean   @default(false)
   // Set right after a successful submission while the bot is offering an
   // optional "додати фото" follow-up — cleared the moment a photo arrives
   // or the employee taps "Пропустити". Deliberately NOT part of the
   // pre-submit pending state above: the execution already exists by this
   // point, a photo is pure best-effort enrichment, never blocks or
   // reverses the submission itself.
-  telegramAwaitingPhotoForExecutionId String? @db.Uuid
+  telegramAwaitingPhotoForExecutionId String?   @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -3262,16 +3323,16 @@ model CompanyBranding {
 // Same 1:1-per-company, all-optional, upsert-tolerant shape as
 // CompanyBranding — most companies won't fill every field in immediately.
 model CompanyRequisites {
-  companyId     String  @id @db.Uuid
-  legalName     String?
-  taxId         String? // ЄДРПОУ/ІПН — no format validation, differs by legal entity type
-  legalAddress  String?
-  phone         String?
-  email         String?
-  bankName      String?
-  bankIban      String?
-  bankMfo       String?
-  website       String?
+  companyId    String  @id @db.Uuid
+  legalName    String?
+  taxId        String? // ЄДРПОУ/ІПН — no format validation, differs by legal entity type
+  legalAddress String?
+  phone        String?
+  email        String?
+  bankName     String?
+  bankIban     String?
+  bankMfo      String?
+  website      String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -3907,16 +3968,16 @@ model QuotationVersionItem {
   // (собівартість → базова ціна → метод → ціна до знижки → знижка →
   // фінальна ціна → маржа), not just the final number.
   pricingSource     PricingSource
-  costSnapshot       Decimal?      @db.Decimal(14, 2) // internal only — never rendered in the client PDF
-  basePriceSnapshot  Decimal?      @db.Decimal(14, 2) // internal only — Assembly.baseSalePriceEur at the moment this line was priced, null unless pricingSource pulled from it
-  laborCostSnapshot  Decimal?      @db.Decimal(14, 2) // internal only — Assembly.laborCostPerUnit at the moment this line was priced (null for non-ASSEMBLY kinds; a real ASSEMBLY line always has one, since the field defaults to 0 rather than being unset)
+  costSnapshot      Decimal?      @db.Decimal(14, 2) // internal only — never rendered in the client PDF
+  basePriceSnapshot Decimal?      @db.Decimal(14, 2) // internal only — Assembly.baseSalePriceEur at the moment this line was priced, null unless pricingSource pulled from it
+  laborCostSnapshot Decimal?      @db.Decimal(14, 2) // internal only — Assembly.laborCostPerUnit at the moment this line was priced (null for non-ASSEMBLY kinds; a real ASSEMBLY line always has one, since the field defaults to 0 rather than being unset)
   // The % actually entered for MARKUP_PERCENT/LABOR_MARKUP_PERCENT (cost or
   // base price × (1 + p)) or COST_PLUS_MARGIN/LABOR_COST_PLUS_MARGIN
   // (cost / (1 - p)) — same column for all four since pricingSource already
   // disambiguates which formula it fed; keeping one column instead of four
   // mostly-mutually-exclusive ones. ALSO reused for GERMAN_PRICE's optional
   // percent-markup (below) — same disambiguation-by-pricingSource reasoning.
-  pricingPercent     Decimal?      @db.Decimal(6, 3)
+  pricingPercent    Decimal?      @db.Decimal(6, 3)
 
   // "додай можливість у комерційній пропозиції також давати націнку на
   // Ціна виробу в Німеччині, € чи відсотками чи конкретною сумою"

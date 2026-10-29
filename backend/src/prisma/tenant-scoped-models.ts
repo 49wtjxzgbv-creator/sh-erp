@@ -100,4 +100,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'LoadPlan',
   'LoadPlanTruck',
   'LoadPlanItem',
+  // Multi-currency module (2026-10-29) — NOT NbuExchangeRate, which is
+  // deliberately global/shared reference data, not tenant-scoped.
+  'ExchangeRateOverride',
 ]);
