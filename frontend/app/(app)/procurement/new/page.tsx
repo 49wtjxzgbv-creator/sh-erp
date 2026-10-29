@@ -7,6 +7,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useCreatePurchaseOrder, useSupplierLinkedProducts } from '@/lib/hooks/use-procurement';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreatePurchaseOrderItemInput } from '@/lib/api-client/procurement';
+import type { Currency } from '@/lib/api-client/settings';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 
@@ -43,6 +45,7 @@ export default function NewPurchaseOrderPage() {
   const [supplierNameSnapshot, setSupplierNameSnapshot] = useState('');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [comment, setComment] = useState('');
+  const [currency, setCurrency] = useState<Currency | ''>('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,6 +118,7 @@ export default function NewPurchaseOrderPage() {
         supplierId,
         supplierNameSnapshot: supplierNameSnapshot.trim(),
         expectedDeliveryDate: expectedDeliveryDate || undefined,
+        currency: currency || undefined,
         comment: comment || undefined,
         items,
       });
@@ -159,6 +163,20 @@ export default function NewPurchaseOrderPage() {
               value={expectedDeliveryDate}
               onChange={(e) => setExpectedDeliveryDate(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="currency">{tc('currency')}</Label>
+            <Select value={currency} onValueChange={(v) => setCurrency(v as Currency)}>
+              <SelectTrigger id="currency">
+                <SelectValue placeholder={t('currencyDefault')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="comment">{t('comment')}</Label>

@@ -1,5 +1,6 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
+import type { Currency } from './settings';
 
 /**
  * Typed wrappers for backend/src/modules/procurement/ (SuppliersController,
@@ -205,6 +206,8 @@ export interface PurchaseOrder {
   supplierConfirmedDeliveryDate: string | null;
   comment: string | null;
   sourceCustomerOrderId: string | null;
+  /** Multi-currency module (2026-10-29) — on the PO header, not per item: covers every item's expectedPrice/actualPrice/supplierConfirmedPrice under this order. */
+  currency: Currency;
   createdById: string;
   createdAt: string;
   /** Present on create/findOne/receive responses; not on query() list rows. */
@@ -227,6 +230,7 @@ export interface CreatePurchaseOrderInput {
   expectedDeliveryDate?: string;
   comment?: string;
   sourceCustomerOrderId?: string;
+  currency?: Currency;
   items: CreatePurchaseOrderItemInput[];
 }
 

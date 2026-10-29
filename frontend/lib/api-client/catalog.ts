@@ -1,5 +1,6 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
+import type { Currency } from './settings';
 
 /**
  * Typed wrappers for backend/src/modules/catalog/ (ProductsController,
@@ -54,6 +55,8 @@ export interface Product {
   germanPriceExclVat: DecimalString | null;
   germanPriceInclVat: DecimalString | null;
   sellPriceEur: DecimalString | null;
+  /** Multi-currency module (2026-10-29) — covers local price fields / sellPriceEur only, not the german* fields (always EUR-denominated benchmarks). */
+  currency: Currency;
   weightPerUnitKg: DecimalString | null;
   warrantyMonths: string | null;
   status: string | null;
@@ -103,6 +106,7 @@ export interface CreateProductInput {
   germanPriceExclVat?: number;
   germanPriceInclVat?: number;
   sellPriceEur?: number;
+  currency?: Currency;
   weightPerUnitKg?: number;
   warrantyMonths?: string;
   status?: string;

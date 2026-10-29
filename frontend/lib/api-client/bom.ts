@@ -1,5 +1,6 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
+import type { Currency } from './settings';
 
 /**
  * Typed wrappers for backend/src/modules/bom/ (AssembliesController). Field
@@ -45,6 +46,8 @@ export interface Assembly {
   otherCostPerUnit: DecimalString;
   /** Quotations module (2026-08-27) — the sale-price starting point for BASE_PRICE-method quotation lines. Independent of cost (laborCostPerUnit etc.) and of Product.sellPriceEur (a cost input, not a retail price) — null until someone sets it. */
   baseSalePriceEur: DecimalString | null;
+  /** Multi-currency module (2026-10-29) — covers laborCostPerUnit/packagingCostPerUnit/deliveryCostPerUnit/otherCostPerUnit/baseSalePriceEur above, NOT germanPriceEur below (always EUR-denominated benchmark). */
+  currency: Currency;
   /** Pure benchmarking input — the going price for this same item in Germany, entered manually for comparison against our own calculated cost on the BOM cost page. Never used by any cost/pricing/quotation calculation. */
   germanPriceEur: DecimalString | null;
   defaultSupplierId: string | null;
@@ -71,6 +74,7 @@ export interface CreateAssemblyInput {
   otherCostPerUnit?: number;
   baseSalePriceEur?: number;
   germanPriceEur?: number;
+  currency?: Currency;
   defaultSupplierId?: string;
   unitsPerBox?: number;
   boxesPerPallet?: number;

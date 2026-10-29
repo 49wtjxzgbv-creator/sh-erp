@@ -25,6 +25,7 @@ const baseProduct: Product = {
   germanPriceExclVat: null,
   germanPriceInclVat: null,
   sellPriceEur: '9.990',
+  currency: 'EUR',
   weightPerUnitKg: null,
   warrantyMonths: null,
   status: null,

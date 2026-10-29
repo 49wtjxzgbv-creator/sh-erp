@@ -9,6 +9,7 @@ import { useAssemblyCosts, useHasSubAssembliesMany } from '@/lib/hooks/use-bom';
 import { formatEur, fromDatetimeLocalValue } from '@/lib/utils';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CustomerOrderItemInput, CustomerOrderPriority, SubAssemblyToProduceInput } from '@/lib/api-client/sales';
+import type { Currency } from '@/lib/api-client/settings';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { SubAssemblyPlanningDialog } from '@/components/domain/sales/sub-assembly-planning-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,6 +61,7 @@ export default function NewCustomerOrderPage() {
   const [transportRiggingCost, setTransportRiggingCost] = useState('');
   const [otherCost, setOtherCost] = useState('');
   const [salePrice, setSalePrice] = useState('');
+  const [currency, setCurrency] = useState<Currency | ''>('');
   const [comment, setComment] = useState('');
   const [rows, setRows] = useState<EditableItemRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +153,7 @@ export default function NewCustomerOrderPage() {
         transportRiggingCost: transportRiggingCost ? Number(transportRiggingCost) : undefined,
         otherCost: otherCost ? Number(otherCost) : undefined,
         salePrice: salePrice ? Number(salePrice) : undefined,
+        currency: currency || undefined,
         comment: comment || undefined,
         items,
       });
@@ -239,6 +242,20 @@ export default function NewCustomerOrderPage() {
               </HelpHint>
             </Label>
             <Input id="plannedDeliveryAt" type="datetime-local" value={plannedDeliveryAt} onChange={(e) => setPlannedDeliveryAt(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="currency">{tc('currency')}</Label>
+            <Select value={currency} onValueChange={(v) => setCurrency(v as Currency)}>
+              <SelectTrigger id="currency">
+                <SelectValue placeholder={t('currencyDefault')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="deliveryCost">{t('deliveryCost')}</Label>

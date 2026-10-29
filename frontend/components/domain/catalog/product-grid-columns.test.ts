@@ -7,7 +7,7 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     category: 'Кріплення', productGroup: null, family: null, type: null, kind: null, productLine: null,
     barcode: null, unitId: 'u1', unitsPerPackage: null, cell: null, qty: '10', minQty: '0',
     localPriceExclVat: null, localPriceInclVat: null, germanPriceExclVat: null, germanPriceInclVat: null,
-    sellPriceEur: null, weightPerUnitKg: null, warrantyMonths: null, status: 'active', manufacturer: null,
+    sellPriceEur: null, currency: 'EUR', weightPerUnitKg: null, warrantyMonths: null, status: 'active', manufacturer: null,
     manufacturerCode: null, countryOfOrigin: null, priceListRef: null, note: null, defaultSupplierId: null,
     createdAt: '2026-01-01', updatedAt: '2026-01-01', deletedAt: null,
     ...overrides,

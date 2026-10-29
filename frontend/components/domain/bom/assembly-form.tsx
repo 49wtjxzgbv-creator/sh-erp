@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
@@ -52,6 +53,11 @@ const assemblySchema = z.object({
   otherCostPerUnit: z.coerce.number().min(0).optional().or(z.literal('')),
   baseSalePriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
   germanPriceEur: z.coerce.number().min(0).optional().or(z.literal('')),
+  // Multi-currency module (2026-10-29) — covers the four *CostPerUnit
+  // fields above AND baseSalePriceEur, NOT germanPriceEur (always
+  // EUR-denominated benchmark). Omitted -> backend defaults to this
+  // company's own base currency, not EUR.
+  currency: z.enum(['EUR', 'UAH', 'USD', 'PLN']).optional(),
   unitsPerBox: z.coerce.number().int().min(1).optional().or(z.literal('')),
   boxesPerPallet: z.coerce.number().int().min(1).optional().or(z.literal('')),
   boxLengthCm: optionalNonNegativeNumber,
@@ -72,6 +78,7 @@ export function assemblyToFormValues(assembly?: Assembly): Partial<AssemblyFormV
     otherCostPerUnit: toNumber(assembly.otherCostPerUnit) ?? undefined,
     baseSalePriceEur: toNumber(assembly.baseSalePriceEur) ?? undefined,
     germanPriceEur: toNumber(assembly.germanPriceEur) ?? undefined,
+    currency: assembly.currency,
     unitsPerBox: assembly.unitsPerBox ?? undefined,
     boxesPerPallet: assembly.boxesPerPallet ?? undefined,
     boxLengthCm: toNumber(assembly.boxLengthCm) ?? undefined,
@@ -196,12 +203,15 @@ export function AssemblyForm({
   const {
     register,
     handleSubmit,
+    watch,
     setValue,
     formState: { errors },
   } = useForm<AssemblyFormValues>({
     resolver: zodResolver(assemblySchema),
     defaultValues: { ...assemblyToFormValues(assembly), ...initialValues },
   });
+
+  const currency = watch('currency');
 
   async function submit(values: AssemblyFormValues) {
     const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
@@ -312,6 +322,21 @@ export function AssemblyForm({
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="note">{t('note')}</Label>
             <Textarea id="note" {...register('note')} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="currency">{tc('currency')}</Label>
+            <Select value={currency ?? ''} onValueChange={(v) => setValue('currency', v as AssemblyFormValues['currency'])}>
+              <SelectTrigger id="currency">
+                <SelectValue placeholder={t('currencyDefault')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('currencyHint')}</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="laborCostPerUnit">{t('laborCostPerUnit')}</Label>

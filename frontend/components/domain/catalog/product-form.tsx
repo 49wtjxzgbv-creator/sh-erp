@@ -69,6 +69,10 @@ const productSchema = z.object({
   germanPriceExclVat: optionalNonNegativeNumber,
   germanPriceInclVat: optionalNonNegativeNumber,
   sellPriceEur: optionalNonNegativeNumber,
+  // Multi-currency module (2026-10-29) — covers localPrice*/sellPriceEur
+  // above, not german* (always EUR-denominated benchmarks). Omitted ->
+  // backend defaults to this company's own base currency, not EUR.
+  currency: z.enum(['EUR', 'UAH', 'USD', 'PLN']).optional(),
   weightPerUnitKg: optionalNonNegativeNumber,
   warrantyMonths: z.string().optional(),
   status: z.string().optional(),
@@ -111,6 +115,7 @@ export function productToFormValues(product?: Product): Partial<ProductFormValue
     germanPriceExclVat: toNumber(product.germanPriceExclVat) ?? undefined,
     germanPriceInclVat: toNumber(product.germanPriceInclVat) ?? undefined,
     sellPriceEur: toNumber(product.sellPriceEur) ?? undefined,
+    currency: product.currency,
     weightPerUnitKg: toNumber(product.weightPerUnitKg) ?? undefined,
     warrantyMonths: product.warrantyMonths ?? undefined,
     status: product.status ?? undefined,
@@ -354,6 +359,7 @@ export function ProductForm({
   });
 
   const unitId = watch('unitId');
+  const currency = watch('currency');
   const initialWarehouseId = watch('initialWarehouseId');
   const sellPriceEur = watch('sellPriceEur');
   const germanPriceExclVat = watch('germanPriceExclVat');
@@ -614,6 +620,20 @@ export function ProductForm({
           <div className="space-y-1.5">
             <Label htmlFor="sellPriceEur">{t('sellPrice')}</Label>
             <Input id="sellPriceEur" type="number" step="any" {...register('sellPriceEur')} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="currency">{tc('currency')}</Label>
+            <Select value={currency ?? ''} onValueChange={(v) => setValue('currency', v as ProductFormValues['currency'])}>
+              <SelectTrigger id="currency">
+                <SelectValue placeholder={t('currencyDefault')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="localPriceExclVat">{t('localPriceExclVat')}</Label>

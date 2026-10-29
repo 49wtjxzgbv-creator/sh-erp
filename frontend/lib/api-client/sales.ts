@@ -1,5 +1,6 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
+import type { Currency } from './settings';
 
 /**
  * Typed wrappers for backend/src/modules/sales/ (CustomerOrdersController,
@@ -73,6 +74,8 @@ export interface CustomerOrder {
   otherCost: DecimalString | null;
   /** Revenue, not cost — total price the whole order is sold to the customer for. Never folded into estimatedTotal/actualTotal. */
   salePrice: DecimalString | null;
+  /** Multi-currency module (2026-10-29) — covers deliveryCost/transportRiggingCost/otherCost/salePrice above. */
+  currency: Currency;
   comment: string | null;
   createdById: string;
   createdAt: string;
@@ -128,6 +131,7 @@ export interface CreateCustomerOrderInput {
   transportRiggingCost?: number;
   otherCost?: number;
   salePrice?: number;
+  currency?: Currency;
   comment?: string;
   items: CustomerOrderItemInput[];
 }

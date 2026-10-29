@@ -12,6 +12,7 @@ const baseAssembly: Assembly = {
   deliveryCostPerUnit: '0.000',
   otherCostPerUnit: '0.000',
   baseSalePriceEur: null,
+  currency: 'EUR',
   germanPriceEur: null,
   defaultSupplierId: null,
   unitsPerBox: null,

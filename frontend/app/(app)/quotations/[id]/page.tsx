@@ -386,15 +386,24 @@ export default function QuotationDetailPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="currency">{t('currency')}</Label>
-            <Input
-              id="currency"
+            <Select
               value={currency}
               disabled={!editable}
-              onChange={(e) => {
-                setCurrency(e.target.value.toUpperCase());
+              onValueChange={(v) => {
+                setCurrency(v);
                 setTermsDirty(true);
               }}
-            />
+            >
+              <SelectTrigger id="currency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="UAH">UAH</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="PLN">PLN</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="vatRatePercent">{t('vatRatePercent')}</Label>
