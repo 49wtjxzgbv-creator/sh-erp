@@ -60,8 +60,17 @@ export function useAiSettings() {
 
 export function useTranslateJson() {
   return useMutation({
-    mutationFn: ({ fields, targetLocale, documentKind }: { fields: Record<string, string | null>; targetLocale: string; documentKind?: string }) =>
-      translateJson(fields, targetLocale, documentKind),
+    mutationFn: ({
+      fields,
+      targetLocale,
+      documentKind,
+      usageFeature,
+    }: {
+      fields: Record<string, string | null>;
+      targetLocale: string;
+      documentKind?: string;
+      usageFeature?: string;
+    }) => translateJson(fields, targetLocale, documentKind, usageFeature),
   });
 }
 

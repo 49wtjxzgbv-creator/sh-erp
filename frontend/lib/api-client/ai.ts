@@ -170,6 +170,11 @@ export function updateAiSettings(dto: UpdateCompanyAiSettingsInput): Promise<Com
  * AI prompt's register; omit to fall back to the backend's
  * Quotations-flavored default.
  */
-export function translateJson(fields: Record<string, string | null>, targetLocale: string, documentKind?: string): Promise<Record<string, string | null>> {
-  return apiClient.post<Record<string, string | null>>('ai/translate-json', { fields, targetLocale, documentKind });
+export function translateJson(
+  fields: Record<string, string | null>,
+  targetLocale: string,
+  documentKind?: string,
+  usageFeature?: string,
+): Promise<Record<string, string | null>> {
+  return apiClient.post<Record<string, string | null>>('ai/translate-json', { fields, targetLocale, documentKind, usageFeature });
 }

@@ -36,6 +36,15 @@ const MAX_TOOL_LOOP_ITERATIONS = 6; // mirrors the legacy askFullAssistant's max
  * limitation, not a scoping choice, so routing it through the company's
  * pick would silently break it the moment someone selected DeepSeek.
  */
+
+/** Same 4-locale set the app ships messages for (frontend/lib/i18n-locales.ts) — Ukrainian names, spelled out in `translateJson`'s own prompt because a bare ISO code wasn't reliably honored by every provider (see that method's own comment). */
+const LOCALE_NAMES: Record<string, string> = {
+  uk: 'українську',
+  en: 'англійську',
+  de: 'німецьку',
+  pl: 'польську',
+};
+
 @Injectable()
 export class AiService {
   constructor(
@@ -361,11 +370,22 @@ export class AiService {
     await this.actionsService.checkQuota(user);
 
     const input = Object.fromEntries(entries);
+    // Real production bug report (2026-10-29, Supplier Requests language
+    // switcher): picking de/pl came back English — every usage log showed
+    // the real AI round-trip completing normally (not an error, not a
+    // silently-skipped call), which points at the provider (DeepSeek, per
+    // this company's own AiSettings) simply not honoring a bare ISO 639-1
+    // code strongly enough. Naming the language explicitly, and repeating
+    // the instruction right before the JSON payload (the position a model
+    // weights most), is the standard mitigation for this class of
+    // instruction-following failure.
+    const localeName = LOCALE_NAMES[targetLocale] ?? targetLocale;
     const prompt =
-      `Переклади значення цього JSON-об'єкта на мову з кодом ISO 639-1 "${targetLocale}". ` +
+      `Переклади значення цього JSON-об'єкта на ${localeName} мову (код ISO 639-1 "${targetLocale}"). ` +
       'Ключі залишай ТОЧНО такими самими, зміни лише значення. ' +
       `Це текст ${documentKind} — перекладай по-діловому, природно, без дослівщини. ` +
       'Якщо значення — власна назва, артикул чи не потребує перекладу, залиш його без змін. ' +
+      `ВАЖЛИВО: результат ОБОВ'ЯЗКОВО має бути ${localeName} мовою — НЕ англійською і не будь-якою іншою, незалежно від мови вхідного тексту. ` +
       'Поверни СУВОРО валідний JSON-об\'єкт з тими самими ключами, без жодного тексту до чи після нього, без markdown-огортання.\n\n' +
       JSON.stringify(input);
 

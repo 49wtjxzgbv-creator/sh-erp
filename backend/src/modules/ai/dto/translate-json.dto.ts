@@ -21,4 +21,13 @@ export class TranslateJsonDto {
   @IsOptional()
   @IsString()
   documentKind?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Short kebab-case tag for ai_usage_logs.feature, e.g. "supplier-request-translate" — lets usage tracking tell this caller apart from Quotations\' own translate flow. Defaults to "quotation-translate" if omitted (matches AiService#translateJson\'s own default, for the one caller that genuinely is Quotations).',
+  })
+  @IsOptional()
+  @IsString()
+  usageFeature?: string;
 }

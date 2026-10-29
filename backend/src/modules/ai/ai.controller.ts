@@ -65,7 +65,7 @@ export class AiController {
       'Generic batch text translation — the same engine the Quotations language switcher uses (AiService#translateJson), reusable by any feature that needs a print/document view in a language other than the user\'s own UI locale (e.g. Supplier Requests).',
   })
   async translateJson(@CurrentUser() user: RequestUser, @Body() dto: TranslateJsonDto) {
-    return this.aiService.translateJson(user, dto.fields, dto.targetLocale, dto.documentKind);
+    return this.aiService.translateJson(user, dto.fields, dto.targetLocale, dto.documentKind, dto.usageFeature);
   }
 
   @Post('cancel-action')

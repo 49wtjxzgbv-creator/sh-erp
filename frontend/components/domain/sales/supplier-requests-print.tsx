@@ -213,18 +213,31 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
       return;
     }
     setPrintLocale(locale);
-    const [messages, translated] = await Promise.all([
-      loadLocaleMessages(locale),
-      descriptionEntries.length > 0
-        ? translateJson.mutateAsync({
-            fields: Object.fromEntries(descriptionEntries),
-            targetLocale: locale,
-            documentKind: 'заявки постачальнику (назви й описи товарних позицій)',
-          })
-        : Promise.resolve({}),
-    ]);
-    setPrintMessages(messages);
-    setTranslatedDescriptions(translated as Record<string, string>);
+    try {
+      const [messages, translated] = await Promise.all([
+        loadLocaleMessages(locale),
+        descriptionEntries.length > 0
+          ? translateJson.mutateAsync({
+              fields: Object.fromEntries(descriptionEntries),
+              targetLocale: locale,
+              documentKind: 'заявки постачальнику (назви й описи товарних позицій)',
+              usageFeature: 'supplier-request-translate',
+            })
+          : Promise.resolve({}),
+      ]);
+      setPrintMessages(messages);
+      setTranslatedDescriptions(translated as Record<string, string>);
+    } catch {
+      // Was a silent, invisible failure before this fix: a rejected
+      // loadLocaleMessages/translateJson left printLocale set but
+      // printMessages/translatedDescriptions never populated, which left
+      // the document stuck on whatever it was rendering before — fully
+      // undetectable from the UI. Reset back to ambient so a failure is at
+      // least visibly "nothing changed" rather than a confusing half state.
+      setPrintLocale(null);
+      setPrintMessages(null);
+      setTranslatedDescriptions({});
+    }
   }
 
   /** "вказуй до якого саме замовлення чи замовлень відноситься ця заявка" (2026-10-28) — present only on the bulk multi-order page's lines; the single-order page's lines never carry `orderNumber`, so this column option doesn't even exist there and the printed layout stays byte-identical. */
