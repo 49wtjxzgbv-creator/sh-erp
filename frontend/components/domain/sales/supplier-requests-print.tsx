@@ -405,7 +405,15 @@ function SupplierRequestsPrintContent({
           <h2 className="mb-2 font-semibold">{tp('requestTo')}: {group.supplierName}</h2>
           {hasOrderColumn && (
             <p className="mb-2 text-sm">
-              {t('orderNumber')}: {Array.from(new Set(group.lines.map((l) => l.orderNumber).filter(Boolean))).join(', ')}
+              {/* Real bug (2026-10-30): on the multi-order bulk page, a line's own `orderNumber`
+                  is ALREADY a comma-joined string when the same product was needed by several
+                  orders (mergeLinesForPrint, shortage-bulk/page.tsx) — deduping on the WHOLE
+                  joined string (the previous code) left an order number duplicated across the
+                  header whenever it appeared in more than one already-joined string (e.g. "1001,
+                  1002" + "1002" -> "1001, 1002, 1002"). Splitting each line's own value back into
+                  individual numbers BEFORE deduping fixes it regardless of whether a line's
+                  orderNumber is a single value (single-order page) or already-joined (bulk page). */}
+              {t('orderNumber')}: {Array.from(new Set(group.lines.flatMap((l) => (l.orderNumber ? l.orderNumber.split(', ') : [])))).join(', ')}
             </p>
           )}
           <table className="mb-6">
