@@ -7,7 +7,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { useAssembly, useAssemblyCost } from '@/lib/hooks/use-bom';
 import { useProduct } from '@/lib/hooks/use-catalog';
 import { toNumber } from '@/lib/api-client/decimal';
-import { formatMoney } from '@/lib/finance-format';
+import { formatMoney, convertWithRates } from '@/lib/finance-format';
+import { useCurrencyRatesMap } from '@/lib/hooks/use-finance';
 import type { QuotationItemKind, PricingSource } from '@/lib/api-client/quotations';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
@@ -78,17 +79,31 @@ export function QuotationItemRow({
   const { data: assemblyCost } = useAssemblyCost(item.kind === 'ASSEMBLY' ? item.assemblyId : undefined);
   const { data: product } = useProduct(item.kind === 'PRODUCT' ? item.productId : undefined);
 
-  const cost = item.kind === 'ASSEMBLY' ? assemblyCost?.costPerUnit ?? null : item.kind === 'PRODUCT' ? toNumber(product?.sellPriceEur) : null;
-  const basePrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.baseSalePriceEur ?? null) : null;
-  const laborCost = item.kind === 'ASSEMBLY' ? toNumber(assembly?.laborCostPerUnit ?? null) : null;
+  // Multi-currency module (2026-10-29) — see QuotationLiveTotals's own
+  // header comment (quotation-item-editor.tsx) for why these need
+  // converting into `currency` before use, not just displayed with its
+  // label slapped on an unconverted number.
+  const today = new Date().toISOString().slice(0, 10);
+  const assemblyCurrency = assemblyCost?.currency ?? assembly?.currency ?? 'EUR';
+  const productCurrency = product?.currency ?? 'EUR';
+  const rates = useCurrencyRatesMap([currency, 'EUR', assemblyCurrency, productCurrency], today);
+
+  const rawCost = item.kind === 'ASSEMBLY' ? assemblyCost?.costPerUnit ?? null : item.kind === 'PRODUCT' ? toNumber(product?.sellPriceEur) : null;
+  const cost = rawCost === null ? null : convertWithRates(rawCost, item.kind === 'ASSEMBLY' ? assemblyCurrency : productCurrency, currency, rates);
+  const rawBasePrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.baseSalePriceEur ?? null) : null;
+  const basePrice = rawBasePrice === null ? null : convertWithRates(rawBasePrice, assemblyCurrency, currency, rates);
+  const rawLaborCost = item.kind === 'ASSEMBLY' ? toNumber(assembly?.laborCostPerUnit ?? null) : null;
+  const laborCost = rawLaborCost === null ? null : convertWithRates(rawLaborCost, assemblyCurrency, currency, rates);
   // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
   // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
-  // field actually labeled "з ПДВ"; PRODUCT lines only.
-  const germanPriceInclVat = item.kind === 'PRODUCT' ? toNumber(product?.germanPriceInclVat ?? null) : null;
+  // field actually labeled "з ПДВ"; PRODUCT lines only. Always EUR.
+  const rawGermanPriceInclVat = item.kind === 'PRODUCT' ? toNumber(product?.germanPriceInclVat ?? null) : null;
+  const germanPriceInclVat = rawGermanPriceInclVat === null ? null : convertWithRates(rawGermanPriceInclVat, 'EUR', currency, rates);
   // "коли в комерційку додаю виріб то має бути можливість обрати ціна
   // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math;
-  // ASSEMBLY lines only.
-  const germanPrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.germanPriceEur ?? null) : null;
+  // ASSEMBLY lines only. Always EUR.
+  const rawGermanPrice = item.kind === 'ASSEMBLY' ? toNumber(assembly?.germanPriceEur ?? null) : null;
+  const germanPrice = rawGermanPrice === null ? null : convertWithRates(rawGermanPrice, 'EUR', currency, rates);
   // Existence of the id (not the display label) is what actually matters —
   // `entityLabel` is only ever populated by the picker's own onChange, so an
   // ASSEMBLY/PRODUCT line hydrated fresh from a saved quotation would show

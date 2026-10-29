@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   listFinancePurchaseOrders,
   getPurchaseOrderFinanceSummary,
@@ -360,4 +360,30 @@ export function useExchangeRate(currency: Currency, asOfDate: string | undefined
     queryFn: () => getExchangeRate(currency, asOfDate as string),
     enabled: Boolean(asOfDate),
   });
+}
+
+/**
+ * Batched `useExchangeRate` for a dynamic set of currencies — same
+ * `useQueries` shape as `useAssemblyCosts` (lib/hooks/use-bom.ts), for the
+ * same reason: a dynamic-length list can't call a plain `useQuery` in a
+ * loop (Rules of Hooks). UAH itself is never fetched (it's the implicit
+ * bridge currency — see ExchangeRatesService#convert). Returns a plain
+ * `{ [currency]: rate }` map, feed it straight into `convertWithRates`
+ * (lib/finance-format.ts). Shares cache entries with any other
+ * `useExchangeRate` call for the same currency/date (identical queryKey).
+ */
+export function useCurrencyRatesMap(currencies: string[], asOfDate: string | undefined) {
+  const distinct = Array.from(new Set(currencies)).filter((c) => c !== 'UAH');
+  const results = useQueries({
+    queries: distinct.map((currency) => ({
+      queryKey: ['exchange-rate', currency, asOfDate] as const,
+      queryFn: () => getExchangeRate(currency as Currency, asOfDate as string),
+      enabled: Boolean(asOfDate),
+    })),
+  });
+  const ratesToUah: Record<string, number | undefined> = {};
+  distinct.forEach((currency, i) => {
+    ratesToUah[currency] = results[i].data?.rate;
+  });
+  return ratesToUah;
 }

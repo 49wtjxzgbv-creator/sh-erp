@@ -202,6 +202,8 @@ export interface CostBreakdownLine {
 export interface AssemblyCostResult {
   assemblyId: string;
   costPerUnit: number;
+  /** Multi-currency module (2026-10-29) — the currency `costPerUnit` is actually expressed in (this assembly's own `currency`), not necessarily EUR. A caller combining this with another currency's amount MUST convert first — see lib/finance-format.ts#convertWithRates. */
+  currency: Currency;
   breakdown: CostBreakdownLine[];
 }
 

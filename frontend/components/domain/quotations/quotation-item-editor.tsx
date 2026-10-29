@@ -6,8 +6,9 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type D
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { useAssembliesByIds, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useCurrencyRatesMap } from '@/lib/hooks/use-finance';
 import { toNumber } from '@/lib/api-client/decimal';
-import { formatMoney } from '@/lib/finance-format';
+import { formatMoney, convertWithRates } from '@/lib/finance-format';
 import { computeLivePrice } from './pricing-method-field';
 import { QuotationItemRow, type QuotationItemDraft } from './quotation-item-row';
 import { Button } from '@/components/ui/button';
@@ -56,27 +57,57 @@ export function QuotationLiveTotals({
   const { data: productsById } = useProductsByIds(productIds);
   const assemblyCostResults = useAssemblyCosts(items.map((i) => (i.kind === 'ASSEMBLY' ? i.assemblyId : undefined)));
 
+  // Multi-currency module (2026-10-29) — cost/basePrice/laborCost below are
+  // each in THEIR OWN row's currency (Assembly.currency/Product.currency),
+  // which may differ from this quotation's own `currency`; germanPrice/
+  // germanPriceInclVat are always EUR (see schema.prisma's own comment on
+  // that exception). Converted here via the same NBU/manual-override rates
+  // ExchangeRatesService#convert resolves server-side, so this live preview
+  // actually matches what saveItems will persist, instead of just slapping
+  // the selected currency's label on an unconverted number.
+  const today = new Date().toISOString().slice(0, 10);
+  const neededCurrencies = [
+    currency,
+    'EUR',
+    ...items.map((item, index) =>
+      item.kind === 'ASSEMBLY'
+        ? (assemblyCostResults[index]?.data?.currency ?? assembliesById?.get(item.assemblyId ?? '')?.currency ?? 'EUR')
+        : item.kind === 'PRODUCT'
+          ? (productsById?.get(item.productId ?? '')?.currency ?? 'EUR')
+          : 'EUR',
+    ),
+  ];
+  const rates = useCurrencyRatesMap(neededCurrencies, today);
+
   let subtotal = 0;
   let discountAmount = 0;
   let total = 0;
   let germanVatInclTotal = 0;
   items.forEach((item, index) => {
-    const cost =
+    const assemblyCurrency = item.assemblyId ? (assemblyCostResults[index]?.data?.currency ?? assembliesById?.get(item.assemblyId)?.currency ?? 'EUR') : 'EUR';
+    const productCurrency = item.productId ? (productsById?.get(item.productId)?.currency ?? 'EUR') : 'EUR';
+    const rawCost =
       item.kind === 'ASSEMBLY'
         ? assemblyCostResults[index]?.data?.costPerUnit ?? null
         : item.kind === 'PRODUCT' && item.productId
           ? toNumber(productsById?.get(item.productId)?.sellPriceEur ?? null)
           : null;
-    const basePrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.baseSalePriceEur ?? null) : null;
-    const laborCost = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.laborCostPerUnit ?? null) : null;
+    const cost = rawCost === null ? null : convertWithRates(rawCost, item.kind === 'ASSEMBLY' ? assemblyCurrency : productCurrency, currency, rates);
+    const rawBasePrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.baseSalePriceEur ?? null) : null;
+    const basePrice = rawBasePrice === null ? null : convertWithRates(rawBasePrice, assemblyCurrency, currency, rates);
+    const rawLaborCost = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.laborCostPerUnit ?? null) : null;
+    const laborCost = rawLaborCost === null ? null : convertWithRates(rawLaborCost, assemblyCurrency, currency, rates);
     // "з специфікацій це ціна виробу в німеччині а в товарах Ціна (DE, з
     // ПДВ)" (2026-10-15 correction) — Product.germanPriceInclVat is the
-    // field actually labeled "з ПДВ"; PRODUCT lines only.
-    const germanPriceInclVat = item.kind === 'PRODUCT' && item.productId ? toNumber(productsById?.get(item.productId)?.germanPriceInclVat ?? null) : null;
+    // field actually labeled "з ПДВ"; PRODUCT lines only. Always EUR.
+    const rawGermanPriceInclVat = item.kind === 'PRODUCT' && item.productId ? toNumber(productsById?.get(item.productId)?.germanPriceInclVat ?? null) : null;
+    const germanPriceInclVat = rawGermanPriceInclVat === null ? null : convertWithRates(rawGermanPriceInclVat, 'EUR', currency, rates);
     // "коли в комерційку додаю виріб то має бути можливість обрати ціна
     // виробу в німеччині" (2026-10-15, same day) — plain, no VAT math;
     // ASSEMBLY lines only, never contributes to germanVatInclTotal below.
-    const germanPrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.germanPriceEur ?? null) : null;
+    // Always EUR.
+    const rawGermanPrice = item.kind === 'ASSEMBLY' && item.assemblyId ? toNumber(assembliesById?.get(item.assemblyId)?.germanPriceEur ?? null) : null;
+    const germanPrice = rawGermanPrice === null ? null : convertWithRates(rawGermanPrice, 'EUR', currency, rates);
     const unitPrice = computeLivePrice(
       item.pricingSource,
       cost,
