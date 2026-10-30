@@ -501,7 +501,18 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     const pointerNdc = new THREE.Vector2();
     const dragPlane = new THREE.Plane();
     const dragIntersection = new THREE.Vector3();
-    let dragging: { entry: BoxRegistryEntry } | null = null;
+    // 4px — same activation-distance convention load-plan/page.tsx's own
+    // dnd-kit PointerSensor already uses for the between-trucks drag.
+    // Without this, EVERY click (not just a real drag) fired an
+    // `onBoxMoved` PUT for a 0-distance "move" — harmless on its own, but
+    // a double-click's two individual taps each fired one too, both
+    // racing the same item's row and occasionally 500ing on a Prisma
+    // transaction timeout (confirmed live, 2026-10-30) before the
+    // dblclick's own DELETE landed. Below this threshold, the drag is
+    // treated as a plain click: visually reverted to its pre-drag
+    // position and no mutation fires at all.
+    const DRAG_THRESHOLD_PX = 4;
+    let dragging: { entry: BoxRegistryEntry; originX: number; originY: number; startClientX: number; startClientY: number } | null = null;
 
     function findBoxAtPointer(point: { clientX: number; clientY: number }): BoxRegistryEntry | null {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -546,7 +557,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
       // group-local Y + group.position.y.
       const worldY = entry.box.z + entry.box.heightCm / 2 + group.position.y;
       dragPlane.set(new THREE.Vector3(0, 1, 0), -worldY);
-      dragging = { entry };
+      dragging = { entry, originX: entry.box.x, originY: entry.box.y, startClientX: e.clientX, startClientY: e.clientY };
       renderer.domElement.setPointerCapture(e.pointerId);
     }
 
@@ -568,9 +579,21 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     function onPointerUpDrag(e: PointerEvent) {
       if (!dragging) return;
       controls.enabled = true;
-      const { box } = dragging.entry;
+      const { entry, originX, originY, startClientX, startClientY } = dragging;
+      const { box } = entry;
       renderer.domElement.releasePointerCapture(e.pointerId);
       dragging = null;
+
+      const movedPx = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
+      if (movedPx < DRAG_THRESHOLD_PX) {
+        // Not a real drag — a plain click (or one tap of a double-click).
+        // Revert any sub-threshold jitter the pointermove handler already
+        // applied and skip the mutation entirely.
+        box.x = originX;
+        box.y = originY;
+        applyBoxVisualPosition(entry, new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2));
+        return;
+      }
       onBoxMoved?.(box.loadPlanItemId, box.boxIndex, { x: box.x, y: box.y, z: box.z });
     }
 
