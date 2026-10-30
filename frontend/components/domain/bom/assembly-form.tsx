@@ -220,22 +220,33 @@ export function AssemblyForm({
   const boxStackable = watch('boxStackable') ?? true;
 
   async function submit(values: AssemblyFormValues) {
-    const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
+    // A cleared field submits as `''` — sending `undefined` for it gets
+    // dropped from the JSON body entirely (JSON.stringify omits undefined
+    // keys), so an update request silently leaves the OLD value in the
+    // database instead of actually clearing it (caught live 2026-10-30:
+    // clearing boxMaxStackWeightKg and saving left the previous number in
+    // place). For a nullable column, an explicit `null` is what actually
+    // clears it. For the four cost fields below, the column is NOT NULL
+    // with a `@default(0)` — Prisma rejects an explicit `null` there, so
+    // a cleared cost field resets to its own real "unset" value, `0`,
+    // instead.
+    const nullable = (v: number | '' | undefined) => (v === '' || v === undefined ? null : v);
+    const costField = (v: number | '' | undefined) => (v === '' || v === undefined ? 0 : v);
     await onSubmit({
       ...values,
-      laborCostPerUnit: numeric(values.laborCostPerUnit),
-      packagingCostPerUnit: numeric(values.packagingCostPerUnit),
-      deliveryCostPerUnit: numeric(values.deliveryCostPerUnit),
-      otherCostPerUnit: numeric(values.otherCostPerUnit),
-      baseSalePriceEur: numeric(values.baseSalePriceEur),
-      germanPriceEur: numeric(values.germanPriceEur),
-      unitsPerBox: numeric(values.unitsPerBox),
-      boxesPerPallet: numeric(values.boxesPerPallet),
-      boxLengthCm: numeric(values.boxLengthCm),
-      boxWidthCm: numeric(values.boxWidthCm),
-      boxHeightCm: numeric(values.boxHeightCm),
+      laborCostPerUnit: costField(values.laborCostPerUnit),
+      packagingCostPerUnit: costField(values.packagingCostPerUnit),
+      deliveryCostPerUnit: costField(values.deliveryCostPerUnit),
+      otherCostPerUnit: costField(values.otherCostPerUnit),
+      baseSalePriceEur: nullable(values.baseSalePriceEur),
+      germanPriceEur: nullable(values.germanPriceEur),
+      unitsPerBox: nullable(values.unitsPerBox),
+      boxesPerPallet: nullable(values.boxesPerPallet),
+      boxLengthCm: nullable(values.boxLengthCm),
+      boxWidthCm: nullable(values.boxWidthCm),
+      boxHeightCm: nullable(values.boxHeightCm),
       boxStackable: values.boxStackable ?? true,
-      boxMaxStackWeightKg: values.boxStackable === false ? undefined : numeric(values.boxMaxStackWeightKg),
+      boxMaxStackWeightKg: values.boxStackable === false ? null : nullable(values.boxMaxStackWeightKg),
     });
   }
 

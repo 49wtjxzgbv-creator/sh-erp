@@ -76,17 +76,19 @@ export interface CreateAssemblyInput {
   packagingCostPerUnit?: number;
   deliveryCostPerUnit?: number;
   otherCostPerUnit?: number;
-  baseSalePriceEur?: number;
-  germanPriceEur?: number;
+  // Nullable DB columns — explicit `null` (not just omitting the field)
+  // is how an update actually CLEARS a previously-set value back to unset.
+  baseSalePriceEur?: number | null;
+  germanPriceEur?: number | null;
   currency?: Currency;
   defaultSupplierId?: string;
-  unitsPerBox?: number;
-  boxesPerPallet?: number;
-  boxLengthCm?: number;
-  boxWidthCm?: number;
-  boxHeightCm?: number;
+  unitsPerBox?: number | null;
+  boxesPerPallet?: number | null;
+  boxLengthCm?: number | null;
+  boxWidthCm?: number | null;
+  boxHeightCm?: number | null;
   boxStackable?: boolean;
-  boxMaxStackWeightKg?: number;
+  boxMaxStackWeightKg?: number | null;
 }
 export type UpdateAssemblyInput = Partial<CreateAssemblyInput>;
 
