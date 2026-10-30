@@ -73,3 +73,24 @@ export class AddLoadPlanItemDto {
   @Min(1)
   unitsQty!: number;
 }
+
+/** Manual drag positioning (2026-10-30, "можливість самому переміщувати вантаж") — pins one specific box (by its loop index within its line) to an exact spot, pulling it out of the auto-packer. Bounds against the truck's own envelope are checked in LoadPlanService#setBoxPosition, not here (needs the plan's truck dims). */
+export class SetLoadPlanBoxPositionDto {
+  @ApiProperty({ description: 'Position along the truck length, cm, from the front.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  xCm!: number;
+
+  @ApiProperty({ description: 'Position along the truck width, cm, from one side.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  yCm!: number;
+
+  @ApiProperty({ description: 'Height off the truck floor, cm.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  zCm!: number;
+}

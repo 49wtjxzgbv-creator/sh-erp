@@ -12,6 +12,8 @@ function box(overrides: Partial<PackBox> = {}): PackBox {
     unitsQty: 1,
     stackable: true,
     maxStackWeightKg: null,
+    loadPlanItemId: 'item-1',
+    boxIndex: 0,
     ...overrides,
   };
 }

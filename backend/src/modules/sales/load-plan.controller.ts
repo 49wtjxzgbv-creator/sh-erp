@@ -1,8 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { AddLoadPlanItemDto, GenerateLoadPlanDto, MoveLoadPlanItemDto } from './dto/load-plan.dto';
+import { AddLoadPlanItemDto, GenerateLoadPlanDto, MoveLoadPlanItemDto, SetLoadPlanBoxPositionDto } from './dto/load-plan.dto';
 import { LoadPlanService } from './load-plan.service';
 
 @ApiTags('sales')
@@ -48,5 +48,30 @@ export class LoadPlanController {
   @ApiOperation({ summary: 'Remove an ad-hoc item from the plan. Order-derived lines cannot be removed here.' })
   async removeItem(@CurrentUser() user: RequestUser, @Param('customerOrderId') customerOrderId: string, @Param('itemId') itemId: string) {
     return this.loadPlanService.removeItem(user, customerOrderId, itemId);
+  }
+
+  @Put('items/:itemId/boxes/:boxIndex/position')
+  @RequirePermissions('shipments:manage')
+  @ApiOperation({ summary: 'Pin one specific box (dragged in the 3D view) to an exact position, pulling it out of the auto-packer.' })
+  async setBoxPosition(
+    @CurrentUser() user: RequestUser,
+    @Param('customerOrderId') customerOrderId: string,
+    @Param('itemId') itemId: string,
+    @Param('boxIndex') boxIndex: string,
+    @Body() dto: SetLoadPlanBoxPositionDto,
+  ) {
+    return this.loadPlanService.setBoxPosition(user, customerOrderId, itemId, Number(boxIndex), dto);
+  }
+
+  @Delete('items/:itemId/boxes/:boxIndex/position')
+  @RequirePermissions('shipments:manage')
+  @ApiOperation({ summary: 'Clear a manual position override — the box rejoins auto-packing.' })
+  async clearBoxPosition(
+    @CurrentUser() user: RequestUser,
+    @Param('customerOrderId') customerOrderId: string,
+    @Param('itemId') itemId: string,
+    @Param('boxIndex') boxIndex: string,
+  ) {
+    return this.loadPlanService.clearBoxPosition(user, customerOrderId, itemId, Number(boxIndex));
   }
 }

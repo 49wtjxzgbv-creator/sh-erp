@@ -145,6 +145,7 @@ model Company {
   loadPlans                      LoadPlan[]
   loadPlanTrucks                 LoadPlanTruck[]
   loadPlanItems                  LoadPlanItem[]
+  loadPlanBoxPositions           LoadPlanBoxPosition[]
   warehouseStocks                WarehouseStock[]
   stockMovements                 StockMovement[]
   inventorySessions              InventorySession[]
@@ -2477,11 +2478,42 @@ model LoadPlanItem {
   loadPlanTruck     LoadPlanTruck      @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
   customerOrderItem CustomerOrderItem? @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
   assembly          Assembly?          @relation(fields: [companyId, assemblyId], references: [companyId, id])
+  boxPositions      LoadPlanBoxPosition[]
 
   @@unique([companyId, id])
   @@index([loadPlanTruckId])
   @@index([customerOrderItemId])
   @@map("load_plan_items")
+}
+
+// Manual drag positioning (2026-10-30, "можливість самому переміщувати
+// вантаж") — one row per PHYSICAL box a human has dragged to a specific
+// spot, keyed by `boxIndex` (the same deterministic loop index
+// LoadPlanService already uses when exploding a LoadPlanItem's `unitsQty`
+// into individual boxes — stable as long as the line's own qty/packaging
+// doesn't change after a box in it was dragged, see LoadPlanService#get's
+// own comment). A box with no row here is still auto-packed exactly as
+// before; LoadPlanService#get pulls any box WITH one out of the auto-
+// packer's input entirely and places it directly at this stored position
+// — the auto-packer for everything else stays blind to where a manually-
+// placed box ended up (no collision check), matching this module's own
+// existing "practical, not a physics engine" tradeoff.
+model LoadPlanBoxPosition {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @db.Uuid
+  loadPlanItemId String   @db.Uuid
+  boxIndex       Int
+  xCm            Decimal  @db.Decimal(8, 2)
+  yCm            Decimal  @db.Decimal(8, 2)
+  zCm            Decimal  @db.Decimal(8, 2)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlanItem LoadPlanItem @relation(fields: [companyId, loadPlanItemId], references: [companyId, id], onDelete: Cascade)
+
+  @@unique([companyId, id])
+  @@unique([loadPlanItemId, boxIndex])
+  @@map("load_plan_box_positions")
 }
 
 // ============================================================================

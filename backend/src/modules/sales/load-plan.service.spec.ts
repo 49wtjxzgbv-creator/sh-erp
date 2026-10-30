@@ -17,6 +17,7 @@ describe('LoadPlanService', () => {
         loadPlan: { findUnique: jest.fn(), deleteMany: jest.fn(), create: jest.fn() },
         loadPlanTruck: { create: jest.fn(), findFirst: jest.fn() },
         loadPlanItem: { createMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
+        loadPlanBoxPosition: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn(), deleteMany: jest.fn() },
         assembly: { findMany: jest.fn() },
         // Deliberately NO `$transaction` here — `prisma.tenant` inside a
         // request is already the per-request transaction client and has no
@@ -235,6 +236,36 @@ describe('LoadPlanService', () => {
       expect(truck.placedBoxes).toHaveLength(2); // unitsQty: 2 -> 2 separate boxes, no unitsPerBox splitting for manual items
       expect(truck.totalWeightKg).toBe(40);
     });
+
+    it('places a box with a stored position override exactly there instead of auto-packing it, leaving the rest of the same line auto-packed', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        transportUnitTypeId: 'type-1',
+        transportUnitType: { id: 'type-1', name: 'Тент 20т', lengthCm: '500', widthCm: '200', heightCm: '200', maxWeightKg: '20000' },
+        trucks: [
+          {
+            id: 'truck-1',
+            index: 1,
+            items: [{ id: 'li-1', customerOrderItemId: 'item-1', assemblyId: 'a1', unitsQty: 2 }],
+          },
+        ],
+      });
+      prisma.tenant.assembly.findMany.mockResolvedValue([
+        { id: 'a1', name: 'Widget', unitsPerBox: 1, boxLengthCm: '50', boxWidthCm: '40', boxHeightCm: '30' },
+      ]);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([]);
+      assemblies.calculateWeight.mockResolvedValue({ weightPerUnitKg: 5, complete: true, breakdown: [] });
+      prisma.tenant.loadPlanBoxPosition.findMany.mockResolvedValue([{ loadPlanItemId: 'li-1', boxIndex: 1, xCm: '111', yCm: '22', zCm: '33' }]);
+
+      const view = await service.get(user, 'order-1');
+
+      const truck = view!.trucks[0];
+      expect(truck.placedBoxes).toHaveLength(2);
+      const manual = truck.placedBoxes.find((b: any) => b.boxIndex === 1)!;
+      const auto = truck.placedBoxes.find((b: any) => b.boxIndex === 0)!;
+      expect(manual).toMatchObject({ x: 111, y: 22, z: 33, isManuallyPlaced: true, loadPlanItemId: 'li-1' });
+      expect(auto.isManuallyPlaced).toBe(false);
+    });
   });
 
   describe('moveItem', () => {
@@ -376,6 +407,67 @@ describe('LoadPlanService', () => {
 
       expect(prisma.tenant.loadPlanItem.delete).toHaveBeenCalledWith({ where: { id: 'item-1' } });
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'load_plan.item_removed' }));
+    });
+  });
+
+  describe('setBoxPosition', () => {
+    const dto = { xCm: 10, yCm: 20, zCm: 30 };
+
+    it('rejects a negative or non-integer boxIndex', async () => {
+      await expect(service.setBoxPosition(user, 'order-1', 'item-1', -1, dto)).rejects.toThrow('boxIndex must be a non-negative integer.');
+      await expect(service.setBoxPosition(user, 'order-1', 'item-1', 1.5, dto)).rejects.toThrow('boxIndex must be a non-negative integer.');
+    });
+
+    it('rejects when no plan exists for this order', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue(null);
+      await expect(service.setBoxPosition(user, 'order-1', 'item-1', 0, dto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects when the item does not belong to this plan', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1', transportUnitType: { lengthCm: '500', widthCm: '200', heightCm: '200' } });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue({ id: 'item-1', loadPlanTruck: { loadPlanId: 'some-other-plan' } });
+      await expect(service.setBoxPosition(user, 'order-1', 'item-1', 0, dto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a position outside the truck envelope', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1', transportUnitType: { lengthCm: '500', widthCm: '200', heightCm: '200' } });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue({ id: 'item-1', loadPlanTruck: { loadPlanId: 'plan-1' } });
+      await expect(service.setBoxPosition(user, 'order-1', 'item-1', 0, { xCm: 999, yCm: 20, zCm: 30 })).rejects.toThrow(
+        "Position is outside the truck's own envelope",
+      );
+      expect(prisma.tenant.loadPlanBoxPosition.upsert).not.toHaveBeenCalled();
+    });
+
+    it('upserts the position and returns get()', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1', transportUnitType: { lengthCm: '500', widthCm: '200', heightCm: '200' } });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue({ id: 'item-1', loadPlanTruck: { loadPlanId: 'plan-1' } });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
+
+      await service.setBoxPosition(user, 'order-1', 'item-1', 2, dto);
+
+      expect(prisma.tenant.loadPlanBoxPosition.upsert).toHaveBeenCalledWith({
+        where: { loadPlanItemId_boxIndex: { loadPlanItemId: 'item-1', boxIndex: 2 } },
+        create: { loadPlanItemId: 'item-1', boxIndex: 2, xCm: 10, yCm: 20, zCm: 30 },
+        update: { xCm: 10, yCm: 20, zCm: 30 },
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'load_plan.box_position_set' }));
+    });
+  });
+
+  describe('clearBoxPosition', () => {
+    it('rejects when no plan exists for this order', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue(null);
+      await expect(service.clearBoxPosition(user, 'order-1', 'item-1', 0)).rejects.toThrow(NotFoundException);
+    });
+
+    it('deletes the override and returns get(), even if nothing was pinned', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
+
+      await service.clearBoxPosition(user, 'order-1', 'item-1', 2);
+
+      expect(prisma.tenant.loadPlanBoxPosition.deleteMany).toHaveBeenCalledWith({ where: { loadPlanItemId: 'item-1', boxIndex: 2 } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'load_plan.box_position_cleared' }));
     });
   });
 });

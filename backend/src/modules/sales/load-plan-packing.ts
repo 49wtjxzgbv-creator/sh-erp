@@ -58,6 +58,9 @@ export interface PackBox {
   stackable: boolean;
   /** Combined weight (kg) this box can bear on top of it, when `stackable`. `null` means unlimited. Ignored when `stackable` is `false`. */
   maxStackWeightKg: number | null;
+  /** Manual drag positioning (2026-10-30) — which LoadPlanItem row and which Nth box of it this is. Carried through untouched, never read by the packing logic itself; lets LoadPlanService#get match a returned PlacedBox back to a possible LoadPlanBoxPosition override. */
+  loadPlanItemId: string;
+  boxIndex: number;
 }
 
 export interface TruckDims {

@@ -5,8 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { TransportUnitTypesService } from '../logistics/transport-unit-types.service';
-import { AddLoadPlanItemDto } from './dto/load-plan.dto';
-import { PackBox, StrapPlan, TruckDims, computeStrapPlan, layoutSingleTruck, packBoxesIntoTrucks } from './load-plan-packing';
+import { AddLoadPlanItemDto, SetLoadPlanBoxPositionDto } from './dto/load-plan.dto';
+import { PackBox, PlacedBox, StrapPlan, TruckDims, computeStrapPlan, layoutSingleTruck, packBoxesIntoTrucks } from './load-plan-packing';
 
 export interface LoadPlanTruckView {
   id: string;
@@ -21,7 +21,20 @@ export interface LoadPlanTruckView {
     unitsQty: number;
     weightKg: number;
   }[];
-  placedBoxes: { assemblyId: string; x: number; y: number; z: number; lengthCm: number; widthCm: number; heightCm: number }[];
+  placedBoxes: {
+    assemblyId: string;
+    x: number;
+    y: number;
+    z: number;
+    lengthCm: number;
+    widthCm: number;
+    heightCm: number;
+    /** Which LoadPlanItem/box this is — target for PUT/DELETE .../boxes/:boxIndex/position. */
+    loadPlanItemId: string;
+    boxIndex: number;
+    /** `true` when a LoadPlanBoxPosition override placed this box here instead of the auto-packer. */
+    isManuallyPlaced: boolean;
+  }[];
   overflowBoxCount: number;
   totalWeightKg: number;
   volumeUsedPercent: number;
@@ -144,6 +157,12 @@ export class LoadPlanService {
           unitsQty: unitsInThisBox,
           stackable: assembly.boxStackable ?? true,
           maxStackWeightKg: assembly.boxMaxStackWeightKg == null ? null : Number(assembly.boxMaxStackWeightKg),
+          // No real LoadPlanItem row exists yet at this point (this pass
+          // only aggregates qty-per-truck to CREATE those rows below) —
+          // these two fields are never read from THIS placement result,
+          // only from get()'s own (separate) packing pass afterward.
+          loadPlanItemId: item.id,
+          boxIndex: i,
         });
       }
     }
@@ -219,9 +238,45 @@ export class LoadPlanService {
       weightByAssembly.set(id, (await this.assembliesService.calculateWeight(user, id)).weightPerUnitKg);
     }
 
+    // Manual drag positioning (2026-10-30) — every override for every item
+    // across every truck of this plan, fetched once up front rather than
+    // per-truck. `boxIndex` is the same deterministic loop index assigned
+    // below as each item's boxes are enumerated (0, 1, 2, ... in the exact
+    // order already used for both branches) — stable release-over-release
+    // as long as the item's own unitsQty/packaging doesn't change.
+    const allItemIds = (plan.trucks as any[]).flatMap((t) => t.items.map((i: any) => i.id));
+    const boxPositions = allItemIds.length > 0 ? await this.prisma.tenant.loadPlanBoxPosition.findMany({ where: { loadPlanItemId: { in: allItemIds } } }) : [];
+    const overridesByItem = new Map<string, Map<number, { xCm: number; yCm: number; zCm: number }>>();
+    for (const pos of boxPositions as any[]) {
+      let byIndex = overridesByItem.get(pos.loadPlanItemId);
+      if (!byIndex) {
+        byIndex = new Map();
+        overridesByItem.set(pos.loadPlanItemId, byIndex);
+      }
+      byIndex.set(pos.boxIndex, { xCm: Number(pos.xCm), yCm: Number(pos.yCm), zCm: Number(pos.zCm) });
+    }
+
     const trucks: LoadPlanTruckView[] = [];
     for (const truck of plan.trucks as any[]) {
       const packBoxes: PackBox[] = [];
+      // Boxes with a stored override skip the auto-packer entirely — built
+      // directly as PlacedBox-shaped entries at their pinned position, then
+      // merged back in below. The auto-packer never sees them, so it packs
+      // everything else blind to where they ended up (no collision check
+      // against a manually-placed box — see the schema's own header
+      // comment on LoadPlanBoxPosition for why that's a deliberate
+      // tradeoff, not an oversight).
+      const manualPlacements: PlacedBox[] = [];
+
+      function pushBox(box: Omit<PackBox, 'loadPlanItemId' | 'boxIndex'>, itemId: string, boxIndex: number) {
+        const override = overridesByItem.get(itemId)?.get(boxIndex);
+        if (override) {
+          manualPlacements.push({ ...box, loadPlanItemId: itemId, boxIndex, truckIndex: truck.index, x: override.xCm, y: override.yCm, z: override.zCm });
+        } else {
+          packBoxes.push({ ...box, loadPlanItemId: itemId, boxIndex });
+        }
+      }
+
       for (const item of truck.items as any[]) {
         // Ad-hoc, fully manual box (2026-10-30) — no Assembly at all, every
         // dimension/weight comes straight off the item's own manual*
@@ -235,17 +290,21 @@ export class LoadPlanService {
         if (item.assemblyId == null) {
           if (item.manualLengthCm == null || item.manualWidthCm == null || item.manualHeightCm == null) continue; // defensive — addItem() already requires these together
           for (let i = 0; i < item.unitsQty; i++) {
-            packBoxes.push({
-              customerOrderItemId: item.id,
-              assemblyId: item.id,
-              lengthCm: Number(item.manualLengthCm),
-              widthCm: Number(item.manualWidthCm),
-              heightCm: Number(item.manualHeightCm),
-              weightKg: item.manualWeightKg == null ? 0 : Number(item.manualWeightKg),
-              unitsQty: 1,
-              stackable: true,
-              maxStackWeightKg: null,
-            });
+            pushBox(
+              {
+                customerOrderItemId: item.id,
+                assemblyId: item.id,
+                lengthCm: Number(item.manualLengthCm),
+                widthCm: Number(item.manualWidthCm),
+                heightCm: Number(item.manualHeightCm),
+                weightKg: item.manualWeightKg == null ? 0 : Number(item.manualWeightKg),
+                unitsQty: 1,
+                stackable: true,
+                maxStackWeightKg: null,
+              },
+              item.id,
+              i,
+            );
           }
           continue;
         }
@@ -254,27 +313,35 @@ export class LoadPlanService {
         if (!assembly || assembly.boxLengthCm == null) continue; // packaging may have been cleared since the plan was generated
         const unitsPerBox: number = assembly.unitsPerBox ?? 1;
         let unitsLeft = item.unitsQty;
+        let boxIndex = 0;
         while (unitsLeft > 0) {
           const unitsInThisBox = Math.min(unitsPerBox, unitsLeft);
           unitsLeft -= unitsInThisBox;
-          packBoxes.push({
-            // Ad-hoc catalog pick (customerOrderItemId null, assemblyId
-            // set) has no real CustomerOrderItem to key off — the item's
-            // own id stands in, same reasoning as the manual case above.
-            customerOrderItemId: item.customerOrderItemId ?? item.id,
-            assemblyId: item.assemblyId,
-            lengthCm: Number(assembly.boxLengthCm),
-            widthCm: Number(assembly.boxWidthCm),
-            heightCm: Number(assembly.boxHeightCm),
-            weightKg: (weightByAssembly.get(item.assemblyId) ?? 0) * unitsInThisBox,
-            unitsQty: unitsInThisBox,
-            stackable: assembly.boxStackable ?? true,
-            maxStackWeightKg: assembly.boxMaxStackWeightKg == null ? null : Number(assembly.boxMaxStackWeightKg),
-          });
+          pushBox(
+            {
+              // Ad-hoc catalog pick (customerOrderItemId null, assemblyId
+              // set) has no real CustomerOrderItem to key off — the item's
+              // own id stands in, same reasoning as the manual case above.
+              customerOrderItemId: item.customerOrderItemId ?? item.id,
+              assemblyId: item.assemblyId,
+              lengthCm: Number(assembly.boxLengthCm),
+              widthCm: Number(assembly.boxWidthCm),
+              heightCm: Number(assembly.boxHeightCm),
+              weightKg: (weightByAssembly.get(item.assemblyId) ?? 0) * unitsInThisBox,
+              unitsQty: unitsInThisBox,
+              stackable: assembly.boxStackable ?? true,
+              maxStackWeightKg: assembly.boxMaxStackWeightKg == null ? null : Number(assembly.boxMaxStackWeightKg),
+            },
+            item.id,
+            boxIndex,
+          );
+          boxIndex += 1;
         }
       }
 
-      const { placed, overflow } = layoutSingleTruck(packBoxes, truckDims);
+      const { placed: autoPlaced, overflow } = layoutSingleTruck(packBoxes, truckDims);
+      const placed = [...manualPlacements, ...autoPlaced];
+      const manuallyPlacedKeys = new Set(manualPlacements.map((b) => `${b.loadPlanItemId}:${b.boxIndex}`));
       const totalWeightKg = placed.reduce((sum, b) => sum + b.weightKg, 0);
       const usedVolumeCm3 = placed.reduce((sum, b) => sum + b.lengthCm * b.widthCm * b.heightCm, 0);
 
@@ -295,7 +362,18 @@ export class LoadPlanService {
             weightKg,
           };
         }),
-        placedBoxes: placed.map((b) => ({ assemblyId: b.assemblyId, x: b.x, y: b.y, z: b.z, lengthCm: b.lengthCm, widthCm: b.widthCm, heightCm: b.heightCm })),
+        placedBoxes: placed.map((b) => ({
+          assemblyId: b.assemblyId,
+          x: b.x,
+          y: b.y,
+          z: b.z,
+          lengthCm: b.lengthCm,
+          widthCm: b.widthCm,
+          heightCm: b.heightCm,
+          loadPlanItemId: b.loadPlanItemId,
+          boxIndex: b.boxIndex,
+          isManuallyPlaced: manuallyPlacedKeys.has(`${b.loadPlanItemId}:${b.boxIndex}`),
+        })),
         overflowBoxCount: overflow.length,
         totalWeightKg,
         volumeUsedPercent: truckVolumeCm3 > 0 ? (usedVolumeCm3 / truckVolumeCm3) * 100 : 0,
@@ -450,6 +528,73 @@ export class LoadPlanService {
       companyId: user.companyId,
       actorUserId: user.userId,
       action: 'load_plan.item_removed',
+      entityType: 'LoadPlanItem',
+      entityId: itemId,
+    });
+
+    return this.get(user, customerOrderId);
+  }
+
+  /**
+   * Manual drag positioning (2026-10-30, "можливість самому переміщувати
+   * вантаж") — pins box `boxIndex` of `itemId` to an exact spot, pulling it
+   * out of the auto-packer on every future `get()` until cleared. Only a
+   * cheap bounds check against the truck's own envelope — no collision
+   * check against other boxes, see the LoadPlanBoxPosition schema comment.
+   */
+  async setBoxPosition(user: RequestUser, customerOrderId: string, itemId: string, boxIndex: number, dto: SetLoadPlanBoxPositionDto) {
+    if (!Number.isInteger(boxIndex) || boxIndex < 0) {
+      throw new CodedBadRequestException('LOAD_PLAN_INVALID_BOX_INDEX', 'boxIndex must be a non-negative integer.');
+    }
+    const plan = await this.prisma.tenant.loadPlan.findUnique({
+      where: { companyId_customerOrderId: { companyId: user.companyId, customerOrderId } },
+      include: { transportUnitType: true },
+    });
+    if (!plan) throw new CodedNotFoundException('LOAD_PLAN_NOT_FOUND', 'No load plan exists for this order yet — generate one first.');
+
+    const item = await this.prisma.tenant.loadPlanItem.findUnique({ where: { id: itemId }, include: { loadPlanTruck: true } });
+    if (!item || (item as any).loadPlanTruck.loadPlanId !== plan.id) {
+      throw new CodedNotFoundException('LOAD_PLAN_ITEM_NOT_FOUND', 'Load plan item not found.');
+    }
+
+    const transportType = plan.transportUnitType as any;
+    const truckDims = { lengthCm: Number(transportType.lengthCm), widthCm: Number(transportType.widthCm), heightCm: Number(transportType.heightCm) };
+    if (dto.xCm > truckDims.lengthCm || dto.yCm > truckDims.widthCm || dto.zCm > truckDims.heightCm) {
+      throw new CodedBadRequestException(
+        'LOAD_PLAN_BOX_POSITION_OUT_OF_BOUNDS',
+        `Position is outside the truck's own envelope (${truckDims.lengthCm}×${truckDims.widthCm}×${truckDims.heightCm} cm).`,
+      );
+    }
+
+    await this.prisma.tenant.loadPlanBoxPosition.upsert({
+      where: { loadPlanItemId_boxIndex: { loadPlanItemId: itemId, boxIndex } },
+      create: { loadPlanItemId: itemId, boxIndex, xCm: dto.xCm, yCm: dto.yCm, zCm: dto.zCm } as any,
+      update: { xCm: dto.xCm, yCm: dto.yCm, zCm: dto.zCm },
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'load_plan.box_position_set',
+      entityType: 'LoadPlanItem',
+      entityId: itemId,
+      after: { boxIndex, ...dto },
+    });
+
+    return this.get(user, customerOrderId);
+  }
+
+  /** Clears a manual position override — the box rejoins auto-packing on the next `get()`. Idempotent: clearing a box that was never pinned is a no-op, not an error. */
+  async clearBoxPosition(user: RequestUser, customerOrderId: string, itemId: string, boxIndex: number) {
+    const plan = await this.prisma.tenant.loadPlan.findUnique({ where: { companyId_customerOrderId: { companyId: user.companyId, customerOrderId } } });
+    if (!plan) throw new CodedNotFoundException('LOAD_PLAN_NOT_FOUND', 'No load plan exists for this order yet — generate one first.');
+
+    await this.prisma.tenant.loadPlanBoxPosition.deleteMany({ where: { loadPlanItemId: itemId, boxIndex } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'load_plan.box_position_cleared',
       entityType: 'LoadPlanItem',
       entityId: itemId,
     });
