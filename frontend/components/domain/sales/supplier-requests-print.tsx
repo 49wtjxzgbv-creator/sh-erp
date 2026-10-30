@@ -30,6 +30,8 @@ export interface SupplierRequestLineForPrint {
   qty: number;
   /** Which customer order this line came from — only ever set on the multi-order bulk request page (`/sales/shortage-bulk`), where one supplier's printed request can genuinely cover several different orders at once and the recipient needs to know which. Undefined on the single-order page, where every line already belongs to the one order the whole document is for — the column simply doesn't render there. */
   orderNumber?: string;
+  /** "конкретну кількість яка потрібна до кожного замовлення саме цього товару" (2026-10-30) — per-order qty breakdown for a merged line, e.g. "1001: 5, 1002: 3" (mergeLinesForPrint, shortage-bulk/page.tsx). Falls back to the plain `orderNumber` in the table cell when unset (single-order page, or a line that was never merged). */
+  orderQtyBreakdown?: string;
   /** The resolved supplier's price, null/undefined when unknown — printed only when the "Ціна" column is selected. */
   price?: number | null;
 }
@@ -446,7 +448,7 @@ function SupplierRequestsPrintContent({
                       <td>{translatedDescriptions[`${gi}-${li}`] ?? descriptionWithoutArticle(line)}</td>
                     )}
                     {printOptions.isColumnVisible('manufacturerCode') && <td>{lineManufacturerCode(line) ?? ''}</td>}
-                    {hasOrderColumn && <td>{line.orderNumber ?? ''}</td>}
+                    {hasOrderColumn && <td>{line.orderQtyBreakdown ?? line.orderNumber ?? ''}</td>}
                     {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                     {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
                     {printOptions.isColumnVisible('price') && (

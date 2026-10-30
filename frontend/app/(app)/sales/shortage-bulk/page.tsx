@@ -77,7 +77,10 @@ function groupTotal(group: EditableGroup): number {
  * fed back into `groups` state.
  */
 function mergeLinesForPrint(lines: EditableLine[]) {
-  const merged = new Map<string, { kind: EditableLine['kind']; productId?: string; subAssemblyId?: string; description: string; article: string | null; qty: number; price: number | null; orderNumbers: string[] }>();
+  const merged = new Map<
+    string,
+    { kind: EditableLine['kind']; productId?: string; subAssemblyId?: string; description: string; article: string | null; qty: number; price: number | null; orderNumbers: string[]; qtyByOrder: Map<string, number> }
+  >();
   for (const line of lines) {
     if (line.qty <= 0) continue;
     const key = `${line.kind}:${line.productId ?? line.subAssemblyId ?? line.description}`;
@@ -85,6 +88,7 @@ function mergeLinesForPrint(lines: EditableLine[]) {
     if (existing) {
       existing.qty += line.qty;
       if (!existing.orderNumbers.includes(line.orderNumber)) existing.orderNumbers.push(line.orderNumber);
+      existing.qtyByOrder.set(line.orderNumber, (existing.qtyByOrder.get(line.orderNumber) ?? 0) + line.qty);
     } else {
       merged.set(key, {
         kind: line.kind,
@@ -95,10 +99,24 @@ function mergeLinesForPrint(lines: EditableLine[]) {
         qty: line.qty,
         price: line.price,
         orderNumbers: [line.orderNumber],
+        qtyByOrder: new Map([[line.orderNumber, line.qty]]),
       });
     }
   }
-  return Array.from(merged.values()).map((m) => ({ ...m, orderNumber: m.orderNumbers.join(', ') }));
+  // "в стовпчику де номер замовлення біля кожного товару краще б ще
+  // поруч з назвою писало конкретну кількість яка потрібна до кожного
+  // замовлення саме цього товару" (2026-10-30) — `orderNumber` stays the
+  // plain comma-joined list (unchanged, what the group header's own dedup
+  // logic expects — see supplier-requests-print.tsx's own comment on
+  // that); `orderQtyBreakdown` is the new "1001: 5, 1002: 3" per-order
+  // detail for the table cell, built from the SAME per-order qty totals
+  // the combined `qty` column is already summed from, so the two always
+  // agree.
+  return Array.from(merged.values()).map((m) => ({
+    ...m,
+    orderNumber: m.orderNumbers.join(', '),
+    orderQtyBreakdown: m.orderNumbers.map((n) => `${n}: ${m.qtyByOrder.get(n)}`).join(', '),
+  }));
 }
 
 /**
