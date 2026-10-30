@@ -70,7 +70,7 @@ export default function BillingPage() {
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-3" data-tour="billing-plans-grid">
             {plans?.map((plan) => {
               const current = subscription?.planId === plan.id;
               return (

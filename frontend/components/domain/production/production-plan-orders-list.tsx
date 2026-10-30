@@ -145,13 +145,15 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
         </SelectContent>
       </Select>
 
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        isLoading={isLoading}
-        onRowClick={(order) => router.push(`${basePath}/${order.id}`)}
-        pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
-      />
+      <div data-tour="production-plan-table">
+        <DataTable
+          columns={columns}
+          data={data?.items ?? []}
+          isLoading={isLoading}
+          onRowClick={(order) => router.push(`${basePath}/${order.id}`)}
+          pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
+        />
+      </div>
 
       {board && board.orders.length > 0 && (
         <>

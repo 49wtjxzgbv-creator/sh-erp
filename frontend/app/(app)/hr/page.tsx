@@ -65,7 +65,7 @@ export default function EmployeesPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button asChild>
+        <Button asChild data-tour="hr-new-employee-button">
           <Link href="/hr/new">
             <Plus className="mr-2 h-4 w-4" />
             {t('newEmployee')}

@@ -40,7 +40,7 @@ export default function AiHelpPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <Card>
+      <Card data-tour="ai-help-card">
         <CardHeader>
           <CardTitle className="text-base">{t('help')}</CardTitle>
           <CardDescription>{t('helpDescription')}</CardDescription>

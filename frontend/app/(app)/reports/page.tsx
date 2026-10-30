@@ -44,7 +44,9 @@ export default function ReorderSuggestionsPage() {
           <Input id="limit" type="number" min={1} max={500} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-32" />
         </div>
       </div>
-      <DataTable columns={columns} data={data ?? []} isLoading={isLoading} />
+      <div data-tour="reports-reorder-table">
+        <DataTable columns={columns} data={data ?? []} isLoading={isLoading} />
+      </div>
     </div>
   );
 }

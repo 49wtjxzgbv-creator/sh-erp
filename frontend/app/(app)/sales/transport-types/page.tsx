@@ -80,7 +80,7 @@ export default function TransportTypesPage() {
   return (
     <RequirePermission permission="transport-unit-types:manage" redirectTo="/sales">
       <div className="max-w-3xl space-y-4">
-        <Card>
+        <Card data-tour="transport-types-new-form">
           <CardHeader>
             <CardTitle className="text-base">{t('newTransportType')}</CardTitle>
           </CardHeader>

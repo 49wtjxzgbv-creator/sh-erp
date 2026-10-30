@@ -197,7 +197,7 @@ export default function QuotationsPage() {
           </Select>
         </div>
         {canManage && (
-          <Button asChild>
+          <Button asChild data-tour="quotations-new-button">
             <Link href="/quotations/new">
               <Plus className="mr-2 h-4 w-4" />
               {t('newQuotation')}

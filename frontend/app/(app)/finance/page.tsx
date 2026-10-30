@@ -202,7 +202,7 @@ export default function FinancePage() {
           {t('exchangeRatesLink')}
         </Link>
       </div>
-      <Tabs defaultValue="customer-orders">
+      <Tabs defaultValue="customer-orders" data-tour="finance-tabs">
         <TabsList>
           <TabsTrigger value="customer-orders">{t('tabCustomerOrders')}</TabsTrigger>
           <TabsTrigger value="purchase-orders">{t('tabPurchaseOrders')}</TabsTrigger>
