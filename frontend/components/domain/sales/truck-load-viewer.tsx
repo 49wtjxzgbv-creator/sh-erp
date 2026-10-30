@@ -163,10 +163,10 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     // Many placed boxes share the same assembly's glb, so without caching
     // this reloaded+reparsed the identical file once per box — freezing the
     // page on trucks with lots of boxes. Scoped to this effect run, not
-    // module-level, so it never outlives the scene it was built for.
-    // Object3D.clone() shares geometry/material refs while copying each
-    // instance's own transform, and dispose() is idempotent, so the
-    // existing cleanup code stays correct for the shared resources.
+    // module-level, so it never outlives the scene it was built for. The
+    // resolved template is never added to the scene itself — its meshes are
+    // only read from (see the instanced-rendering block below), so it's
+    // returned as-is rather than cloned.
     const scaledModelCache = new Map<string, Promise<THREE.Object3D | null>>();
     function loadGlbScaledToBoxCached(glbUrl: string, targetCm: { lengthCm: number; widthCm: number; heightCm: number }): Promise<THREE.Object3D | null> {
       // Dims included in case two different assemblies ever share one glb file.
@@ -176,7 +176,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         cached = loadGlbScaledToBox(glbUrl, targetCm);
         scaledModelCache.set(cacheKey, cached);
       }
-      return cached.then((model) => model?.clone() ?? null);
+      return cached;
     }
 
     const scene = new THREE.Scene();
@@ -282,6 +282,24 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     // below to find and dispose.
     if (focusedBox) truckGeometry.dispose();
 
+    // Boxes sharing the same assembly+dims are batched here instead of
+    // handled individually below — a truck can place the SAME assembly's
+    // model dozens or hundreds of times, and loading no longer being the
+    // bottleneck (the cache above) still left every one of those instances
+    // adding its own full clone of the model's mesh hierarchy to the scene.
+    // One real glb measured live here had 53 separate submeshes; placed 375
+    // times that's ~19,875 individual WebGL draw calls every frame, which
+    // is what was still freezing the page (confirmed: frame times over
+    // 700ms even with fetch/parse already cached). Collected into groups
+    // keyed the same way as the load cache so each group's placed instances
+    // can be rendered as ONE THREE.InstancedMesh per submesh further down —
+    // 53 draw calls total for that truck, regardless of how many boxes
+    // share the model.
+    const glbGroups = new Map<
+      string,
+      { glbUrl: string; targetCm: { lengthCm: number; widthCm: number; heightCm: number }; slotPositions: THREE.Vector3[]; placeholders: { geometry: THREE.BoxGeometry; material: THREE.MeshStandardMaterial; mesh: THREE.Mesh }[] }
+    >();
+
     for (const box of placedBoxes) {
       const slotPosition = new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2);
       const geometry = new THREE.BoxGeometry(box.lengthCm, box.heightCm, box.widthCm);
@@ -294,42 +312,26 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
 
       const glbUrl = assemblyGlbUrls?.[box.assemblyId];
       if (glbUrl) {
+        const targetCm = { lengthCm: box.lengthCm, widthCm: box.widthCm, heightCm: box.heightCm };
+        const cacheKey = `${glbUrl}|${targetCm.lengthCm}x${targetCm.widthCm}x${targetCm.heightCm}`;
+        let entry = glbGroups.get(cacheKey);
+        if (!entry) {
+          entry = { glbUrl, targetCm, slotPositions: [], placeholders: [] };
+          glbGroups.set(cacheKey, entry);
+        }
+        entry.slotPositions.push(slotPosition);
+
         // Real geometry (2026-10-28, "де є глб має бути видно 3д моделі що
-        // там") loads async — the plain colored block below is swapped in
-        // immediately so the scene never shows an empty slot while waiting,
-        // then replaced once (if) the model resolves.
+        // там") loads async — a plain colored block per instance is shown
+        // immediately so the scene never shows empty slots while waiting,
+        // then the whole group's placeholders are swapped for the
+        // instanced model together once (if) it resolves.
         const placeholderGeometry = new THREE.BoxGeometry(box.lengthCm, box.heightCm, box.widthCm);
         const placeholderMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)), transparent: true, opacity: 0.5 });
         const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
         placeholder.position.copy(slotPosition);
         group.add(placeholder);
-
-        loadGlbScaledToBoxCached(glbUrl, { lengthCm: box.lengthCm, widthCm: box.widthCm, heightCm: box.heightCm })
-          .then((model) => {
-            if (!model) return;
-            if (cancelled) {
-              // Resolved after the viewer unmounted (e.g. the user switched
-              // trucks mid-load) — never got added to the (now-disposed)
-              // scene, so its own GPU resources need disposing here instead
-              // of via the effect's own cleanup traversal.
-              model.traverse((o) => {
-                if (o instanceof THREE.Mesh) {
-                  o.geometry.dispose();
-                  for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
-                }
-              });
-              return;
-            }
-            group.remove(placeholder);
-            placeholderGeometry.dispose();
-            placeholderMaterial.dispose();
-            model.position.copy(slotPosition);
-            group.add(model);
-          })
-          .catch(() => {
-            // Leave the colored placeholder in place — a broken/unreadable
-            // GLB shouldn't blank out that slot entirely.
-          });
+        entry.placeholders.push({ geometry: placeholderGeometry, material: placeholderMaterial, mesh: placeholder });
       } else {
         const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)) });
         const mesh = new THREE.Mesh(geometry, material);
@@ -338,6 +340,53 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         continue;
       }
       geometry.dispose();
+    }
+
+    for (const entry of glbGroups.values()) {
+      loadGlbScaledToBoxCached(entry.glbUrl, entry.targetCm)
+        .then((template) => {
+          if (cancelled) {
+            // The viewer unmounted before this resolved (e.g. the user
+            // switched trucks mid-load) — nothing from this group was ever
+            // added to the (now-disposed) scene, including the template
+            // itself (only read from below, never added directly), so
+            // there's nothing here that needs disposing.
+            return;
+          }
+          for (const { geometry, material, mesh } of entry.placeholders) {
+            group.remove(mesh);
+            geometry.dispose();
+            material.dispose();
+          }
+          if (!template) return;
+
+          // `template` itself is a throwaway wrapper never added to the
+          // scene — each submesh's `matrixWorld`, computed here with the
+          // wrapper still at the origin, is exactly its center/align/scale
+          // transform (what `loadGlbScaledToBox` built it for) with no
+          // per-instance placement folded in yet, so prepending each box's
+          // own translation below reproduces precisely the placement the
+          // old one-clone-per-box code did, just without cloning.
+          template.updateMatrixWorld(true);
+          const templateMeshes: THREE.Mesh[] = [];
+          template.traverse((o) => {
+            if (o instanceof THREE.Mesh) templateMeshes.push(o);
+          });
+          const matrix = new THREE.Matrix4();
+          for (const mesh of templateMeshes) {
+            const instanced = new THREE.InstancedMesh(mesh.geometry, mesh.material, entry.slotPositions.length);
+            entry.slotPositions.forEach((pos, i) => {
+              matrix.makeTranslation(pos.x, pos.y, pos.z).multiply(mesh.matrixWorld);
+              instanced.setMatrixAt(i, matrix);
+            });
+            instanced.instanceMatrix.needsUpdate = true;
+            group.add(instanced);
+          }
+        })
+        .catch(() => {
+          // Leave the colored placeholders in place — a broken/unreadable
+          // GLB shouldn't blank out those slots entirely.
+        });
     }
 
     // Tie-down straps (2026-10-28, "потрібно щоб враховувало стропи ремені
