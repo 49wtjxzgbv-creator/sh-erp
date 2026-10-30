@@ -20,6 +20,8 @@ import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { TruckLoadViewer, colorForAssembly } from '@/components/domain/sales/truck-load-viewer';
 import { AddLoadPlanItemDialog } from '@/components/domain/sales/add-load-plan-item-dialog';
+import { LoadPlan2DView } from '@/components/domain/sales/load-plan-2d-view';
+import { LoadPlanPrint } from '@/components/domain/sales/load-plan-print';
 
 type BulkFillStatus = 'done' | 'no-model' | 'error';
 
@@ -46,6 +48,7 @@ export default function LoadPlanPage() {
   const [focusedAssemblyId, setFocusedAssemblyId] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'3d' | 'top' | 'side'>('3d');
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
   const skippedAssemblies = plan?.skippedAssemblies ?? [];
@@ -296,11 +299,14 @@ export default function LoadPlanPage() {
           sizedTypes.length === 0 ? null : <p className="text-sm text-muted-foreground">{t('loadPlanEmpty')}</p>
         ) : (
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{t('loadPlanAddItemHint')}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => setAddItemDialogOpen(true)}>
-                {t('loadPlanAddItemButton')}
-              </Button>
+              <div className="flex gap-2">
+                <LoadPlanPrint customerOrderId={orderId} plan={plan} namesByAssemblyId={assemblyNames} truckDims={truckDims} />
+                <Button type="button" variant="outline" size="sm" onClick={() => setAddItemDialogOpen(true)}>
+                  {t('loadPlanAddItemButton')}
+                </Button>
+              </div>
             </div>
             <AddLoadPlanItemDialog orderId={orderId} truckIndex={selectedTruckIndex ?? 1} open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen} />
             <div className="flex gap-3 overflow-x-auto pb-2">
@@ -337,13 +343,28 @@ export default function LoadPlanPage() {
                   {selectedTruck.overflowBoxCount > 0 && (
                     <p className="text-sm text-amber-600 dark:text-amber-500">{t('loadPlanOverflowWarning', { count: selectedTruck.overflowBoxCount })}</p>
                   )}
-                  <TruckLoadViewer
-                    truckDims={truckDims}
-                    placedBoxes={selectedTruck.placedBoxes}
-                    assemblyGlbUrls={assemblyGlbUrls}
-                    focusedAssemblyId={focusedAssemblyId}
-                    strapPlan={selectedTruck.strapPlan}
-                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant={viewMode === '3d' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('3d')}>
+                      {t('loadPlanView3D')}
+                    </Button>
+                    <Button type="button" variant={viewMode === 'top' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('top')}>
+                      {t('loadPlanViewTop')}
+                    </Button>
+                    <Button type="button" variant={viewMode === 'side' ? 'default' : 'outline'} size="sm" onClick={() => setViewMode('side')}>
+                      {t('loadPlanViewSide')}
+                    </Button>
+                  </div>
+                  {viewMode === '3d' ? (
+                    <TruckLoadViewer
+                      truckDims={truckDims}
+                      placedBoxes={selectedTruck.placedBoxes}
+                      assemblyGlbUrls={assemblyGlbUrls}
+                      focusedAssemblyId={focusedAssemblyId}
+                      strapPlan={selectedTruck.strapPlan}
+                    />
+                  ) : (
+                    <LoadPlan2DView truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} namesByAssemblyId={assemblyNames} view={viewMode} className="max-h-[420px] rounded-md border border-border" />
+                  )}
                   {selectedTruck.strapPlan && !focusedAssemblyId && (
                     <p className="text-xs text-muted-foreground">
                       {t('loadPlanStrapRecommendation', {
