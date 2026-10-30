@@ -954,6 +954,7 @@
     "loadPlanPrintButton": "Anleitung drucken",
     "loadPlanPrintTitle": "Beladungsanleitung",
     "loadPlanPrintLevel": "Ebene {level}",
+    "loadPlanDragHint": "Ziehen Sie einen Karton mit der Maus, um ihn manuell zu platzieren. Doppelklicken Sie auf einen manuell platzierten Karton, um ihn wieder der automatischen Beladung zu überlassen.",
     "filterByAssembly": "Filter by assembly",
     "serialNumber": "Serial number",
     "manufactureDate": "Manufacture date",

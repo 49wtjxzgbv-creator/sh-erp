@@ -36,6 +36,18 @@ export interface TruckLoadViewerProps {
    * framing the whole cargo exactly as before.
    */
   focusedAssemblyId?: string | null;
+  /**
+   * Manual drag positioning (2026-10-30, "можливість самому переміщувати
+   * вантаж"). Both optional — a caller that omits them just gets a
+   * read-only viewer, same as before this feature existed. `onBoxMoved`
+   * fires once per drag, on release, with the box's new truck-local
+   * position (height/`z` unchanged — drag is floor-plane only, see the
+   * drag handler's own comment for why). `onBoxPositionCleared` fires on
+   * a double-click of an already-manually-placed box (`isManuallyPlaced`
+   * on the box itself) to drop its override and rejoin auto-packing.
+   */
+  onBoxMoved?: (loadPlanItemId: string, boxIndex: number, position: { x: number; y: number; z: number }) => void;
+  onBoxPositionCleared?: (loadPlanItemId: string, boxIndex: number) => void;
 }
 
 const AXIS_UNIT_VECTORS: Record<'x' | 'y' | 'z', THREE.Vector3> = {
@@ -152,7 +164,7 @@ export function colorForAssembly(assemblyId: string): string {
  * the same hand-rolled three.js pattern, reused deliberately rather than
  * introducing react-three-fiber (not used anywhere else in this project).
  */
-export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan }: TruckLoadViewerProps) {
+export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan, onBoxMoved, onBoxPositionCleared }: TruckLoadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -245,6 +257,29 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     group.position.set(-truckDims.lengthCm / 2, -truckDims.heightCm / 2, -truckDims.widthCm / 2);
     scene.add(group);
 
+    // Manual drag positioning (2026-10-30, "можливість самому переміщувати
+    // вантаж") — one entry per physical box, built alongside the render
+    // loop below, keyed by the same `${loadPlanItemId}:${boxIndex}` the
+    // backend already uses to identify a box. Holds everything a drag
+    // needs to move: the box's own current truck-local position/size, its
+    // wireframe edges, and whichever visual representation it currently
+    // has — either its own plain Mesh (a no-glb box, OR a glb box's
+    // placeholder while loading) or a set of InstancedMesh references (a
+    // resolved glb box, one ref per submesh the model has, since each
+    // submesh is its own InstancedMesh — see the glb-batching block
+    // below). `instancedRefs` is populated once (if) the real model
+    // resolves, replacing `plainMesh`; a box dragged mid-load still moves
+    // correctly either way since the registry is read fresh on every
+    // pointermove, not captured once at drag-start.
+    interface BoxRegistryEntry {
+      box: LoadPlanPlacedBox;
+      edges: THREE.LineSegments;
+      plainMesh?: THREE.Mesh;
+      instancedRefs?: { mesh: THREE.InstancedMesh; index: number; localMatrix: THREE.Matrix4 }[];
+    }
+    const boxRegistry = new Map<string, BoxRegistryEntry>();
+    const boxRegistryKey = (loadPlanItemId: string, boxIndex: number) => `${loadPlanItemId}:${boxIndex}`;
+
     // Semi-transparent cargo body (2026-10-28, "короб завантаження має бути
     // напівпрозорим") — a real solid mesh, not just edges, so the truck
     // reads as an actual container while still letting what's loaded
@@ -297,18 +332,31 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     // share the model.
     const glbGroups = new Map<
       string,
-      { glbUrl: string; targetCm: { lengthCm: number; widthCm: number; heightCm: number }; slotPositions: THREE.Vector3[]; placeholders: { geometry: THREE.BoxGeometry; material: THREE.MeshStandardMaterial; mesh: THREE.Mesh }[] }
+      {
+        glbUrl: string;
+        targetCm: { lengthCm: number; widthCm: number; heightCm: number };
+        slotPositions: THREE.Vector3[];
+        boxRefs: LoadPlanPlacedBox[];
+        placeholders: { geometry: THREE.BoxGeometry; material: THREE.MeshStandardMaterial; mesh: THREE.Mesh }[];
+      }
     >();
 
     for (const box of placedBoxes) {
       const slotPosition = new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2);
       const geometry = new THREE.BoxGeometry(box.lengthCm, box.heightCm, box.widthCm);
+      // Manually-placed boxes (dragged by the user) get a distinct edge
+      // color so "this one's pinned" is visible at a glance — same bright
+      // blue regardless of the box's own assembly color, which is already
+      // used for the fill.
       const boxEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry),
-        new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.25 }),
+        new THREE.LineBasicMaterial({ color: box.isManuallyPlaced ? 0x2563eb : 0x1e293b, transparent: true, opacity: box.isManuallyPlaced ? 0.9 : 0.25 }),
       );
       boxEdges.position.copy(slotPosition);
       group.add(boxEdges);
+
+      const registryEntry: BoxRegistryEntry = { box, edges: boxEdges };
+      boxRegistry.set(boxRegistryKey(box.loadPlanItemId, box.boxIndex), registryEntry);
 
       const glbUrl = assemblyGlbUrls?.[box.assemblyId];
       if (glbUrl) {
@@ -316,10 +364,11 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         const cacheKey = `${glbUrl}|${targetCm.lengthCm}x${targetCm.widthCm}x${targetCm.heightCm}`;
         let entry = glbGroups.get(cacheKey);
         if (!entry) {
-          entry = { glbUrl, targetCm, slotPositions: [], placeholders: [] };
+          entry = { glbUrl, targetCm, slotPositions: [], boxRefs: [], placeholders: [] };
           glbGroups.set(cacheKey, entry);
         }
         entry.slotPositions.push(slotPosition);
+        entry.boxRefs.push(box);
 
         // Real geometry (2026-10-28, "де є глб має бути видно 3д моделі що
         // там") loads async — a plain colored block per instance is shown
@@ -330,13 +379,17 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         const placeholderMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)), transparent: true, opacity: 0.5 });
         const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
         placeholder.position.copy(slotPosition);
+        placeholder.userData.boxRegistryKey = boxRegistryKey(box.loadPlanItemId, box.boxIndex);
         group.add(placeholder);
         entry.placeholders.push({ geometry: placeholderGeometry, material: placeholderMaterial, mesh: placeholder });
+        registryEntry.plainMesh = placeholder;
       } else {
         const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(colorForAssembly(box.assemblyId)) });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.copy(slotPosition);
+        mesh.userData.boxRegistryKey = boxRegistryKey(box.loadPlanItemId, box.boxIndex);
         group.add(mesh);
+        registryEntry.plainMesh = mesh;
         continue;
       }
       geometry.dispose();
@@ -375,9 +428,25 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
           const matrix = new THREE.Matrix4();
           for (const mesh of templateMeshes) {
             const instanced = new THREE.InstancedMesh(mesh.geometry, mesh.material, entry.slotPositions.length);
+            // Raycast hits on an InstancedMesh give back an `instanceId`,
+            // not which box that is — this parallel array (same order as
+            // `slotPositions`, which `setMatrixAt` below also indexes by)
+            // is how pointerdown resolves a hit back to a real box.
+            instanced.userData.boxRefs = entry.boxRefs;
+            const localMatrix = mesh.matrixWorld.clone();
             entry.slotPositions.forEach((pos, i) => {
-              matrix.makeTranslation(pos.x, pos.y, pos.z).multiply(mesh.matrixWorld);
+              matrix.makeTranslation(pos.x, pos.y, pos.z).multiply(localMatrix);
               instanced.setMatrixAt(i, matrix);
+              // Drag needs to recompute this instance's matrix later from a
+              // NEW slot position — `localMatrix` (the submesh's own
+              // center/align/scale transform, position-independent) is
+              // exactly the piece `setMatrixAt` above folds in every time.
+              const key = boxRegistryKey(entry.boxRefs[i].loadPlanItemId, entry.boxRefs[i].boxIndex);
+              const registryEntry = boxRegistry.get(key);
+              if (registryEntry) {
+                registryEntry.plainMesh = undefined;
+                (registryEntry.instancedRefs ??= []).push({ mesh: instanced, index: i, localMatrix });
+              }
             });
             instanced.instanceMatrix.needsUpdate = true;
             group.add(instanced);
@@ -418,6 +487,105 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
       }
     }
 
+    // Manual drag positioning (2026-10-30) — click-and-drag a box across
+    // the truck floor (X/length, Y/width in truck-local terms — THREE's Y
+    // stays fixed, i.e. height never changes via drag; re-stacking a box
+    // to a different LEVEL is still the auto-packer's job only). Registered
+    // on `renderer.domElement` in the CAPTURE phase specifically so this
+    // raycast runs, and can set `controls.enabled = false`, BEFORE
+    // OrbitControls' own (bubble-phase) pointerdown handler on the same
+    // element processes the same event — without that ordering, a drag
+    // starting on a box would also kick off an orbit rotation at the same
+    // time since OrbitControls has no idea a box was clicked.
+    const raycaster = new THREE.Raycaster();
+    const pointerNdc = new THREE.Vector2();
+    const dragPlane = new THREE.Plane();
+    const dragIntersection = new THREE.Vector3();
+    let dragging: { entry: BoxRegistryEntry } | null = null;
+
+    function findBoxAtPointer(point: { clientX: number; clientY: number }): BoxRegistryEntry | null {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointerNdc.x = ((point.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((point.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNdc, camera);
+      const hits = raycaster.intersectObject(group, true);
+      for (const hit of hits) {
+        const obj = hit.object;
+        if (obj instanceof THREE.InstancedMesh && obj.userData.boxRefs && hit.instanceId != null) {
+          const box = (obj.userData.boxRefs as LoadPlanPlacedBox[])[hit.instanceId];
+          const entry = box && boxRegistry.get(boxRegistryKey(box.loadPlanItemId, box.boxIndex));
+          if (entry) return entry;
+        } else if (obj instanceof THREE.Mesh && obj.userData.boxRegistryKey) {
+          const entry = boxRegistry.get(obj.userData.boxRegistryKey as string);
+          if (entry) return entry;
+        }
+      }
+      return null;
+    }
+
+    function applyBoxVisualPosition(entry: BoxRegistryEntry, slotPosition: THREE.Vector3) {
+      entry.edges.position.copy(slotPosition);
+      if (entry.plainMesh) entry.plainMesh.position.copy(slotPosition);
+      if (entry.instancedRefs) {
+        const m = new THREE.Matrix4();
+        for (const ref of entry.instancedRefs) {
+          m.makeTranslation(slotPosition.x, slotPosition.y, slotPosition.z).multiply(ref.localMatrix);
+          ref.mesh.setMatrixAt(ref.index, m);
+          ref.mesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+    }
+
+    function onPointerDownCapture(e: PointerEvent) {
+      if (e.button !== 0 || !onBoxMoved) return;
+      const entry = findBoxAtPointer(e);
+      if (!entry) return;
+      controls.enabled = false;
+      // Floor-plane for THIS drag, fixed at the box's own current height —
+      // in world space, since group only ever translates (no rotation),
+      // group-local Y + group.position.y.
+      const worldY = entry.box.z + entry.box.heightCm / 2 + group.position.y;
+      dragPlane.set(new THREE.Vector3(0, 1, 0), -worldY);
+      dragging = { entry };
+      renderer.domElement.setPointerCapture(e.pointerId);
+    }
+
+    function onPointerMoveDrag(e: PointerEvent) {
+      if (!dragging) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNdc, camera);
+      if (!raycaster.ray.intersectPlane(dragPlane, dragIntersection)) return;
+      const { box } = dragging.entry;
+      const localX = dragIntersection.x - group.position.x;
+      const localZ = dragIntersection.z - group.position.z;
+      box.x = Math.min(Math.max(localX - box.lengthCm / 2, 0), Math.max(truckDims.lengthCm - box.lengthCm, 0));
+      box.y = Math.min(Math.max(localZ - box.widthCm / 2, 0), Math.max(truckDims.widthCm - box.widthCm, 0));
+      applyBoxVisualPosition(dragging.entry, new THREE.Vector3(box.x + box.lengthCm / 2, box.z + box.heightCm / 2, box.y + box.widthCm / 2));
+    }
+
+    function onPointerUpDrag(e: PointerEvent) {
+      if (!dragging) return;
+      controls.enabled = true;
+      const { box } = dragging.entry;
+      renderer.domElement.releasePointerCapture(e.pointerId);
+      dragging = null;
+      onBoxMoved?.(box.loadPlanItemId, box.boxIndex, { x: box.x, y: box.y, z: box.z });
+    }
+
+    function onDoubleClickClear(e: MouseEvent) {
+      if (!onBoxPositionCleared) return;
+      const entry = findBoxAtPointer(e);
+      if (!entry || !entry.box.isManuallyPlaced) return;
+      onBoxPositionCleared(entry.box.loadPlanItemId, entry.box.boxIndex);
+    }
+
+    renderer.domElement.addEventListener('pointerdown', onPointerDownCapture, { capture: true });
+    renderer.domElement.addEventListener('pointermove', onPointerMoveDrag);
+    renderer.domElement.addEventListener('pointerup', onPointerUpDrag);
+    renderer.domElement.addEventListener('dblclick', onDoubleClickClear);
+
     let animationFrame: number;
     function animate() {
       animationFrame = requestAnimationFrame(animate);
@@ -439,6 +607,10 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
       cancelled = true;
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDownCapture, { capture: true });
+      renderer.domElement.removeEventListener('pointermove', onPointerMoveDrag);
+      renderer.domElement.removeEventListener('pointerup', onPointerUpDrag);
+      renderer.domElement.removeEventListener('dblclick', onDoubleClickClear);
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();
@@ -450,7 +622,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         }
       });
     };
-  }, [truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan]);
+  }, [truckDims, placedBoxes, assemblyGlbUrls, focusedAssemblyId, strapPlan, onBoxMoved, onBoxPositionCleared]);
 
   return <div ref={containerRef} className="h-full min-h-[420px] w-full" />;
 }

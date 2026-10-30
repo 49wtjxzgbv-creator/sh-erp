@@ -606,6 +606,11 @@ export interface LoadPlanPlacedBox {
   lengthCm: number;
   widthCm: number;
   heightCm: number;
+  /** Which LoadPlanItem/box this is — target for setLoadPlanBoxPosition/clearLoadPlanBoxPosition. */
+  loadPlanItemId: string;
+  boxIndex: number;
+  /** `true` when a stored position override placed this box here instead of the auto-packer. */
+  isManuallyPlaced: boolean;
 }
 export interface LoadPlanStrapPlan {
   count: number;
@@ -650,4 +655,10 @@ export function addLoadPlanItem(customerOrderId: string, dto: AddLoadPlanItemInp
 }
 export function removeLoadPlanItem(customerOrderId: string, itemId: string): Promise<LoadPlan> {
   return apiClient.delete<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}`);
+}
+export function setLoadPlanBoxPosition(customerOrderId: string, itemId: string, boxIndex: number, position: { xCm: number; yCm: number; zCm: number }): Promise<LoadPlan> {
+  return apiClient.put<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}/boxes/${boxIndex}/position`, position);
+}
+export function clearLoadPlanBoxPosition(customerOrderId: string, itemId: string, boxIndex: number): Promise<LoadPlan> {
+  return apiClient.delete<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}/boxes/${boxIndex}/position`);
 }

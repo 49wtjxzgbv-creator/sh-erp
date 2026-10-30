@@ -35,6 +35,8 @@ import {
   moveLoadPlanItem,
   addLoadPlanItem,
   removeLoadPlanItem,
+  setLoadPlanBoxPosition,
+  clearLoadPlanBoxPosition,
   type AddLoadPlanItemInput,
   type QueryCustomerOrdersInput,
   type CreateCustomerOrderInput,
@@ -363,6 +365,23 @@ export function useRemoveLoadPlanItem(customerOrderId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (itemId: string) => removeLoadPlanItem(customerOrderId, itemId),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
+  });
+}
+
+export function useSetLoadPlanBoxPosition(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, boxIndex, position }: { itemId: string; boxIndex: number; position: { xCm: number; yCm: number; zCm: number } }) =>
+      setLoadPlanBoxPosition(customerOrderId, itemId, boxIndex, position),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
+  });
+}
+
+export function useClearLoadPlanBoxPosition(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, boxIndex }: { itemId: string; boxIndex: number }) => clearLoadPlanBoxPosition(customerOrderId, itemId, boxIndex),
     onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
   });
 }

@@ -954,6 +954,7 @@
     "loadPlanPrintButton": "Print instructions",
     "loadPlanPrintTitle": "Loading instructions",
     "loadPlanPrintLevel": "Level {level}",
+    "loadPlanDragHint": "Drag a box with the mouse to place it by hand. Double-click a manually-placed box to send it back to auto-packing.",
     "filterByAssembly": "Filter by assembly",
     "serialNumber": "Serial number",
     "manufactureDate": "Manufacture date",

@@ -1,11 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { useTransportUnitTypes } from '@/lib/hooks/use-logistics';
-import { useLoadPlan, useGenerateLoadPlan, useMoveLoadPlanItem, useRemoveLoadPlanItem } from '@/lib/hooks/use-sales';
+import {
+  useLoadPlan,
+  useGenerateLoadPlan,
+  useMoveLoadPlanItem,
+  useRemoveLoadPlanItem,
+  useSetLoadPlanBoxPosition,
+  useClearLoadPlanBoxPosition,
+} from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { LoadPlanTruck, LoadPlanTruckItem } from '@/lib/api-client/sales';
 import { updateAssembly } from '@/lib/api-client/bom';
@@ -35,6 +42,26 @@ export default function LoadPlanPage() {
   const { data: plan, isLoading: planLoading } = useLoadPlan(orderId);
   const generatePlan = useGenerateLoadPlan(orderId);
   const moveItem = useMoveLoadPlanItem(orderId);
+  const setBoxPosition = useSetLoadPlanBoxPosition(orderId);
+  const clearBoxPosition = useClearLoadPlanBoxPosition(orderId);
+  // Stable identities (useCallback) — TruckLoadViewer's own effect
+  // rebuilds the entire 3D scene whenever these props change, so passing
+  // a fresh inline function every render would tear the scene down (and
+  // abort any in-progress drag) on every unrelated page re-render.
+  const setBoxPositionMutate = setBoxPosition.mutate;
+  const clearBoxPositionMutate = clearBoxPosition.mutate;
+  const handleBoxMoved = useCallback(
+    (loadPlanItemId: string, boxIndex: number, position: { x: number; y: number; z: number }) => {
+      setBoxPositionMutate({ itemId: loadPlanItemId, boxIndex, position: { xCm: position.x, yCm: position.y, zCm: position.z } });
+    },
+    [setBoxPositionMutate],
+  );
+  const handleBoxPositionCleared = useCallback(
+    (loadPlanItemId: string, boxIndex: number) => {
+      clearBoxPositionMutate({ itemId: loadPlanItemId, boxIndex });
+    },
+    [clearBoxPositionMutate],
+  );
 
   const sizedTypes = (transportTypes ?? []).filter((tp) => tp.active && tp.lengthCm && tp.widthCm && tp.heightCm);
 
@@ -355,13 +382,18 @@ export default function LoadPlanPage() {
                     </Button>
                   </div>
                   {viewMode === '3d' ? (
-                    <TruckLoadViewer
-                      truckDims={truckDims}
-                      placedBoxes={selectedTruck.placedBoxes}
-                      assemblyGlbUrls={assemblyGlbUrls}
-                      focusedAssemblyId={focusedAssemblyId}
-                      strapPlan={selectedTruck.strapPlan}
-                    />
+                    <>
+                      <TruckLoadViewer
+                        truckDims={truckDims}
+                        placedBoxes={selectedTruck.placedBoxes}
+                        assemblyGlbUrls={assemblyGlbUrls}
+                        focusedAssemblyId={focusedAssemblyId}
+                        strapPlan={selectedTruck.strapPlan}
+                        onBoxMoved={handleBoxMoved}
+                        onBoxPositionCleared={handleBoxPositionCleared}
+                      />
+                      <p className="text-xs text-muted-foreground">{t('loadPlanDragHint')}</p>
+                    </>
                   ) : (
                     <LoadPlan2DView truckDims={truckDims} placedBoxes={selectedTruck.placedBoxes} namesByAssemblyId={assemblyNames} view={viewMode} className="max-h-[420px] rounded-md border border-border" />
                   )}

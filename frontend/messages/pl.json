@@ -954,6 +954,7 @@
     "loadPlanPrintButton": "Drukuj instrukcję",
     "loadPlanPrintTitle": "Instrukcja załadunku",
     "loadPlanPrintLevel": "Poziom {level}",
+    "loadPlanDragHint": "Przeciągnij pudło myszką, aby ustawić je ręcznie. Kliknij dwukrotnie ręcznie ustawione pudło, aby zwrócić je do automatycznego pakowania.",
     "filterByAssembly": "Filter by assembly",
     "serialNumber": "Serial number",
     "manufactureDate": "Manufacture date",
