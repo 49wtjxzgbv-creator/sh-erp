@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EntityPhotoField } from '@/components/domain/files/entity-photo-field';
 import { PendingPhotoField } from '@/components/domain/files/pending-photo-field';
@@ -63,6 +64,8 @@ const assemblySchema = z.object({
   boxLengthCm: optionalNonNegativeNumber,
   boxWidthCm: optionalNonNegativeNumber,
   boxHeightCm: optionalNonNegativeNumber,
+  boxStackable: z.boolean().optional(),
+  boxMaxStackWeightKg: optionalNonNegativeNumber,
 });
 export type AssemblyFormValues = z.infer<typeof assemblySchema>;
 
@@ -84,6 +87,8 @@ export function assemblyToFormValues(assembly?: Assembly): Partial<AssemblyFormV
     boxLengthCm: toNumber(assembly.boxLengthCm) ?? undefined,
     boxWidthCm: toNumber(assembly.boxWidthCm) ?? undefined,
     boxHeightCm: toNumber(assembly.boxHeightCm) ?? undefined,
+    boxStackable: assembly.boxStackable,
+    boxMaxStackWeightKg: toNumber(assembly.boxMaxStackWeightKg) ?? undefined,
   };
 }
 
@@ -212,6 +217,7 @@ export function AssemblyForm({
   });
 
   const currency = watch('currency');
+  const boxStackable = watch('boxStackable') ?? true;
 
   async function submit(values: AssemblyFormValues) {
     const numeric = (v: number | '' | undefined) => (v === '' || v === undefined ? undefined : v);
@@ -228,6 +234,8 @@ export function AssemblyForm({
       boxLengthCm: numeric(values.boxLengthCm),
       boxWidthCm: numeric(values.boxWidthCm),
       boxHeightCm: numeric(values.boxHeightCm),
+      boxStackable: values.boxStackable ?? true,
+      boxMaxStackWeightKg: values.boxStackable === false ? undefined : numeric(values.boxMaxStackWeightKg),
     });
   }
 
@@ -391,6 +399,15 @@ export function AssemblyForm({
             </div>
           )}
           <p className="text-xs text-muted-foreground sm:col-span-2">{t('packagingHint')}</p>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Switch id="boxStackable" checked={boxStackable} onCheckedChange={(v) => setValue('boxStackable', v)} />
+            <Label htmlFor="boxStackable">{t('boxStackable')}</Label>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="boxMaxStackWeightKg">{t('boxMaxStackWeightKg')}</Label>
+            <Input id="boxMaxStackWeightKg" type="number" step="any" min="0" disabled={!boxStackable} {...register('boxMaxStackWeightKg')} />
+            <p className="text-xs text-muted-foreground">{t('boxMaxStackWeightKgHint')}</p>
+          </div>
         </CardContent>
       </Card>
 

@@ -57,6 +57,10 @@ export interface Assembly {
   boxLengthCm: DecimalString | null;
   boxWidthCm: DecimalString | null;
   boxHeightCm: DecimalString | null;
+  /** Load-plan weight-aware stacking (2026-10-30) — whether anything may rest on top of this assembly's own box at all. */
+  boxStackable: boolean;
+  /** Combined weight (kg) this box can bear on top of it when `boxStackable`. `null` means unlimited. */
+  boxMaxStackWeightKg: DecimalString | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -81,6 +85,8 @@ export interface CreateAssemblyInput {
   boxLengthCm?: number;
   boxWidthCm?: number;
   boxHeightCm?: number;
+  boxStackable?: boolean;
+  boxMaxStackWeightKg?: number;
 }
 export type UpdateAssemblyInput = Partial<CreateAssemblyInput>;
 

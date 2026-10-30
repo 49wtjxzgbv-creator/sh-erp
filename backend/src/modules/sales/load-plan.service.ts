@@ -132,6 +132,8 @@ export class LoadPlanService {
           heightCm,
           weightKg: weight.weightPerUnitKg * unitsInThisBox,
           unitsQty: unitsInThisBox,
+          stackable: assembly.boxStackable ?? true,
+          maxStackWeightKg: assembly.boxMaxStackWeightKg == null ? null : Number(assembly.boxMaxStackWeightKg),
         });
       }
     }
@@ -226,6 +228,8 @@ export class LoadPlanService {
             heightCm: Number(assembly.boxHeightCm),
             weightKg: (weightByAssembly.get(item.assemblyId) ?? 0) * unitsInThisBox,
             unitsQty: unitsInThisBox,
+            stackable: assembly.boxStackable ?? true,
+            maxStackWeightKg: assembly.boxMaxStackWeightKg == null ? null : Number(assembly.boxMaxStackWeightKg),
           });
         }
       }

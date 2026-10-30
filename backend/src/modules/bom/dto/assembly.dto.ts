@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
 import { Currency } from '@prisma/client';
 
 // Mirrors the old Assemblies sheet's header columns (Phase 1 §3.3) 1:1 —
@@ -132,6 +132,18 @@ export class CreateAssemblyDto {
   @IsNumber()
   @Min(0)
   boxHeightCm?: number;
+
+  @ApiPropertyOptional({ description: 'Load-plan packing: whether anything may be stacked on top of this assembly\'s own box. Defaults to true (no restriction).' })
+  @IsOptional()
+  @IsBoolean()
+  boxStackable?: boolean;
+
+  @ApiPropertyOptional({ description: 'Load-plan packing: max combined weight (kg) allowed to rest on top of this assembly\'s own box when boxStackable is true. Unset means no limit.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  boxMaxStackWeightKg?: number;
 }
 
 export class UpdateAssemblyDto extends PartialType(CreateAssemblyDto) {}

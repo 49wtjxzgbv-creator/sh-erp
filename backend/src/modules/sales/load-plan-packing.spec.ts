@@ -10,6 +10,8 @@ function box(overrides: Partial<PackBox> = {}): PackBox {
     heightCm: 30,
     weightKg: 10,
     unitsQty: 1,
+    stackable: true,
+    maxStackWeightKg: null,
     ...overrides,
   };
 }
@@ -96,6 +98,48 @@ describe('packBoxesIntoTrucks', () => {
     expect(new Set(motorYs).size).toBe(1);
     const beltYs = placed.filter((p) => p.assemblyId === 'belt').map((p) => p.y);
     expect(new Set(beltYs)).not.toEqual(new Set(motorYs));
+  });
+
+  it('refuses to stack a box on top of one marked not stackable, overflowing it to another truck', () => {
+    // Floor is exactly one box wide/long, so the second box can only ever
+    // be placed by stacking on the first — never beside it.
+    const truck: TruckDims = { lengthCm: 50, widthCm: 40, heightCm: 65, maxWeightKg: 10000 };
+    const bottom = box({ assemblyId: 'fragile', stackable: false });
+    const top = box({ assemblyId: 'other' });
+
+    const placed = packBoxesIntoTrucks([bottom, top], truck);
+
+    const bottomPlaced = placed.find((p) => p.assemblyId === 'fragile')!;
+    const topPlaced = placed.find((p) => p.assemblyId === 'other')!;
+    expect(bottomPlaced.truckIndex).toBe(1);
+    expect(topPlaced.truckIndex).toBe(2);
+  });
+
+  it('refuses to stack a box whose weight exceeds the support box\'s max stack weight', () => {
+    const truck: TruckDims = { lengthCm: 50, widthCm: 40, heightCm: 65, maxWeightKg: 10000 };
+    const bottom = box({ assemblyId: 'base', stackable: true, maxStackWeightKg: 5 });
+    const top = box({ assemblyId: 'other', weightKg: 10 });
+
+    const placed = packBoxesIntoTrucks([bottom, top], truck);
+
+    const bottomPlaced = placed.find((p) => p.assemblyId === 'base')!;
+    const topPlaced = placed.find((p) => p.assemblyId === 'other')!;
+    expect(bottomPlaced.truckIndex).toBe(1);
+    expect(topPlaced.truckIndex).toBe(2);
+  });
+
+  it('stacks a box on top of a support with enough remaining stack-weight budget', () => {
+    const truck: TruckDims = { lengthCm: 50, widthCm: 40, heightCm: 65, maxWeightKg: 10000 };
+    const bottom = box({ assemblyId: 'base', stackable: true, maxStackWeightKg: 20 });
+    const top = box({ assemblyId: 'other', weightKg: 10 });
+
+    const placed = packBoxesIntoTrucks([bottom, top], truck);
+
+    const bottomPlaced = placed.find((p) => p.assemblyId === 'base')!;
+    const topPlaced = placed.find((p) => p.assemblyId === 'other')!;
+    expect(bottomPlaced.truckIndex).toBe(1);
+    expect(topPlaced.truckIndex).toBe(1);
+    expect(topPlaced.z).toBe(bottomPlaced.z + bottomPlaced.heightCm);
   });
 
   it('throws when a single box does not fit inside the truck even empty', () => {

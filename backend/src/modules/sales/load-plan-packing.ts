@@ -12,19 +12,37 @@ import { CodedBadRequestException } from '../../common/api-exceptions';
  * Assembly's box dimensions is assumed to have picked a sensible loading
  * face). Two-stage approach per truck:
  *   1. Layer/level packing along the truck's height (Z): boxes sorted
- *      tallest-first, each level is a 2D Next-Fit-Decreasing-Height shelf
- *      pack of the truck's floor (L×W) using only boxes short enough to
- *      share that level without wasting more vertical space than needed.
+ *      tallest-first (heaviest-first as a tiebreak among equal heights —
+ *      see weight-aware stacking below), each level is a 2D
+ *      Next-Fit-Decreasing-Height shelf pack of the truck's floor (L×W).
  *      A single row never mixes two different assemblies (see
  *      `packOneLevel`'s own comment) — same-SKU boxes always end up
  *      grouped, even if that leaves a little unused length at a row's end.
  *   2. Weight budget (`maxWeightKg`) is enforced on top, in placement
  *      order — a box that would push the running total over budget
  *      overflows to the next truck even if it geometrically fit.
- * Anything that doesn't fit in the current truck (height-limited or
- * weight-limited) recurses into a fresh truck, so the result may span
- * more trucks than `Math.ceil(totalVolume / truckVolume)` would suggest
- * — expected for irregular cargo, not a bug.
+ * Anything that doesn't fit in the current truck (height-limited,
+ * weight-limited, or stacking-limited — see below) recurses into a fresh
+ * truck, so the result may span more trucks than
+ * `Math.ceil(totalVolume / truckVolume)` would suggest — expected for
+ * irregular cargo, not a bug.
+ *
+ * Weight-aware stacking (2026-10-30, "логіка завантаження якась
+ * неправильна... треба зважати на вагу розмір форму, як це правильно
+ * розміщати") — real freight loading doesn't just fit boxes into empty
+ * floor space, it also cares what's allowed to rest on top of what. A box
+ * is only placed at a given (x,y) in a level above the ground floor when
+ * EVERY box in the level directly below it that its footprint overlaps is
+ * both `stackable` and has enough `maxStackWeightKg` budget left for this
+ * box's own weight — see `SupportEntry`/`packOneLevel`. A box that can't
+ * find a legal resting spot anywhere in the current truck overflows to the
+ * next one, same as a height- or weight-limited box already did. This is
+ * a conservative approximation (a box resting on two supports below is
+ * charged against BOTH at its full weight, not split proportionally by
+ * overlap area) — deliberately erring toward "this box might not actually
+ * fit here" over silently modeling a real support structure too
+ * generously, in keeping with this module's own "practical, not a physics
+ * engine" tradeoff elsewhere (see `computeStrapPlan`).
  */
 
 export interface PackBox {
@@ -36,6 +54,10 @@ export interface PackBox {
   weightKg: number;
   /** How many finished units of the order line this one box represents — carried through untouched, never read by the packing logic itself. */
   unitsQty: number;
+  /** Whether anything may be placed on top of this box at all. `false` means it must end up topmost in its stack regardless of remaining space elsewhere. */
+  stackable: boolean;
+  /** Combined weight (kg) this box can bear on top of it, when `stackable`. `null` means unlimited. Ignored when `stackable` is `false`. */
+  maxStackWeightKg: number | null;
 }
 
 export interface TruckDims {
@@ -50,6 +72,21 @@ export interface PlacedBox extends PackBox {
   x: number;
   y: number;
   z: number;
+}
+
+/** One already-placed box, as seen from the level directly above it — only what's needed to check whether a new box may rest on it. */
+interface SupportEntry {
+  x: number;
+  y: number;
+  lengthCm: number;
+  widthCm: number;
+  stackable: boolean;
+  /** Mutated in place as boxes in the level above get accepted onto this support — starts at `maxStackWeightKg ?? Infinity` (or 0 when not stackable). */
+  remainingCapacityKg: number;
+}
+
+function footprintsOverlap(a: { x: number; y: number; lengthCm: number; widthCm: number }, b: { x: number; y: number; lengthCm: number; widthCm: number }): boolean {
+  return a.x < b.x + b.lengthCm && a.x + a.lengthCm > b.x && a.y < b.y + b.widthCm && a.y + a.widthCm > b.y;
 }
 
 const MAX_TRUCKS = 200;
@@ -89,20 +126,30 @@ function packRemaining(boxes: PackBox[], truck: TruckDims, truckIndex: number): 
 
 /**
  * Lays `boxes` out in ONE truck only — no recursion into further trucks.
- * Anything that doesn't fit (height- or weight-limited) comes back in
- * `overflow` instead of being silently dropped or reassigned elsewhere.
- * Used directly by LoadPlanService#get to recompute a single, already-
- * assigned-by-the-user truck's geometry after a manual move — overflow
- * here means "this truck is over capacity", surfaced as a UI warning,
- * not auto-resolved by shuffling the user's own assignment.
+ * Anything that doesn't fit (height-, weight-, or stacking-limited) comes
+ * back in `overflow` instead of being silently dropped or reassigned
+ * elsewhere. Used directly by LoadPlanService#get to recompute a single,
+ * already-assigned-by-the-user truck's geometry after a manual move —
+ * overflow here means "this truck is over capacity", surfaced as a UI
+ * warning, not auto-resolved by shuffling the user's own assignment.
  */
 export function layoutSingleTruck(boxes: PackBox[], truck: TruckDims): { placed: PlacedBox[]; overflow: PackBox[] } {
-  let remaining = [...boxes].sort((a, b) => b.heightCm - a.heightCm);
+  // Height-first (preserves the shelf-height efficiency this algorithm has
+  // always relied on), weight as a tiebreak among equal-height boxes — of
+  // two boxes that would otherwise compete for the same level, the heavier
+  // one is offered first and so more likely claims a lower level. This is
+  // a soft preference only; the REAL guarantee that nothing illegal ends
+  // up resting on a fragile/over-capacity box is the stacking check in
+  // `packOneLevel` below, which applies regardless of arrival order.
+  let remaining = [...boxes].sort((a, b) => b.heightCm - a.heightCm || b.weightKg - a.weightKg);
   const placedThisTruck: { box: PackBox; x: number; y: number; z: number }[] = [];
   let z = 0;
+  // `null` = ground floor, which can always bear weight — no stacking
+  // check applies to the very first level.
+  let supportBelow: SupportEntry[] | null = null;
 
   while (remaining.length > 0 && z < truck.heightCm) {
-    const level = packOneLevel(remaining, truck.lengthCm, truck.widthCm);
+    const level = packOneLevel(remaining, truck.lengthCm, truck.widthCm, supportBelow);
     if (level.placed.length === 0) break; // shouldn't happen when every box individually fits the envelope — guards against an infinite loop
     if (z + level.levelHeightCm > truck.heightCm) {
       // This level doesn't fit height-wise at all — everything in it overflows.
@@ -112,6 +159,14 @@ export function layoutSingleTruck(boxes: PackBox[], truck: TruckDims): { placed:
     for (const p of level.placed) placedThisTruck.push({ box: p.box, x: p.x, y: p.y, z });
     z += level.levelHeightCm;
     remaining = level.unplaced;
+    supportBelow = level.placed.map((p) => ({
+      x: p.x,
+      y: p.y,
+      lengthCm: p.box.lengthCm,
+      widthCm: p.box.widthCm,
+      stackable: p.box.stackable,
+      remainingCapacityKg: p.box.stackable ? (p.box.maxStackWeightKg ?? Infinity) : 0,
+    }));
   }
 
   const placed: PlacedBox[] = [];
@@ -209,6 +264,7 @@ function packOneLevel(
   boxes: PackBox[],
   floorLengthCm: number,
   floorWidthCm: number,
+  supportBelow: SupportEntry[] | null,
 ): { placed: { box: PackBox; x: number; y: number }[]; unplaced: PackBox[]; levelHeightCm: number } {
   const placed: { box: PackBox; x: number; y: number }[] = [];
   const unplaced: PackBox[] = [];
@@ -243,6 +299,25 @@ function packOneLevel(
       unplaced.push(box);
       continue;
     }
+
+    if (supportBelow !== null) {
+      const supports = supportBelow.filter((s) => footprintsOverlap({ x, y, lengthCm: box.lengthCm, widthCm: box.widthCm }, s));
+      // No support directly underneath at this position (shouldn't happen
+      // given this level's floor is only ever as large as the level
+      // below's own footprint, but guarded anyway), or something it would
+      // rest on can't bear it (not stackable, or out of weight budget) —
+      // this box doesn't get a legal resting spot here. Pushed to
+      // `unplaced` exactly like a width-overflowing box above: it may
+      // still find a spot in a LATER level (different footprint), or ends
+      // up in `overflow` for the next truck if it never does.
+      const hasIllegalSupport = supports.length === 0 || supports.some((s) => !s.stackable || s.remainingCapacityKg < box.weightKg);
+      if (hasIllegalSupport) {
+        unplaced.push(box);
+        continue;
+      }
+      for (const s of supports) s.remainingCapacityKg -= box.weightKg;
+    }
+
     placed.push({ box, x, y });
     x += box.lengthCm;
     rowDepth = Math.max(rowDepth, box.widthCm);

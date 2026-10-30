@@ -1541,6 +1541,16 @@ model Assembly {
   boxWidthCm     Decimal? @db.Decimal(8, 2)
   boxHeightCm    Decimal? @db.Decimal(8, 2)
 
+  // Load-plan weight-aware stacking (2026-10-30, "логіка завантаження якась
+  // неправильна... треба зважати на вагу розмір форму") — LoadPlanService
+  // reads these to decide what this assembly's own boxes may have placed on
+  // top of them. `boxStackable=false` means nothing at all may rest on top
+  // (fragile/top-only cargo); `boxMaxStackWeightKg` caps the combined weight
+  // of whatever DOES rest on top when stackable. Both default to "no
+  // restriction" so existing assemblies behave exactly as before.
+  boxStackable        Boolean  @default(true)
+  boxMaxStackWeightKg Decimal? @db.Decimal(10, 2)
+
   defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
   legacyId String?
