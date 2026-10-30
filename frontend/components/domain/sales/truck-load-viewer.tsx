@@ -160,6 +160,25 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
     if (!container) return;
     let cancelled = false;
 
+    // Many placed boxes share the same assembly's glb, so without caching
+    // this reloaded+reparsed the identical file once per box — freezing the
+    // page on trucks with lots of boxes. Scoped to this effect run, not
+    // module-level, so it never outlives the scene it was built for.
+    // Object3D.clone() shares geometry/material refs while copying each
+    // instance's own transform, and dispose() is idempotent, so the
+    // existing cleanup code stays correct for the shared resources.
+    const scaledModelCache = new Map<string, Promise<THREE.Object3D | null>>();
+    function loadGlbScaledToBoxCached(glbUrl: string, targetCm: { lengthCm: number; widthCm: number; heightCm: number }): Promise<THREE.Object3D | null> {
+      // Dims included in case two different assemblies ever share one glb file.
+      const cacheKey = `${glbUrl}|${targetCm.lengthCm}x${targetCm.widthCm}x${targetCm.heightCm}`;
+      let cached = scaledModelCache.get(cacheKey);
+      if (!cached) {
+        cached = loadGlbScaledToBox(glbUrl, targetCm);
+        scaledModelCache.set(cacheKey, cached);
+      }
+      return cached.then((model) => model?.clone() ?? null);
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf3f4f6);
 
@@ -285,7 +304,7 @@ export function TruckLoadViewer({ truckDims, placedBoxes, assemblyGlbUrls, focus
         placeholder.position.copy(slotPosition);
         group.add(placeholder);
 
-        loadGlbScaledToBox(glbUrl, { lengthCm: box.lengthCm, widthCm: box.widthCm, heightCm: box.heightCm })
+        loadGlbScaledToBoxCached(glbUrl, { lengthCm: box.lengthCm, widthCm: box.widthCm, heightCm: box.heightCm })
           .then((model) => {
             if (!model) return;
             if (cancelled) {
