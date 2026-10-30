@@ -320,6 +320,49 @@ const completion: TrainingStep[] = [
   },
 ];
 
+// План завантаження (2026-10-30) — reached only from a specific order's own
+// card (`/sales/:id/load-plan`), a dynamic route this engine can't deep-link
+// into generically (same constraint documented in this file's own header
+// comment re: Клієнт/Готова продукція). Every step below routes to the
+// `/sales` list instead, same "describe the detail-page action from the
+// list page" pattern already used by production-start/procurement-receive/
+// shipments-deliver — no targetSelector, since nothing load-plan-specific
+// lives on `/sales` itself to spotlight.
+const loadPlan: TrainingStep[] = [
+  {
+    id: 'load-plan-open',
+    title: 'План завантаження фури',
+    what: 'На картці замовлення клієнта — кнопка «План завантаження»: вона автоматично розкладає всі вироби замовлення по фурах обраного типу транспорту, у справжньому 3D.',
+    why: 'Дозволяє побачити, скільки фур насправді знадобиться і як саме завантажується кожна — ще до відвантаження.',
+    route: '/sales',
+    mode: 'demo',
+  },
+  {
+    id: 'load-plan-add-item',
+    title: 'Вантаж поза замовленням',
+    what: 'Кнопка «+ Додати позицію» додає в план щось, чого нема в самому замовленні: або реальний виріб з каталогу (з власною кількістю), або повністю довільну коробку — просто вписавши назву, габарити і вагу вручну.',
+    why: 'Реальна фура часто везе ще й піддони, пакувальний матеріал чи супутні деталі — не лише те, що є рядками замовлення.',
+    route: '/sales',
+    mode: 'demo',
+  },
+  {
+    id: 'load-plan-views',
+    title: 'Карта зверху і друк інструкції',
+    what: 'Перемикач 3D / Зверху / Збоку дає плоску схему замість об’ємної сцени; кнопка «Друкувати інструкцію» формує документ на друк — схема завантаження, порядок по рівнях і рекомендована кількість ременів для кожної фури.',
+    why: 'Аркуш паперу для вантажника чи водія зручніший за ноутбук із 3D-сценою.',
+    route: '/sales',
+    mode: 'demo',
+  },
+  {
+    id: 'load-plan-drag',
+    title: 'Ручне перетягування коробки',
+    what: 'Будь-яку коробку в 3D можна затиснути мишею і перетягнути туди, де вона має стояти насправді — система запам’ятає цю позицію. Подвійний клік на вже вручну поставленій коробці (вона має синю рамку) повертає її назад до автоматичного розміщення.',
+    why: 'Автоматична розкладка — лише стартова пропозиція; останнє слово завжди за людиною, яка бачить фуру.',
+    route: '/sales',
+    mode: 'demo',
+  },
+];
+
 function course(id: string, title: string, description: string, steps: TrainingStep[]): TrainingCourse {
   return { id, title, description, steps };
 }
@@ -375,6 +418,7 @@ export const COURSES: TrainingCourse[] = [
       ...completion,
     ],
   ),
+  course('load-plan', '17 — План завантаження фури', '3D-розкладка вантажу по фурах: що є в плані, а чого нема в замовленні, і як поправити вручну.', loadPlan),
 ];
 
 export function findCourse(id: string): TrainingCourse | undefined {
