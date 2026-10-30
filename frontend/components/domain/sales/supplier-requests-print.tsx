@@ -6,7 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { ExternalLink, FileText, Languages } from 'lucide-react';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import type { FileAssetWithUrl } from '@/lib/api-client/files';
-import { useProductsByIds } from '@/lib/hooks/use-catalog';
+import { useProductsByIds, useCompanyUnits } from '@/lib/hooks/use-catalog';
 import { generateSupplierRequestDocumentsPdf } from '@/lib/api-client/sales';
 import { useTranslateJson } from '@/lib/hooks/use-ai';
 import { loadLocaleMessages } from '@/lib/load-locale-messages';
@@ -145,6 +145,25 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
   function lineManufacturerCode(line: SupplierRequestLineForPrint): string | null {
     if (line.kind === 'PRODUCT' && line.productId) return productsById?.get(line.productId)?.manufacturerCode ?? null;
     return null;
+  }
+
+  /**
+   * "хай поруч з цифрою пише шт чи що там вказано в каталозі до кожного
+   * товару" (2026-10-30) — the real catalog unit (Product.unitId ->
+   * CompanyUnit.name), not a hardcoded "шт", for the per-order qty
+   * breakdown below. Assembly has no unit concept of its own
+   * (schema.prisma — never carries a unitId, unlike Product) — "шт" is a
+   * reasonable fallback label for an ASSEMBLY line, same convention
+   * QuotationItemEditor's own default unit already uses.
+   */
+  const { data: units } = useCompanyUnits();
+  const unitNameById = new Map((units ?? []).map((u) => [u.id, u.name]));
+  function lineUnit(line: SupplierRequestLineForPrint): string {
+    if (line.kind === 'PRODUCT' && line.productId) {
+      const unitId = productsById?.get(line.productId)?.unitId;
+      return (unitId && unitNameById.get(unitId)) || 'шт';
+    }
+    return 'шт';
   }
 
   function lineDownloadUrl(line: SupplierRequestLineForPrint): string | undefined {
@@ -299,6 +318,7 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
         hasOrderColumn={hasOrderColumn}
         lineDownloadUrl={lineDownloadUrl}
         lineManufacturerCode={lineManufacturerCode}
+        lineUnit={lineUnit}
         descriptionWithoutArticle={descriptionWithoutArticle}
         groupTotal={groupTotal}
         translatedDescriptions={translatedDescriptions}
@@ -370,6 +390,7 @@ interface SupplierRequestsPrintContentProps {
   hasOrderColumn: boolean;
   lineDownloadUrl: (line: SupplierRequestLineForPrint) => string | undefined;
   lineManufacturerCode: (line: SupplierRequestLineForPrint) => string | null;
+  lineUnit: (line: SupplierRequestLineForPrint) => string;
   descriptionWithoutArticle: (line: SupplierRequestLineForPrint) => string;
   groupTotal: (group: SupplierRequestGroupForPrint) => number;
   /** AI-translated descriptions keyed `${groupIndex}-${lineIndex}` (see handleSelectLocale above) — falls back to the real (Ukrainian) description when a key is missing, same as before this feature existed. */
@@ -392,12 +413,22 @@ function SupplierRequestsPrintContent({
   hasOrderColumn,
   lineDownloadUrl,
   lineManufacturerCode,
+  lineUnit,
   descriptionWithoutArticle,
   groupTotal,
   translatedDescriptions,
 }: SupplierRequestsPrintContentProps) {
   const t = useTranslations('sales');
   const tp = useTranslations('print');
+
+  /** "поруч з цифрою пише шт" — appends each order's own unit after its qty: "1001: 5, 1002: 3" -> "1001: 5 шт, 1002: 3 шт". Plain format from mergeLinesForPrint (shortage-bulk/page.tsx), split/rejoined here since that function has no catalog/unit access of its own. */
+  function withUnit(breakdown: string | undefined, unit: string): string | undefined {
+    if (!breakdown) return breakdown;
+    return breakdown
+      .split(', ')
+      .map((part) => `${part} ${unit}`)
+      .join(', ');
+  }
 
   return (
     <>
@@ -448,7 +479,7 @@ function SupplierRequestsPrintContent({
                       <td>{translatedDescriptions[`${gi}-${li}`] ?? descriptionWithoutArticle(line)}</td>
                     )}
                     {printOptions.isColumnVisible('manufacturerCode') && <td>{lineManufacturerCode(line) ?? ''}</td>}
-                    {hasOrderColumn && <td>{line.orderQtyBreakdown ?? line.orderNumber ?? ''}</td>}
+                    {hasOrderColumn && <td>{withUnit(line.orderQtyBreakdown, lineUnit(line)) ?? line.orderNumber ?? ''}</td>}
                     {printOptions.isColumnVisible('qtyToOrder') && <td>{line.qty}</td>}
                     {printOptions.isColumnVisible('unitPrice') && <td>{line.price != null ? formatEur(line.price) : '—'}</td>}
                     {printOptions.isColumnVisible('price') && (
