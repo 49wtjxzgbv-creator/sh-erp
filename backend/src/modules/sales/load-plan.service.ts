@@ -1,16 +1,26 @@
 import { Injectable } from '@nestjs/common';
-import { CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { AuditService } from '../audit/audit.service';
 import { TransportUnitTypesService } from '../logistics/transport-unit-types.service';
+import { AddLoadPlanItemDto } from './dto/load-plan.dto';
 import { PackBox, StrapPlan, TruckDims, computeStrapPlan, layoutSingleTruck, packBoxesIntoTrucks } from './load-plan-packing';
 
 export interface LoadPlanTruckView {
   id: string;
   index: number;
-  items: { id: string; customerOrderItemId: string; assemblyId: string; assemblyName: string; unitsQty: number; weightKg: number }[];
+  items: {
+    id: string;
+    customerOrderItemId: string | null;
+    assemblyId: string | null;
+    assemblyName: string;
+    /** `ORDER` = normal line derived from the customer order. `ASSEMBLY`/`MANUAL` = added directly to the plan — see LoadPlanService#addItem. */
+    source: 'ORDER' | 'ASSEMBLY' | 'MANUAL';
+    unitsQty: number;
+    weightKg: number;
+  }[];
   placedBoxes: { assemblyId: string; x: number; y: number; z: number; lengthCm: number; widthCm: number; heightCm: number }[];
   overflowBoxCount: number;
   totalWeightKg: number;
@@ -201,7 +211,7 @@ export class LoadPlanService {
     };
     const truckVolumeCm3 = truckDims.lengthCm * truckDims.widthCm * truckDims.heightCm;
 
-    const assemblyIds = [...new Set((plan.trucks as any[]).flatMap((t) => t.items.map((i: any) => i.assemblyId)))];
+    const assemblyIds = [...new Set((plan.trucks as any[]).flatMap((t) => t.items.map((i: any) => i.assemblyId)).filter((id: string | null): id is string => id != null))];
     const assemblies = await this.prisma.tenant.assembly.findMany({ where: { id: { in: assemblyIds } } });
     const assemblyById = new Map((assemblies as any[]).map((a) => [a.id, a]));
     const weightByAssembly = new Map<string, number>();
@@ -213,6 +223,33 @@ export class LoadPlanService {
     for (const truck of plan.trucks as any[]) {
       const packBoxes: PackBox[] = [];
       for (const item of truck.items as any[]) {
+        // Ad-hoc, fully manual box (2026-10-30) — no Assembly at all, every
+        // dimension/weight comes straight off the item's own manual*
+        // columns. `assemblyId`/`customerOrderItemId` on PackBox are only
+        // ever read as opaque grouping/identity keys elsewhere (never
+        // surfaced in the API response, never resolved against a real
+        // Assembly past this point) — the item's own id stands in for
+        // both, so each manual line still gets its own row-grouping and a
+        // stable color on the frontend (colorForAssembly), same as a real
+        // assembly would.
+        if (item.assemblyId == null) {
+          if (item.manualLengthCm == null || item.manualWidthCm == null || item.manualHeightCm == null) continue; // defensive — addItem() already requires these together
+          for (let i = 0; i < item.unitsQty; i++) {
+            packBoxes.push({
+              customerOrderItemId: item.id,
+              assemblyId: item.id,
+              lengthCm: Number(item.manualLengthCm),
+              widthCm: Number(item.manualWidthCm),
+              heightCm: Number(item.manualHeightCm),
+              weightKg: item.manualWeightKg == null ? 0 : Number(item.manualWeightKg),
+              unitsQty: 1,
+              stackable: true,
+              maxStackWeightKg: null,
+            });
+          }
+          continue;
+        }
+
         const assembly = assemblyById.get(item.assemblyId);
         if (!assembly || assembly.boxLengthCm == null) continue; // packaging may have been cleared since the plan was generated
         const unitsPerBox: number = assembly.unitsPerBox ?? 1;
@@ -221,7 +258,10 @@ export class LoadPlanService {
           const unitsInThisBox = Math.min(unitsPerBox, unitsLeft);
           unitsLeft -= unitsInThisBox;
           packBoxes.push({
-            customerOrderItemId: item.customerOrderItemId,
+            // Ad-hoc catalog pick (customerOrderItemId null, assemblyId
+            // set) has no real CustomerOrderItem to key off — the item's
+            // own id stands in, same reasoning as the manual case above.
+            customerOrderItemId: item.customerOrderItemId ?? item.id,
             assemblyId: item.assemblyId,
             lengthCm: Number(assembly.boxLengthCm),
             widthCm: Number(assembly.boxWidthCm),
@@ -241,14 +281,20 @@ export class LoadPlanService {
       trucks.push({
         id: truck.id,
         index: truck.index,
-        items: (truck.items as any[]).map((item) => ({
-          id: item.id,
-          customerOrderItemId: item.customerOrderItemId,
-          assemblyId: item.assemblyId,
-          assemblyName: assemblyById.get(item.assemblyId)?.name ?? item.assemblyId,
-          unitsQty: item.unitsQty,
-          weightKg: (weightByAssembly.get(item.assemblyId) ?? 0) * item.unitsQty,
-        })),
+        items: (truck.items as any[]).map((item) => {
+          const source: 'ORDER' | 'ASSEMBLY' | 'MANUAL' = item.customerOrderItemId != null ? 'ORDER' : item.assemblyId != null ? 'ASSEMBLY' : 'MANUAL';
+          const name = assemblyById.get(item.assemblyId)?.name ?? item.manualName ?? item.id;
+          const weightKg = item.assemblyId == null ? (item.manualWeightKg == null ? 0 : Number(item.manualWeightKg)) * item.unitsQty : (weightByAssembly.get(item.assemblyId) ?? 0) * item.unitsQty;
+          return {
+            id: item.id,
+            customerOrderItemId: item.customerOrderItemId,
+            assemblyId: item.assemblyId,
+            assemblyName: name,
+            source,
+            unitsQty: item.unitsQty,
+            weightKg,
+          };
+        }),
         placedBoxes: placed.map((b) => ({ assemblyId: b.assemblyId, x: b.x, y: b.y, z: b.z, lengthCm: b.lengthCm, widthCm: b.widthCm, heightCm: b.heightCm })),
         overflowBoxCount: overflow.length,
         totalWeightKg,
@@ -327,6 +373,85 @@ export class LoadPlanService {
       entityType: 'LoadPlanItem',
       entityId: itemId,
       after: { toTruckIndex },
+    });
+
+    return this.get(user, customerOrderId);
+  }
+
+  /**
+   * Ad-hoc item (2026-10-30, "також додавати той якого нема в замовленні")
+   * — adds a line to an already-generated plan that isn't derived from the
+   * order: either a real Assembly pick (`dto.assemblyId` set, same
+   * packaging/weight lookup an order line already uses) or a fully manual
+   * box (`dto.assemblyId` unset, described by `dto.manual*`). Wiped on the
+   * next `generate()` same as every other LoadPlanItem — regenerating is a
+   * fresh start, not a merge.
+   */
+  async addItem(user: RequestUser, customerOrderId: string, dto: AddLoadPlanItemDto) {
+    const plan = await this.prisma.tenant.loadPlan.findUnique({ where: { companyId_customerOrderId: { companyId: user.companyId, customerOrderId } } });
+    if (!plan) throw new CodedNotFoundException('LOAD_PLAN_NOT_FOUND', 'No load plan exists for this order yet — generate one first.');
+
+    const isManual = !dto.assemblyId;
+    if (isManual) {
+      if (dto.manualName == null || dto.manualLengthCm == null || dto.manualWidthCm == null || dto.manualHeightCm == null || dto.manualWeightKg == null) {
+        throw new CodedBadRequestException(
+          'LOAD_PLAN_MANUAL_ITEM_INCOMPLETE',
+          'A box with no catalog link needs a name, all three dimensions, and a weight.',
+        );
+      }
+    } else {
+      await this.assembliesService.findOne(user, dto.assemblyId!); // throws if it doesn't exist / isn't this company's
+    }
+
+    let targetTruck = await this.prisma.tenant.loadPlanTruck.findFirst({ where: { loadPlanId: plan.id, index: dto.truckIndex } });
+    if (!targetTruck) {
+      targetTruck = await this.prisma.tenant.loadPlanTruck.create({ data: { loadPlanId: plan.id, index: dto.truckIndex } as any });
+    }
+
+    const item = await this.prisma.tenant.loadPlanItem.create({
+      data: {
+        loadPlanTruckId: targetTruck.id,
+        assemblyId: isManual ? null : dto.assemblyId,
+        unitsQty: dto.unitsQty,
+        manualName: isManual ? dto.manualName : null,
+        manualLengthCm: isManual ? dto.manualLengthCm : null,
+        manualWidthCm: isManual ? dto.manualWidthCm : null,
+        manualHeightCm: isManual ? dto.manualHeightCm : null,
+        manualWeightKg: isManual ? dto.manualWeightKg : null,
+      } as any,
+    });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'load_plan.item_added',
+      entityType: 'LoadPlanItem',
+      entityId: item.id,
+      after: dto,
+    });
+
+    return this.get(user, customerOrderId);
+  }
+
+  /** Only ad-hoc items (added via `addItem`, no `customerOrderItemId`) can be removed here — an order-derived line disappears on its own if the order itself changes. */
+  async removeItem(user: RequestUser, customerOrderId: string, itemId: string) {
+    const plan = await this.prisma.tenant.loadPlan.findUnique({ where: { companyId_customerOrderId: { companyId: user.companyId, customerOrderId } } });
+    if (!plan) throw new CodedNotFoundException('LOAD_PLAN_NOT_FOUND', 'No load plan exists for this order yet — generate one first.');
+
+    const item = await this.prisma.tenant.loadPlanItem.findUnique({ where: { id: itemId } });
+    if (!item) throw new CodedNotFoundException('LOAD_PLAN_ITEM_NOT_FOUND', 'Load plan item not found.');
+    if ((item as any).customerOrderItemId != null) {
+      throw new CodedBadRequestException('LOAD_PLAN_ITEM_NOT_REMOVABLE', 'Only ad-hoc items (not derived from the order) can be removed here.');
+    }
+
+    await this.prisma.tenant.loadPlanItem.delete({ where: { id: itemId } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'load_plan.item_removed',
+      entityType: 'LoadPlanItem',
+      entityId: itemId,
     });
 
     return this.get(user, customerOrderId);

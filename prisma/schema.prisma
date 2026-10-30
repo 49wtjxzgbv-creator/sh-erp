@@ -2444,18 +2444,39 @@ model LoadPlanTruck {
 // "compute, don't store" convention as AssembliesService#calculateWeight),
 // so a manual move (see LoadPlanService#moveItem) only ever touches
 // `loadPlanTruckId` on one row.
+//
+// Ad-hoc items (2026-10-30, "також додавати той якого нема в замовленні")
+// — `customerOrderItemId` is nullable: null means this row was added
+// directly to the plan, not derived from the order. Kind is derivable
+// from which FK is set rather than a separate enum column: both FKs set
+// is impossible to reach from the service layer, so there's no real
+// third state to track — `customerOrderItemId` set = normal order line;
+// null + `assemblyId` set = an ad-hoc catalog pick (same packaging/weight
+// lookup as an order line, just not tied to one); both null = a fully
+// manual box described by the `manual*` columns below, no catalog link
+// at all (e.g. packing material, a spare pallet).
 model LoadPlanItem {
-  id                  String @id @default(uuid()) @db.Uuid
-  companyId           String @db.Uuid
-  loadPlanTruckId     String @db.Uuid
-  customerOrderItemId String @db.Uuid
-  assemblyId          String @db.Uuid
+  id                  String  @id @default(uuid()) @db.Uuid
+  companyId           String  @db.Uuid
+  loadPlanTruckId     String  @db.Uuid
+  customerOrderItemId String? @db.Uuid
+  assemblyId          String? @db.Uuid
   unitsQty            Int
 
-  company           Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  loadPlanTruck     LoadPlanTruck     @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
-  customerOrderItem CustomerOrderItem @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
-  assembly          Assembly          @relation(fields: [companyId, assemblyId], references: [companyId, id])
+  // Only meaningful when `assemblyId` is null — see header comment.
+  // `manualWeightKg` is PER BOX (this line has no unitsPerBox/sub-box
+  // splitting concept the way an Assembly does: `unitsQty` here already
+  // means "how many identical boxes").
+  manualName     String?
+  manualLengthCm Decimal? @db.Decimal(8, 2)
+  manualWidthCm  Decimal? @db.Decimal(8, 2)
+  manualHeightCm Decimal? @db.Decimal(8, 2)
+  manualWeightKg Decimal? @db.Decimal(10, 3)
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlanTruck     LoadPlanTruck      @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
+  customerOrderItem CustomerOrderItem? @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
+  assembly          Assembly?          @relation(fields: [companyId, assemblyId], references: [companyId, id])
 
   @@unique([companyId, id])
   @@index([loadPlanTruckId])

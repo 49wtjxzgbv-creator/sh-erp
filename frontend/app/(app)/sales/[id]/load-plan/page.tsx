@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { useTransportUnitTypes } from '@/lib/hooks/use-logistics';
-import { useLoadPlan, useGenerateLoadPlan, useMoveLoadPlanItem } from '@/lib/hooks/use-sales';
+import { useLoadPlan, useGenerateLoadPlan, useMoveLoadPlanItem, useRemoveLoadPlanItem } from '@/lib/hooks/use-sales';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { LoadPlanTruck, LoadPlanTruckItem } from '@/lib/api-client/sales';
 import { updateAssembly } from '@/lib/api-client/bom';
@@ -19,6 +19,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
 import { TruckLoadViewer, colorForAssembly } from '@/components/domain/sales/truck-load-viewer';
+import { AddLoadPlanItemDialog } from '@/components/domain/sales/add-load-plan-item-dialog';
 
 type BulkFillStatus = 'done' | 'no-model' | 'error';
 
@@ -44,6 +45,7 @@ export default function LoadPlanPage() {
   // the full-load view.
   const [focusedAssemblyId, setFocusedAssemblyId] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
   const [bulkFilling, setBulkFilling] = useState(false);
   const [bulkResults, setBulkResults] = useState<Record<string, BulkFillStatus> | null>(null);
   const skippedAssemblies = plan?.skippedAssemblies ?? [];
@@ -174,7 +176,7 @@ export default function LoadPlanPage() {
   // switching trucks doesn't refetch) — deliberately NOT what the legend
   // below renders, see `selectedTruckAssemblyNames`.
   const assemblyNames = new Map<string, string>();
-  for (const truck of plan?.trucks ?? []) for (const item of truck.items) assemblyNames.set(item.assemblyId, item.assemblyName);
+  for (const truck of plan?.trucks ?? []) for (const item of truck.items) if (item.assemblyId) assemblyNames.set(item.assemblyId, item.assemblyName);
   // The legend/focus-camera UI must only ever show assemblies actually IN
   // the currently selected truck — using the all-trucks map above there
   // let a legend entry point at an assembly that lives in a DIFFERENT
@@ -183,7 +185,7 @@ export default function LoadPlanPage() {
   // live: clicking "Antrieb_VBG" while Фура №1 was selected had no visible
   // effect — it was actually packed into Фура №2).
   const selectedTruckAssemblyNames = new Map<string, string>();
-  for (const item of selectedTruck?.items ?? []) selectedTruckAssemblyNames.set(item.assemblyId, item.assemblyName);
+  for (const item of selectedTruck?.items ?? []) if (item.assemblyId) selectedTruckAssemblyNames.set(item.assemblyId, item.assemblyName);
   const planTransportType = plan ? (transportTypes ?? []).find((tp) => tp.id === plan.transportUnitTypeId) : undefined;
   const truckDims = planTransportType
     ? { lengthCm: Number(planTransportType.lengthCm), widthCm: Number(planTransportType.widthCm), heightCm: Number(planTransportType.heightCm) }
@@ -294,10 +296,18 @@ export default function LoadPlanPage() {
           sizedTypes.length === 0 ? null : <p className="text-sm text-muted-foreground">{t('loadPlanEmpty')}</p>
         ) : (
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">{t('loadPlanAddItemHint')}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAddItemDialogOpen(true)}>
+                {t('loadPlanAddItemButton')}
+              </Button>
+            </div>
+            <AddLoadPlanItemDialog orderId={orderId} truckIndex={selectedTruckIndex ?? 1} open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen} />
             <div className="flex gap-3 overflow-x-auto pb-2">
               {plan.trucks.map((truck) => (
                 <TruckColumn
                   key={truck.id}
+                  orderId={orderId}
                   truck={truck}
                   selected={truck.index === selectedTruckIndex}
                   onSelect={() => {
@@ -307,6 +317,7 @@ export default function LoadPlanPage() {
                 />
               ))}
               <TruckColumn
+                orderId={orderId}
                 truck={{ id: 'new', index: (plan.trucks.at(-1)?.index ?? 0) + 1, items: [], placedBoxes: [], overflowBoxCount: 0, totalWeightKg: 0, volumeUsedPercent: 0, strapPlan: null }}
                 selected={false}
                 onSelect={() => {}}
@@ -409,11 +420,13 @@ function LegendSwatch({ assemblyId, glbUrl }: { assemblyId: string; glbUrl?: str
 }
 
 function TruckColumn({
+  orderId,
   truck,
   selected,
   onSelect,
   isNewDropZone,
 }: {
+  orderId: string;
   truck: LoadPlanTruck;
   selected: boolean;
   onSelect: () => void;
@@ -436,17 +449,19 @@ function TruckColumn({
       {!isNewDropZone && <p className="text-xs text-muted-foreground">{truck.totalWeightKg.toFixed(1)} {t('kgUnit')}</p>}
       <div className="flex flex-col gap-1.5">
         {truck.items.map((item) => (
-          <DraggableItemCard key={item.id} item={item} />
+          <DraggableItemCard key={item.id} orderId={orderId} item={item} />
         ))}
       </div>
     </div>
   );
 }
 
-function DraggableItemCard({ item }: { item: LoadPlanTruckItem }) {
+function DraggableItemCard({ orderId, item }: { orderId: string; item: LoadPlanTruckItem }) {
   const t = useTranslations('sales');
+  const removeItem = useRemoveLoadPlanItem(orderId);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `item-${item.id}` });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 } : undefined;
+  const isAdHoc = item.source !== 'ORDER';
 
   return (
     <div
@@ -456,7 +471,34 @@ function DraggableItemCard({ item }: { item: LoadPlanTruckItem }) {
       {...attributes}
       className={`cursor-grab rounded border border-border bg-card p-1.5 text-xs shadow-sm active:cursor-grabbing ${isDragging ? 'opacity-50' : ''}`}
     >
-      <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
+      <div className="flex items-start justify-between gap-1">
+        {item.assemblyId ? (
+          <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
+        ) : (
+          <span className="truncate text-xs font-medium" title={item.assemblyName}>
+            {item.assemblyName}
+          </span>
+        )}
+        {isAdHoc && (
+          <button
+            type="button"
+            title={t('loadPlanRemoveItem')}
+            // Drag listeners are on this card's root — stop the click from
+            // also being read as a drag-start, and stop it from bubbling
+            // into the truck column's own onClick (which would re-select
+            // the truck instead of just removing the item).
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeItem.mutate(item.id);
+            }}
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {isAdHoc && <p className="text-[10px] text-muted-foreground">{t('loadPlanAdHocBadge')}</p>}
       <p className="mt-1 text-muted-foreground">
         {t('transportUnitsCount', { count: item.unitsQty })} · {item.weightKg.toFixed(1)} {t('kgUnit')}
       </p>

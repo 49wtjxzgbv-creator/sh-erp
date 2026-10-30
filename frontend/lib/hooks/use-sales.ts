@@ -33,6 +33,9 @@ import {
   getLoadPlan,
   generateLoadPlan,
   moveLoadPlanItem,
+  addLoadPlanItem,
+  removeLoadPlanItem,
+  type AddLoadPlanItemInput,
   type QueryCustomerOrdersInput,
   type CreateCustomerOrderInput,
   type UpdateCustomerOrderInput,
@@ -344,6 +347,22 @@ export function useMoveLoadPlanItem(customerOrderId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ itemId, toTruckIndex }: { itemId: string; toTruckIndex: number }) => moveLoadPlanItem(customerOrderId, itemId, toTruckIndex),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
+  });
+}
+
+export function useAddLoadPlanItem(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: AddLoadPlanItemInput) => addLoadPlanItem(customerOrderId, dto),
+    onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
+  });
+}
+
+export function useRemoveLoadPlanItem(customerOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => removeLoadPlanItem(customerOrderId, itemId),
     onSuccess: (plan) => qc.setQueryData(loadPlanKey(customerOrderId), plan),
   });
 }

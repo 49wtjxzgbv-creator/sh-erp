@@ -578,11 +578,25 @@ export function deleteShipment(id: string): Promise<{ ok: true }> {
  */
 export interface LoadPlanTruckItem {
   id: string;
-  customerOrderItemId: string;
-  assemblyId: string;
+  customerOrderItemId: string | null;
+  assemblyId: string | null;
   assemblyName: string;
+  /** `ORDER` = derived from the customer order. `ASSEMBLY`/`MANUAL` = added directly to the plan, not part of the order — see `addLoadPlanItem`. */
+  source: 'ORDER' | 'ASSEMBLY' | 'MANUAL';
   unitsQty: number;
   weightKg: number;
+}
+export interface AddLoadPlanItemInput {
+  truckIndex: number;
+  /** A real catalog pick — omit all manual* fields below when set. */
+  assemblyId?: string;
+  /** Required together when assemblyId is not given — a box with no catalog link. */
+  manualName?: string;
+  manualLengthCm?: number;
+  manualWidthCm?: number;
+  manualHeightCm?: number;
+  manualWeightKg?: number;
+  unitsQty: number;
 }
 export interface LoadPlanPlacedBox {
   assemblyId: string;
@@ -630,4 +644,10 @@ export function generateLoadPlan(customerOrderId: string, transportUnitTypeId: s
 }
 export function moveLoadPlanItem(customerOrderId: string, itemId: string, toTruckIndex: number): Promise<LoadPlan> {
   return apiClient.patch<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}`, { toTruckIndex });
+}
+export function addLoadPlanItem(customerOrderId: string, dto: AddLoadPlanItemInput): Promise<LoadPlan> {
+  return apiClient.post<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items`, dto);
+}
+export function removeLoadPlanItem(customerOrderId: string, itemId: string): Promise<LoadPlan> {
+  return apiClient.delete<LoadPlan>(`customer-orders/${customerOrderId}/load-plan/items/${itemId}`);
 }

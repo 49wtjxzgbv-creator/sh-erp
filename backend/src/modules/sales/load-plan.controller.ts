@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { GenerateLoadPlanDto, MoveLoadPlanItemDto } from './dto/load-plan.dto';
+import { AddLoadPlanItemDto, GenerateLoadPlanDto, MoveLoadPlanItemDto } from './dto/load-plan.dto';
 import { LoadPlanService } from './load-plan.service';
 
 @ApiTags('sales')
@@ -34,5 +34,19 @@ export class LoadPlanController {
     @Body() dto: MoveLoadPlanItemDto,
   ) {
     return this.loadPlanService.moveItem(user, customerOrderId, itemId, dto.toTruckIndex);
+  }
+
+  @Post('items')
+  @RequirePermissions('shipments:manage')
+  @ApiOperation({ summary: 'Add an ad-hoc item to the plan — a real Assembly pick or a fully manual box, not derived from the order.' })
+  async addItem(@CurrentUser() user: RequestUser, @Param('customerOrderId') customerOrderId: string, @Body() dto: AddLoadPlanItemDto) {
+    return this.loadPlanService.addItem(user, customerOrderId, dto);
+  }
+
+  @Delete('items/:itemId')
+  @RequirePermissions('shipments:manage')
+  @ApiOperation({ summary: 'Remove an ad-hoc item from the plan. Order-derived lines cannot be removed here.' })
+  async removeItem(@CurrentUser() user: RequestUser, @Param('customerOrderId') customerOrderId: string, @Param('itemId') itemId: string) {
+    return this.loadPlanService.removeItem(user, customerOrderId, itemId);
   }
 }

@@ -16,7 +16,7 @@ describe('LoadPlanService', () => {
         customerOrderItem: { findMany: jest.fn() },
         loadPlan: { findUnique: jest.fn(), deleteMany: jest.fn(), create: jest.fn() },
         loadPlanTruck: { create: jest.fn(), findFirst: jest.fn() },
-        loadPlanItem: { createMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+        loadPlanItem: { createMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
         assembly: { findMany: jest.fn() },
         // Deliberately NO `$transaction` here — `prisma.tenant` inside a
         // request is already the per-request transaction client and has no
@@ -27,7 +27,7 @@ describe('LoadPlanService', () => {
       },
     };
     audit = { record: jest.fn() };
-    assemblies = { calculateWeight: jest.fn() };
+    assemblies = { calculateWeight: jest.fn(), findOne: jest.fn() };
     transportUnitTypes = { findOne: jest.fn() };
     service = new LoadPlanService(prisma, audit, assemblies, transportUnitTypes);
   });
@@ -146,7 +146,7 @@ describe('LoadPlanService', () => {
       expect(view!.transportUnitTypeName).toBe('Тент 20т');
       expect(view!.trucks).toHaveLength(1);
       const truck = view!.trucks[0];
-      expect(truck.items).toEqual([{ id: 'li-1', customerOrderItemId: 'item-1', assemblyId: 'a1', assemblyName: 'Widget', unitsQty: 2, weightKg: 10 }]);
+      expect(truck.items).toEqual([{ id: 'li-1', customerOrderItemId: 'item-1', assemblyId: 'a1', assemblyName: 'Widget', source: 'ORDER', unitsQty: 2, weightKg: 10 }]);
       expect(truck.placedBoxes).toHaveLength(2); // 2 units, 1 per box (unitsPerBox: 1)
       expect(truck.overflowBoxCount).toBe(0);
       expect(truck.totalWeightKg).toBe(10);
@@ -197,6 +197,44 @@ describe('LoadPlanService', () => {
 
       expect(view!.skippedAssemblies).toEqual([{ id: 'a2', name: 'Too long for this truck', reason: 'does-not-fit' }]);
     });
+
+    it('packs an ad-hoc fully-manual item (no assemblyId at all) straight from its own manual* columns', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({
+        id: 'plan-1',
+        transportUnitTypeId: 'type-1',
+        transportUnitType: { id: 'type-1', name: 'Тент 20т', lengthCm: '500', widthCm: '200', heightCm: '200', maxWeightKg: '20000' },
+        trucks: [
+          {
+            id: 'truck-1',
+            index: 1,
+            items: [
+              {
+                id: 'li-manual',
+                customerOrderItemId: null,
+                assemblyId: null,
+                unitsQty: 2,
+                manualName: 'Піддон',
+                manualLengthCm: '120',
+                manualWidthCm: '80',
+                manualHeightCm: '15',
+                manualWeightKg: '20',
+              },
+            ],
+          },
+        ],
+      });
+      prisma.tenant.assembly.findMany.mockResolvedValue([]);
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([]);
+
+      const view = await service.get(user, 'order-1');
+
+      const truck = view!.trucks[0];
+      expect(truck.items).toEqual([
+        { id: 'li-manual', customerOrderItemId: null, assemblyId: null, assemblyName: 'Піддон', source: 'MANUAL', unitsQty: 2, weightKg: 40 },
+      ]);
+      expect(truck.placedBoxes).toHaveLength(2); // unitsQty: 2 -> 2 separate boxes, no unitsPerBox splitting for manual items
+      expect(truck.totalWeightKg).toBe(40);
+    });
   });
 
   describe('moveItem', () => {
@@ -234,6 +272,110 @@ describe('LoadPlanService', () => {
 
       expect(prisma.tenant.loadPlanTruck.create).not.toHaveBeenCalled();
       expect(prisma.tenant.loadPlanItem.update).toHaveBeenCalledWith({ where: { id: 'item-1' }, data: { loadPlanTruckId: 'truck-2' } });
+    });
+  });
+
+  describe('addItem', () => {
+    it('rejects when no plan exists for this order', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue(null);
+      await expect(service.addItem(user, 'order-1', { truckIndex: 1, assemblyId: 'a1', unitsQty: 1 } as any)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a manual item missing any of name/dimensions/weight', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      await expect(
+        service.addItem(user, 'order-1', { truckIndex: 1, manualName: 'Піддон', manualLengthCm: 120, unitsQty: 1 } as any),
+      ).rejects.toThrow('A box with no catalog link needs a name, all three dimensions, and a weight.');
+    });
+
+    it('creates the target truck if needed and inserts an ad-hoc catalog item', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      assemblies.findOne.mockResolvedValue({ id: 'a1', name: 'Widget' });
+      prisma.tenant.loadPlanTruck.findFirst.mockResolvedValue(null);
+      prisma.tenant.loadPlanTruck.create.mockResolvedValue({ id: 'truck-2' });
+      prisma.tenant.loadPlanItem.create.mockResolvedValue({ id: 'li-new' });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
+
+      await service.addItem(user, 'order-1', { truckIndex: 2, assemblyId: 'a1', unitsQty: 3 } as any);
+
+      expect(prisma.tenant.loadPlanTruck.create).toHaveBeenCalledWith({ data: { loadPlanId: 'plan-1', index: 2 } });
+      expect(prisma.tenant.loadPlanItem.create).toHaveBeenCalledWith({
+        data: {
+          loadPlanTruckId: 'truck-2',
+          assemblyId: 'a1',
+          unitsQty: 3,
+          manualName: null,
+          manualLengthCm: null,
+          manualWidthCm: null,
+          manualHeightCm: null,
+          manualWeightKg: null,
+        },
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'load_plan.item_added' }));
+    });
+
+    it('inserts a fully manual box with no assemblyId', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      prisma.tenant.loadPlanTruck.findFirst.mockResolvedValue({ id: 'truck-1' });
+      prisma.tenant.loadPlanItem.create.mockResolvedValue({ id: 'li-new' });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
+
+      await service.addItem(user, 'order-1', {
+        truckIndex: 1,
+        manualName: 'Піддон',
+        manualLengthCm: 120,
+        manualWidthCm: 80,
+        manualHeightCm: 15,
+        manualWeightKg: 20,
+        unitsQty: 2,
+      } as any);
+
+      expect(assemblies.findOne).not.toHaveBeenCalled();
+      expect(prisma.tenant.loadPlanItem.create).toHaveBeenCalledWith({
+        data: {
+          loadPlanTruckId: 'truck-1',
+          assemblyId: null,
+          unitsQty: 2,
+          manualName: 'Піддон',
+          manualLengthCm: 120,
+          manualWidthCm: 80,
+          manualHeightCm: 15,
+          manualWeightKg: 20,
+        },
+      });
+    });
+  });
+
+  describe('removeItem', () => {
+    it('rejects when no plan exists for this order', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue(null);
+      await expect(service.removeItem(user, 'order-1', 'item-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects when the item does not exist', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue(null);
+      await expect(service.removeItem(user, 'order-1', 'item-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses to remove an order-derived item', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue({ id: 'item-1', customerOrderItemId: 'order-item-1' });
+      await expect(service.removeItem(user, 'order-1', 'item-1')).rejects.toThrow(
+        'Only ad-hoc items (not derived from the order) can be removed here.',
+      );
+      expect(prisma.tenant.loadPlanItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('removes an ad-hoc item', async () => {
+      prisma.tenant.loadPlan.findUnique.mockResolvedValue({ id: 'plan-1' });
+      prisma.tenant.loadPlanItem.findUnique.mockResolvedValue({ id: 'item-1', customerOrderItemId: null });
+      jest.spyOn(service, 'get').mockResolvedValue({ id: 'plan-1' } as any);
+
+      await service.removeItem(user, 'order-1', 'item-1');
+
+      expect(prisma.tenant.loadPlanItem.delete).toHaveBeenCalledWith({ where: { id: 'item-1' } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'load_plan.item_removed' }));
     });
   });
 });
