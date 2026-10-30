@@ -20,14 +20,17 @@ export interface AddLoadPlanItemDialogProps {
 /**
  * Ad-hoc load-plan item (2026-10-30, "також додавати той якого нема в
  * замовленні") — same plain-useState shape as AddCustomerOrderItemDialog,
- * no zod/react-hook-form. Two modes, switched by a Tabs trigger-only strip
- * (no TabsContent — this dialog is small enough that swapping a few fields
- * inline reads better than two whole panels): a real Assembly pick (same
- * packaging/weight as an order line) or a fully manual box with no catalog
- * link at all.
+ * no zod/react-hook-form. Two modes, switched by a pair of plain toggle
+ * buttons (dialog's too small to warrant the Tabs primitive): a real
+ * Assembly pick (same packaging/weight as an order line) or a fully
+ * manual box with no catalog link at all.
  */
 export function AddLoadPlanItemDialog({ orderId, truckIndex, open, onOpenChange }: AddLoadPlanItemDialogProps) {
   const t = useTranslations('sales');
+  // boxDimensionsCm/boxLength/boxWidth/boxHeight already exist in `bom`
+  // (assembly-form.tsx's own packaging fields) — reused here rather than
+  // duplicating the same four strings into `sales` across all 4 locales.
+  const tb = useTranslations('bom');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const addItem = useAddLoadPlanItem(orderId);
@@ -117,11 +120,11 @@ export function AddLoadPlanItemDialog({ orderId, truckIndex, open, onOpenChange 
                 <Input id="load-plan-manual-name" value={manualName} onChange={(e) => setManualName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t('boxDimensionsCm')}</Label>
+                <Label>{tb('boxDimensionsCm')}</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  <Input type="number" step="any" min="0" placeholder={t('boxLength')} value={manualLengthCm} onChange={(e) => setManualLengthCm(e.target.value)} />
-                  <Input type="number" step="any" min="0" placeholder={t('boxWidth')} value={manualWidthCm} onChange={(e) => setManualWidthCm(e.target.value)} />
-                  <Input type="number" step="any" min="0" placeholder={t('boxHeight')} value={manualHeightCm} onChange={(e) => setManualHeightCm(e.target.value)} />
+                  <Input type="number" step="any" min="0" placeholder={tb('boxLength')} value={manualLengthCm} onChange={(e) => setManualLengthCm(e.target.value)} />
+                  <Input type="number" step="any" min="0" placeholder={tb('boxWidth')} value={manualWidthCm} onChange={(e) => setManualWidthCm(e.target.value)} />
+                  <Input type="number" step="any" min="0" placeholder={tb('boxHeight')} value={manualHeightCm} onChange={(e) => setManualHeightCm(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-1.5">
