@@ -15,6 +15,10 @@ export interface StepBomLine {
   name: string;
   qty: number;
   dimensionsCm: string | null;
+  /** Розкрій (2026-10-31): the same bounding-box geometry as `dimensionsCm`, as numbers — lets the frontend auto-fill cutLengthCm/cutWidthCm when the matched product has a ProductCuttingSpec, without parsing free text. Geometry-derived, not an authoritative drawing dimension — same caveat as `dimensionsCm`. */
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
 }
 
 // A real multi-part mechanical assembly can legitimately need several

@@ -146,6 +146,9 @@ export interface MatchedBomLine {
   article: string;
   matchedName: string;
   productId: string;
+  /** Розкрій (2026-10-31): structured bounding-box numbers, STEP path only — null for the PDF/AI path. Lets the review page prefill cutLengthCm/cutWidthCm when the matched/created product has a ProductCuttingSpec. */
+  lengthCm: number | null;
+  widthCm: number | null;
 }
 
 export interface BomExtractionResult {

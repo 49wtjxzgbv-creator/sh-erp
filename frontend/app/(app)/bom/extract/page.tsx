@@ -86,7 +86,20 @@ export default function ExtractBomPage() {
     if (!assemblyId || !lines || !allResolved) return;
     setSaveError(null);
     try {
-      await setComponents.mutateAsync(lines.map((l) => ({ componentType: 'PRODUCT' as const, productId: l.productId, qtyPerUnit: l.qty })));
+      await setComponents.mutateAsync(
+        lines.map((l) => ({
+          componentType: 'PRODUCT' as const,
+          productId: l.productId,
+          qtyPerUnit: l.qty,
+          // Розкрій (2026-10-31): the STEP path's geometry-derived bounding
+          // box, stored unconditionally whenever present — harmless if the
+          // matched product has no cutting spec (just sits unused), useful
+          // right away if it does or gets one later. The PDF/AI path never
+          // sets these (lengthCm/widthCm stay null there).
+          cutLengthCm: l.lengthCm ?? undefined,
+          cutWidthCm: l.widthCm ?? undefined,
+        })),
+      );
       router.push(`/bom/${assemblyId}/components`);
     } catch (err) {
       setSaveError(apiErrorMessage(err, tc('error')));

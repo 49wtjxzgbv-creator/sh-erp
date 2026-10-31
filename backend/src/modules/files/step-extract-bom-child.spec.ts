@@ -85,6 +85,15 @@ describe('groupResultIntoBomLines', () => {
     expect(lines[0].dimensionsCm).toContain('за геометрією');
   });
 
+  it('also returns the bounding box as structured numbers (lengthCm/widthCm/heightCm) for розкрій auto-fill', () => {
+    const result = {
+      root: { name: 'Root', meshes: [], children: [{ name: 'Деталь', meshes: [0], children: [] }] },
+      meshes: [{ attributes: { position: flatCube } }],
+    };
+    const lines = groupResultIntoBomLines(result);
+    expect(lines[0]).toEqual(expect.objectContaining({ lengthCm: 1, widthCm: 1, heightCm: 1 }));
+  });
+
   it('falls back to one line per mesh when there is no assembly tree at all', () => {
     const result = {
       root: undefined,

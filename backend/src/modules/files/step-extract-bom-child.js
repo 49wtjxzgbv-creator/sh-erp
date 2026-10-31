@@ -93,6 +93,15 @@ function groupResultIntoBomLines(result) {
       name: leaf.name,
       qty: 1,
       dimensionsCm: bbox ? `${bbox.lengthCm}×${bbox.widthCm}×${bbox.heightCm} см (за геометрією)` : null,
+      // Структуровані числа (2026-10-31, "розкрій") — та сама bounding-box
+      // геометрія, що й dimensionsCm вище, але як числа, щоб UI міг
+      // автопідставити довжину/розмір деталі в поля розкрою компонента
+      // специфікації без парсингу вільного тексту. Та сама засторога, що й
+      // для dimensionsCm: це габарит по геометрії, не офіційний розмір з
+      // креслення.
+      lengthCm: bbox ? bbox.lengthCm : null,
+      widthCm: bbox ? bbox.widthCm : null,
+      heightCm: bbox ? bbox.heightCm : null,
     });
   }
 

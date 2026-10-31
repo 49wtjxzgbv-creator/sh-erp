@@ -56,6 +56,10 @@ export const PERMISSIONS_CATALOGUE: PermissionDefinition[] = [
   { key: 'assemblies:read', resource: 'assemblies', action: 'read', description: 'View assemblies and their BOM.' },
   { key: 'assemblies:write', resource: 'assemblies', action: 'write', description: 'Create/edit assemblies and BOM lines, save new BOM versions.' },
 
+  // Cutting-stock optimization (розкрій, 2026-10-31): bar/sheet nesting plans and remnant stock.
+  { key: 'cutting:read', resource: 'cutting', action: 'read', description: 'View cutting plans and remnant (offcut) stock.' },
+  { key: 'cutting:write', resource: 'cutting', action: 'write', description: 'Compute and execute cutting plans.' },
+
   // Production
   { key: 'production-orders:read', resource: 'production-orders', action: 'read', description: 'View production orders.' },
   { key: 'production-orders:manage', resource: 'production-orders', action: 'manage', description: 'Plan, start, advance, and complete production orders.' },
@@ -162,6 +166,7 @@ export const DEFAULT_ROLES = [
       'products:read', 'products:write', 'units:manage', 'suppliers:read',
       'warehouses:manage', 'stock:read', 'stock:adjust', 'inventory-sessions:manage',
       'purchase-orders:read', 'finished-goods:read', 'finished-goods:manage', 'shipments:read', 'files:read', 'files:write',
+      'cutting:read',
       // AI: full RBAC-matrix parity with the legacy "storekeeper" role — both
       // basic AI use and confirming a critical action (Phase 1 §5's AI rows).
       'ai:use', 'ai:use-critical-actions', 'planner:read',
@@ -173,6 +178,7 @@ export const DEFAULT_ROLES = [
       'products:read', 'assemblies:read', 'assemblies:write',
       'production-orders:read', 'production-orders:manage', 'finished-goods:read', 'finished-goods:manage',
       'qc:record', 'stock:read', 'files:read', 'files:write', 'ai:use', 'planner:read',
+      'cutting:read', 'cutting:write',
       // Production-labor module (2026-08-24): the shop-floor foreman role
       // records AND confirms its own executions — this codebase has no
       // separate "Supervisor" role yet, so both tiers are bundled here,

@@ -45,7 +45,7 @@ export class StepBomExtractionService {
     }
 
     const products = await this.prisma.tenant.product.findMany({ where: { deletedAt: null } });
-    const lines = stepLines.map((line) => toMatchedBomLine(line.name, line.qty, line.dimensionsCm, products));
+    const lines = stepLines.map((line) => toMatchedBomLine(line.name, line.qty, line.dimensionsCm, products, line.lengthCm, line.widthCm));
 
     return { sourceFileAssetId: fileAssetId, lines };
   }

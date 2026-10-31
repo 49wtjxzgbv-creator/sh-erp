@@ -17,6 +17,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoiceStockImportModule } from './modules/inventory/invoice-stock-import/invoice-stock-import.module';
 import { BomModule } from './modules/bom/bom.module';
+import { CuttingModule } from './modules/cutting/cutting.module';
 import { ProductionModule } from './modules/production/production.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { FinanceModule } from './modules/finance/finance.module';
@@ -63,6 +64,7 @@ import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
     InventoryModule,
     InvoiceStockImportModule,
     BomModule,
+    CuttingModule,
     ProductionModule,
     ProcurementModule,
     FinanceModule,

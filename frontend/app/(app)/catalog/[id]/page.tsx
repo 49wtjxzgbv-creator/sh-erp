@@ -7,6 +7,7 @@ import { Trash2 } from 'lucide-react';
 import { useProduct, useUpdateProduct, useDeleteProduct } from '@/lib/hooks/use-catalog';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { ProductForm } from '@/components/domain/catalog/product-form';
+import { ProductCuttingSpecCard } from '@/components/domain/cutting/product-cutting-spec-card';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
 import { Button } from '@/components/ui/button';
@@ -91,6 +92,7 @@ export default function EditProductPage() {
         submitError={error}
         readOnly={!canWrite}
       />
+      <ProductCuttingSpecCard productId={params.id} readOnly={!canWrite} />
     </div>
   );
 }

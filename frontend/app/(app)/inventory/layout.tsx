@@ -12,6 +12,7 @@ const TABS = [
   { href: '/inventory/in-progress', labelKey: 'inProgress' },
   { href: '/inventory/finished-goods', labelKey: 'finishedGoods' },
   { href: '/inventory/warehouses', labelKey: 'warehouses' },
+  { href: '/inventory/remnants', labelKey: 'remnantsTab' },
   { href: '/inventory/sessions', labelKey: 'sessions' },
   { href: '/inventory/expected', labelKey: 'expectedFromSupplier' },
 ] as const;

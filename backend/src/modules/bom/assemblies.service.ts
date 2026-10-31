@@ -484,6 +484,8 @@ export class AssembliesService {
           subAssemblyId: line.componentType === 'ASSEMBLY' ? line.subAssemblyId : null,
           warehouseId: line.warehouseId ?? null,
           qtyPerUnit: line.qtyPerUnit,
+          cutLengthCm: line.cutLengthCm ?? null,
+          cutWidthCm: line.cutWidthCm ?? null,
         })) as any,
       });
     }

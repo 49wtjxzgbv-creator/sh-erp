@@ -40,7 +40,15 @@ describe('toMatchedBomLine', () => {
       article: 'A-001',
       matchedName: 'Гвинт M6x20',
       productId: 'p1',
+      lengthCm: null,
+      widthCm: null,
     });
+  });
+
+  it('carries structured lengthCm/widthCm through for the STEP path', () => {
+    const line = toMatchedBomLine('Гвинт M6x20', 10, '1×1×1 см (за геометрією)', products, 1, 1);
+    expect(line.lengthCm).toBe(1);
+    expect(line.widthCm).toBe(1);
   });
 
   it('leaves match fields empty when nothing matches', () => {

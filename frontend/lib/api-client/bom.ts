@@ -33,6 +33,9 @@ export interface AssemblyComponent {
   subAssemblyId: string | null;
   warehouseId: string | null;
   qtyPerUnit: DecimalString;
+  /** Розкрій (2026-10-31): per-piece dimensions, only meaningful when the product has a ProductCuttingSpec (lib/api-client/cutting.ts). */
+  cutLengthCm: DecimalString | null;
+  cutWidthCm: DecimalString | null;
 }
 
 export interface Assembly {
@@ -150,6 +153,9 @@ export interface AssemblyComponentLineInput {
   subAssemblyId?: string;
   warehouseId?: string;
   qtyPerUnit: number;
+  /** Розкрій (2026-10-31): only meaningful when the selected product has a ProductCuttingSpec — BAR uses cutLengthCm only, SHEET uses both. */
+  cutLengthCm?: number;
+  cutWidthCm?: number;
 }
 
 export function getAssemblyComponents(assemblyId: string): Promise<AssemblyComponent[]> {

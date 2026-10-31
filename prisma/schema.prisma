@@ -205,6 +205,13 @@ model Company {
   productionExecutionAllocations ProductionExecutionAllocation[]
   payrollPeriods                 PayrollPeriod[]
 
+  // Cutting-stock optimization module (розкрій, 2026-10-31)
+  productCuttingSpecs ProductCuttingSpec[]
+  stockRemnants       StockRemnant[]
+  cuttingPlans        CuttingPlan[]
+  cuttingPlanStocks   CuttingPlanStock[]
+  cuttingPlanCuts     CuttingPlanCut[]
+
   // Quotations module (2026-08-27)
   customers               Customer[]
   quotations              Quotation[]
@@ -863,14 +870,57 @@ model Product {
   stockReservations         StockReservation[]
   orderMaterialRequirements OrderMaterialRequirement[]
 
+  // Cutting-stock optimization module (розкрій, 2026-10-31)
+  cuttingSpec       ProductCuttingSpec?
+  stockRemnants     StockRemnant[]
+  cuttingPlanStocks CuttingPlanStock[]
+  cuttingPlanCuts   CuttingPlanCut[]
+
   @@unique([companyId, article])
-  @@unique([companyId, id]) // composite-FK target for WarehouseStock/StockMovement/InventoryItem
+  @@unique([companyId, id]) // composite-FK target for WarehouseStock/StockMovement/InventoryItem/ProductCuttingSpec/StockRemnant/CuttingPlanStock/CuttingPlanCut
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, category])
   @@index([companyId, name])
   @@index([companyId, barcode])
   @@index([companyId, unitId])
   @@map("products")
+}
+
+// Розкрій (cutting-stock optimization, 2026-10-31): opt-in physical spec for
+// raw-material products that get cut from standard-length stock (aluminum/
+// steel profiles, glass/panel sheets) rather than stocked at the exact size
+// needed. 1:1 with Product — most products never get this row. See the
+// CuttingPlan model group below for how this feeds the nesting algorithm.
+model ProductCuttingSpec {
+  id        String           @id @default(uuid()) @db.Uuid
+  companyId String           @db.Uuid
+  productId String           @db.Uuid
+  kind      CuttingStockKind
+
+  // BAR: length of one standard bar/profile. SHEET: the sheet's own two
+  // planar dimensions (stockLengthCm × stockWidthCm).
+  stockLengthCm Decimal  @db.Decimal(8, 2)
+  stockWidthCm  Decimal? @db.Decimal(8, 2) // required for SHEET, unused for BAR
+
+  kerfMm             Decimal  @default(3) @db.Decimal(6, 2) // saw/blade loss per cut
+  minRemnantLengthCm Decimal? @db.Decimal(8, 2) // BAR: leftover below this counts as waste, not a trackable remnant
+  minRemnantAreaCm2  Decimal? @db.Decimal(10, 2) // SHEET: same idea, by area
+  allowRotation      Boolean  @default(true) // SHEET only — whether a piece may be rotated 90° when nesting
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [companyId, productId], references: [companyId, id], onDelete: Cascade) // composite — meaningless without its product
+
+  @@unique([companyId, productId])
+  @@index([companyId])
+  @@map("product_cutting_specs")
+}
+
+enum CuttingStockKind {
+  BAR
+  SHEET
 }
 
 model CompanyUnit {
@@ -1203,8 +1253,10 @@ model Warehouse {
   movements          StockMovement[]
   assemblyComponents AssemblyComponent[]
   stockReservations  StockReservation[]
+  stockRemnants      StockRemnant[]
+  cuttingPlans       CuttingPlan[]
 
-  @@unique([companyId, id]) // composite-FK target for WarehouseStock.warehouse
+  @@unique([companyId, id]) // composite-FK target for WarehouseStock.warehouse/StockRemnant.warehouse/CuttingPlan.warehouse
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
   @@map("warehouses")
@@ -1572,8 +1624,9 @@ model Assembly {
   suppliers               AssemblySupplier[]
   subAssemblyReservations SubAssemblyReservation[]
   loadPlanItems           LoadPlanItem[]
+  cuttingPlans            CuttingPlan[]
 
-  @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem
+  @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem/CuttingPlan
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId])
   @@map("assemblies")
@@ -1596,6 +1649,14 @@ model AssemblyComponent {
   subAssemblyId String?       @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   warehouseId   String?       @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
   qtyPerUnit    Decimal       @db.Decimal(14, 4)
+
+  // Cutting-stock optimization (розкрій, 2026-10-31): per-piece dimensions
+  // needed, only meaningful when componentType=PRODUCT and that product has
+  // a ProductCuttingSpec. qtyPerUnit keeps meaning "piece count" for these
+  // lines — BAR uses cutLengthCm only, SHEET uses both. Sourced either
+  // manually or auto-filled from the STEP-extraction bounding box.
+  cutLengthCm Decimal? @db.Decimal(8, 2)
+  cutWidthCm  Decimal? @db.Decimal(8, 2)
 
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
   assembly    Assembly   @relation(fields: [companyId, assemblyId], references: [companyId, id], onDelete: Cascade) // composite — a BOM line has no meaning without its assembly
@@ -1662,6 +1723,159 @@ model AssemblyVersionComponent {
   @@index([assemblyVersionId])
   @@index([companyId])
   @@map("assembly_version_components")
+}
+
+// ============================================================================
+// SECTION: Cutting-stock optimization (розкрій)  (module: CuttingModule) —
+// new, 2026-10-31. Computes how many standard-length bars/sheets to buy and
+// how to cut them to fulfil an assembly's BOM, tracking reusable leftover
+// offcuts as a real sub-stock. See ProductCuttingSpec above (opt-in, lives
+// next to Product) for the raw-material physical spec this reads from.
+//
+// Design decision: WarehouseStock.qty (already tracked in meters/m² via the
+// product's own unit) remains the sole source of truth for total raw
+// material on hand — this module never writes to it. StockRemnant is an
+// ADDITIONAL breakdown of which specific physical pieces that aggregate
+// quantity is fragmented into (one full 5m piece vs. fifty 10cm scraps look
+// identical in aggregate qty, but only one is actually usable for a 4m cut).
+// Production's existing consumption flow (ProductionOrdersService#start /
+// AssembliesService#produce) keeps deducting the exact needed length exactly
+// as before, regardless of whether a CuttingPlan was ever run — this module
+// degrades gracefully to a no-op if unused.
+// ============================================================================
+
+enum RemnantStatus {
+  AVAILABLE
+  CONSUMED
+}
+
+// A single physical offcut left over from executing a CuttingPlan — the
+// per-physical-unit analogue of FinishedGood (not WarehouseStock's
+// aggregate-qty model).
+model StockRemnant {
+  id          String           @id @default(uuid()) @db.Uuid
+  companyId   String           @db.Uuid
+  productId   String           @db.Uuid
+  warehouseId String           @db.Uuid
+  kind        CuttingStockKind
+  lengthCm    Decimal          @db.Decimal(8, 2)
+  widthCm     Decimal?         @db.Decimal(8, 2) // SHEET only
+  code        String // "З-000001" sequential per company, mirrors FinishedGood.serialNumber
+  status      RemnantStatus    @default(AVAILABLE)
+
+  // polymorphic link to what produced this remnant — mirrors StockMovement's
+  // own sourceType/sourceId convention
+  sourceType String?
+  sourceId   String? @db.Uuid
+
+  // single-column FK, not a relation: a remnant may be consumed by a LATER
+  // plan than the one that created it, and must not be cascade-deleted
+  // alongside that later plan
+  consumedInCuttingPlanId String? @db.Uuid
+
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product   Product   @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  warehouse Warehouse @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+
+  @@unique([companyId, code])
+  @@index([companyId, productId, status])
+  @@map("stock_remnants")
+}
+
+enum CuttingPlanStatus {
+  DRAFT
+  EXECUTED
+}
+
+// Header for one "Порахувати розкрій" run against a single assembly/qty.
+model CuttingPlan {
+  id          String            @id @default(uuid()) @db.Uuid
+  companyId   String            @db.Uuid
+  assemblyId  String            @db.Uuid
+  // Which warehouse remnants are drawn from at preview() and a new leftover
+  // remnant is assigned to at execute() — resolved once up front (defaults
+  // to the company's default warehouse) and kept for execute(), which
+  // otherwise has no way to know where a freshly-created StockRemnant belongs.
+  warehouseId String            @db.Uuid
+  qty         Decimal           @db.Decimal(14, 3) // units of the assembly this plan was computed for
+  status      CuttingPlanStatus @default(DRAFT)
+  createdById String            @db.Uuid
+
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  executedAt DateTime? @db.Timestamptz(3)
+
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly   Assembly           @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  warehouse  Warehouse          @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
+  stockItems CuttingPlanStock[]
+
+  @@unique([companyId, id]) // composite-FK target for CuttingPlanStock
+  @@index([companyId, assemblyId])
+  @@map("cutting_plans")
+}
+
+enum CuttingPlanStockSourceKind {
+  FRESH
+  REMNANT
+}
+
+// One bar/sheet used within a CuttingPlan — either freshly purchased stock
+// (FRESH) or an existing StockRemnant consumed from (REMNANT).
+model CuttingPlanStock {
+  id            String                     @id @default(uuid()) @db.Uuid
+  companyId     String                     @db.Uuid
+  cuttingPlanId String                     @db.Uuid
+  productId     String                     @db.Uuid
+  sourceKind    CuttingPlanStockSourceKind
+  remnantId     String?                    @db.Uuid // single-column FK, set when sourceKind=REMNANT — not cascaded, a remnant outlives any one plan
+  lengthCm      Decimal                    @db.Decimal(8, 2)
+  widthCm       Decimal?                   @db.Decimal(8, 2)
+
+  // computed by the optimizer; becomes a new StockRemnant on execute() if
+  // >= the product's min-remnant threshold
+  leftoverLengthCm Decimal? @db.Decimal(8, 2)
+  leftoverWidthCm  Decimal? @db.Decimal(8, 2)
+  newRemnantId     String?  @db.Uuid // single-column FK, filled by execute() once the leftover remnant row is created
+
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  cuttingPlan CuttingPlan      @relation(fields: [companyId, cuttingPlanId], references: [companyId, id], onDelete: Cascade) // composite — a stock line has no meaning without its plan
+  product     Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  cuts        CuttingPlanCut[]
+
+  @@unique([companyId, id]) // composite-FK target for CuttingPlanCut
+  @@index([cuttingPlanId])
+  @@index([companyId])
+  @@map("cutting_plan_stocks")
+}
+
+// One piece cut from a CuttingPlanStock. `productId` identifies which raw-
+// material this piece consumes — deliberately NOT a live FK to
+// AssemblyComponent.id: AssembliesService#setComponents fully replaces an
+// assembly's component rows on every BOM save (same reason
+// AssemblyVersionComponent/ProductionOrderPickListItem snapshot rather than
+// reference live component rows), so a CuttingPlanCut must survive a later
+// BOM edit without dangling.
+model CuttingPlanCut {
+  id                 String   @id @default(uuid()) @db.Uuid
+  companyId          String   @db.Uuid
+  cuttingPlanStockId String   @db.Uuid
+  productId          String   @db.Uuid
+  pieceLengthCm      Decimal  @db.Decimal(8, 2)
+  pieceWidthCm       Decimal? @db.Decimal(8, 2)
+  posXCm             Decimal? @db.Decimal(8, 2) // SHEET diagram layout, from the optimizer's own packing output
+  posYCm             Decimal? @db.Decimal(8, 2)
+  rotated            Boolean  @default(false)
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  cuttingPlanStock CuttingPlanStock @relation(fields: [companyId, cuttingPlanStockId], references: [companyId, id], onDelete: Cascade) // composite — a cut has no meaning without its stock item
+  product          Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+
+  @@index([cuttingPlanStockId])
+  @@index([companyId])
+  @@map("cutting_plan_cuts")
 }
 
 // ============================================================================
@@ -2474,10 +2688,10 @@ model LoadPlanItem {
   manualHeightCm Decimal? @db.Decimal(8, 2)
   manualWeightKg Decimal? @db.Decimal(10, 3)
 
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  loadPlanTruck     LoadPlanTruck      @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
-  customerOrderItem CustomerOrderItem? @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
-  assembly          Assembly?          @relation(fields: [companyId, assemblyId], references: [companyId, id])
+  company           Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  loadPlanTruck     LoadPlanTruck         @relation(fields: [companyId, loadPlanTruckId], references: [companyId, id], onDelete: Cascade)
+  customerOrderItem CustomerOrderItem?    @relation(fields: [companyId, customerOrderItemId], references: [companyId, id], onDelete: Cascade)
+  assembly          Assembly?             @relation(fields: [companyId, assemblyId], references: [companyId, id])
   boxPositions      LoadPlanBoxPosition[]
 
   @@unique([companyId, id])

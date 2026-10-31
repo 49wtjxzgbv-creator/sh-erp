@@ -39,6 +39,25 @@ export class AssemblyComponentLineDto {
   @IsNumber()
   @Min(0.0001)
   qtyPerUnit!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Розкрій (2026-10-31): per-piece length needed, only meaningful when the selected product has a ProductCuttingSpec of kind BAR (profile/bar) — cutWidthCm stays unset. Not snapshotted into AssemblyVersionComponent (a live planning input, not a historical cost/consumption fact).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  cutLengthCm?: number;
+
+  @ApiPropertyOptional({
+    description: 'Розкрій (2026-10-31): the piece\'s other planar dimension, only meaningful when the product has a ProductCuttingSpec of kind SHEET (used together with cutLengthCm as the two piece dimensions).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  cutWidthCm?: number;
 }
 
 export class SetAssemblyComponentsDto {

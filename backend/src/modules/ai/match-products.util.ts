@@ -9,6 +9,9 @@ export interface MatchedBomLine {
   article: string;
   matchedName: string;
   productId: string;
+  /** Розкрій (2026-10-31): structured bounding-box numbers from the STEP path only — null for the PDF/AI path (free-text `dimensions` only, unreliable to parse). Lets the review page prefill cutLengthCm/cutWidthCm when the matched/created product has a ProductCuttingSpec. */
+  lengthCm: number | null;
+  widthCm: number | null;
 }
 
 /**
@@ -28,7 +31,14 @@ export function matchProductByName(rawName: string, products: Product[]): Produc
   return match;
 }
 
-export function toMatchedBomLine(rawName: string, qty: number, dimensions: string | null, products: Product[]): MatchedBomLine {
+export function toMatchedBomLine(
+  rawName: string,
+  qty: number,
+  dimensions: string | null,
+  products: Product[],
+  lengthCm: number | null = null,
+  widthCm: number | null = null,
+): MatchedBomLine {
   const match = matchProductByName(rawName, products);
   return {
     rawName,
@@ -38,5 +48,7 @@ export function toMatchedBomLine(rawName: string, qty: number, dimensions: strin
     article: match ? match.article : '',
     matchedName: match ? match.name : '',
     productId: match ? match.id : '',
+    lengthCm,
+    widthCm,
   };
 }

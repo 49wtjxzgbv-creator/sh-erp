@@ -28,6 +28,7 @@ function tabsFor(id: string) {
     { href: `/bom/${id}/cost-vs-german-price`, labelKey: 'tabCostVsGermanPrice', tour: undefined },
     { href: `/bom/${id}/weight`, labelKey: 'tabWeight', tour: undefined },
     { href: `/bom/${id}/availability`, labelKey: 'tabAvailability', tour: 'bom-availability-tab' },
+    { href: `/bom/${id}/cutting`, labelKey: 'tabCutting', tour: undefined },
     { href: `/bom/${id}/versions`, labelKey: 'tabVersions', tour: undefined },
   ] as const;
 }

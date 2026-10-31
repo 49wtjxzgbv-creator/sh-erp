@@ -5,9 +5,11 @@ import { useTranslations } from 'next-intl';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAssemblyComponents, useSetAssemblyComponents } from '@/lib/hooks/use-bom';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
+import { useProductCuttingSpec } from '@/lib/hooks/use-cutting';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import type { AssemblyComponentLineInput, ComponentType } from '@/lib/api-client/bom';
+import type { Warehouse } from '@/lib/api-client/inventory';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
 import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,9 @@ interface EditableRow {
   subAssemblyId?: string;
   warehouseId?: string;
   qtyPerUnit: string;
+  /** Розкрій (2026-10-31) — only meaningful when the selected product has a ProductCuttingSpec. */
+  cutLengthCm: string;
+  cutWidthCm: string;
   /**
    * Display label for the picked product/sub-assembly. Only populated when
    * the user picks a row in this session, or reconstructed for rows loaded
@@ -68,13 +73,15 @@ export function BomEditor({ assemblyId, readOnly }: BomEditorProps) {
         subAssemblyId: c.subAssemblyId ?? undefined,
         warehouseId: c.warehouseId ?? undefined,
         qtyPerUnit: String(toNumber(c.qtyPerUnit) ?? ''),
+        cutLengthCm: c.cutLengthCm != null ? String(toNumber(c.cutLengthCm) ?? '') : '',
+        cutWidthCm: c.cutWidthCm != null ? String(toNumber(c.cutWidthCm) ?? '') : '',
         label: (c.productId ?? c.subAssemblyId ?? '') as string,
       })),
     );
   }, [serverComponents]);
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), componentType: 'PRODUCT', qtyPerUnit: '', label: '' }]);
+    setRows((r) => [...r, { key: newRowKey(), componentType: 'PRODUCT', qtyPerUnit: '', cutLengthCm: '', cutWidthCm: '', label: '' }]);
   }
 
   function removeRow(key: string) {
@@ -101,7 +108,9 @@ export function BomEditor({ assemblyId, readOnly }: BomEditorProps) {
           setError(t('invalidRow'));
           return;
         }
-        payload.push({ componentType: 'PRODUCT', productId: row.productId, warehouseId: row.warehouseId, qtyPerUnit: qty });
+        const cutLengthCm = row.cutLengthCm ? Number(row.cutLengthCm) : undefined;
+        const cutWidthCm = row.cutWidthCm ? Number(row.cutWidthCm) : undefined;
+        payload.push({ componentType: 'PRODUCT', productId: row.productId, warehouseId: row.warehouseId, qtyPerUnit: qty, cutLengthCm, cutWidthCm });
       } else {
         if (!row.subAssemblyId) {
           setError(t('invalidRow'));
@@ -133,87 +142,27 @@ export function BomEditor({ assemblyId, readOnly }: BomEditorProps) {
             <TableHead>{t('component')}</TableHead>
             <TableHead className="w-36">{t('warehouseOptional')}</TableHead>
             <TableHead className="w-28">{t('qtyPerUnit')}</TableHead>
+            <TableHead className="w-48">{t('cutDimensionsOptional')}</TableHead>
             <TableHead className="w-10" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                 {tc('noResults')}
               </TableCell>
             </TableRow>
           ) : (
             rows.map((row) => (
-              <TableRow key={row.key}>
-                <TableCell>
-                  <Select
-                    value={row.componentType}
-                    onValueChange={(v) =>
-                      updateRow(row.key, {
-                        componentType: v as ComponentType,
-                        productId: undefined,
-                        subAssemblyId: undefined,
-                        label: '',
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PRODUCT">{t('componentTypeProduct')}</SelectItem>
-                      <SelectItem value="ASSEMBLY">{t('componentTypeAssembly')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  {row.componentType === 'PRODUCT' ? (
-                    <ProductPicker
-                      value={row.productId}
-                      onChange={(id, label) => updateRow(row.key, { productId: id, label: label ?? '' })}
-                    />
-                  ) : (
-                    <AssemblyPicker
-                      value={row.subAssemblyId}
-                      excludeId={assemblyId}
-                      onChange={(id, label) => updateRow(row.key, { subAssemblyId: id, label: label ?? '' })}
-                    />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Select
-                    value={row.warehouseId ?? '__none__'}
-                    onValueChange={(v) => updateRow(row.key, { warehouseId: v === '__none__' ? undefined : v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="—" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">—</SelectItem>
-                      {warehouses?.map((w) => (
-                        <SelectItem key={w.id} value={w.id}>
-                          {w.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    step="any"
-                    min={0}
-                    value={row.qtyPerUnit}
-                    onChange={(e) => updateRow(row.key, { qtyPerUnit: e.target.value })}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="icon" onClick={() => removeRow(row.key)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
+              <BomEditorRow
+                key={row.key}
+                row={row}
+                assemblyId={assemblyId}
+                warehouses={warehouses}
+                onChange={(patch) => updateRow(row.key, patch)}
+                onRemove={() => removeRow(row.key)}
+              />
             ))
           )}
         </TableBody>
@@ -236,5 +185,95 @@ export function BomEditor({ assemblyId, readOnly }: BomEditorProps) {
         </div>
       )}
     </div>
+  );
+}
+
+interface BomEditorRowProps {
+  row: EditableRow;
+  assemblyId: string;
+  warehouses: Warehouse[] | undefined;
+  onChange: (patch: Partial<EditableRow>) => void;
+  onRemove: () => void;
+}
+
+/** One BOM line — a separate component so it can call `useProductCuttingSpec` per-row (a variable number of rows means that hook can't live directly in a `.map()` inside the parent). */
+function BomEditorRow({ row, assemblyId, warehouses, onChange, onRemove }: BomEditorRowProps) {
+  const t = useTranslations('bom');
+  const tCutting = useTranslations('cutting');
+  const { data: cuttingSpec } = useProductCuttingSpec(row.productId ?? '');
+
+  return (
+    <TableRow>
+      <TableCell>
+        <Select
+          value={row.componentType}
+          onValueChange={(v) => onChange({ componentType: v as ComponentType, productId: undefined, subAssemblyId: undefined, label: '', cutLengthCm: '', cutWidthCm: '' })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="PRODUCT">{t('componentTypeProduct')}</SelectItem>
+            <SelectItem value="ASSEMBLY">{t('componentTypeAssembly')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        {row.componentType === 'PRODUCT' ? (
+          <ProductPicker value={row.productId} onChange={(id, label) => onChange({ productId: id, label: label ?? '', cutLengthCm: '', cutWidthCm: '' })} />
+        ) : (
+          <AssemblyPicker value={row.subAssemblyId} excludeId={assemblyId} onChange={(id, label) => onChange({ subAssemblyId: id, label: label ?? '' })} />
+        )}
+      </TableCell>
+      <TableCell>
+        <Select value={row.warehouseId ?? '__none__'} onValueChange={(v) => onChange({ warehouseId: v === '__none__' ? undefined : v })}>
+          <SelectTrigger>
+            <SelectValue placeholder="—" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">—</SelectItem>
+            {warehouses?.map((w) => (
+              <SelectItem key={w.id} value={w.id}>
+                {w.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Input type="number" step="any" min={0} value={row.qtyPerUnit} onChange={(e) => onChange({ qtyPerUnit: e.target.value })} />
+      </TableCell>
+      <TableCell>
+        {cuttingSpec && (
+          <div className="flex gap-1.5">
+            <Input
+              type="number"
+              step="any"
+              min={0}
+              placeholder={cuttingSpec.kind === 'BAR' ? tCutting('cutLengthLabel') : tCutting('cutLengthLabel')}
+              value={row.cutLengthCm}
+              onChange={(e) => onChange({ cutLengthCm: e.target.value })}
+              className="h-9"
+            />
+            {cuttingSpec.kind === 'SHEET' && (
+              <Input
+                type="number"
+                step="any"
+                min={0}
+                placeholder={tCutting('cutWidthLabel')}
+                value={row.cutWidthCm}
+                onChange={(e) => onChange({ cutWidthCm: e.target.value })}
+                className="h-9"
+              />
+            )}
+          </div>
+        )}
+      </TableCell>
+      <TableCell>
+        <Button variant="ghost" size="icon" onClick={onRemove}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }
