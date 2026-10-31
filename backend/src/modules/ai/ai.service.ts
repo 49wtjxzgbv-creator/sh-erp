@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CodedBadRequestException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -49,6 +49,8 @@ const LOCALE_NAMES: Record<string, string> = {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly geminiProvider: GeminiAdapter,
     private readonly deepSeekProvider: DeepSeekAdapter,
@@ -380,7 +382,22 @@ export class AiService {
       [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data: bytes.toString('base64') } }] }],
       apiKey,
     );
-    await this.actionsService.logUsage(user, 'bom-extraction-drawing', result.usage);
+    // Real incident, 2026-10-31: an unusually slow/overloaded Gemini call
+    // (GeminiAdapter's own retry/backoff can push total latency well past
+    // a minute) outlived the ambient per-request Prisma transaction
+    // (TenantScopeInterceptor's own 60s cap — see the standing "prisma.tenant
+    // has no $transaction in-request" gotcha) — logUsage's own write then
+    // hit "Transaction already closed" and threw, discarding an extraction
+    // that had ALREADY succeeded. Usage logging is bookkeeping, not the
+    // actual result the user is waiting on; failing to log it is a real
+    // gap (quota tracking under-counts this call) but a far smaller one
+    // than silently throwing away a successful AI result the company's
+    // quota already paid for.
+    try {
+      await this.actionsService.logUsage(user, 'bom-extraction-drawing', result.usage);
+    } catch (err) {
+      this.logger.warn(`extractBomFromDrawing: logUsage failed (result still returned to caller): ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     const text = result.message.parts.find((p) => p.text !== undefined)?.text ?? '';
     const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();

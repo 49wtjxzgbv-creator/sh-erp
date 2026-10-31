@@ -282,6 +282,18 @@ describe('AiService', () => {
       expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
     });
 
+    it('still returns the extraction result when logUsage fails (e.g. an unusually slow Gemini call outlived the ambient request transaction) — real incident, 2026-10-31', async () => {
+      provider.generateContent.mockResolvedValue({
+        message: { role: 'model', parts: [{ text: '[{"name":"Кутник","qty":2}]' }] },
+      });
+      prisma.tenant.product.findMany.mockResolvedValue([]);
+      actionsService.logUsage.mockRejectedValue(new Error('Transaction already closed'));
+
+      const result = await service.extractBomFromDrawing(user, 'file-1');
+
+      expect(result.lines).toEqual([expect.objectContaining({ rawName: 'Кутник', qty: 2 })]);
+    });
+
     it('defaults qty to 1 and dimensions to null when the model omits them', async () => {
       provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '[{"name":"Кутник"}]' }] } });
       prisma.tenant.product.findMany.mockResolvedValue([]);
