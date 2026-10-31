@@ -59,8 +59,21 @@ async function bootstrap() {
   // origin behavior, which is the wrong tradeoff once credentials are ever
   // added — see docs/deployment.md's env-var checklist.
   const frontendUrl = process.env.FRONTEND_URL;
+  const isProduction = process.env.NODE_ENV === 'production';
+  // Security-audit fix (2026-10-31): the permissive `origin: true` fallback
+  // described above is the right call in dev (no FRONTEND_URL set, same-
+  // origin/localhost testing only) but is the WRONG failure mode in
+  // production — if FRONTEND_URL is ever unset there by a config mistake,
+  // `true` would silently reflect-any-origin with credentials:true, i.e.
+  // ANY site could ride a logged-in user's session. Fail closed instead:
+  // block all cross-origin requests (same-origin calls, health checks,
+  // etc. keep working) rather than crash the whole process — same
+  // "disabled until configured, not fatal" shape as SUPER_ADMIN_JWT_SECRET.
+  if (isProduction && !frontendUrl) {
+    app.get(Logger).error('FRONTEND_URL is not set in production — CORS is failing closed (blocking all cross-origin requests) rather than allowing any origin.');
+  }
   app.enableCors({
-    origin: frontendUrl ? frontendUrl.split(',').map((o) => o.trim()) : true,
+    origin: frontendUrl ? frontendUrl.split(',').map((o) => o.trim()) : !isProduction,
     credentials: true,
   });
 

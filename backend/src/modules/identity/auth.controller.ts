@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { getClientMeta } from '../../common/request-client-meta';
@@ -12,8 +13,14 @@ import { RefreshDto } from './dto/refresh.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Security-audit fix (2026-10-31): previously relied only on the global
+  // 100-req/60s-per-IP budget (app.module.ts), which is nowhere near tight
+  // enough to stop password-guessing against a known email — tightened
+  // per-route here, same 5/60s precedent already used on supplier-portal's
+  // unauthenticated account-creation routes.
   @Public()
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Sign in with email/password, scoped to one company.' })
   @ApiResponse({ status: 200, description: 'Access + refresh token pair.' })
   @ApiResponse({ status: 401, description: 'Invalid credentials, or no access to that company.' })

@@ -1,4 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { SuperAdminAuthService } from './super-admin-auth.service';
@@ -13,8 +14,13 @@ export class SuperAdminAuthController {
   // @Public() here means "skip the regular JwtAuthGuard/TenantScopeInterceptor
   // pipeline" — this route has no tenant context and never will. It is NOT
   // actually open to the public: the login itself is the real gate.
+  // Security-audit fix (2026-10-31): the single highest-value account on
+  // the whole platform had no tighter rate limit than the global 100/60s
+  // budget — tightened to the same 5/60s used on supplier-portal's
+  // unauthenticated account-creation routes.
   @Public()
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Super Admin login — completely separate from Company Admin / regular user auth.' })
   @ApiResponse({ status: 200, description: 'Access + refresh token pair (P0 fix, 2026-08-20 — session now survives reload).' })
   @ApiResponse({ status: 401, description: 'Invalid credentials, inactive account, or SUPER_ADMIN_JWT_SECRET unset.' })

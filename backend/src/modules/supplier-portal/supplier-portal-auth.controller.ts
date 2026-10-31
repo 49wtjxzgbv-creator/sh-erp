@@ -20,8 +20,13 @@ export class SupplierPortalAuthController {
   // @Public() means "skip the regular JwtAuthGuard/TenantScopeInterceptor
   // pipeline" — this route has no tenant context yet. It is NOT actually
   // open to the public: the login itself is the real gate.
+  // Security-audit fix (2026-10-31): only `register` below had a tightened
+  // rate limit — `login` itself relied on the global 100/60s-per-IP budget,
+  // nowhere near tight enough to stop password-guessing. Same 5/60s used
+  // everywhere else in this file.
   @Public()
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Supplier Portal login — completely separate from Company Admin / regular user / Super Admin auth.' })
   @ApiResponse({ status: 200, description: 'Access + refresh token pair (P0 fix, 2026-08-20 — session now survives reload).' })
   @ApiResponse({ status: 401, description: 'Invalid credentials, inactive account, or SUPPLIER_PORTAL_JWT_SECRET unset.' })
