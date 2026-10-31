@@ -1,6 +1,7 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
 import type { Currency } from './settings';
+import type { BomExtractionResult } from './ai';
 
 /**
  * Typed wrappers for backend/src/modules/bom/ (AssembliesController). Field
@@ -119,6 +120,16 @@ export function getAssembliesByIds(ids: string[]): Promise<Assembly[]> {
 }
 export function createAssembly(dto: CreateAssemblyInput): Promise<Assembly> {
   return apiClient.post<Assembly>('assemblies', dto);
+}
+/**
+ * "Креслення → специфікація" (2026-10-31), STEP half: reads the file's own
+ * embedded assembly-tree structure (exact part names/instance counts) —
+ * no AI, no quota cost, unlike `extractBomFromDrawing` (lib/api-client/
+ * ai.ts) for PDF/scanned drawings. Same `BomExtractionResult` shape either
+ * way — the review screen doesn't need to know which path produced a line.
+ */
+export function extractComponentsFromStep(fileAssetId: string): Promise<BomExtractionResult> {
+  return apiClient.post<BomExtractionResult>('assemblies/extract-components-from-step', { fileAssetId });
 }
 export function updateAssembly(id: string, dto: UpdateAssemblyInput): Promise<Assembly> {
   return apiClient.patch<Assembly>(`assemblies/${id}`, dto);

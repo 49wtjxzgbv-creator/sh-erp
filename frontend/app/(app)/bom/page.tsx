@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus } from 'lucide-react';
+import { Plus, ScanLine } from 'lucide-react';
 import { useAssemblies, useAssemblyCosts } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { useSuppliers } from '@/lib/hooks/use-procurement';
@@ -167,12 +167,20 @@ export default function BomPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('title')}</h1>
         {useHasPermission('assemblies:write') && (
-          <Button asChild>
-            <Link href="/bom/new" data-tour="bom-new-button">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('newAssembly')}
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/bom/extract" data-tour="bom-extract-button">
+                <ScanLine className="mr-2 h-4 w-4" />
+                {t('extractTitle')}
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/bom/new" data-tour="bom-new-button">
+                <Plus className="mr-2 h-4 w-4" />
+                {t('newAssembly')}
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 

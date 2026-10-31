@@ -7,6 +7,7 @@ import {
   getAssembly,
   getAssembliesByIds,
   createAssembly,
+  extractComponentsFromStep,
   updateAssembly,
   deleteAssembly,
   duplicateAssembly,
@@ -75,6 +76,10 @@ export function useCreateAssembly() {
     mutationFn: (dto: CreateAssemblyInput) => createAssembly(dto),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assemblies'] }),
   });
+}
+
+export function useExtractComponentsFromStep() {
+  return useMutation({ mutationFn: (fileAssetId: string) => extractComponentsFromStep(fileAssetId) });
 }
 
 export function useUpdateAssembly(id: string) {

@@ -11,6 +11,7 @@ describe('AiService', () => {
   let toolsRegistry: any;
   let assembliesService: any;
   let customerOrdersService: any;
+  let filesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -40,8 +41,19 @@ describe('AiService', () => {
     toolsRegistry = { getDeclarations: jest.fn().mockReturnValue([]), executeTool: jest.fn() };
     assembliesService = { calculateCost: jest.fn() };
     customerOrdersService = { findOne: jest.fn() };
+    filesService = { getFileAssetBytes: jest.fn() };
 
-    service = new AiService(provider, deepSeekProvider, prisma, settingsService, actionsService, toolsRegistry, assembliesService, customerOrdersService);
+    service = new AiService(
+      provider,
+      deepSeekProvider,
+      prisma,
+      settingsService,
+      actionsService,
+      toolsRegistry,
+      assembliesService,
+      customerOrdersService,
+      filesService,
+    );
   });
 
   describe('provider routing (2026-09-06, DeepSeek support)', () => {
@@ -226,6 +238,73 @@ describe('AiService', () => {
     it('throws BadRequestException when the model does not return valid JSON', async () => {
       provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'not json at all' }] } });
       await expect(service.recognizeInvoice(user, 'base64...', 'image/jpeg')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('extractBomFromDrawing — технічне креслення → чернетка специфікації', () => {
+    beforeEach(() => {
+      filesService.getFileAssetBytes.mockResolvedValue({
+        bytes: Buffer.from('fake-pdf-bytes'),
+        mimeType: 'application/pdf',
+        originalName: 'drawing.pdf',
+      });
+    });
+
+    it('fetches bytes server-side (never trusts a client-supplied body), sends them to Gemini, and fuzzy-matches the result', async () => {
+      provider.generateContent.mockResolvedValue({
+        message: { role: 'model', parts: [{ text: '[{"name":"Профіль 40x40","qty":4,"dimensions":"2000mm"}]' }] },
+      });
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'PR-40', name: 'Профіль 40x40' }]);
+
+      const result = await service.extractBomFromDrawing(user, 'file-1');
+
+      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith(user, 'file-1');
+      expect(settingsService.getGeminiApiKey).toHaveBeenCalledWith(user.companyId);
+      expect(actionsService.checkQuota).toHaveBeenCalledWith(user);
+      const [contents] = provider.generateContent.mock.calls[0];
+      expect(contents[0].parts[1].inlineData).toEqual({ mimeType: 'application/pdf', data: Buffer.from('fake-pdf-bytes').toString('base64') });
+      expect(result).toEqual({
+        sourceFileAssetId: 'file-1',
+        lines: [
+          expect.objectContaining({ rawName: 'Профіль 40x40', qty: 4, dimensions: '2000mm', matched: true, productId: 'p1' }),
+        ],
+      });
+    });
+
+    it('always uses Gemini (vision), regardless of the company\'s chat provider setting', async () => {
+      settingsService.getProvider.mockResolvedValue('deepseek');
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '[]' }] } });
+      prisma.tenant.product.findMany.mockResolvedValue([]);
+
+      await service.extractBomFromDrawing(user, 'file-1');
+
+      expect(settingsService.getGeminiApiKey).toHaveBeenCalled();
+      expect(deepSeekProvider.generateContent).not.toHaveBeenCalled();
+    });
+
+    it('defaults qty to 1 and dimensions to null when the model omits them', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '[{"name":"Кутник"}]' }] } });
+      prisma.tenant.product.findMany.mockResolvedValue([]);
+
+      const result = await service.extractBomFromDrawing(user, 'file-1');
+
+      expect(result.lines[0]).toEqual(expect.objectContaining({ rawName: 'Кутник', qty: 1, dimensions: null, matched: false }));
+    });
+
+    it('throws a coded error when the model does not return valid JSON', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'not json' }] } });
+      await expect(service.extractBomFromDrawing(user, 'file-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws a coded error when the model returns valid JSON that is not an array', async () => {
+      provider.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: '{"not":"a list"}' }] } });
+      await expect(service.extractBomFromDrawing(user, 'file-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('propagates a quota-exceeded rejection before ever fetching the file or calling Gemini', async () => {
+      actionsService.checkQuota.mockRejectedValue(new BadRequestException('quota exceeded'));
+      await expect(service.extractBomFromDrawing(user, 'file-1')).rejects.toThrow(BadRequestException);
+      expect(provider.generateContent).not.toHaveBeenCalled();
     });
   });
 

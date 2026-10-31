@@ -3,9 +3,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { AssembliesService } from './assemblies.service';
+import { StepBomExtractionService } from './step-bom-extraction.service';
 import { SetAssemblyComponentsDto } from './dto/assembly-component.dto';
 import { SetAssemblySuppliersDto } from './dto/assembly-supplier.dto';
 import { CreateAssemblyDto, UpdateAssemblyDto } from './dto/assembly.dto';
+import { ExtractComponentsFromStepDto } from './dto/extract-components-from-step.dto';
 import { CheckAvailabilityDto, ProduceAssemblyDto, SubAssembliesNeededQueryDto } from './dto/produce-assembly.dto';
 import { QueryAssembliesDto } from './dto/query-assemblies.dto';
 import { BatchAssemblyIdsDto } from './dto/batch-assemblies.dto';
@@ -13,13 +15,26 @@ import { BatchAssemblyIdsDto } from './dto/batch-assemblies.dto';
 @ApiTags('bom')
 @Controller({ path: 'assemblies', version: '1' })
 export class AssembliesController {
-  constructor(private readonly assembliesService: AssembliesService) {}
+  constructor(
+    private readonly assembliesService: AssembliesService,
+    private readonly stepBomExtractionService: StepBomExtractionService,
+  ) {}
 
   @Post()
   @RequirePermissions('assemblies:write')
   @ApiOperation({ summary: 'Create an assembly (BOM header).' })
   async create(@CurrentUser() user: RequestUser, @Body() dto: CreateAssemblyDto) {
     return this.assembliesService.create(user, dto);
+  }
+
+  @Post('extract-components-from-step')
+  @RequirePermissions('assemblies:write')
+  @ApiOperation({
+    summary:
+      'STEP/3D CAD file (already uploaded as a FileAsset) → draft BOM lines, read from the file\'s own assembly structure (exact part names/counts, no AI). "Креслення → специфікація", STEP half.',
+  })
+  async extractComponentsFromStep(@CurrentUser() user: RequestUser, @Body() dto: ExtractComponentsFromStepDto) {
+    return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
   }
 
   @Get()

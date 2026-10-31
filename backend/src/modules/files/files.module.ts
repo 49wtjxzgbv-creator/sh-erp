@@ -7,6 +7,6 @@ import { GlbOptimizationService } from './glb-optimization.service';
 @Module({
   controllers: [FilesController],
   providers: [FilesService, StepConversionService, GlbOptimizationService],
-  exports: [FilesService],
+  exports: [FilesService, StepConversionService],
 })
 export class FilesModule {}

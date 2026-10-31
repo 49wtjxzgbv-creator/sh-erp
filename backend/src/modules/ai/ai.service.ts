@@ -4,6 +4,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssembliesService } from '../bom/assemblies.service';
 import { CustomerOrdersService } from '../sales/customer-orders.service';
+import { FilesService } from '../files/files.service';
 import { HELP_MANUAL_TEXT } from './help-manual.constant';
 import { AiGenerateResult, AiMessage, AiProviderException, AiProviderPort, AiToolDeclaration } from './providers/ai-provider.port';
 import { GeminiAdapter } from './providers/gemini.adapter';
@@ -13,6 +14,7 @@ import { AiSettingsService } from './ai-settings.service';
 import { AiToolsRegistry } from './tools/tools.registry';
 import { loadPermissionSet } from '../../common/authorization/permission-set.util';
 import { AskFullAssistantDto } from './dto/ask-full-assistant.dto';
+import { MatchedBomLine, toMatchedBomLine } from './match-products.util';
 
 const MAX_TOOL_LOOP_ITERATIONS = 6; // mirrors the legacy askFullAssistant's maxIterations
 
@@ -56,6 +58,7 @@ export class AiService {
     private readonly toolsRegistry: AiToolsRegistry,
     private readonly assembliesService: AssembliesService,
     private readonly customerOrdersService: CustomerOrdersService,
+    private readonly filesService: FilesService,
   ) {}
 
   private async resolveProvider(companyId: string): Promise<AiProviderPort> {
@@ -339,6 +342,65 @@ export class AiService {
         productId: match ? match.id : '',
       };
     });
+  }
+
+  /**
+   * "Креслення → специфікація" (2026-10-31): a PDF/scanned technical
+   * drawing's title-block parts table → a draft BOM, fuzzy-matched against
+   * existing Products — same idea as `recognizeInvoice` above, but fixed
+   * transport. `recognizeInvoice` takes the file as inline base64 in the
+   * JSON request body, which silently hits Express/body-parser's default
+   * 100KB limit (no override exists anywhere in this app) long before
+   * anything resembling a real drawing PDF would fit. This instead takes a
+   * `fileAssetId` for a file already uploaded through the normal presigned-
+   * upload flow (`FilesModule`, 200MB ceiling, never transits this app's
+   * own request body) and fetches the bytes server-side via
+   * `FilesService.getFileAssetBytes` — built exactly for "a server-side
+   * consumer needs the real bytes in-process" (already used by
+   * SupplierRequestDocumentsPdfService). The uploaded drawing also stays a
+   * real `FileAsset` afterward, unlike `recognizeInvoice`'s image, which is
+   * discarded the moment the request completes.
+   */
+  async extractBomFromDrawing(user: RequestUser, fileAssetId: string): Promise<{ sourceFileAssetId: string; lines: MatchedBomLine[] }> {
+    const apiKey = await this.settingsService.getGeminiApiKey(user.companyId);
+    await this.actionsService.checkQuota(user);
+
+    const { bytes, mimeType } = await this.filesService.getFileAssetBytes(user, fileAssetId);
+
+    const prompt =
+      'Ти аналізуєш технічне креслення (PDF або скан) виробничого виробу. ' +
+      'Знайди таблицю специфікації/переліку деталей (BOM) на кресленні — зазвичай у штампі або окремому блоці. ' +
+      'Витягни ВСІ позиції з цієї таблиці. ' +
+      'Поверни СУВОРО валідний JSON-масив, без жодного тексту до чи після нього, без markdown-огортання. ' +
+      'Формат кожного елемента: {"name": "точна назва/позначення деталі як на кресленні", "qty": число, "dimensions": "розміри як вказано на кресленні, або null якщо не вказано"}. ' +
+      'Якщо кількість не вдається розпізнати — став 1. Креслення може бути українською, англійською або німецькою мовою.';
+
+    const result = await this.generateContentOrThrow(
+      this.geminiProvider,
+      [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data: bytes.toString('base64') } }] }],
+      apiKey,
+    );
+    await this.actionsService.logUsage(user, 'bom-extraction-drawing', result.usage);
+
+    const text = result.message.parts.find((p) => p.text !== undefined)?.text ?? '';
+    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    let items: any[];
+    try {
+      items = JSON.parse(cleaned);
+    } catch {
+      throw new CodedBadRequestException('AI_BOM_EXTRACTION_INVALID_JSON', 'AI did not return valid JSON for the extracted BOM.');
+    }
+    if (!Array.isArray(items)) {
+      throw new CodedBadRequestException('AI_BOM_EXTRACTION_NOT_A_LIST', 'AI returned something other than a list of BOM lines.');
+    }
+
+    const products = await this.prisma.tenant.product.findMany({ where: { deletedAt: null } });
+    const lines = items.map((item) =>
+      toMatchedBomLine(String(item.name || '').trim(), Number(item.qty) || 1, item.dimensions ? String(item.dimensions).trim() : null, products),
+    );
+
+    return { sourceFileAssetId: fileAssetId, lines };
   }
 
   /**

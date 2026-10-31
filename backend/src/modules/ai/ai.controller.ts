@@ -10,6 +10,7 @@ import { AskFullAssistantDto } from './dto/ask-full-assistant.dto';
 import { AskHelpDto } from './dto/ask-help.dto';
 import { CancelAiActionDto, ConfirmAiActionDto } from './dto/confirm-ai-action.dto';
 import { UpdateCompanyAiSettingsDto } from './dto/company-ai-settings.dto';
+import { ExtractBomFromDrawingDto } from './dto/extract-bom-from-drawing.dto';
 import { RecognizeInvoiceDto } from './dto/recognize-invoice.dto';
 import { TranslateJsonDto } from './dto/translate-json.dto';
 
@@ -80,6 +81,13 @@ export class AiController {
   @ApiOperation({ summary: 'Supplier invoice photo/scan → structured line items, fuzzy-matched against existing Products.' })
   async recognizeInvoice(@CurrentUser() user: RequestUser, @Body() dto: RecognizeInvoiceDto) {
     return this.aiService.recognizeInvoice(user, dto.base64Image, dto.mimeType);
+  }
+
+  @Post('extract-bom-from-drawing')
+  @RequirePermissions('ai:use')
+  @ApiOperation({ summary: 'Technical drawing (PDF/scan, already uploaded as a FileAsset) → draft BOM lines, fuzzy-matched against existing Products. "Креслення → специфікація".' })
+  async extractBomFromDrawing(@CurrentUser() user: RequestUser, @Body() dto: ExtractBomFromDrawingDto) {
+    return this.aiService.extractBomFromDrawing(user, dto.fileAssetId);
   }
 
   @Get('settings')

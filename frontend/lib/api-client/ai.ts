@@ -129,6 +129,42 @@ export function recognizeInvoice(base64Image: string, mimeType: string): Promise
   return apiClient.post<InvoiceRecognitionLine[]>('ai/recognize-invoice', { base64Image, mimeType });
 }
 
+/**
+ * "Креслення → специфікація" (2026-10-31) — one draft BOM line, shared by
+ * BOTH extraction sources: a PDF/scanned drawing read by Gemini vision
+ * (`extractBomFromDrawing` below) and a STEP file's own assembly-tree
+ * structure (`extractComponentsFromStep`, lib/api-client/bom.ts — no AI,
+ * exact counts from the CAD data itself). The review screen renders this
+ * one shape regardless of which path produced it.
+ */
+export interface MatchedBomLine {
+  rawName: string;
+  qty: number;
+  /** Free text — a drawing's own annotation (PDF path) or a geometry-computed bounding box labeled "за геометрією" (STEP path). Never a structured field — Product has no dimension columns. */
+  dimensions: string | null;
+  matched: boolean;
+  article: string;
+  matchedName: string;
+  productId: string;
+}
+
+export interface BomExtractionResult {
+  sourceFileAssetId: string;
+  lines: MatchedBomLine[];
+}
+
+/**
+ * Unlike `recognizeInvoice`, takes an already-uploaded `fileAssetId`
+ * (`uploadFile` from lib/api-client/files.ts, domain `ASSEMBLY_DRAWING`) —
+ * NOT inline base64 — the backend fetches the bytes itself server-side.
+ * See AiService#extractBomFromDrawing's header comment: inline base64 in
+ * the JSON body silently hits Express's default 100KB limit, nowhere near
+ * big enough for a real drawing PDF.
+ */
+export function extractBomFromDrawing(fileAssetId: string): Promise<BomExtractionResult> {
+  return apiClient.post<BomExtractionResult>('ai/extract-bom-from-drawing', { fileAssetId });
+}
+
 /** 2026-09-06: choice of AI vendor — only 'gemini' has a platform-provided fallback key; 'deepseek' always needs the company's own key (AiSettingsService#getEffectiveApiKey). */
 export type AiProviderName = 'gemini' | 'deepseek';
 

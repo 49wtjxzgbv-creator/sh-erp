@@ -10,6 +10,13 @@ import { createR2Client, R2_BUCKET } from './r2-client';
 
 const STEP_EXTENSION = /\.(step|stp)$/i;
 
+/** One grouped part instance from a STEP assembly's own tree structure — see `extractBomStructure`'s header comment. */
+export interface StepBomLine {
+  name: string;
+  qty: number;
+  dimensionsCm: string | null;
+}
+
 // A real multi-part mechanical assembly can legitimately need several
 // minutes and multiple gigabytes of WASM linear memory to tessellate —
 // confirmed directly: a 17.4MB real customer file was still running after
@@ -102,6 +109,36 @@ export class StepConversionService {
     }
   }
 
+  /**
+   * AI-free BOM-draft extraction (2026-10-31, "креслення → специфікація"
+   * feature): STEP's own assembly tree (`PRODUCT`/`NEXT_ASSEMBLY_USAGE_
+   * OCCURRENCE` entities) already encodes part names and instance counts —
+   * OCCT surfaces this as `result.root`, which `convert()`/step-convert-
+   * child.js parse but discard (only `result.meshes` is used there, for
+   * geometry). `step-extract-bom-child.js` walks that tree instead and
+   * returns grouped `{name, qty, dimensionsCm}` lines — exact counts from
+   * the CAD structure itself, no AI involved, and (unlike `convert()`)
+   * awaited synchronously since a caller is waiting on the result for a
+   * review screen, not firing-and-forgetting a background conversion.
+   */
+  async extractBomStructure(fileAsset: FileAsset): Promise<StepBomLine[]> {
+    let workDir: string | undefined;
+    try {
+      workDir = await mkdtemp(join(tmpdir(), 'step-extract-'));
+      const stepPath = join(workDir, 'input.step');
+      const outputPath = join(workDir, 'output.json');
+
+      const stepBytes = await this.getObjectBytes(fileAsset.storageKey);
+      await writeFile(stepPath, stepBytes);
+
+      await spawnGuardedChild('step-extract-bom-child.js', [stepPath, outputPath]);
+      const json = await readFile(outputPath, 'utf8');
+      return JSON.parse(json) as StepBomLine[];
+    } finally {
+      if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   private async getObjectBytes(storageKey: string): Promise<Buffer> {
     const object = await this.r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }));
     const chunks: Buffer[] = [];
@@ -138,18 +175,25 @@ export class StepConversionService {
   }
 }
 
+function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
+  return spawnGuardedChild('step-convert-child.js', [stepPath, glbPath]);
+}
+
 /**
- * Spawns `step-convert-child.js` (copied next to the compiled service by
+ * Spawns a child script (copied next to the compiled service by
  * `nest-cli.json`'s `assets` config — plain `.js`, not part of the TS
  * build) and enforces both limits externally: a wall-clock timeout, and a
  * periodic `/proc/<pid>/status` RSS check (Linux-only — a no-op elsewhere,
  * e.g. `npm run build` running on a contributor's Mac, since production is
  * what actually needs this guard). Either limit kills the child with
- * SIGKILL; the promise rejects, `convert()`'s catch marks the row FAILED.
+ * SIGKILL; the promise rejects. Shared by both `step-convert-child.js`
+ * (GLB build, fire-and-forget) and `step-extract-bom-child.js` (BOM-tree
+ * extraction, awaited synchronously) — same OCCT/WASM memory risk either
+ * way, same guard rails.
  */
-function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
+function spawnGuardedChild(scriptName: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const childScript = join(__dirname, 'step-convert-child.js');
+    const childScript = join(__dirname, scriptName);
     // --max-old-space-size: found via a real test, not speculatively — the
     // actual crash on the real 17.4MB file wasn't a system OOM kill or WASM
     // memory at all, it was Node's OWN default V8 heap ceiling (~2GB),
@@ -158,7 +202,7 @@ function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
     // the default here specifically because this runs in its own process —
     // MAX_CONVERSION_RSS_BYTES below still bounds the child's total OS-level
     // memory regardless of what V8 itself would allow.
-    const child = spawn(process.execPath, ['--max-old-space-size=4096', childScript, stepPath, glbPath], {
+    const child = spawn(process.execPath, ['--max-old-space-size=4096', childScript, ...args], {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
 
@@ -192,7 +236,7 @@ function runConvertChild(stepPath: string, glbPath: string): Promise<void> {
     child.on('exit', (code) => {
       if (settled) return;
       if (code === 0) settle();
-      else settle(new Error(`step-convert-child exited with code ${code}: ${stderr.trim() || '(no stderr)'}`));
+      else settle(new Error(`${scriptName} exited with code ${code}: ${stderr.trim() || '(no stderr)'}`));
     });
   });
 }

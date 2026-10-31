@@ -12,6 +12,10 @@
       {
         "include": "modules/files/glb-optimize-child.js",
         "outDir": "dist"
+      },
+      {
+        "include": "modules/files/step-extract-bom-child.js",
+        "outDir": "dist"
       }
     ]
   }

@@ -8,6 +8,7 @@ import {
   confirmAiAction,
   cancelAiAction,
   recognizeInvoice,
+  extractBomFromDrawing,
   getAiSettings,
   updateAiSettings,
   translateJson,
@@ -50,6 +51,10 @@ export function useRecognizeInvoice() {
   return useMutation({
     mutationFn: ({ base64Image, mimeType }: { base64Image: string; mimeType: string }) => recognizeInvoice(base64Image, mimeType),
   });
+}
+
+export function useExtractBomFromDrawing() {
+  return useMutation({ mutationFn: (fileAssetId: string) => extractBomFromDrawing(fileAssetId) });
 }
 
 const aiSettingsKey = ['ai-settings'] as const;
