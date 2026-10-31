@@ -79,7 +79,14 @@ cd "$REPO_ROOT/backend"
 # "prisma":{"seed":...}) needs ts-node — both are devDependencies. There is
 # no container-image-size reason to strip them anymore now that this runs
 # natively, so this no longer tries to be clever about it.
-npm ci
+# `--include=dev` is required, not just documentation, now that
+# NODE_ENV=production is correctly set in backend.env (security-audit fix,
+# 2026-10-31) and this script sources that same file into its own shell —
+# bare `npm ci` respects NODE_ENV and silently skips devDependencies under
+# it, which broke this exact step (`ts-node/register` missing) the first
+# time this ran after that fix. The running service's own NODE_ENV is
+# unaffected either way — this only controls what npm installs here.
+npm ci --include=dev
 npx prisma generate --schema=../prisma/schema.prisma
 
 echo "--- Migrations (superuser connection — app_user intentionally lacks CREATEROLE, see .env.example) ---"
