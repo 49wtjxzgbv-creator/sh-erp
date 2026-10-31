@@ -14,7 +14,7 @@ export { locales, defaultLocale, LOCALE_COOKIE_NAME, type Locale };
  * This is next-intl's documented "without i18n routing" mode.
  */
 export default getRequestConfig(async () => {
-  const cookieLocale = cookies().get(LOCALE_COOKIE_NAME)?.value;
+  const cookieLocale = (await cookies()).get(LOCALE_COOKIE_NAME)?.value;
   const locale = (locales as readonly string[]).includes(cookieLocale ?? '')
     ? (cookieLocale as Locale)
     : defaultLocale;

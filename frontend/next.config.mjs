@@ -18,6 +18,12 @@ const nextConfig = {
   // Vercel-native deployment path (Vercel does its own equivalent tracing
   // regardless of this setting) — safe to enable unconditionally.
   output: 'standalone',
+  // Next.js 16 defaults to Turbopack for builds and otherwise warns/guesses
+  // at the workspace root when it finds more than one lockfile — this repo
+  // has a tiny root-level package.json (just prisma/@prisma/client, for
+  // running `prisma` CLI commands from the repo root) alongside this one.
+  // Pin explicitly rather than relying on Turbopack's inference.
+  turbopack: { root: import.meta.dirname },
   // Real, repeatedly-reproduced flakiness on the production VPS
   // (2026-08-19, hit on several separate deploys): `next build`'s
   // static-page generation intermittently throws "Cannot read properties

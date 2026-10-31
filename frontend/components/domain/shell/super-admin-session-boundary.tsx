@@ -21,7 +21,6 @@ export function SuperAdminSessionBoundary({ children }: { children: React.ReactN
   useEffect(() => {
     if (isHydrated) return;
     restoreSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated]);
 
   if (!isHydrated) {

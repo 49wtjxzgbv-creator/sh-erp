@@ -7,7 +7,13 @@ import type { ModelViewerElement } from '@google/model-viewer';
  * `ar-view-button.tsx`'s only use of the tag, so only the attributes it
  * actually sets are declared (plus `src`/`alt`, the two any usage needs).
  */
-declare global {
+// React 19 moved the JSX namespace from the bare global `JSX` to
+// `React.JSX` (@types/react's index.d.ts nests it inside `declare namespace
+// React`) — augmenting via `declare module 'react'` is the pattern React's
+// own types use internally and merges correctly into React.JSX, unlike the
+// old `declare global { namespace JSX {...} }` form, which no longer has
+// anything to merge with.
+declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
       'model-viewer': DetailedHTMLProps<HTMLAttributes<ModelViewerElement>, ModelViewerElement> & {

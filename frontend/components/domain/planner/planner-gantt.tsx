@@ -434,7 +434,6 @@ export const PlannerGanttChart = forwardRef<
         flashAndScroll([`ship-plan:${orderId}`, `ship-fact:${orderId}`]);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }));
 
   function runSearch(query: string) {

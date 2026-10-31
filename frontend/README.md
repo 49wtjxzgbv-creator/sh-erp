@@ -57,7 +57,7 @@ So this app owns cookie storage itself:
 - `app/api/auth/login/route.ts`, `refresh/route.ts`, `logout/route.ts` call the backend, then set/clear four **httpOnly, Secure (in production), SameSite=Lax** cookies via `lib/auth/server-cookies.ts` (names in `lib/auth/cookie-names.ts`): the refresh token itself, plus `userId`/`companyId`/`companySlug`. The latter three exist only because `auth.service.ts#refresh()` deliberately returns just `{accessToken, refreshToken, expiresIn}` — no identity fields (only `login()` returns those) — so the refresh route re-derives them from the cookies set at login rather than the backend response.
 - The **access token is never put in a cookie.** It's returned to the browser in the JSON response of our own `/api/auth/*` routes and held only in the Zustand store (`lib/auth/session-store.ts`) for the life of the tab.
 - `lib/api-client/http.ts` attaches the in-memory access token as a Bearer header on every backend call, and on a `401` calls our own `/api/auth/refresh` once (same-origin, cookie rides along automatically) before giving up and clearing the session.
-- `middleware.ts` gates the authenticated route segments by checking **presence** of the refresh cookie only — it cannot validate it (that needs a DB round-trip the backend owns). An expired/revoked cookie still passes the middleware gate and is rejected on the first real API call.
+- `proxy.ts` gates the authenticated route segments by checking **presence** of the refresh cookie only — it cannot validate it (that needs a DB round-trip the backend owns). An expired/revoked cookie still passes the middleware gate and is rejected on the first real API call.
 - `components/domain/shell/session-boundary.tsx` is the client-side counterpart: on first mount under `app/(app)/layout.tsx` it calls `restoreSession()` to silently exchange the httpOnly cookie for an access token (necessary after every page reload/new tab, since the access token itself never persists), and redirects to `/login` if that fails.
 
 ## Known gap: pre-login branding images (found while building Task 43, not silently worked around)
@@ -398,7 +398,7 @@ frontend/
       session-store.ts             — Zustand: in-memory access token + identity
       actions.ts                    — login()/logout()/restoreSession(), calling our own /api/auth/* routes
   messages/uk.json, en.json, pl.json, de.json
-  i18n.ts, middleware.ts, tailwind.config.ts, next.config.mjs
+  i18n.ts, proxy.ts, tailwind.config.ts, next.config.mjs
 ```
 
 **Pattern to follow for every later module** (established in Task 43, keep using it): `lib/api-client/<module>.ts` (plain typed fetch functions, field shapes copied from the real DTOs) → `lib/hooks/use-<module>.ts` (TanStack Query wrapping those, owns cache keys/invalidation) → components/pages call only the hooks, never `apiClient` or the api-client functions directly.

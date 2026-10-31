@@ -22,7 +22,7 @@ const PROTECTED_SEGMENTS = [
   'billing',
 ];
 
-export default function middleware(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Never intercept Next.js-owned API routes (auth cookie proxy, presign proxy).

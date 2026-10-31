@@ -33,7 +33,6 @@ export default async function OpengraphImage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 40 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logoDataUrl} width={56} height={56} style={{ borderRadius: 14 }} alt="" />
           <div style={{ fontSize: 40, fontWeight: 700, color: '#ffffff' }}>SH ERP</div>
         </div>

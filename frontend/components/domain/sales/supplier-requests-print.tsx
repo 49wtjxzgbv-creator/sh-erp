@@ -220,7 +220,6 @@ export function SupplierRequestsPrint({ groups, onPreview }: SupplierRequestsPri
         .forEach((line, li) => entries.push([`${gi}-${li}`, descriptionWithoutArticle(line)]));
     });
     return entries;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- descriptionWithoutArticle is a pure function of its own argument, not a real dep.
   }, [printable]);
 
   async function handleSelectLocale(locale: Locale) {

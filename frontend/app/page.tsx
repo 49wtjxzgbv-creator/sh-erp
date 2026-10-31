@@ -16,12 +16,12 @@ import { landingMediaUrl } from '@/lib/landing-page/media-url';
 
 /**
  * Public Landing Page (2026-08-05, content-driven since 2026-08-20) — this
- * used to be a redirect straight to /dashboard (which middleware.ts then
+ * used to be a redirect straight to /dashboard (which proxy.ts then
  * bounced to /login for anyone signed out, meaning every first-time
  * visitor's actual first screen was a bare login form). Now "/" is real
  * marketing content; /login and /register are their own routes under
  * app/(public)/. An already signed-in visitor landing here is redirected to
- * /dashboard by middleware.ts instead of seeing this page again.
+ * /dashboard by proxy.ts instead of seeing this page again.
  *
  * Content (hero/modules/showcase/benefits/pricing/faq/contact/footer/seo)
  * comes from GET /landing-page (backend/src/modules/landing-page) — the
@@ -55,7 +55,7 @@ const golosText = Golos_Text({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const locale = resolveLocale();
+  const locale = await resolveLocale();
   const { content } = await getPublishedLandingPage();
   const seo = content.seo;
   const title = seo.title[locale] || seo.title.uk;
@@ -158,7 +158,7 @@ function buildJsonLd(
 }
 
 export default async function LandingPage() {
-  const locale = resolveLocale();
+  const locale = await resolveLocale();
   const { content, plans } = await getPublishedLandingPage();
   const c = flattenLandingPageContent(content, locale);
   const jsonLd = buildJsonLd(c, plans);
@@ -166,7 +166,6 @@ export default async function LandingPage() {
   return (
     <div className={`flex min-h-screen flex-col ${golosText.variable}`}>
       {/* `<` escaped so Super-Admin-edited copy (e.g. an FAQ answer) can never contain a literal "</script>" and break out of this tag. */}
-      {/* eslint-disable-next-line react/no-danger */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
       <MarketingHeader pricingVisible={c.pricing.visible} />
       <main className="flex-1">

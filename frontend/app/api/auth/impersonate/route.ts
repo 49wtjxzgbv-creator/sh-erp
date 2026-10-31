@@ -6,7 +6,7 @@ import { forwardClientMetaHeaders } from '@/lib/auth/forward-client-meta';
  * P0 fix (2026-08-20): the old flow (app/impersonate/page.tsx, now deleted)
  * put the Super Admin panel's minted access token straight into the
  * regular app's in-memory session store and redirected — but never set the
- * httpOnly `sh_refresh_token` cookie, so middleware.ts immediately bounced
+ * httpOnly `sh_refresh_token` cookie, so proxy.ts immediately bounced
  * the new tab back to /login. This route closes that gap the same way
  * app/api/auth/login/route.ts does: proxy to the backend (here,
  * `POST super-admin/companies/:id/impersonate`, Bearer-authenticated with

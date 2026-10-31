@@ -6,7 +6,7 @@ import { useSessionStore } from '@/lib/auth/session-store';
 import { restoreSession } from '@/lib/auth/actions';
 
 /**
- * Bridges the gap between middleware.ts's cookie-presence check (which only
+ * Bridges the gap between proxy.ts's cookie-presence check (which only
  * proves a refresh cookie exists, not that it's valid, and doesn't put an
  * access token anywhere the client can use) and the in-memory
  * session store that lib/api-client/http.ts actually reads from. On mount,
