@@ -1,6 +1,6 @@
 'use client';
 
-import { X, ChevronLeft, ChevronRight, SkipForward, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TrainingCourse, TrainingStep } from './training-types';
 
@@ -85,12 +85,6 @@ export function TrainingStepPopover({ course, step, stepIndex, onNext, onBack, o
           </Button>
         </div>
         <div className="flex gap-1">
-          {!waitingOnCheckpoint && (
-            <Button variant="ghost" size="sm" onClick={onNext}>
-              <SkipForward className="mr-1 h-3.5 w-3.5" />
-              Пропустити
-            </Button>
-          )}
           {!waitingOnCheckpoint && (
             <Button size="sm" onClick={onNext}>
               {isLast ? 'Завершити' : 'Далі'}
