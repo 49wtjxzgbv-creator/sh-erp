@@ -42,6 +42,7 @@ describe('toMatchedBomLine', () => {
       productId: 'p1',
       lengthCm: null,
       widthCm: null,
+      shapePolygon: null,
     });
   });
 

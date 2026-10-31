@@ -66,6 +66,52 @@ describe('CuttingPlansService', () => {
       expect(result.id).toBe('plan1');
     });
 
+    it('routes a SHEET component with a real contour through the irregular nester, persisting shapePolygonCm/usedAreaCm2/wasteAreaCm2 instead of leftoverLengthCm/WidthCm', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1' });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([
+        {
+          componentType: 'PRODUCT',
+          productId: 'p1',
+          qtyPerUnit: 1,
+          cutLengthCm: 10,
+          cutWidthCm: 10,
+          cutShapePolygon: {
+            outerCm: [
+              [0, 0],
+              [10, 0],
+              [10, 10],
+              [0, 10],
+            ],
+            holesCm: [],
+          },
+        },
+      ]);
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({ productId: 'p1', kind: 'SHEET', stockLengthCm: 100, stockWidthCm: 100, kerfMm: 0, allowRotation: false });
+      prisma.tenant.stockRemnant.findMany.mockResolvedValue([]);
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, { assemblyId: 'a1', qty: 1 });
+
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            usedAreaCm2: expect.any(Number),
+            wasteAreaCm2: expect.any(Number),
+          }),
+        }),
+      );
+      const stockCallData = prisma.tenant.cuttingPlanStock.create.mock.calls[0][0].data;
+      expect(stockCallData.leftoverLengthCm).toBeUndefined();
+
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([expect.objectContaining({ shapePolygonCm: expect.objectContaining({ outerCm: expect.any(Array) }) })]),
+        }),
+      );
+    });
+
     it('does not call the optimizer for a demand group whose product no longer has a cutting spec', async () => {
       prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1' });
       prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1, cutLengthCm: 100 }]);

@@ -56,6 +56,8 @@ export interface CuttingPlanCut {
   posXCm: DecimalString | null;
   posYCm: DecimalString | null;
   rotated: boolean;
+  /** Irregular-shape nesting (2026-11-01): the piece's real contour, already placed in the sheet's own coordinate frame. Null for the ordinary rectangle path (pieceLengthCm/pieceWidthCm/posXCm/posYCm already fully describe those). */
+  shapePolygonCm: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
 }
 
 export interface CuttingPlanStock {
@@ -69,6 +71,9 @@ export interface CuttingPlanStock {
   leftoverLengthCm: DecimalString | null;
   leftoverWidthCm: DecimalString | null;
   newRemnantId: string | null;
+  /** Irregular-shape nesting (2026-11-01): populated instead of leftoverLengthCm/leftoverWidthCm for a polygon-nested sheet (no clean rectangular leftover to report). */
+  usedAreaCm2: DecimalString | null;
+  wasteAreaCm2: DecimalString | null;
   cuts: CuttingPlanCut[];
 }
 

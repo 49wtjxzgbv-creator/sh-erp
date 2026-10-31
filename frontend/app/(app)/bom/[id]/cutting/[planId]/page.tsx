@@ -66,7 +66,17 @@ function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
   );
 }
 
-/** One лист's nesting layout — SVG rects positioned by the optimizer's own posXCm/posYCm output. */
+/** Builds an SVG path `d` string for a polygon with holes (even-odd fill rule punches the holes out) — one `M...Z` ring per outer/hole loop. */
+function polygonToPathD(outerCm: [number, number][], holesCm: [number, number][][]): string {
+  const ring = (pts: [number, number][]) => `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')} Z`;
+  return [ring(outerCm), ...holesCm.map(ring)].join(' ');
+}
+
+/**
+ * One лист's nesting layout. Irregular-shape nesting (2026-11-01): when a
+ * cut carries `shapePolygonCm`, draws its real contour (holes punched out
+ * via `fill-rule: evenodd`) instead of a bounding-box `<rect>`.
+ */
 function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
   const lengthCm = toNumber(stockItem.lengthCm) ?? 0;
   const widthCm = toNumber(stockItem.widthCm) ?? 0;
@@ -74,18 +84,29 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
 
   return (
     <svg viewBox={`0 0 ${lengthCm} ${widthCm}`} className="w-full rounded border border-border bg-muted" style={{ aspectRatio: `${lengthCm} / ${widthCm}` }}>
-      {stockItem.cuts.map((cut, i) => (
-        <rect
-          key={cut.id}
-          x={toNumber(cut.posXCm) ?? 0}
-          y={toNumber(cut.posYCm) ?? 0}
-          width={toNumber(cut.pieceLengthCm) ?? 0}
-          height={toNumber(cut.pieceWidthCm) ?? 0}
-          className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
-          stroke="white"
-          strokeWidth={lengthCm / 200}
-        />
-      ))}
+      {stockItem.cuts.map((cut, i) =>
+        cut.shapePolygonCm ? (
+          <path
+            key={cut.id}
+            d={polygonToPathD(cut.shapePolygonCm.outerCm, cut.shapePolygonCm.holesCm)}
+            fillRule="evenodd"
+            className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
+            stroke="white"
+            strokeWidth={lengthCm / 200}
+          />
+        ) : (
+          <rect
+            key={cut.id}
+            x={toNumber(cut.posXCm) ?? 0}
+            y={toNumber(cut.posYCm) ?? 0}
+            width={toNumber(cut.pieceLengthCm) ?? 0}
+            height={toNumber(cut.pieceWidthCm) ?? 0}
+            className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
+            stroke="white"
+            strokeWidth={lengthCm / 200}
+          />
+        ),
+      )}
     </svg>
   );
 }
@@ -113,6 +134,11 @@ function MaterialCard({ material }: { material: CuttingPlanMaterial }) {
               </Badge>
             </div>
             {material.kind === 'SHEET' ? <SheetStockDiagram stockItem={stockItem} /> : <BarStockDiagram stockItem={stockItem} />}
+            {stockItem.usedAreaCm2 != null && (
+              <p className="text-xs text-muted-foreground">
+                {t('usedWasteAreaLabel', { used: toNumber(stockItem.usedAreaCm2) ?? 0, waste: toNumber(stockItem.wasteAreaCm2) ?? 0 })}
+              </p>
+            )}
           </div>
         ))}
       </CardContent>

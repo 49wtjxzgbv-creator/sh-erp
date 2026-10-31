@@ -12,6 +12,8 @@ export interface MatchedBomLine {
   /** Розкрій (2026-10-31): structured bounding-box numbers from the STEP path only — null for the PDF/AI path (free-text `dimensions` only, unreliable to parse). Lets the review page prefill cutLengthCm/cutWidthCm when the matched/created product has a ProductCuttingSpec. */
   lengthCm: number | null;
   widthCm: number | null;
+  /** Irregular-shape nesting (2026-11-01): the part's real contour, STEP path only — null when unavailable (PDF/AI path, or a curved/non-flat STEP part with no clean planar face). Saved verbatim as AssemblyComponent.cutShapePolygon when present. */
+  shapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
 }
 
 /**
@@ -38,6 +40,7 @@ export function toMatchedBomLine(
   products: Product[],
   lengthCm: number | null = null,
   widthCm: number | null = null,
+  shapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null = null,
 ): MatchedBomLine {
   const match = matchProductByName(rawName, products);
   return {
@@ -50,5 +53,6 @@ export function toMatchedBomLine(
     productId: match ? match.id : '',
     lengthCm,
     widthCm,
+    shapePolygon,
   };
 }

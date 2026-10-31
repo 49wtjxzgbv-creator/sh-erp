@@ -1658,6 +1658,18 @@ model AssemblyComponent {
   cutLengthCm Decimal? @db.Decimal(8, 2)
   cutWidthCm  Decimal? @db.Decimal(8, 2)
 
+  // Irregular-shape nesting (2026-11-01): { outerCm: [number,number][],
+  // holesCm?: [number,number][][] } — the real 2D contour of the piece
+  // (arcs already tessellated into line segments), STEP-sourced ONLY
+  // (never hand-typed, no manual-entry UI for this — a form can't
+  // reasonably capture an arbitrary polygon). When set, the cutting
+  // optimizer nests this piece by its real shape instead of the
+  // cutLengthCm×cutWidthCm bounding box above (which stays populated
+  // alongside it, for display/sorting). Opaque, always read/written as a
+  // whole — same Json? @db.JsonB precedent as CustomerOrderItem.
+  // plannedSubAssemblies, not a case for real child rows.
+  cutShapePolygon Json? @db.JsonB
+
   company     Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
   assembly    Assembly   @relation(fields: [companyId, assemblyId], references: [companyId, id], onDelete: Cascade) // composite — a BOM line has no meaning without its assembly
   product     Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -1840,6 +1852,15 @@ model CuttingPlanStock {
   leftoverWidthCm  Decimal? @db.Decimal(8, 2)
   newRemnantId     String?  @db.Uuid // single-column FK, filled by execute() once the leftover remnant row is created
 
+  // Irregular-shape nesting (2026-11-01): populated instead of
+  // leftoverLengthCm/leftoverWidthCm when this stock item was nested by
+  // optimizeIrregularSheetNesting (grid/raster placement) — an irregular
+  // leftover region has no safe way to be reported as a clean rectangle,
+  // so no StockRemnant is created from it either (reported for visibility
+  // only). Null for the ordinary rectangle-nesting path.
+  usedAreaCm2  Decimal? @db.Decimal(10, 2)
+  wasteAreaCm2 Decimal? @db.Decimal(10, 2)
+
   company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   cuttingPlan CuttingPlan      @relation(fields: [companyId, cuttingPlanId], references: [companyId, id], onDelete: Cascade) // composite — a stock line has no meaning without its plan
   product     Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
@@ -1868,6 +1889,14 @@ model CuttingPlanCut {
   posXCm             Decimal? @db.Decimal(8, 2) // SHEET diagram layout, from the optimizer's own packing output
   posYCm             Decimal? @db.Decimal(8, 2)
   rotated            Boolean  @default(false)
+
+  // Irregular-shape nesting (2026-11-01): the piece's real outer contour
+  // (+ any holes), already translated/rotated into the sheet's own
+  // coordinate frame — [number,number][] / { outerCm, holesCm } shape,
+  // same opaque-JSON convention as AssemblyComponent.cutShapePolygon.
+  // Null for the ordinary rectangle path (pieceLengthCm/pieceWidthCm/
+  // posXCm/posYCm/rotated already fully describe those).
+  shapePolygonCm Json? @db.JsonB
 
   company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   cuttingPlanStock CuttingPlanStock @relation(fields: [companyId, cuttingPlanStockId], references: [companyId, id], onDelete: Cascade) // composite — a cut has no meaning without its stock item

@@ -1,11 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsEnum, IsNumber, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEnum, IsNumber, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
 
 /** Mirrors the Prisma `ComponentType` enum — kept as a separate DTO-layer enum so validation errors read cleanly without importing `@prisma/client` into the DTO layer. */
 export enum ComponentTypeDto {
   PRODUCT = 'PRODUCT',
   ASSEMBLY = 'ASSEMBLY',
+}
+
+/** Irregular-shape nesting (2026-11-01) — STEP-sourced only, never hand-typed, so validation here stays structural (array shape) rather than per-point, same trust level the rest of this DTO already gives STEP-derived values. */
+export class CutShapePolygonDto {
+  @ApiProperty({ description: 'The piece\'s real outer contour, [x,y] pairs in cm (arcs already tessellated into line segments upstream).' })
+  @IsArray()
+  @ArrayMinSize(3)
+  outerCm!: [number, number][];
+
+  @ApiPropertyOptional({ description: 'Any holes in the contour (e.g. a punched circle), same coordinate frame as outerCm.' })
+  @IsOptional()
+  @IsArray()
+  holesCm?: [number, number][][];
 }
 
 export class AssemblyComponentLineDto {
@@ -58,6 +71,15 @@ export class AssemblyComponentLineDto {
   @IsNumber()
   @Min(0.01)
   cutWidthCm?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Irregular-shape nesting (2026-11-01): the piece\'s real contour, STEP-sourced only — never hand-typed (no manual-entry UI for this). When set, the cutting optimizer nests this piece by its real shape instead of the cutLengthCm×cutWidthCm bounding box above (which stays populated alongside it, for display/sorting). Not snapshotted into AssemblyVersionComponent, same scoping as cutLengthCm/cutWidthCm.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CutShapePolygonDto)
+  cutShapePolygon?: CutShapePolygonDto;
 }
 
 export class SetAssemblyComponentsDto {

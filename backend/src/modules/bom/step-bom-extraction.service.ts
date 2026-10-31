@@ -45,7 +45,17 @@ export class StepBomExtractionService {
     }
 
     const products = await this.prisma.tenant.product.findMany({ where: { deletedAt: null } });
-    const lines = stepLines.map((line) => toMatchedBomLine(line.name, line.qty, line.dimensionsCm, products, line.lengthCm, line.widthCm));
+    const lines = stepLines.map((line) =>
+      toMatchedBomLine(
+        line.name,
+        line.qty,
+        line.dimensionsCm,
+        products,
+        line.lengthCm,
+        line.widthCm,
+        line.shapeKind === 'polygon' && line.outerCm ? { outerCm: line.outerCm, holesCm: line.holesCm ?? [] } : null,
+      ),
+    );
 
     return { sourceFileAssetId: fileAssetId, lines };
   }

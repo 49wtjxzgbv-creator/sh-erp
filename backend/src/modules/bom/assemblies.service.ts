@@ -486,6 +486,7 @@ export class AssembliesService {
           qtyPerUnit: line.qtyPerUnit,
           cutLengthCm: line.cutLengthCm ?? null,
           cutWidthCm: line.cutWidthCm ?? null,
+          cutShapePolygon: line.cutShapePolygon ?? null,
         })) as any,
       });
     }

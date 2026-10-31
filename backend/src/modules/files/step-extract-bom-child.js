@@ -51,6 +51,234 @@ function computeBoundingBoxCm(positionArray) {
   return { lengthCm: toCm(maxX - minX), widthCm: toCm(maxY - minY), heightCm: toCm(maxZ - minZ) };
 }
 
+// ----------------------------------------------------------------------------
+// Irregular-shape nesting (2026-11-01) — extracts the real 2D contour (outer
+// boundary + any holes) of a part's dominant FLAT face, instead of just its
+// bounding box. Relies on a real, empirically-verified occt-import-js output
+// field: `mesh.brep_faces: {first, last}[]` maps triangle-index ranges back
+// to the ORIGINAL B-rep face each triangle came from — so the part's main
+// flat surface (as opposed to its thin side walls) can be identified
+// reliably, not guessed from a triangle soup. Standard, well-defined
+// computational-geometry technique: an edge used by exactly ONE triangle
+// within one face's own triangle subset is a boundary edge (true for any
+// manifold-with-boundary triangulation); chaining those into closed loops
+// gives the outer contour (largest loop) and any holes (smaller loops
+// nested inside it, e.g. a punched circle) — topology-based, so concave
+// shapes work correctly with no special-casing.
+// ----------------------------------------------------------------------------
+
+function vecSub(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+function vecCross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function vecDot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function vecLen(a) {
+  return Math.sqrt(vecDot(a, a));
+}
+function vecNormalize(a) {
+  const l = vecLen(a);
+  return l < 1e-9 ? [0, 0, 0] : [a[0] / l, a[1] / l, a[2] / l];
+}
+function vecScale(a, s) {
+  return [a[0] * s, a[1] * s, a[2] * s];
+}
+
+function getVertex(positionArray, i) {
+  return [positionArray[i * 3], positionArray[i * 3 + 1], positionArray[i * 3 + 2]];
+}
+function triangleVertexIndices(indexArray, triIdx) {
+  return [indexArray[triIdx * 3], indexArray[triIdx * 3 + 1], indexArray[triIdx * 3 + 2]];
+}
+function triangleNormal(positionArray, indexArray, triIdx) {
+  const [i0, i1, i2] = triangleVertexIndices(indexArray, triIdx);
+  const e1 = vecSub(getVertex(positionArray, i1), getVertex(positionArray, i0));
+  const e2 = vecSub(getVertex(positionArray, i2), getVertex(positionArray, i0));
+  return vecCross(e1, e2); // unnormalized — magnitude/2 is the triangle's area
+}
+
+// Tolerance for "every triangle in this face shares the same normal" —
+// generous (~11° off exact) to absorb tessellation noise on a nominally
+// flat face; `Math.abs` tolerates a flipped winding between triangles
+// (irrelevant here — boundary detection below is undirected-edge-based,
+// so winding direction never matters).
+const PLANAR_DOT_TOLERANCE = 0.98;
+
+/** One candidate planar face per `brep_faces` segment, with its reference normal and total triangle area (for picking the dominant one). */
+function analyzeFaces(positionArray, indexArray, brepFaces) {
+  const faces = [];
+  for (const bf of brepFaces) {
+    const triIndices = [];
+    for (let t = bf.first; t <= bf.last; t++) triIndices.push(t);
+    if (triIndices.length === 0) continue;
+
+    let refNormal = null;
+    let totalArea = 0;
+    const normals = [];
+    for (const t of triIndices) {
+      const n = triangleNormal(positionArray, indexArray, t);
+      const len = vecLen(n);
+      if (len < 1e-9) continue; // degenerate triangle (zero area) — skip, doesn't affect planarity
+      totalArea += len / 2;
+      const nn = vecScale(n, 1 / len);
+      normals.push(nn);
+      if (!refNormal) refNormal = nn;
+    }
+    if (!refNormal || normals.length === 0) continue;
+
+    const isPlanar = normals.every((n) => Math.abs(vecDot(n, refNormal)) > PLANAR_DOT_TOLERANCE);
+    if (!isPlanar) continue;
+
+    faces.push({ triIndices, normal: refNormal, area: totalArea });
+  }
+  return faces;
+}
+
+function pickDominantFlatFace(faces) {
+  if (faces.length === 0) return null;
+  return faces.reduce((best, f) => (f.area > best.area ? f : best), faces[0]);
+}
+
+function edgeKey(a, b) {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+/** Edges used by exactly one triangle within this face's own triangle subset — the face's boundary (outer contour + any hole loops), undirected. */
+function findBoundaryEdges(indexArray, triIndices) {
+  const edgeCount = new Map();
+  const edgeVerts = new Map();
+  for (const t of triIndices) {
+    const [i0, i1, i2] = triangleVertexIndices(indexArray, t);
+    for (const [a, b] of [
+      [i0, i1],
+      [i1, i2],
+      [i2, i0],
+    ]) {
+      const key = edgeKey(a, b);
+      edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
+      if (!edgeVerts.has(key)) edgeVerts.set(key, [a, b]);
+    }
+  }
+  const boundary = [];
+  for (const [key, count] of edgeCount) {
+    if (count === 1) boundary.push(edgeVerts.get(key));
+  }
+  return boundary;
+}
+
+/**
+ * Chains undirected boundary edges into closed vertex-index loops. A greedy
+ * walk, not a full topological solver — correct for the well-formed case
+ * (every boundary vertex touches exactly 2 boundary edges, true for any
+ * clean B-rep face tessellation) and simply abandons a loop that doesn't
+ * close rather than looping forever on malformed/degenerate input.
+ */
+function chainBoundaryLoops(boundaryEdges) {
+  const adjacency = new Map();
+  for (const [a, b] of boundaryEdges) {
+    if (!adjacency.has(a)) adjacency.set(a, []);
+    if (!adjacency.has(b)) adjacency.set(b, []);
+    adjacency.get(a).push(b);
+    adjacency.get(b).push(a);
+  }
+
+  const visitedEdges = new Set();
+  const loops = [];
+  for (const [startA, startB] of boundaryEdges) {
+    const startKey = edgeKey(startA, startB);
+    if (visitedEdges.has(startKey)) continue;
+
+    const loop = [startA];
+    let prev = startA;
+    let current = startB;
+    visitedEdges.add(startKey);
+    const safetyLimit = boundaryEdges.length + 10;
+    let steps = 0;
+
+    while (current !== startA && steps < safetyLimit) {
+      loop.push(current);
+      const neighbors = adjacency.get(current) || [];
+      let next = neighbors.find((n) => n !== prev && !visitedEdges.has(edgeKey(current, n)));
+      if (next === undefined) next = neighbors.find((n) => !visitedEdges.has(edgeKey(current, n)));
+      if (next === undefined) break; // dead end — malformed boundary, abandon this loop
+
+      visitedEdges.add(edgeKey(current, next));
+      prev = current;
+      current = next;
+      steps++;
+    }
+
+    if (current === startA && loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}
+
+function buildBasis(normal) {
+  const arbitrary = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const u = vecNormalize(vecCross(arbitrary, normal));
+  const v = vecNormalize(vecCross(normal, u));
+  return { u, v };
+}
+
+function projectLoopTo2D(positionArray, loopIndices, origin, u, v) {
+  return loopIndices.map((idx) => {
+    const rel = vecSub(getVertex(positionArray, idx), origin);
+    return [vecDot(rel, u), vecDot(rel, v)];
+  });
+}
+
+function signedArea2D(points) {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return sum / 2;
+}
+
+function toCmPoints(pointsMm) {
+  return pointsMm.map(([x, y]) => [Math.round(x * 0.1 * 100) / 100, Math.round(y * 0.1 * 100) / 100]);
+}
+
+/**
+ * Pure core: a mesh (with `attributes.position`, `index`, `brep_faces`) ->
+ * `{ outerCm, holesCm }` for its dominant flat face, or `null` when no
+ * clean planar face is found (curved/non-flat part — honest degradation,
+ * same spirit as `dimensionsCm`'s own "за геометрією" caveat: the caller
+ * falls back to the existing bounding-box-only output in that case).
+ */
+function extractFlatFaceOutline(mesh) {
+  if (!mesh || !mesh.attributes || !mesh.attributes.position || !mesh.index || !mesh.brep_faces) return null;
+
+  const positionArray = mesh.attributes.position.array;
+  const indexArray = mesh.index.array;
+
+  const faces = analyzeFaces(positionArray, indexArray, mesh.brep_faces);
+  const dominant = pickDominantFlatFace(faces);
+  if (!dominant) return null;
+
+  const boundaryEdges = findBoundaryEdges(indexArray, dominant.triIndices);
+  const loops = chainBoundaryLoops(boundaryEdges);
+  if (loops.length === 0) return null;
+
+  const { u, v } = buildBasis(dominant.normal);
+  const origin = getVertex(positionArray, loops[0][0]);
+  const projectedLoopsCm = loops.map((loop) => toCmPoints(projectLoopTo2D(positionArray, loop, origin, u, v)));
+  const areas = projectedLoopsCm.map((pts) => Math.abs(signedArea2D(pts)));
+
+  let outerIdx = 0;
+  for (let i = 1; i < areas.length; i++) if (areas[i] > areas[outerIdx]) outerIdx = i;
+
+  return {
+    outerCm: projectedLoopsCm[outerIdx],
+    holesCm: projectedLoopsCm.filter((_, i) => i !== outerIdx),
+  };
+}
+
 /**
  * Walks OCCT's assembly tree collecting one entry per LEAF node that owns
  * geometry (`meshes.length > 0`) at any depth — that's what a real STEP
@@ -89,6 +317,10 @@ function groupResultIntoBomLines(result) {
     }
     const mesh = result.meshes[leaf.meshIndex];
     const bbox = mesh && mesh.attributes && mesh.attributes.position ? computeBoundingBoxCm(mesh.attributes.position.array) : null;
+    // Irregular-shape nesting (2026-11-01): the real contour of the part's
+    // dominant flat face, when one can be found — `null` for curved/non-flat
+    // parts, which keeps using the bounding box above exactly as before.
+    const outline = mesh ? extractFlatFaceOutline(mesh) : null;
     grouped.set(leaf.name, {
       name: leaf.name,
       qty: 1,
@@ -102,6 +334,9 @@ function groupResultIntoBomLines(result) {
       lengthCm: bbox ? bbox.lengthCm : null,
       widthCm: bbox ? bbox.widthCm : null,
       heightCm: bbox ? bbox.heightCm : null,
+      shapeKind: outline ? 'polygon' : 'bbox',
+      outerCm: outline ? outline.outerCm : null,
+      holesCm: outline ? outline.holesCm : null,
     });
   }
 
@@ -127,7 +362,7 @@ async function main() {
   fs.writeFileSync(outputPath, JSON.stringify(lines));
 }
 
-module.exports = { computeBoundingBoxCm, collectLeaves, groupResultIntoBomLines };
+module.exports = { computeBoundingBoxCm, collectLeaves, groupResultIntoBomLines, extractFlatFaceOutline };
 
 if (require.main === module) {
   main()

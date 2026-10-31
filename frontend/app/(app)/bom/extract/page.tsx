@@ -98,6 +98,10 @@ export default function ExtractBomPage() {
           // sets these (lengthCm/widthCm stay null there).
           cutLengthCm: l.lengthCm ?? undefined,
           cutWidthCm: l.widthCm ?? undefined,
+          // Irregular-shape nesting (2026-11-01): the real contour, STEP
+          // path only — undefined (not sent) for the PDF/AI path or a
+          // curved/non-flat STEP part with no clean planar face.
+          cutShapePolygon: l.shapePolygon ?? undefined,
         })),
       );
       router.push(`/bom/${assemblyId}/components`);

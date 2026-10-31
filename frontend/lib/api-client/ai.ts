@@ -149,6 +149,8 @@ export interface MatchedBomLine {
   /** Розкрій (2026-10-31): structured bounding-box numbers, STEP path only — null for the PDF/AI path. Lets the review page prefill cutLengthCm/cutWidthCm when the matched/created product has a ProductCuttingSpec. */
   lengthCm: number | null;
   widthCm: number | null;
+  /** Irregular-shape nesting (2026-11-01): the part's real contour, STEP path only — null for the PDF/AI path, or a curved/non-flat STEP part with no clean planar face. Saved verbatim into AssemblyComponent.cutShapePolygon when present. */
+  shapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
 }
 
 export interface BomExtractionResult {

@@ -36,6 +36,58 @@ describe('StepBomExtractionService', () => {
     });
   });
 
+  it('carries the real contour through to shapePolygon when the STEP path found one (irregular-shape nesting, 2026-11-01)', async () => {
+    stepConversionService.extractBomStructure.mockResolvedValue([
+      {
+        name: 'Лист з отвором',
+        qty: 1,
+        dimensionsCm: '10×10×0.2 см (за геометрією)',
+        lengthCm: 10,
+        widthCm: 10,
+        heightCm: 0.2,
+        shapeKind: 'polygon',
+        outerCm: [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ],
+        holesCm: [
+          [
+            [3, 3],
+            [7, 3],
+            [7, 7],
+            [3, 7],
+          ],
+        ],
+      },
+    ]);
+
+    const result = await service.extractComponentsFromStep(user, 'f1');
+
+    expect(result.lines[0].shapePolygon).toEqual({
+      outerCm: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ],
+      holesCm: [
+        [
+          [3, 3],
+          [7, 3],
+          [7, 7],
+          [3, 7],
+        ],
+      ],
+    });
+  });
+
+  it('leaves shapePolygon null when the STEP path only found a bounding box (shapeKind "bbox")', async () => {
+    const result = await service.extractComponentsFromStep(user, 'f1'); // beforeEach's default mock has no shapeKind at all
+    expect(result.lines[0].shapePolygon).toBeNull();
+  });
+
   it('rejects a file that is not a .step/.stp CAD file', async () => {
     stepConversionService.isStepFile.mockReturnValue(false);
     await expect(service.extractComponentsFromStep(user, 'f1')).rejects.toThrow(BadRequestException);

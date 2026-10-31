@@ -19,6 +19,12 @@ export interface StepBomLine {
   lengthCm: number | null;
   widthCm: number | null;
   heightCm: number | null;
+  /** Irregular-shape nesting (2026-11-01): 'polygon' when a real 2D contour was found on the part's dominant flat face, 'bbox' when it falls back to the bounding box only (curved/non-flat part). */
+  shapeKind: 'polygon' | 'bbox';
+  /** The part's real outer contour in cm (already tessellated — arcs became line segments upstream), null when shapeKind is 'bbox'. */
+  outerCm: [number, number][] | null;
+  /** Any holes in the contour (e.g. a punched circle), same coordinate frame as outerCm. Empty array, not null, when shapeKind is 'polygon' with no holes. */
+  holesCm: [number, number][][] | null;
 }
 
 // A real multi-part mechanical assembly can legitimately need several

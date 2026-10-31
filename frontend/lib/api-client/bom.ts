@@ -36,6 +36,8 @@ export interface AssemblyComponent {
   /** Розкрій (2026-10-31): per-piece dimensions, only meaningful when the product has a ProductCuttingSpec (lib/api-client/cutting.ts). */
   cutLengthCm: DecimalString | null;
   cutWidthCm: DecimalString | null;
+  /** Irregular-shape nesting (2026-11-01): the real contour, STEP-sourced only. */
+  cutShapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
 }
 
 export interface Assembly {
@@ -156,6 +158,8 @@ export interface AssemblyComponentLineInput {
   /** Розкрій (2026-10-31): only meaningful when the selected product has a ProductCuttingSpec — BAR uses cutLengthCm only, SHEET uses both. */
   cutLengthCm?: number;
   cutWidthCm?: number;
+  /** Irregular-shape nesting (2026-11-01): the real contour, STEP-sourced only — never hand-typed. */
+  cutShapePolygon?: { outerCm: [number, number][]; holesCm: [number, number][][] };
 }
 
 export function getAssemblyComponents(assemblyId: string): Promise<AssemblyComponent[]> {

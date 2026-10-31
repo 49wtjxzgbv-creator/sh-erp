@@ -104,7 +104,7 @@ describe('AssembliesService', () => {
 
       expect(prisma.tenant.assemblyComponent.deleteMany).toHaveBeenCalledWith({ where: { assemblyId: 'a1' } });
       expect(prisma.tenant.assemblyComponent.createMany).toHaveBeenCalledWith({
-        data: [{ assemblyId: 'a1', componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, warehouseId: null, qtyPerUnit: 2, cutLengthCm: null, cutWidthCm: null }],
+        data: [{ assemblyId: 'a1', componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, warehouseId: null, qtyPerUnit: 2, cutLengthCm: null, cutWidthCm: null, cutShapePolygon: null }],
       });
       expect(prisma.tenant.assemblyVersion.create).toHaveBeenCalledWith({
         data: { assemblyId: 'a1', versionNumber: 1, createdById: 'u1' },

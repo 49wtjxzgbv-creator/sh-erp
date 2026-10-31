@@ -7,17 +7,38 @@ import { PreviewCuttingPlanDto } from './dto/preview-cutting-plan.dto';
 import { UpsertProductCuttingSpecDto } from './dto/upsert-product-cutting-spec.dto';
 import {
   AvailableBarRemnant,
+  AvailableIrregularSheetRemnant,
   AvailableSheetRemnant,
   BarDemandLine,
+  IrregularSheetDemandLine,
+  Point2D,
   SheetDemandLine,
   optimizeBarCutting,
+  optimizeIrregularSheetNesting,
   optimizeSheetNesting,
 } from './cutting-optimizer';
+
+interface ShapePolygon {
+  outerCm: Point2D[];
+  holesCm: Point2D[][];
+}
 
 interface CutDemandLine {
   cutLengthCm: number;
   cutWidthCm: number | null;
   qty: number;
+  /** Irregular-shape nesting (2026-11-01): the real contour, STEP-sourced only — null for a plain-rectangle component. */
+  shapePolygon: ShapePolygon | null;
+}
+
+/** A plain rectangle, as a 4-point polygon — lets a simple BAR/SHEET-rectangle component nest on the same sheet as a real irregular-contour one via the same polygon placement engine. */
+function rectangleAsPolygon(widthCm: number, heightCm: number): Point2D[] {
+  return [
+    [0, 0],
+    [widthCm, 0],
+    [widthCm, heightCm],
+    [0, heightCm],
+  ];
 }
 
 /**
@@ -89,6 +110,52 @@ export class CuttingPlansService {
           if (stockItem.cuts.length > 0) {
             await this.prisma.tenant.cuttingPlanCut.createMany({
               data: stockItem.cuts.map((c) => ({ cuttingPlanStockId: stockRow.id, productId, pieceLengthCm: c.pieceLengthCm })) as any,
+            });
+          }
+        }
+      } else if (lines.some((l) => l.shapePolygon)) {
+        // Irregular-shape nesting (2026-11-01): at least one component in
+        // this material group has a real contour — nest the WHOLE group
+        // (rectangle-only lines included, as trivial 4-point polygons) on
+        // the same grid/raster engine, so everything shares one set of
+        // sheets/remnants.
+        const demand: IrregularSheetDemandLine[] = lines.map((l) => ({
+          label: productId,
+          outerCm: l.shapePolygon ? l.shapePolygon.outerCm : rectangleAsPolygon(l.cutWidthCm ?? 0, l.cutLengthCm),
+          holesCm: l.shapePolygon ? l.shapePolygon.holesCm : [],
+          qty: l.qty,
+        }));
+        const availableRemnants: AvailableIrregularSheetRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm), widthCm: Number(r.widthCm ?? 0) }));
+        const result = optimizeIrregularSheetNesting(demand, Number(spec.stockLengthCm), Number(spec.stockWidthCm ?? 0), Number(spec.kerfMm), availableRemnants, spec.allowRotation);
+
+        for (const stockItem of result.stockItems) {
+          const stockRow = await this.prisma.tenant.cuttingPlanStock.create({
+            data: {
+              cuttingPlanId: plan.id,
+              productId,
+              sourceKind: stockItem.sourceKind,
+              remnantId: stockItem.remnantId,
+              lengthCm: stockItem.lengthCm,
+              widthCm: stockItem.widthCm,
+              // No clean rectangular leftover for an irregular nest — see
+              // this service's class header / the feature's plan doc for
+              // why no StockRemnant gets created from these at execute().
+              usedAreaCm2: stockItem.usedAreaCm2,
+              wasteAreaCm2: stockItem.wasteAreaCm2,
+            } as any,
+          });
+          if (stockItem.cuts.length > 0) {
+            await this.prisma.tenant.cuttingPlanCut.createMany({
+              data: stockItem.cuts.map((c) => ({
+                cuttingPlanStockId: stockRow.id,
+                productId,
+                pieceLengthCm: c.boundingLengthCm,
+                pieceWidthCm: c.boundingWidthCm,
+                posXCm: c.posXCm,
+                posYCm: c.posYCm,
+                rotated: c.rotated,
+                shapePolygonCm: { outerCm: c.outerCm, holesCm: c.holesCm },
+              })) as any,
             });
           }
         }
@@ -256,7 +323,13 @@ export class CuttingPlansService {
         const pieceQty = Math.ceil(qtyOfAssembly * Number(line.qtyPerUnit));
         if (pieceQty <= 0) continue;
         const lines = demandByProduct.get(line.productId) ?? [];
-        lines.push({ cutLengthCm: Number(line.cutLengthCm), cutWidthCm: line.cutWidthCm != null ? Number(line.cutWidthCm) : null, qty: pieceQty });
+        const shapePolygon = line.cutShapePolygon as unknown as ShapePolygon | null;
+        lines.push({
+          cutLengthCm: Number(line.cutLengthCm),
+          cutWidthCm: line.cutWidthCm != null ? Number(line.cutWidthCm) : null,
+          qty: pieceQty,
+          shapePolygon: shapePolygon?.outerCm ? shapePolygon : null,
+        });
         demandByProduct.set(line.productId, lines);
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
         const neededQty = qtyOfAssembly * Number(line.qtyPerUnit);
