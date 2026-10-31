@@ -25,9 +25,9 @@ export function AssemblyCell({
   const { data: assembly } = useAssembly(assemblyId);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex min-w-0 items-center gap-2.5">
       <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size={size} />
-      <span className={cn('max-w-[320px] truncate', textClassName)} title={assembly?.name ?? assemblyId}>
+      <span className={cn('min-w-0 max-w-[320px] truncate', textClassName)} title={assembly?.name ?? assemblyId}>
         {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
       </span>
     </div>

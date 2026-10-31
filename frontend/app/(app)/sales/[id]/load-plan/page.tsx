@@ -525,13 +525,15 @@ function DraggableItemCard({ orderId, item }: { orderId: string; item: LoadPlanT
       className={`cursor-grab rounded border border-border bg-card p-1.5 text-xs shadow-sm active:cursor-grabbing ${isDragging ? 'opacity-50' : ''}`}
     >
       <div className="flex items-start justify-between gap-1">
-        {item.assemblyId ? (
-          <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
-        ) : (
-          <span className="truncate text-xs font-medium" title={item.assemblyName}>
-            {item.assemblyName}
-          </span>
-        )}
+        <div className="min-w-0 flex-1">
+          {item.assemblyId ? (
+            <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
+          ) : (
+            <span className="block truncate text-xs font-medium" title={item.assemblyName}>
+              {item.assemblyName}
+            </span>
+          )}
+        </div>
         {isAdHoc && (
           <button
             type="button"
