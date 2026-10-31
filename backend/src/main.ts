@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 // Bootstrap. API versioning is URI-path (`/api/v1/...`), per ADR-0008 — every
@@ -9,6 +10,16 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+
+  // Security-audit fix (2026-10-31): standard protective headers
+  // (X-Content-Type-Options, X-Frame-Options, etc.) — same gap as the
+  // frontend had, fixed there via next.config.mjs's own `headers()`.
+  // `contentSecurityPolicy: false` here deliberately — Swagger UI
+  // (`/api/docs`) needs inline scripts/styles that a default CSP blocks,
+  // and this is a JSON API with no other HTML surface to protect; a real
+  // CSP pass belongs on the frontend (where it was also skipped today,
+  // for the same "needs careful tuning, not a drive-by" reason).
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   // Real, serious gap found during the pre-Hostinger-launch audit —
   // affects BOTH deployment paths, not just Hostinger, and was never

@@ -41,6 +41,31 @@ const nextConfig = {
   // Business logic never lives here (Phase 2 §3.2/§23's "thin client" rule)
   // — this file only wires framework plumbing (i18n, image domains for R2
   // file previews).
+  // Security-audit fix (2026-10-31): this app previously sent zero
+  // protective headers at any layer (checked Nginx, this config, and the
+  // backend) — nothing stopped e.g. another site framing sh-erp.pro to
+  // trick a logged-in user into clicking something ("clickjacking"), or a
+  // browser being talked into mis-sniffing an uploaded file's content
+  // type. Deliberately NOT shipping a Content-Security-Policy here yet —
+  // this app relies on Next's own inline hydration scripts and Tailwind's
+  // compiled styles, and a wrong CSP value fails silently in production
+  // (blocks real functionality with no error the user would ever report
+  // back to us) rather than loudly — that needs its own careful, tested
+  // pass, not a drive-by addition alongside the safe headers below.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self)' },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       // R2 presigned URLs / public branding assets (Phase 2 §7). Add a

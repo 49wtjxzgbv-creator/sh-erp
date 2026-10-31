@@ -55,6 +55,37 @@ describe('FilesService', () => {
     expect(res.uploadUrl).toBe('https://r2.example.com/signed');
   });
 
+  it('createPresignedUpload sanitizes a dangerous inline-rendering mimeType (e.g. a disguised HTML/SVG upload) to application/octet-stream', async () => {
+    await service.createPresignedUpload(user, {
+      domain: 'PRODUCT_PHOTO',
+      entityType: 'Product',
+      entityId: 'p1',
+      originalName: 'photo.jpg',
+      mimeType: 'text/html',
+      sizeBytes: 1000,
+    });
+
+    const createCalls = prisma.tenant.fileAsset.create.mock.calls;
+    expect(createCalls[createCalls.length - 1][0].data.mimeType).toBe('application/octet-stream');
+    const signedUrlCalls = (getSignedUrl as jest.Mock).mock.calls;
+    const putObjectCommand = signedUrlCalls[signedUrlCalls.length - 1][1];
+    expect(putObjectCommand.input.ContentType).toBe('application/octet-stream');
+  });
+
+  it('createPresignedUpload leaves a harmless mimeType untouched', async () => {
+    await service.createPresignedUpload(user, {
+      domain: 'PRODUCT_PHOTO',
+      entityType: 'Product',
+      entityId: 'p1',
+      originalName: 'model.glb',
+      mimeType: 'model/gltf-binary',
+      sizeBytes: 1000,
+    });
+
+    const createCalls = prisma.tenant.fileAsset.create.mock.calls;
+    expect(createCalls[createCalls.length - 1][0].data.mimeType).toBe('model/gltf-binary');
+  });
+
   it('confirmUpload rejects when the object is not yet present in R2', async () => {
     prisma.tenant.fileAsset.findUnique.mockResolvedValue({
       id: 'f1',

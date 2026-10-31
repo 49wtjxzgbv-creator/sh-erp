@@ -94,9 +94,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     return tenantContextStorage.run(context, () =>
       extended.$transaction(
         async (tx) => {
-          await tx.$executeRawUnsafe(
-            `SET LOCAL app.current_company_id = '${context.companyId}'`,
-          );
+          // Security-audit fix (2026-10-31): was `$executeRawUnsafe` with
+          // companyId string-interpolated directly into the SQL text — not
+          // exploitable today (every call site resolves companyId
+          // server-side from a verified source before reaching here), but
+          // it's the exact shape of a SQL-injection bug sitting at the
+          // single line that activates RLS. `set_config(..., true)` is
+          // Postgres's parameterizable equivalent of `SET LOCAL` (reverts
+          // at transaction end, same as before) — `$executeRaw`'s tagged
+          // template sends `context.companyId` as a real bind parameter,
+          // not interpolated text, closing the pattern off entirely rather
+          // than just trusting every future caller to keep validating it.
+          await tx.$executeRaw`SELECT set_config('app.current_company_id', ${context.companyId}, true)`;
           // `tx` here is Prisma's own interactive-transaction client shape for
           // an extended PrismaClient — structurally compatible with
           // TenantPrismaClient for every model-delegate call this codebase

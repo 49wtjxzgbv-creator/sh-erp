@@ -126,7 +126,10 @@ export class StepConversionService {
     convertedStorageKey?: string,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyId}'`);
+      // Security-audit fix (2026-10-31): parameterized set_config() instead
+      // of string-interpolated SET LOCAL — see prisma.service.ts's own
+      // comment on the same pattern for the full rationale.
+      await tx.$executeRaw`SELECT set_config('app.current_company_id', ${companyId}, true)`;
       await tx.fileAsset.update({
         where: { id: fileAssetId },
         data: { conversionStatus, ...(convertedStorageKey ? { convertedStorageKey } : {}) },

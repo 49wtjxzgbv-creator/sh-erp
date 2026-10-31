@@ -19,7 +19,7 @@ describe('AuditService', () => {
       // is rejected) — the tx client reuses the same `auditEvent` mock
       // above so assertions on `prisma.auditEvent.create` keep working
       // unchanged.
-      $transaction: jest.fn((cb: (tx: any) => Promise<void>) => cb({ $executeRawUnsafe: jest.fn(), auditEvent: prisma.auditEvent })),
+      $transaction: jest.fn((cb: (tx: any) => Promise<void>) => cb({ $executeRaw: jest.fn(), auditEvent: prisma.auditEvent })),
     };
     service = new AuditService(prisma);
   });

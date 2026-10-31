@@ -42,6 +42,7 @@ export class FilesService {
    */
   async createPresignedUpload(user: RequestUser, dto: CreatePresignedUploadDto) {
     const safeName = sanitizeFilename(dto.originalName);
+    const safeMimeType = sanitizeMimeType(dto.mimeType);
     const storageKey = `tenants/${user.companyId}/${dto.domain.toLowerCase()}/${dto.entityType.toLowerCase()}/${dto.entityId}/${randomUUID()}-${safeName}`;
 
     // Root cause of a real Docker-build failure (TS2322 "Property 'company'
@@ -64,7 +65,7 @@ export class FilesService {
         entityId: dto.entityId,
         storageKey,
         originalName: dto.originalName,
-        mimeType: dto.mimeType,
+        mimeType: safeMimeType,
         sizeBytes: dto.sizeBytes,
         isPublic: dto.isPublic ?? false,
         uploadedById: user.userId,
@@ -76,7 +77,7 @@ export class FilesService {
       new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: storageKey,
-        ContentType: dto.mimeType,
+        ContentType: safeMimeType,
         ContentLength: dto.sizeBytes,
       }),
       { expiresIn: UPLOAD_URL_TTL_SECONDS },
@@ -615,6 +616,35 @@ export class FilesService {
  */
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-140); // keep the tail (extension survives truncation of an overly long name)
+}
+
+// Security-audit fix (2026-10-31): `mimeType` on CreatePresignedUploadDto is
+// a client-supplied string, stored verbatim as the R2 object's ContentType
+// — meaning a download link previously served the file with whatever
+// Content-Type the uploader claimed, inline, from the R2 domain. Someone
+// could upload real HTML/SVG content declared as `text/html`/`image/svg+xml`
+// (SVG can carry <script>) as a "product photo", then share the resulting
+// download link — the browser would render it as a page instead of an
+// image. Only these few types execute scripts when rendered inline; every
+// other declared type (jpeg/png/pdf/glb/docx/etc.) is left untouched rather
+// than built out into a full allowlist, since this app's legitimate upload
+// domains include 3D models and CAD files whose real-world Content-Type
+// strings aren't fully catalogued here — forcing an unrecognized-but-safe
+// type to a narrow allowlist risks breaking a real upload; overriding a
+// small, specific dangerous set to a inert fallback does not.
+const DANGEROUS_INLINE_MIME_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'application/xml',
+  'text/xml',
+  'application/javascript',
+  'text/javascript',
+  'application/x-javascript',
+]);
+
+function sanitizeMimeType(mimeType: string): string {
+  return DANGEROUS_INLINE_MIME_TYPES.has(mimeType.toLowerCase().trim()) ? 'application/octet-stream' : mimeType;
 }
 
 /** Reduces an ExcelJS cell value to a plain JSON-safe primitive for the preview response — formulas resolve to their cached result, rich text/hyperlinks to their display text, dates to an ISO string. */
