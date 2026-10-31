@@ -22,6 +22,7 @@ import { isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { AssemblyCell } from '@/components/domain/sales/assembly-cell';
@@ -529,9 +530,12 @@ function DraggableItemCard({ orderId, item }: { orderId: string; item: LoadPlanT
           {item.assemblyId ? (
             <AssemblyCell assemblyId={item.assemblyId} size="sm" textClassName="text-xs font-medium" />
           ) : (
-            <span className="block truncate text-xs font-medium" title={item.assemblyName}>
-              {item.assemblyName}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="block truncate text-xs font-medium">{item.assemblyName}</span>
+              </TooltipTrigger>
+              <TooltipContent>{item.assemblyName}</TooltipContent>
+            </Tooltip>
           )}
         </div>
         {isAdHoc && (

@@ -3,6 +3,7 @@
 import { useAssembly } from '@/lib/hooks/use-bom';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
 import { Avatar } from '@/components/ui/avatar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 /**
@@ -24,12 +25,16 @@ export function AssemblyCell({
 }) {
   const { data: assembly } = useAssembly(assemblyId);
   const { data: photosByAssembly } = useFilesForEntities('Assembly', [assemblyId], 'ASSEMBLY_PHOTO');
+  const label = assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId;
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       <Avatar src={photosByAssembly?.[assemblyId]?.[0]?.downloadUrl} size={size} />
-      <span className={cn('min-w-0 max-w-[320px] truncate', textClassName)} title={assembly?.name ?? assemblyId}>
-        {assembly ? `${assembly.name}${assembly.article ? ` (${assembly.article})` : ''}` : assemblyId}
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={cn('min-w-0 max-w-[320px] truncate', textClassName)}>{label}</span>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
