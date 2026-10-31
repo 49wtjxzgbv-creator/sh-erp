@@ -15,6 +15,25 @@ export function getDashboardSummary(): Promise<DashboardSummary> {
   return apiClient.get<DashboardSummary>('dashboard/summary');
 }
 
+/** All-time milestone flags backing the dashboard getting-started checklist (OnboardingChecklist). */
+export interface OnboardingProgress {
+  hasProducts: boolean;
+  hasAssemblies: boolean;
+  hasSuppliers: boolean;
+  hasPurchaseOrders: boolean;
+  hasReceivedStock: boolean;
+  hasCustomerOrders: boolean;
+  hasProductionOrders: boolean;
+  hasFinishedGoods: boolean;
+  hasShipments: boolean;
+  hasEmployees: boolean;
+}
+
+/** GET /dashboard/onboarding-progress — no permission gate, same reasoning as /dashboard/summary. */
+export function getOnboardingProgress(): Promise<OnboardingProgress> {
+  return apiClient.get<OnboardingProgress>('dashboard/onboarding-progress');
+}
+
 export type TimelineStage = 'planned' | 'in_progress' | 'completed';
 
 /** One bar on the dashboard's unified operations Gantt chart — same shape for purchase orders, production orders, and shipments (backend/src/modules/dashboard/dashboard-timeline.service.ts's TimelineLine). */

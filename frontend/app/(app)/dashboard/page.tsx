@@ -15,6 +15,7 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
 import { PrintArea, PrintDocumentHeader, PrintButton, PreviewButton } from '@/components/domain/print/print-area';
 import { OperationsTimelineSection, OperationsTimelineLegend } from '@/components/domain/dashboard/operations-timeline';
+import { OnboardingChecklist } from '@/components/domain/dashboard/onboarding-checklist';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
 import type { TimelineStage } from '@/lib/api-client/dashboard';
@@ -100,6 +101,8 @@ export default function DashboardPage() {
       </div>
 
       {isError && <p className="text-sm text-destructive">{t('loadFailed')}</p>}
+
+      <OnboardingChecklist />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map(({ key, navKey, href, icon: Icon, label, value, warn }) => (

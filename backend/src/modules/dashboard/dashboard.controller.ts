@@ -17,4 +17,10 @@ export class DashboardController {
   async getSummary(@CurrentUser() user: RequestUser) {
     return this.dashboardService.getSummary(user);
   }
+
+  @Get('onboarding-progress')
+  @ApiOperation({ summary: 'All-time per-milestone flags backing the dashboard getting-started checklist.' })
+  async getOnboardingProgress(@CurrentUser() user: RequestUser) {
+    return this.dashboardService.getOnboardingProgress(user);
+  }
 }

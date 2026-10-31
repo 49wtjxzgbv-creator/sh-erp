@@ -50,4 +50,52 @@ export class DashboardService {
       activeEmployees,
     };
   }
+
+  /**
+   * Getting-started checklist for a new company (frontend/components/domain/
+   * dashboard/onboarding-checklist.tsx). Each flag is an ALL-TIME `count() >
+   * 0` — unlike getSummary's "currently open" counts above, a milestone here
+   * must stay true forever once reached (e.g. the one customer order a
+   * company ever created might since be COMPLETED, which getSummary's
+   * pendingCustomerOrders would no longer count — but onboarding shouldn't
+   * un-tick a step just because the order finished).
+   */
+  async getOnboardingProgress(user: RequestUser) {
+    const [
+      productsCount,
+      assembliesCount,
+      suppliersCount,
+      purchaseOrdersCount,
+      receivedStockCount,
+      customerOrdersCount,
+      productionOrdersCount,
+      finishedGoodsCount,
+      shipmentsCount,
+      employeesCount,
+    ] = await Promise.all([
+      this.prisma.tenant.product.count({ where: { deletedAt: null } }),
+      this.prisma.tenant.assembly.count({ where: { deletedAt: null } }),
+      this.prisma.tenant.supplier.count({ where: { deletedAt: null } }),
+      this.prisma.tenant.purchaseOrder.count(),
+      this.prisma.tenant.stockMovement.count({ where: { type: 'RECEIVE' } }),
+      this.prisma.tenant.customerOrder.count(),
+      this.prisma.tenant.productionOrder.count(),
+      this.prisma.tenant.finishedGood.count(),
+      this.prisma.tenant.shipment.count(),
+      this.prisma.tenant.employee.count(),
+    ]);
+
+    return {
+      hasProducts: productsCount > 0,
+      hasAssemblies: assembliesCount > 0,
+      hasSuppliers: suppliersCount > 0,
+      hasPurchaseOrders: purchaseOrdersCount > 0,
+      hasReceivedStock: receivedStockCount > 0,
+      hasCustomerOrders: customerOrdersCount > 0,
+      hasProductionOrders: productionOrdersCount > 0,
+      hasFinishedGoods: finishedGoodsCount > 0,
+      hasShipments: shipmentsCount > 0,
+      hasEmployees: employeesCount > 0,
+    };
+  }
 }
