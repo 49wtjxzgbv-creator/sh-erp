@@ -7,11 +7,12 @@ import { Check, Rocket, X } from 'lucide-react';
 import { useOnboardingProgress } from '@/lib/hooks/use-dashboard';
 import type { OnboardingProgress } from '@/lib/api-client/dashboard';
 import { useTraining } from '@/components/domain/training/training-provider';
+import { useSessionStore } from '@/lib/auth/session-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-const DISMISSED_KEY = 'sh-erp-onboarding-dismissed';
+const DISMISSED_KEY_PREFIX = 'sh-erp-onboarding-dismissed';
 
 interface OnboardingStepDef {
   key: keyof OnboardingProgress;
@@ -56,21 +57,28 @@ export function OnboardingChecklist() {
   const router = useRouter();
   const { data, isLoading } = useOnboardingProgress();
   const { startCourse } = useTraining();
+  // Keyed by companyId, not just a flat flag — a super-admin impersonating
+  // several companies in the same browser (as happens during QA) must not
+  // have dismissing one company's checklist silently hide every other
+  // company's checklist too; each tenant gets its own dismiss state.
+  const companyId = useSessionStore((s) => s.companyId);
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
+    if (!companyId) return;
     try {
-      setDismissed(window.localStorage.getItem(DISMISSED_KEY) === '1');
+      setDismissed(window.localStorage.getItem(`${DISMISSED_KEY_PREFIX}:${companyId}`) === '1');
     } catch {
       // Private-browsing/quota-exceeded edge case — just show the checklist.
       setDismissed(false);
     }
-  }, []);
+  }, [companyId]);
 
   function dismiss() {
     setDismissed(true);
+    if (!companyId) return;
     try {
-      window.localStorage.setItem(DISMISSED_KEY, '1');
+      window.localStorage.setItem(`${DISMISSED_KEY_PREFIX}:${companyId}`, '1');
     } catch {
       // Non-fatal — checklist may reappear next visit, acceptable.
     }
