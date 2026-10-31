@@ -268,14 +268,14 @@ export class LoadPlanService {
       // tradeoff, not an oversight).
       const manualPlacements: PlacedBox[] = [];
 
-      function pushBox(box: Omit<PackBox, 'loadPlanItemId' | 'boxIndex'>, itemId: string, boxIndex: number) {
+      const pushBox = (box: Omit<PackBox, 'loadPlanItemId' | 'boxIndex'>, itemId: string, boxIndex: number) => {
         const override = overridesByItem.get(itemId)?.get(boxIndex);
         if (override) {
           manualPlacements.push({ ...box, loadPlanItemId: itemId, boxIndex, truckIndex: truck.index, x: override.xCm, y: override.yCm, z: override.zCm });
         } else {
           packBoxes.push({ ...box, loadPlanItemId: itemId, boxIndex });
         }
-      }
+      };
 
       for (const item of truck.items as any[]) {
         // Ad-hoc, fully manual box (2026-10-30) — no Assembly at all, every

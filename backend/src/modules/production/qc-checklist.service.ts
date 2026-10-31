@@ -29,7 +29,7 @@ export class QcChecklistService {
     return item;
   }
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.qcChecklistItem.findMany({ orderBy: { sortOrder: 'asc' } });
   }
 

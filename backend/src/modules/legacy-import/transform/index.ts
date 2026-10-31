@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { RawRow } from './types';
 import { LegacyIdMap } from './id-map';
-import { SEED_UNIT_NAMES, collectRequiredUnitNames, planUnitCreation, resolveUnitId } from './units';
+import { SEED_UNIT_NAMES, collectRequiredUnitNames, planUnitCreation } from './units';
 import { transformProductRow } from './products';
 import { parseComponentsJson, transformAssemblyComponentRow, type ComponentResolutionContext, type AssemblyVersionComponentRecord } from './bom';
 import { computeDefaultWarehouseRemainder } from './warehouse-remainder';

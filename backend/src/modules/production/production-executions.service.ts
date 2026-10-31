@@ -213,7 +213,7 @@ export class ProductionExecutionsService {
     await this.payrollPeriodsService.assertDateNotClosed(performedAt);
 
     let totalAmount: number;
-    let qtyCompleted: number | undefined = dto.qtyCompleted ?? (execution.qtyCompleted !== null ? Number(execution.qtyCompleted) : undefined);
+    const qtyCompleted: number | undefined = dto.qtyCompleted ?? (execution.qtyCompleted !== null ? Number(execution.qtyCompleted) : undefined);
 
     if (execution.productionOrderId) {
       if (dto.totalAmount !== undefined) {

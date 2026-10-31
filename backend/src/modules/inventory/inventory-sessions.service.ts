@@ -60,8 +60,8 @@ export class InventorySessionsService {
     return session;
   }
 
-  async recordCount(user: RequestUser, sessionId: string, dto: RecordInventoryCountDto) {
-    const session = await this.getOpenSession(sessionId);
+  async recordCount(_user: RequestUser, sessionId: string, dto: RecordInventoryCountDto) {
+    await this.getOpenSession(sessionId);
     const item = await this.prisma.tenant.inventoryItem.findFirst({
       where: { inventorySessionId: sessionId, productId: dto.productId },
     });
@@ -74,12 +74,12 @@ export class InventorySessionsService {
     });
   }
 
-  async getItems(user: RequestUser, sessionId: string) {
+  async getItems(_user: RequestUser, sessionId: string) {
     await this.getSessionOrThrow(sessionId);
     return this.prisma.tenant.inventoryItem.findMany({ where: { inventorySessionId: sessionId } });
   }
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.inventorySession.findMany({ orderBy: { startedAt: 'desc' } });
   }
 

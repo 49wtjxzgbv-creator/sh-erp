@@ -54,7 +54,7 @@ export class WarehousesService {
     return warehouse;
   }
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.warehouse.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } });
   }
 
@@ -113,7 +113,7 @@ export class WarehousesService {
     return warehouse;
   }
 
-  private async clearExistingDefault(user: RequestUser) {
+  private async clearExistingDefault(_user: RequestUser) {
     // Exactly one isDefault=true warehouse per company at a time (Phase 1's
     // single-implicit-default-warehouse model, still a single default even
     // though every warehouse's stock is now explicit — Phase 3 §... note on

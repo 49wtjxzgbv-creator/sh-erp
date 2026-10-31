@@ -13,7 +13,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(user: RequestUser) {
+  async getSummary(_user: RequestUser) {
     const [
       productsCount,
       assembliesCount,
@@ -60,7 +60,7 @@ export class DashboardService {
    * pendingCustomerOrders would no longer count — but onboarding shouldn't
    * un-tick a step just because the order finished).
    */
-  async getOnboardingProgress(user: RequestUser) {
+  async getOnboardingProgress(_user: RequestUser) {
     const [
       productsCount,
       assembliesCount,

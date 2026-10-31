@@ -2,7 +2,7 @@
 // directly by node, copied as a raw asset by nest-cli.json), but its pure
 // grouping/bounding-box logic is exported for exactly this: a real unit
 // test without spawning a process or touching OCCT/WASM.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { computeBoundingBoxCm, collectLeaves, groupResultIntoBomLines } = require('./step-extract-bom-child.js');
 
 describe('computeBoundingBoxCm', () => {

@@ -37,7 +37,7 @@ export class ProductionStagesService {
     return stage;
   }
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.productionStage.findMany({ orderBy: { sortOrder: 'asc' } });
   }
 

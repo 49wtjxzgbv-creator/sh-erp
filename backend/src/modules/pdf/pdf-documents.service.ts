@@ -34,7 +34,7 @@ export class PdfDocumentsService {
     private readonly auditService: AuditService,
   ) {}
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.pdfDocument.findMany({
       where: { deletedAt: null },
       orderBy: { updatedAt: 'desc' },

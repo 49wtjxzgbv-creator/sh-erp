@@ -334,7 +334,7 @@ describe('QuotationsService', () => {
     });
 
     it('a stray belowCostApproved on the input is ignored — resolveItem always starts a fresh item unapproved', async () => {
-      const { service, db } = makeService();
+      const { service } = makeService();
       const q = await service.create(user, { customerId: 'cust-1' } as any);
       const saved = await service.saveItems(user, q.id, {
         items: [{ kind: 'CUSTOM', nameSnapshot: 'Custom line', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10, belowCostApproved: true } as any],
@@ -343,7 +343,7 @@ describe('QuotationsService', () => {
     });
 
     it('saveItems/updateVersionTerms reject once the current version is locked (sentAt set)', async () => {
-      const { service, db } = makeService();
+      const { service } = makeService();
       const q = await service.create(user, { customerId: 'cust-1' } as any);
       await service.saveItems(user, q.id, { items: [{ kind: 'CUSTOM', nameSnapshot: 'X', quantity: 1, pricingSource: 'CUSTOM', customUnitPrice: 10 }] } as any);
       await service.send(user, q.id);

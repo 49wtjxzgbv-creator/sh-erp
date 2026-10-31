@@ -56,9 +56,6 @@ export interface ImportReport {
   skippedLedgers?: string[]; // only set on the post-import report — StockMovement/AuditEvent skipped because the company already had rows (see load.ts)
 }
 
-/** legacyId-keyed entities (upserted by (companyId, legacyId) in load.ts) — the only ones a meaningful create/update split applies to. */
-const LEGACY_ID_ENTITIES = ['products', 'suppliers', 'warehouses', 'assemblies', 'customerOrders'] as const;
-
 export async function buildImportReport(
   prisma: PrismaService,
   companyId: string,

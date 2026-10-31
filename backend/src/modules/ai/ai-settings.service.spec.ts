@@ -1,4 +1,5 @@
 import { AiSettingsService } from './ai-settings.service';
+import { encryptApiKey } from './ai-crypto.util';
 
 describe('AiSettingsService', () => {
   let service: AiSettingsService;
@@ -108,7 +109,6 @@ describe('AiSettingsService', () => {
 
   describe('getEffectiveApiKey', () => {
     it('decrypts and returns a company-provided key when set', async () => {
-      const { encryptApiKey } = require('./ai-crypto.util');
       const ciphertext = encryptApiKey('company-own-key');
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ apiKeyEncrypted: ciphertext });
 
@@ -132,7 +132,6 @@ describe('AiSettingsService', () => {
     });
 
     it('returns the company\'s own key when provider is deepseek and a key is set', async () => {
-      const { encryptApiKey } = require('./ai-crypto.util');
       const ciphertext = encryptApiKey('deepseek-own-key');
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ provider: 'deepseek', apiKeyEncrypted: ciphertext });
 
@@ -155,7 +154,6 @@ describe('AiSettingsService', () => {
 
   describe('getGeminiApiKey — always Gemini, regardless of the company\'s chosen provider', () => {
     it('uses the company key when provider is gemini', async () => {
-      const { encryptApiKey } = require('./ai-crypto.util');
       const ciphertext = encryptApiKey('my-gemini-key');
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ provider: 'gemini', apiKeyEncrypted: ciphertext });
 
@@ -164,7 +162,6 @@ describe('AiSettingsService', () => {
 
     it('falls back to the platform key when provider is deepseek — the stored key is a DeepSeek key, wrong vendor for this call', async () => {
       process.env.AI_PLATFORM_API_KEY = 'platform-key';
-      const { encryptApiKey } = require('./ai-crypto.util');
       const ciphertext = encryptApiKey('some-deepseek-key');
       prisma.tenant.companyAiSettings.findUnique.mockResolvedValue({ provider: 'deepseek', apiKeyEncrypted: ciphertext });
 

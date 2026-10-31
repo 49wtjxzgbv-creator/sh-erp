@@ -32,7 +32,7 @@ export class TransportUnitTypesService {
     return type;
   }
 
-  async list(user: RequestUser) {
+  async list(_user: RequestUser) {
     return this.prisma.tenant.transportUnitType.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } });
   }
 

@@ -41,7 +41,7 @@ export class QuotationTemplatesService {
     return template;
   }
 
-  async query(user: RequestUser) {
+  async query(_user: RequestUser) {
     return this.prisma.tenant.quotationTemplate.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } });
   }
 
