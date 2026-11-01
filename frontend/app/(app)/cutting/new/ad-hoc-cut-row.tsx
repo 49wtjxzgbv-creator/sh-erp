@@ -175,7 +175,7 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
         <input
           ref={fileInputRef}
           type="file"
-          accept=".step,.stp"
+          accept=".step,.stp,.dxf"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];

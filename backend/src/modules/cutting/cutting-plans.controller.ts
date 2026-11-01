@@ -2,8 +2,8 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { StepBomExtractionService } from '../bom/step-bom-extraction.service';
 import { CuttingPlansService } from './cutting-plans.service';
+import { CadShapeExtractionService } from './cad-shape-extraction.service';
 import { ExtractDefaultShapeDto } from './dto/extract-default-shape.dto';
 import { PreviewCuttingPlanDto } from './dto/preview-cutting-plan.dto';
 import { QueryCuttableProductsDto } from './dto/query-cuttable-products.dto';
@@ -14,7 +14,7 @@ import { UpsertProductCuttingSpecDto } from './dto/upsert-product-cutting-spec.d
 export class CuttingPlansController {
   constructor(
     private readonly cuttingPlansService: CuttingPlansService,
-    private readonly stepBomExtractionService: StepBomExtractionService,
+    private readonly cadShapeExtractionService: CadShapeExtractionService,
   ) {}
 
   @Get('specs/:productId')
@@ -42,20 +42,20 @@ export class CuttingPlansController {
   @RequirePermissions('products:write')
   @ApiOperation({
     summary:
-      'Direct-product cutting (2026-11-01): STEP/3D CAD file (already uploaded as a FileAsset) → candidate piece shapes for this product\'s own default cut shape, read from the file\'s geometry (same extraction StepBomExtractionService already does for BOM lines, reused as-is). The caller picks one line and PUTs its lengthCm/widthCm/shapePolygon into specs/:productId.',
+      'Direct-product cutting (2026-11-01): STEP/3D CAD or DXF/2D-drawing file (already uploaded as a FileAsset) → candidate piece shapes for this product\'s own default cut shape, read from the file\'s geometry (CadShapeExtractionService dispatches by extension). The caller picks one line and PUTs its lengthCm/widthCm/shapePolygon into specs/:productId.',
   })
   async extractDefaultShape(@CurrentUser() user: RequestUser, @Body() dto: ExtractDefaultShapeDto) {
-    return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
+    return this.cadShapeExtractionService.extractShape(user, dto.fileAssetId);
   }
 
   @Post('extract-shape')
   @RequirePermissions('cutting:write')
   @ApiOperation({
     summary:
-      'Ad-hoc multi-material worksheet (2026-11-01): STEP/3D CAD file → candidate piece shapes for a single worksheet position, with no product to hang the extraction off (same StepBomExtractionService logic as specs/:productId/extract-default-shape, at a param-less path).',
+      'Ad-hoc multi-material worksheet (2026-11-01): STEP/3D CAD or DXF/2D-drawing file → candidate piece shapes for a single worksheet position, with no product to hang the extraction off (same CadShapeExtractionService dispatch as specs/:productId/extract-default-shape, at a param-less path).',
   })
   async extractShape(@CurrentUser() user: RequestUser, @Body() dto: ExtractDefaultShapeDto) {
-    return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
+    return this.cadShapeExtractionService.extractShape(user, dto.fileAssetId);
   }
 
   @Get('products')
