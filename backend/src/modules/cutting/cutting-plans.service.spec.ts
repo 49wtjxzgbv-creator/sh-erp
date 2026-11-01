@@ -213,6 +213,80 @@ describe('CuttingPlansService', () => {
         }),
       );
     });
+
+    it('throws when more than one of assemblyId/productId/lines is given', async () => {
+      await expect(service.preview(user, { assemblyId: 'a1', lines: [{ materialProductId: 'p1', qty: 1, cutLengthCm: 10 }] } as any)).rejects.toThrow();
+    });
+
+    it('ad-hoc worksheet: throws when a referenced material has no cutting spec', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.preview(user, { lines: [{ materialProductId: 'missing-material', qty: 2, cutLengthCm: 100 }] } as any),
+      ).rejects.toThrow();
+    });
+
+    it('ad-hoc worksheet: single material, multiple labeled positions, nested together with qty = sum of lines', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([{ productId: 'p1', kind: 'BAR', stockLengthCm: 600, kerfMm: 0, minRemnantLengthCm: null }]);
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({ productId: 'p1', kind: 'BAR', stockLengthCm: 600, kerfMm: 0, minRemnantLengthCm: null });
+      prisma.tenant.stockRemnant.findMany.mockResolvedValue([]);
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, {
+        lines: [
+          { materialProductId: 'p1', label: 'кришка', qty: 2, cutLengthCm: 100 },
+          { materialProductId: 'p1', label: 'бокова панель', qty: 1, cutLengthCm: 200 },
+        ],
+      } as any);
+
+      expect(prisma.tenant.cuttingPlan.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ assemblyId: null, productId: null, qty: 3 }) }),
+      );
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([
+            expect.objectContaining({ pieceLabel: 'кришка' }),
+            expect.objectContaining({ pieceLabel: 'бокова панель' }),
+          ]),
+        }),
+      );
+    });
+
+    it('ad-hoc worksheet: two different materials group into separate stock items, unlabeled line has null pieceLabel', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([
+        { productId: 'mat-bar', kind: 'BAR', stockLengthCm: 600, kerfMm: 0, minRemnantLengthCm: null },
+        { productId: 'mat-sheet', kind: 'SHEET', stockLengthCm: 200, stockWidthCm: 150, kerfMm: 0, allowRotation: true },
+      ]);
+      prisma.tenant.productCuttingSpec.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.productId === 'mat-bar'
+            ? { productId: 'mat-bar', kind: 'BAR', stockLengthCm: 600, kerfMm: 0, minRemnantLengthCm: null }
+            : { productId: 'mat-sheet', kind: 'SHEET', stockLengthCm: 200, stockWidthCm: 150, kerfMm: 0, allowRotation: true },
+        ),
+      );
+      prisma.tenant.stockRemnant.findMany.mockResolvedValue([]);
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, {
+        lines: [
+          { materialProductId: 'mat-bar', qty: 1, cutLengthCm: 150 },
+          { materialProductId: 'mat-sheet', label: 'панель', qty: 1, cutLengthCm: 50, cutWidthCm: 40 },
+        ],
+      } as any);
+
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ productId: 'mat-bar' }) }));
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ productId: 'mat-sheet' }) }));
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ pieceLabel: null })]) }),
+      );
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ pieceLabel: 'панель' })]) }),
+      );
+    });
   });
 
   describe('execute/getDetail on a productId-only plan', () => {

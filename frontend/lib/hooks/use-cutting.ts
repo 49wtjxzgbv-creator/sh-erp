@@ -6,6 +6,7 @@ import {
   upsertProductCuttingSpec,
   deleteProductCuttingSpec,
   extractDefaultCutShape,
+  extractShape,
   previewCuttingPlan,
   executeCuttingPlan,
   getCuttingPlan,
@@ -43,6 +44,11 @@ export function useDeleteProductCuttingSpec(productId: string) {
 /** Direct-product cutting (2026-11-01): upload a STEP file → candidate piece shapes for the product's own default cut shape. */
 export function useExtractDefaultCutShape(productId: string) {
   return useMutation({ mutationFn: (fileAssetId: string) => extractDefaultCutShape(productId, fileAssetId) });
+}
+
+/** Ad-hoc multi-material worksheet (2026-11-01): upload a STEP file → candidate piece shapes for a worksheet position with no product of its own. */
+export function useExtractShape() {
+  return useMutation({ mutationFn: (fileAssetId: string) => extractShape(fileAssetId) });
 }
 
 export function useCuttableProducts(filter: { search?: string; limit?: number; offset?: number } = {}) {

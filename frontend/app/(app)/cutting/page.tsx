@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Scissors } from 'lucide-react';
+import { Plus, Scissors } from 'lucide-react';
 import { useCuttableProducts, usePreviewCuttingPlan } from '@/lib/hooks/use-cutting';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useHasPermission } from '@/lib/hooks/use-roles';
@@ -165,9 +166,19 @@ export default function CuttingListPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">{t('cuttingListTitle')}</h1>
-        <p className="text-sm text-muted-foreground">{t('cuttingListDescription')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">{t('cuttingListTitle')}</h1>
+          <p className="text-sm text-muted-foreground">{t('cuttingListDescription')}</p>
+        </div>
+        {canWrite && (
+          <Button variant="outline" asChild>
+            <Link href="/cutting/new">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('adHocCreateButton')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <Input

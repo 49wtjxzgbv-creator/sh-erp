@@ -30,6 +30,8 @@ interface CutDemandLine {
   qty: number;
   /** Irregular-shape nesting (2026-11-01): the real contour, STEP-sourced only — null for a plain-rectangle component. */
   shapePolygon: ShapePolygon | null;
+  /** Ad-hoc multi-material worksheet (2026-11-01): the user's own free-text label for this position — null for assembly/direct-product-sourced demand. */
+  pieceLabel: string | null;
 }
 
 /** A plain rectangle, as a 4-point polygon — lets a simple BAR/SHEET-rectangle component nest on the same sheet as a real irregular-contour one via the same polygon placement engine. */
@@ -65,12 +67,16 @@ export class CuttingPlansService {
     this.validateExactlyOneSource(dto);
 
     const demandByProduct = new Map<string, CutDemandLine[]>();
+    let qty: number;
+
     if (dto.assemblyId) {
+      if (dto.qty == null) throw new CodedBadRequestException('CUTTING_QTY_REQUIRED', 'Вкажіть кількість виробів.');
+      qty = Number(dto.qty);
       const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
       if (!assembly) {
         throw new CodedNotFoundException('CUTTING_ASSEMBLY_NOT_FOUND', `Assembly ${dto.assemblyId} not found.`);
       }
-      await this.flattenCutDemand(dto.assemblyId, Number(dto.qty), demandByProduct, new Set());
+      await this.flattenCutDemand(dto.assemblyId, qty, demandByProduct, new Set());
 
       if (demandByProduct.size === 0) {
         throw new CodedBadRequestException(
@@ -78,7 +84,9 @@ export class CuttingPlansService {
           'Ця специфікація не містить компонентів із заданою довжиною/розміром розкрою — вкажіть довжину деталі в редакторі компонентів.',
         );
       }
-    } else {
+    } else if (dto.productId) {
+      if (dto.qty == null) throw new CodedBadRequestException('CUTTING_QTY_REQUIRED', 'Вкажіть кількість виробів.');
+      qty = Number(dto.qty);
       // Direct-product cutting (2026-11-01): no BOM walk, a single demand
       // line built straight from the product's own ProductCuttingSpec.default*
       // fields, set once on the product page independently of any assembly.
@@ -93,20 +101,52 @@ export class CuttingPlansService {
         );
       }
       const shapePolygon = spec.defaultCutShapePolygon as unknown as ShapePolygon | null;
-      demandByProduct.set(dto.productId!, [
+      demandByProduct.set(dto.productId, [
         {
           cutLengthCm: Number(spec.defaultCutLengthCm),
           cutWidthCm: spec.defaultCutWidthCm != null ? Number(spec.defaultCutWidthCm) : null,
-          qty: Number(dto.qty),
+          qty,
           shapePolygon: shapePolygon?.outerCm ? shapePolygon : null,
+          pieceLabel: null,
         },
       ]);
+    } else {
+      // Ad-hoc multi-material worksheet (2026-11-01): the client supplies
+      // the demand directly — no assembly/BOM, no single product's saved
+      // default shape. Each line names its own raw material and is grouped
+      // into the SAME demandByProduct map the assembly path already builds,
+      // so a worksheet can freely mix several different materials in one
+      // plan with zero changes to the per-material loop below.
+      const lines = dto.lines!;
+      const materialIds = Array.from(new Set(lines.map((l) => l.materialProductId)));
+      const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: materialIds } } });
+      const specByProduct = new Map(specs.map((s) => [s.productId, s]));
+      const missing = materialIds.filter((id) => !specByProduct.has(id));
+      if (missing.length > 0) {
+        throw new CodedBadRequestException(
+          'CUTTING_LINE_MATERIAL_NO_SPEC',
+          `Для товарів без спеки розкрою не можна рахувати: ${missing.join(', ')}. Увімкніть "Матеріал для розкрою" на картці товару.`,
+        );
+      }
+
+      qty = lines.reduce((sum, l) => sum + Number(l.qty), 0);
+      for (const line of lines) {
+        const group = demandByProduct.get(line.materialProductId) ?? [];
+        group.push({
+          cutLengthCm: Number(line.cutLengthCm),
+          cutWidthCm: line.cutWidthCm != null ? Number(line.cutWidthCm) : null,
+          qty: Number(line.qty),
+          shapePolygon: line.cutShapePolygon?.outerCm ? (line.cutShapePolygon as unknown as ShapePolygon) : null,
+          pieceLabel: line.label ?? null,
+        });
+        demandByProduct.set(line.materialProductId, group);
+      }
     }
 
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
 
     const plan = await this.prisma.tenant.cuttingPlan.create({
-      data: { assemblyId: dto.assemblyId ?? null, productId: dto.productId ?? null, warehouseId, qty: dto.qty, status: 'DRAFT', createdById: user.userId } as any,
+      data: { assemblyId: dto.assemblyId ?? null, productId: dto.productId ?? null, warehouseId, qty, status: 'DRAFT', createdById: user.userId } as any,
     });
 
     for (const [productId, lines] of demandByProduct) {
@@ -119,7 +159,7 @@ export class CuttingPlansService {
       const remnants = await this.prisma.tenant.stockRemnant.findMany({ where: { productId, warehouseId, status: 'AVAILABLE' } });
 
       if (spec.kind === 'BAR') {
-        const demand: BarDemandLine[] = lines.map((l) => ({ label: productId, lengthCm: l.cutLengthCm, qty: l.qty }));
+        const demand: BarDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? productId, lengthCm: l.cutLengthCm, qty: l.qty }));
         const availableRemnants: AvailableBarRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm) }));
         const result = optimizeBarCutting(demand, Number(spec.stockLengthCm), Number(spec.kerfMm), availableRemnants);
 
@@ -136,7 +176,12 @@ export class CuttingPlansService {
           });
           if (stockItem.cuts.length > 0) {
             await this.prisma.tenant.cuttingPlanCut.createMany({
-              data: stockItem.cuts.map((c) => ({ cuttingPlanStockId: stockRow.id, productId, pieceLengthCm: c.pieceLengthCm })) as any,
+              data: stockItem.cuts.map((c) => ({
+                cuttingPlanStockId: stockRow.id,
+                productId,
+                pieceLengthCm: c.pieceLengthCm,
+                pieceLabel: c.label !== productId ? c.label : null,
+              })) as any,
             });
           }
         }
@@ -147,7 +192,7 @@ export class CuttingPlansService {
         // the same grid/raster engine, so everything shares one set of
         // sheets/remnants.
         const demand: IrregularSheetDemandLine[] = lines.map((l) => ({
-          label: productId,
+          label: l.pieceLabel ?? productId,
           outerCm: l.shapePolygon ? l.shapePolygon.outerCm : rectangleAsPolygon(l.cutWidthCm ?? 0, l.cutLengthCm),
           holesCm: l.shapePolygon ? l.shapePolygon.holesCm : [],
           qty: l.qty,
@@ -182,12 +227,13 @@ export class CuttingPlansService {
                 posYCm: c.posYCm,
                 rotated: c.rotated,
                 shapePolygonCm: { outerCm: c.outerCm, holesCm: c.holesCm },
+                pieceLabel: c.label !== productId ? c.label : null,
               })) as any,
             });
           }
         }
       } else {
-        const demand: SheetDemandLine[] = lines.map((l) => ({ label: productId, widthCm: l.cutWidthCm ?? 0, heightCm: l.cutLengthCm, qty: l.qty }));
+        const demand: SheetDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? productId, widthCm: l.cutWidthCm ?? 0, heightCm: l.cutLengthCm, qty: l.qty }));
         const availableRemnants: AvailableSheetRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm), widthCm: Number(r.widthCm ?? 0) }));
         const result = optimizeSheetNesting(demand, Number(spec.stockLengthCm), Number(spec.stockWidthCm ?? 0), Number(spec.kerfMm), availableRemnants, spec.allowRotation);
 
@@ -214,6 +260,7 @@ export class CuttingPlansService {
                 posXCm: c.posXCm,
                 posYCm: c.posYCm,
                 rotated: c.rotated,
+                pieceLabel: c.label !== productId ? c.label : null,
               })) as any,
             });
           }
@@ -319,12 +366,14 @@ export class CuttingPlansService {
   }
 
   /** Direct-product cutting (2026-11-01): exactly one of assemblyId/productId must be set — mirrors the cutting_plan_source_consistency DB CHECK constraint. */
+  /** Ad-hoc multi-material worksheet (2026-11-01): exactly one of assemblyId/productId/lines must be given. */
   private validateExactlyOneSource(dto: PreviewCuttingPlanDto): void {
-    if (dto.assemblyId && dto.productId) {
-      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_AMBIGUOUS', 'Вкажіть специфікацію АБО товар, не обидва одночасно.');
+    const sourcesGiven = [Boolean(dto.assemblyId), Boolean(dto.productId), Boolean(dto.lines?.length)].filter(Boolean).length;
+    if (sourcesGiven > 1) {
+      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_AMBIGUOUS', 'Вкажіть специфікацію, товар АБО довільний список позицій — не декілька одночасно.');
     }
-    if (!dto.assemblyId && !dto.productId) {
-      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_REQUIRED', 'Потрібно вказати специфікацію або товар для розкрою.');
+    if (sourcesGiven === 0) {
+      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_REQUIRED', 'Потрібно вказати специфікацію, товар або список позицій для розкрою.');
     }
   }
 
@@ -366,6 +415,7 @@ export class CuttingPlansService {
           cutWidthCm: line.cutWidthCm != null ? Number(line.cutWidthCm) : null,
           qty: pieceQty,
           shapePolygon: shapePolygon?.outerCm ? shapePolygon : null,
+          pieceLabel: null,
         });
         demandByProduct.set(line.productId, lines);
       } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {

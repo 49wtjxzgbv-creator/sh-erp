@@ -1815,13 +1815,15 @@ enum CuttingPlanStatus {
   EXECUTED
 }
 
-// Header for one "Порахувати розкрій" run — either against a single
-// assembly/qty (assemblyId set, walks the BOM) or directly against a
-// single product/qty (productId set, direct-product cutting, 2026-11-01 —
-// uses that product's own ProductCuttingSpec.defaultCut* fields instead of
-// any AssemblyComponent). Exactly one of assemblyId/productId is set,
-// enforced by the cutting_plan_source_consistency CHECK constraint added
-// in the same migration that introduced productId.
+// Header for one "Порахувати розкрій" run, from one of three sources:
+// an assembly/qty (assemblyId set, walks the BOM), a single product/qty
+// (productId set, direct-product cutting, 2026-11-01 — uses that
+// product's own ProductCuttingSpec.defaultCut* fields instead of any
+// AssemblyComponent), or an ad-hoc multi-material worksheet (both null,
+// 2026-11-01 — demand lines supplied directly in the preview request,
+// never persisted as their own rows; see CuttingPlanCut.pieceLabel).
+// At most one of assemblyId/productId is set, enforced by the
+// cutting_plan_source_consistency CHECK constraint.
 model CuttingPlan {
   id          String            @id @default(uuid()) @db.Uuid
   companyId   String            @db.Uuid
@@ -1832,7 +1834,7 @@ model CuttingPlan {
   // to the company's default warehouse) and kept for execute(), which
   // otherwise has no way to know where a freshly-created StockRemnant belongs.
   warehouseId String            @db.Uuid
-  qty         Decimal           @db.Decimal(14, 3) // units of the assembly, or pieces of the product, this plan was computed for
+  qty         Decimal           @db.Decimal(14, 3) // units of the assembly, pieces of the product, or total pieces across all lines for an ad-hoc worksheet
   status      CuttingPlanStatus @default(DRAFT)
   createdById String            @db.Uuid
 
@@ -1919,6 +1921,14 @@ model CuttingPlanCut {
   // Null for the ordinary rectangle path (pieceLengthCm/pieceWidthCm/
   // posXCm/posYCm/rotated already fully describe those).
   shapePolygonCm Json? @db.JsonB
+
+  // Ad-hoc multi-material worksheet (2026-11-01): the free-text label a
+  // user typed for this position on a plan with no assemblyId/productId
+  // source — null for assembly/direct-product-sourced plans, or when the
+  // user left it blank. Recovered at persistence time by comparing the
+  // optimizer's carried-through `label` against the material's own
+  // productId (see CuttingPlansService#preview's per-material loop).
+  pieceLabel String? @db.Text
 
   company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   cuttingPlanStock CuttingPlanStock @relation(fields: [companyId, cuttingPlanStockId], references: [companyId, id], onDelete: Cascade) // composite — a cut has no meaning without its stock item

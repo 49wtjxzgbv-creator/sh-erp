@@ -48,6 +48,16 @@ export class CuttingPlansController {
     return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
   }
 
+  @Post('extract-shape')
+  @RequirePermissions('cutting:write')
+  @ApiOperation({
+    summary:
+      'Ad-hoc multi-material worksheet (2026-11-01): STEP/3D CAD file → candidate piece shapes for a single worksheet position, with no product to hang the extraction off (same StepBomExtractionService logic as specs/:productId/extract-default-shape, at a param-less path).',
+  })
+  async extractShape(@CurrentUser() user: RequestUser, @Body() dto: ExtractDefaultShapeDto) {
+    return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
+  }
+
   @Get('products')
   @RequirePermissions('cutting:read')
   @ApiOperation({ summary: 'Every product with a ProductCuttingSpec configured, enriched with draft/executed CuttingPlan counts — the top-level "Розкрій" list page.' })

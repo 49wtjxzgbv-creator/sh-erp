@@ -47,9 +47,9 @@ function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
             key={cut.id}
             className={`flex items-center justify-center overflow-hidden whitespace-nowrap text-[10px] text-white ${SEGMENT_BG_COLORS[i % SEGMENT_BG_COLORS.length]}`}
             style={{ flex: `${lengthCm} 0 0%` }}
-            title={`${lengthCm} см`}
+            title={cut.pieceLabel ? `${cut.pieceLabel} — ${lengthCm} см` : `${lengthCm} см`}
           >
-            {lengthCm} см
+            {cut.pieceLabel ? `${cut.pieceLabel} · ${lengthCm} см` : `${lengthCm} см`}
           </div>
         );
       })}
@@ -93,7 +93,9 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
             className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
             stroke="white"
             strokeWidth={lengthCm / 200}
-          />
+          >
+            {cut.pieceLabel && <title>{cut.pieceLabel}</title>}
+          </path>
         ) : (
           <rect
             key={cut.id}
@@ -104,7 +106,9 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
             className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
             stroke="white"
             strokeWidth={lengthCm / 200}
-          />
+          >
+            {cut.pieceLabel && <title>{cut.pieceLabel}</title>}
+          </rect>
         ),
       )}
     </svg>

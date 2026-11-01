@@ -60,6 +60,11 @@ export function extractDefaultCutShape(productId: string, fileAssetId: string): 
   return apiClient.post<{ sourceFileAssetId: string; lines: MatchedBomLine[] }>(`cutting/specs/${productId}/extract-default-shape`, { fileAssetId });
 }
 
+/** Ad-hoc multi-material worksheet (2026-11-01): same STEP extraction, param-less — for a worksheet position with no product of its own. */
+export function extractShape(fileAssetId: string): Promise<{ sourceFileAssetId: string; lines: MatchedBomLine[] }> {
+  return apiClient.post<{ sourceFileAssetId: string; lines: MatchedBomLine[] }>('cutting/extract-shape', { fileAssetId });
+}
+
 export interface CuttingPlanCut {
   id: string;
   cuttingPlanStockId: string;
@@ -71,6 +76,8 @@ export interface CuttingPlanCut {
   rotated: boolean;
   /** Irregular-shape nesting (2026-11-01): the piece's real contour, already placed in the sheet's own coordinate frame. Null for the ordinary rectangle path (pieceLengthCm/pieceWidthCm/posXCm/posYCm already fully describe those). */
   shapePolygonCm: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
+  /** Ad-hoc multi-material worksheet (2026-11-01): the user's own free-text label for this position — null for assembly/direct-product-sourced plans, or when left blank. */
+  pieceLabel: string | null;
 }
 
 export interface CuttingPlanStock {
@@ -114,11 +121,23 @@ export interface CuttingPlan {
   materials: CuttingPlanMaterial[];
 }
 
+/** Ad-hoc multi-material worksheet (2026-11-01): one hand-typed position — no catalog product of its own required, only the raw material it's cut from (materialProductId). */
+export interface AdHocCutLine {
+  materialProductId: string;
+  label?: string;
+  qty: number;
+  cutLengthCm: number;
+  cutWidthCm?: number;
+  cutShapePolygon?: { outerCm: [number, number][]; holesCm: [number, number][][] };
+}
+
 export interface PreviewCuttingPlanInput {
-  /** Exactly one of assemblyId/productId must be set. */
+  /** Exactly one of assemblyId/productId/lines must be set. */
   assemblyId?: string;
   productId?: string;
-  qty: number;
+  lines?: AdHocCutLine[];
+  /** Required for assemblyId/productId; ignored (computed server-side) for lines. */
+  qty?: number;
   warehouseId?: string;
 }
 
