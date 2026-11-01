@@ -1,11 +1,17 @@
 import { login, logout, restoreSession } from './actions';
 import { useSuperAdminSessionStore } from './session-store';
+import { toast } from '@/lib/hooks/use-toast';
+
+jest.mock('@/lib/hooks/use-toast', () => ({
+  toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn() }),
+}));
 
 describe('lib/super-admin/actions', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     useSuperAdminSessionStore.setState({ accessToken: null, email: null, permissions: [], isHydrated: false });
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -73,6 +79,26 @@ describe('lib/super-admin/actions', () => {
       await expect(restoreSession()).resolves.toBe(false);
       expect(useSuperAdminSessionStore.getState().isHydrated).toBe(true);
     });
+
+    it(
+      'real incident (2026-11-01): a mid-session refresh that resolves to a DIFFERENT admin than this tab already ' +
+        'knew (the shared httpOnly cookie was overwritten by another tab logging in as someone else) does NOT ' +
+        'silently adopt the new identity',
+      async () => {
+        useSuperAdminSessionStore.getState().setSession({ accessToken: 'old-tok', email: 'admin1@sh-erp.pro', permissions: [] });
+
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          text: async () => JSON.stringify({ accessToken: 'new-tok', email: 'admin2@sh-erp.pro', permissions: ['audit:read'] }),
+        }) as unknown as typeof fetch;
+
+        const ok = await restoreSession();
+
+        expect(ok).toBe(false);
+        expect(useSuperAdminSessionStore.getState().accessToken).toBeNull();
+        expect(toast.error).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 
   describe('logout', () => {

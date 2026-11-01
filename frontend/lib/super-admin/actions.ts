@@ -1,5 +1,6 @@
 import { useSuperAdminSessionStore } from './session-store';
 import { serializedRefresh } from '../auth/refresh-mutex';
+import { toast } from '@/lib/hooks/use-toast';
 
 /**
  * Client-side super-admin auth actions. These call our own same-origin
@@ -51,13 +52,26 @@ export async function logout(): Promise<void> {
  * 401-retry.
  */
 export async function restoreSession(): Promise<boolean> {
+  const previousEmail = useSuperAdminSessionStore.getState().email;
   try {
     const result = await serializedRefresh('sh-erp-super-admin-auth-refresh', '/api/super-admin/auth/refresh');
     if (!result.ok) {
       useSuperAdminSessionStore.getState().clearSession();
       return false;
     }
-    useSuperAdminSessionStore.getState().setSession(result.body as SuperAdminSessionResponse);
+    const session = result.body as SuperAdminSessionResponse;
+
+    // Same cross-tab identity-swap guard as lib/auth/actions.ts#restoreSession
+    // — the httpOnly refresh cookie is shared by every open tab, so a
+    // different admin logging in in another tab could otherwise silently
+    // swap this tab's identity on its next mid-session refresh.
+    if (previousEmail && previousEmail !== session.email) {
+      useSuperAdminSessionStore.getState().clearSession();
+      toast.error('В іншій вкладці відбувся вхід в інший акаунт — увійдіть у цій вкладці ще раз.', 'Сесію змінено в іншій вкладці');
+      return false;
+    }
+
+    useSuperAdminSessionStore.getState().setSession(session);
     return true;
   } catch {
     useSuperAdminSessionStore.getState().clearSession();

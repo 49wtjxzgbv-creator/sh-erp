@@ -1,5 +1,6 @@
 import { useSupplierPortalSessionStore } from './session-store';
 import { serializedRefresh } from '../auth/refresh-mutex';
+import { toast } from '@/lib/hooks/use-toast';
 
 /**
  * Client-side supplier-portal auth actions. These call our own same-origin
@@ -56,13 +57,30 @@ export async function logout(): Promise<void> {
  * lib/supplier-portal/api.ts's 401-retry.
  */
 export async function restoreSession(): Promise<boolean> {
+  const previousEmail = useSupplierPortalSessionStore.getState().email;
   try {
     const result = await serializedRefresh('sh-erp-supplier-portal-auth-refresh', '/api/supplier-portal/auth/refresh');
     if (!result.ok) {
       useSupplierPortalSessionStore.getState().clearSession();
       return false;
     }
-    useSupplierPortalSessionStore.getState().setSession(result.body as SupplierPortalSessionResponse);
+    const session = result.body as SupplierPortalSessionResponse;
+
+    // Same cross-tab identity-swap guard as lib/auth/actions.ts#restoreSession
+    // — the httpOnly refresh cookie is shared by every open tab, so a
+    // different supplier account logging in in another tab could otherwise
+    // silently swap this tab's identity on its next mid-session refresh.
+    // Compared on `email` (the actual authenticated account), not
+    // companyId/activeConnectionId — those legitimately change within the
+    // SAME tab via the explicit switchConnection() flow, which sets the
+    // session directly and never goes through this function.
+    if (previousEmail && previousEmail !== session.email) {
+      useSupplierPortalSessionStore.getState().clearSession();
+      toast.error('В іншій вкладці відбувся вхід в інший акаунт — увійдіть у цій вкладці ще раз.', 'Сесію змінено в іншій вкладці');
+      return false;
+    }
+
+    useSupplierPortalSessionStore.getState().setSession(session);
     return true;
   } catch {
     useSupplierPortalSessionStore.getState().clearSession();

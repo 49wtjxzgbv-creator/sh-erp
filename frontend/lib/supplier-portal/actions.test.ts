@@ -1,11 +1,24 @@
 import { login, logout, restoreSession } from './actions';
 import { useSupplierPortalSessionStore } from './session-store';
+import { toast } from '@/lib/hooks/use-toast';
+
+jest.mock('@/lib/hooks/use-toast', () => ({
+  toast: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn() }),
+}));
 
 describe('lib/supplier-portal/actions', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    useSupplierPortalSessionStore.setState({ accessToken: null, email: null, isHydrated: false });
+    useSupplierPortalSessionStore.setState({
+      accessToken: null,
+      email: null,
+      companyId: null,
+      companyName: null,
+      activeConnectionId: null,
+      isHydrated: false,
+    });
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -64,6 +77,40 @@ describe('lib/supplier-portal/actions', () => {
       expect(ok).toBe(false);
       expect(useSupplierPortalSessionStore.getState().accessToken).toBeNull();
       expect(useSupplierPortalSessionStore.getState().isHydrated).toBe(true);
+    });
+
+    it(
+      'real incident (2026-11-01): a mid-session refresh that resolves to a DIFFERENT supplier account than this ' +
+        'tab already knew (the shared httpOnly cookie was overwritten by another tab logging in as someone else) ' +
+        'does NOT silently adopt the new identity',
+      async () => {
+        useSupplierPortalSessionStore.getState().setSession({ accessToken: 'old-tok', email: 'supplier-a@example.com', companyId: 'c1' });
+
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          text: async () => JSON.stringify({ accessToken: 'new-tok', email: 'supplier-b@example.com', supplierId: 's2', companyId: 'c2' }),
+        }) as unknown as typeof fetch;
+
+        const ok = await restoreSession();
+
+        expect(ok).toBe(false);
+        expect(useSupplierPortalSessionStore.getState().accessToken).toBeNull();
+        expect(toast.error).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('a companyId change for the SAME account (e.g. switchConnection happened earlier in this tab) is not mistaken for a cross-tab swap — only email is compared', async () => {
+      useSupplierPortalSessionStore.getState().setSession({ accessToken: 'tok', email: 'supplier-a@example.com', companyId: 'c1' });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({ accessToken: 'tok2', email: 'supplier-a@example.com', companyId: 'c2' }),
+      }) as unknown as typeof fetch;
+
+      const ok = await restoreSession();
+
+      expect(ok).toBe(true);
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
