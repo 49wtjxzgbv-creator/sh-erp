@@ -86,7 +86,7 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
 
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5" data-tour="adhoc-material-mode-toggle">
         <Button type="button" size="sm" variant={row.materialMode === 'existing' ? 'default' : 'outline'} onClick={() => onChange({ materialMode: 'existing' })}>
           {t('adHocModeExisting')}
         </Button>

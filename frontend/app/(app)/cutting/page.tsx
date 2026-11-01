@@ -173,7 +173,7 @@ export default function CuttingListPage() {
         </div>
         {canWrite && (
           <Button variant="outline" asChild>
-            <Link href="/cutting/new">
+            <Link href="/cutting/new" data-tour="cutting-adhoc-button">
               <Plus className="mr-2 h-4 w-4" />
               {t('adHocCreateButton')}
             </Link>
@@ -191,14 +191,16 @@ export default function CuttingListPage() {
         className="max-w-sm"
       />
 
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        isLoading={isLoading}
-        onRowClick={(product) => router.push(`/catalog/${product.productId}`)}
-        pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
-        emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{t('cuttingListEmpty')}</p>}
-      />
+      <div data-tour="cutting-products-table">
+        <DataTable
+          columns={columns}
+          data={data?.items ?? []}
+          isLoading={isLoading}
+          onRowClick={(product) => router.push(`/catalog/${product.productId}`)}
+          pagination={data ? { offset, limit: PAGE_SIZE, total: data.total, onOffsetChange: setOffset } : undefined}
+          emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{t('cuttingListEmpty')}</p>}
+        />
+      </div>
     </div>
   );
 }
