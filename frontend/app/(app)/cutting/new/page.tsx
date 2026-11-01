@@ -66,6 +66,8 @@ export default function NewAdHocCuttingPlanPage() {
     rows.length > 0 &&
     rows.every((r) => {
       if (!r.cutLengthCm || !r.qty) return false;
+      const isSheet = r.materialMode === 'existing' ? r.materialKind === 'SHEET' : r.customKind === 'SHEET';
+      if (isSheet && !r.cutWidthCm) return false;
       if (r.materialMode === 'existing') return Boolean(r.materialProductId);
       return Boolean(r.customLabel && r.customStockLengthCm && (r.customKind === 'BAR' || r.customStockWidthCm));
     });

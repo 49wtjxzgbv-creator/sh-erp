@@ -123,6 +123,10 @@ export function ProductCuttingSpecCard({ productId, readOnly }: ProductCuttingSp
       setError(t('stockWidthLabel'));
       return;
     }
+    if (kind === 'SHEET' && defaultCutLengthCm && (!defaultCutWidthCm || Number(defaultCutWidthCm) <= 0)) {
+      setError(t('cutWidthLabel'));
+      return;
+    }
     try {
       await upsert.mutateAsync({
         kind,

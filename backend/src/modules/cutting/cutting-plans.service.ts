@@ -157,15 +157,27 @@ export class CuttingPlansService {
       }
 
       const materialIds = Array.from(new Set(lines.map((l) => l.materialProductId).filter((id): id is string => Boolean(id))));
+      const specByProduct = new Map<string, { kind: 'BAR' | 'SHEET' }>();
       if (materialIds.length > 0) {
         const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: materialIds } } });
-        const specByProduct = new Map(specs.map((s) => [s.productId, s]));
+        for (const s of specs) specByProduct.set(s.productId, s);
         const missing = materialIds.filter((id) => !specByProduct.has(id));
         if (missing.length > 0) {
           throw new CodedBadRequestException(
             'CUTTING_LINE_MATERIAL_NO_SPEC',
             `Для товарів без спеки розкрою не можна рахувати: ${missing.join(', ')}. Увімкніть "Матеріал для розкрою" на картці товару.`,
           );
+        }
+      }
+
+      // Every line whose material (real or custom) is SHEET-kind must carry
+      // its own piece width — without this, a blank cutWidthCm silently
+      // defaults to 0 further down and the optimizer happily "places" a
+      // zero-area piece instead of erroring.
+      for (const line of lines) {
+        const kind = line.materialProductId ? specByProduct.get(line.materialProductId)!.kind : line.customMaterial!.kind;
+        if (kind === 'SHEET' && line.cutWidthCm == null) {
+          throw new CodedBadRequestException('CUTTING_PIECE_NEEDS_WIDTH', 'Для листового матеріалу потрібно вказати ширину деталі.');
         }
       }
 
@@ -554,6 +566,13 @@ export class CuttingPlansService {
   async upsertSpec(user: RequestUser, productId: string, dto: UpsertProductCuttingSpecDto) {
     if (dto.kind === 'SHEET' && dto.stockWidthCm == null) {
       throw new CodedBadRequestException('CUTTING_SHEET_NEEDS_WIDTH', 'Для листового матеріалу потрібно вказати ширину листа.');
+    }
+    // Direct-product cutting (2026-11-01): same reasoning as the ad-hoc
+    // worksheet's own CUTTING_PIECE_NEEDS_WIDTH check — a SHEET material with
+    // a default cut length but no default cut width would otherwise silently
+    // become a 0-width demand line when "Порахувати розкрій" runs.
+    if (dto.kind === 'SHEET' && dto.defaultCutLengthCm != null && dto.defaultCutWidthCm == null) {
+      throw new CodedBadRequestException('CUTTING_PIECE_NEEDS_WIDTH', 'Для листового матеріалу потрібно вказати ширину деталі за замовчуванням.');
     }
 
     const existing = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId } });

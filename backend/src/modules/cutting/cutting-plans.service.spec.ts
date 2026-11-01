@@ -308,6 +308,23 @@ describe('CuttingPlansService', () => {
       ).rejects.toThrow();
     });
 
+    it('throws when a custom SHEET material line has no piece cutWidthCm', async () => {
+      await expect(
+        service.preview(user, {
+          lines: [{ customMaterial: { label: 'Алюміній', kind: 'SHEET', stockLengthCm: 100, stockWidthCm: 80 }, qty: 1, cutLengthCm: 10 }],
+        } as any),
+      ).rejects.toThrow();
+    });
+
+    it('throws when an existing-product SHEET material line has no piece cutWidthCm', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([{ productId: 'mat-sheet', kind: 'SHEET', stockLengthCm: 200, stockWidthCm: 150, kerfMm: 0 }]);
+      await expect(
+        service.preview(user, {
+          lines: [{ materialProductId: 'mat-sheet', qty: 1, cutLengthCm: 10 }],
+        } as any),
+      ).rejects.toThrow();
+    });
+
     it('custom material: no catalog/remnant lookup, persists customMaterialLabel and null productId', async () => {
       prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
       prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
@@ -514,6 +531,19 @@ describe('CuttingPlansService', () => {
   describe('upsertSpec', () => {
     it('rejects a SHEET spec with no stockWidthCm', async () => {
       await expect(service.upsertSpec(user, 'p1', { kind: 'SHEET' as any, stockLengthCm: 300 })).rejects.toThrow();
+    });
+
+    it('rejects a SHEET spec with a default cut length but no default cut width', async () => {
+      await expect(
+        service.upsertSpec(user, 'p1', { kind: 'SHEET' as any, stockLengthCm: 300, stockWidthCm: 150, defaultCutLengthCm: 50 } as any),
+      ).rejects.toThrow();
+    });
+
+    it('allows a SHEET spec with no default cut shape set at all', async () => {
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue(null);
+
+      await service.upsertSpec(user, 'p1', { kind: 'SHEET' as any, stockLengthCm: 300, stockWidthCm: 150 });
+      expect(prisma.tenant.productCuttingSpec.create).toHaveBeenCalled();
     });
 
     it('creates a new spec when none exists', async () => {

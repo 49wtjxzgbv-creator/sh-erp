@@ -472,6 +472,7 @@ export class AssembliesService {
   async setComponents(user: RequestUser, assemblyId: string, dto: SetAssemblyComponentsDto) {
     await this.findOne(user, assemblyId);
     this.validateComponentLines(dto.components);
+    await this.validateCutWidths(dto.components);
     await this.assertNoCycle(assemblyId, dto.components);
 
     await this.prisma.tenant.assemblyComponent.deleteMany({ where: { assemblyId } });
@@ -544,6 +545,31 @@ export class AssembliesService {
     });
     if (!version) throw new CodedNotFoundException('BOM_VERSION_NOT_FOUND', 'Assembly version not found.');
     return version;
+  }
+
+  /**
+   * Розкрій (2026-10-31): a PRODUCT line with cutLengthCm set against a
+   * SHEET-kind raw material also needs cutWidthCm — without this, a blank
+   * width silently becomes a 0-width demand line at preview() time (the
+   * cutting optimizer has no guard against a zero-area piece, it just
+   * "places" it). Checked here rather than in the DTO because it needs the
+   * referenced product's own ProductCuttingSpec.kind, not known statically.
+   */
+  private async validateCutWidths(lines: AssemblyComponentLineDto[]): Promise<void> {
+    const productIds = Array.from(
+      new Set(lines.filter((l) => l.componentType === 'PRODUCT' && l.productId && l.cutLengthCm != null).map((l) => l.productId!)),
+    );
+    if (productIds.length === 0) return;
+
+    const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: productIds } } });
+    const kindByProduct = new Map(specs.map((s) => [s.productId, s.kind]));
+
+    for (const line of lines) {
+      if (line.componentType !== 'PRODUCT' || !line.productId || line.cutLengthCm == null) continue;
+      if (kindByProduct.get(line.productId) === 'SHEET' && line.cutWidthCm == null) {
+        throw new CodedBadRequestException('BOM_CUT_WIDTH_REQUIRED', 'Для листового матеріалу потрібно вказати ширину деталі.');
+      }
+    }
   }
 
   private validateComponentLines(lines: AssemblyComponentLineDto[]) {

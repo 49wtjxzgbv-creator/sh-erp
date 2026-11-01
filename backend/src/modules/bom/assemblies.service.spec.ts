@@ -32,6 +32,7 @@ describe('AssembliesService', () => {
           findMany: jest.fn(),
         },
         assemblyVersionComponent: { createMany: jest.fn() },
+        productCuttingSpec: { findMany: jest.fn().mockResolvedValue([]) },
         product: { findUnique: jest.fn() },
         warehouse: { findFirst: jest.fn() },
         finishedGood: { count: jest.fn().mockResolvedValue(0) },
@@ -91,6 +92,27 @@ describe('AssembliesService', () => {
           components: [{ componentType: ComponentTypeDto.ASSEMBLY, subAssemblyId: 'a2', qtyPerUnit: 1 }],
         }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects a PRODUCT line with cutLengthCm against a SHEET material but no cutWidthCm', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([{ productId: 'p1', kind: 'SHEET' }]);
+
+      await expect(
+        service.setComponents(user, 'a1', {
+          components: [{ componentType: ComponentTypeDto.PRODUCT, productId: 'p1', qtyPerUnit: 1, cutLengthCm: 50 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows a PRODUCT line with cutLengthCm against a BAR material and no cutWidthCm', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([{ productId: 'p1', kind: 'BAR' }]);
+      prisma.tenant.assemblyVersion.create.mockResolvedValue({ id: 'v1', versionNumber: 1 });
+
+      await expect(
+        service.setComponents(user, 'a1', {
+          components: [{ componentType: ComponentTypeDto.PRODUCT, productId: 'p1', qtyPerUnit: 1, cutLengthCm: 50 }],
+        }),
+      ).resolves.toBeDefined();
     });
 
     it('replaces all existing lines, creates version 1 for a fresh assembly', async () => {
