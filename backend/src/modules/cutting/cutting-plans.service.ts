@@ -426,11 +426,9 @@ export class CuttingPlansService {
    * Map-based grouping, rather than a raw SQL join.
    */
   async listCuttableProducts(user: RequestUser, query: QueryCuttableProductsDto) {
-    const where: any = {};
+    const where: any = { product: { deletedAt: null } };
     if (query.search) {
-      where.product = {
-        OR: [{ name: { contains: query.search, mode: 'insensitive' } }, { article: { contains: query.search, mode: 'insensitive' } }],
-      };
+      where.product.OR = [{ name: { contains: query.search, mode: 'insensitive' } }, { article: { contains: query.search, mode: 'insensitive' } }];
     }
 
     const take = query.limit ?? 50;
