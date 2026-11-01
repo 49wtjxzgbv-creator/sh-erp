@@ -2,14 +2,20 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { StepBomExtractionService } from '../bom/step-bom-extraction.service';
 import { CuttingPlansService } from './cutting-plans.service';
+import { ExtractDefaultShapeDto } from './dto/extract-default-shape.dto';
 import { PreviewCuttingPlanDto } from './dto/preview-cutting-plan.dto';
+import { QueryCuttableProductsDto } from './dto/query-cuttable-products.dto';
 import { UpsertProductCuttingSpecDto } from './dto/upsert-product-cutting-spec.dto';
 
 @ApiTags('cutting')
 @Controller({ path: 'cutting', version: '1' })
 export class CuttingPlansController {
-  constructor(private readonly cuttingPlansService: CuttingPlansService) {}
+  constructor(
+    private readonly cuttingPlansService: CuttingPlansService,
+    private readonly stepBomExtractionService: StepBomExtractionService,
+  ) {}
 
   @Get('specs/:productId')
   @RequirePermissions('products:read')
@@ -30,6 +36,23 @@ export class CuttingPlansController {
   @ApiOperation({ summary: 'Turn off "матеріал для розкрою" for this product.' })
   async deleteSpec(@CurrentUser() user: RequestUser, @Param('productId') productId: string) {
     await this.cuttingPlansService.deleteSpec(user, productId);
+  }
+
+  @Post('specs/:productId/extract-default-shape')
+  @RequirePermissions('products:write')
+  @ApiOperation({
+    summary:
+      'Direct-product cutting (2026-11-01): STEP/3D CAD file (already uploaded as a FileAsset) → candidate piece shapes for this product\'s own default cut shape, read from the file\'s geometry (same extraction StepBomExtractionService already does for BOM lines, reused as-is). The caller picks one line and PUTs its lengthCm/widthCm/shapePolygon into specs/:productId.',
+  })
+  async extractDefaultShape(@CurrentUser() user: RequestUser, @Body() dto: ExtractDefaultShapeDto) {
+    return this.stepBomExtractionService.extractComponentsFromStep(user, dto.fileAssetId);
+  }
+
+  @Get('products')
+  @RequirePermissions('cutting:read')
+  @ApiOperation({ summary: 'Every product with a ProductCuttingSpec configured, enriched with draft/executed CuttingPlan counts — the top-level "Розкрій" list page.' })
+  async listCuttableProducts(@CurrentUser() user: RequestUser, @Query() query: QueryCuttableProductsDto) {
+    return this.cuttingPlansService.listCuttableProducts(user, query);
   }
 
   @Post('preview')

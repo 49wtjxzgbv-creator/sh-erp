@@ -4,6 +4,7 @@ import { CodedBadRequestException, CodedConflictException, CodedNotFoundExceptio
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PreviewCuttingPlanDto } from './dto/preview-cutting-plan.dto';
+import { QueryCuttableProductsDto } from './dto/query-cuttable-products.dto';
 import { UpsertProductCuttingSpecDto } from './dto/upsert-product-cutting-spec.dto';
 import {
   AvailableBarRemnant,
@@ -61,25 +62,51 @@ export class CuttingPlansService {
   ) {}
 
   async preview(user: RequestUser, dto: PreviewCuttingPlanDto) {
-    const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
-    if (!assembly) {
-      throw new CodedNotFoundException('CUTTING_ASSEMBLY_NOT_FOUND', `Assembly ${dto.assemblyId} not found.`);
-    }
+    this.validateExactlyOneSource(dto);
 
     const demandByProduct = new Map<string, CutDemandLine[]>();
-    await this.flattenCutDemand(dto.assemblyId, Number(dto.qty), demandByProduct, new Set());
+    if (dto.assemblyId) {
+      const assembly = await this.prisma.tenant.assembly.findUnique({ where: { id: dto.assemblyId } });
+      if (!assembly) {
+        throw new CodedNotFoundException('CUTTING_ASSEMBLY_NOT_FOUND', `Assembly ${dto.assemblyId} not found.`);
+      }
+      await this.flattenCutDemand(dto.assemblyId, Number(dto.qty), demandByProduct, new Set());
 
-    if (demandByProduct.size === 0) {
-      throw new CodedBadRequestException(
-        'CUTTING_NO_CUT_STOCK_COMPONENTS',
-        'Ця специфікація не містить компонентів із заданою довжиною/розміром розкрою — вкажіть довжину деталі в редакторі компонентів.',
-      );
+      if (demandByProduct.size === 0) {
+        throw new CodedBadRequestException(
+          'CUTTING_NO_CUT_STOCK_COMPONENTS',
+          'Ця специфікація не містить компонентів із заданою довжиною/розміром розкрою — вкажіть довжину деталі в редакторі компонентів.',
+        );
+      }
+    } else {
+      // Direct-product cutting (2026-11-01): no BOM walk, a single demand
+      // line built straight from the product's own ProductCuttingSpec.default*
+      // fields, set once on the product page independently of any assembly.
+      const spec = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId: dto.productId } });
+      if (!spec) {
+        throw new CodedNotFoundException('CUTTING_PRODUCT_SPEC_NOT_FOUND', `Product ${dto.productId} has no cutting spec.`);
+      }
+      if (spec.defaultCutLengthCm == null) {
+        throw new CodedBadRequestException(
+          'CUTTING_PRODUCT_NO_DEFAULT_SHAPE',
+          'Для цього товару не задано розмір деталі для прямого розкрою — вкажіть довжину/ширину або завантажте STEP-файл на картці товару.',
+        );
+      }
+      const shapePolygon = spec.defaultCutShapePolygon as unknown as ShapePolygon | null;
+      demandByProduct.set(dto.productId!, [
+        {
+          cutLengthCm: Number(spec.defaultCutLengthCm),
+          cutWidthCm: spec.defaultCutWidthCm != null ? Number(spec.defaultCutWidthCm) : null,
+          qty: Number(dto.qty),
+          shapePolygon: shapePolygon?.outerCm ? shapePolygon : null,
+        },
+      ]);
     }
 
     const warehouseId = dto.warehouseId ?? (await this.resolveDefaultWarehouseId());
 
     const plan = await this.prisma.tenant.cuttingPlan.create({
-      data: { assemblyId: dto.assemblyId, warehouseId, qty: dto.qty, status: 'DRAFT', createdById: user.userId } as any,
+      data: { assemblyId: dto.assemblyId ?? null, productId: dto.productId ?? null, warehouseId, qty: dto.qty, status: 'DRAFT', createdById: user.userId } as any,
     });
 
     for (const [productId, lines] of demandByProduct) {
@@ -249,7 +276,7 @@ export class CuttingPlansService {
       action: 'cutting_plan.executed',
       entityType: 'CuttingPlan',
       entityId: plan.id,
-      after: { assemblyId: plan.assemblyId, qty: Number(plan.qty) },
+      after: { assemblyId: plan.assemblyId, productId: plan.productId, qty: Number(plan.qty) },
     });
 
     return this.getDetail(user, plan.id);
@@ -289,6 +316,16 @@ export class CuttingPlansService {
       where: { status: 'AVAILABLE', productId: filter.productId, warehouseId: filter.warehouseId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Direct-product cutting (2026-11-01): exactly one of assemblyId/productId must be set — mirrors the cutting_plan_source_consistency DB CHECK constraint. */
+  private validateExactlyOneSource(dto: PreviewCuttingPlanDto): void {
+    if (dto.assemblyId && dto.productId) {
+      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_AMBIGUOUS', 'Вкажіть специфікацію АБО товар, не обидва одночасно.');
+    }
+    if (!dto.assemblyId && !dto.productId) {
+      throw new CodedBadRequestException('CUTTING_PLAN_SOURCE_REQUIRED', 'Потрібно вказати специфікацію або товар для розкрою.');
+    }
   }
 
   private async resolveDefaultWarehouseId(): Promise<string> {
@@ -363,10 +400,14 @@ export class CuttingPlansService {
       minRemnantLengthCm: dto.minRemnantLengthCm ?? null,
       minRemnantAreaCm2: dto.minRemnantAreaCm2 ?? null,
       allowRotation: dto.allowRotation ?? true,
+      // Direct-product cutting (2026-11-01)
+      defaultCutLengthCm: dto.defaultCutLengthCm ?? null,
+      defaultCutWidthCm: dto.defaultCutWidthCm ?? null,
+      defaultCutShapePolygon: dto.defaultCutShapePolygon ?? null,
     };
 
     if (existing) {
-      return this.prisma.tenant.productCuttingSpec.update({ where: { id: existing.id }, data });
+      return this.prisma.tenant.productCuttingSpec.update({ where: { id: existing.id }, data: data as any });
     }
     return this.prisma.tenant.productCuttingSpec.create({ data: { productId, ...data } as any });
   }
@@ -375,5 +416,64 @@ export class CuttingPlansService {
     const existing = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId } });
     if (!existing) return;
     await this.prisma.tenant.productCuttingSpec.delete({ where: { id: existing.id } });
+  }
+
+  /**
+   * Direct-product cutting (2026-11-01): every product with a
+   * ProductCuttingSpec, enriched with draft/executed CuttingPlan counts and
+   * the last plan's date — backs the top-level "Розкрій" list page. Counts
+   * computed via groupBy + in-memory merge, same style as getDetail()'s own
+   * Map-based grouping, rather than a raw SQL join.
+   */
+  async listCuttableProducts(user: RequestUser, query: QueryCuttableProductsDto) {
+    const where: any = {};
+    if (query.search) {
+      where.product = {
+        OR: [{ name: { contains: query.search, mode: 'insensitive' } }, { article: { contains: query.search, mode: 'insensitive' } }],
+      };
+    }
+
+    const take = query.limit ?? 50;
+    const skip = query.offset ?? 0;
+
+    const [specs, total] = await Promise.all([
+      this.prisma.tenant.productCuttingSpec.findMany({
+        where,
+        include: { product: true },
+        orderBy: { product: { name: 'asc' } },
+        take,
+        skip,
+      }),
+      this.prisma.tenant.productCuttingSpec.count({ where }),
+    ]);
+
+    const productIds = specs.map((s) => s.productId);
+    const counts = await this.prisma.tenant.cuttingPlan.groupBy({
+      by: ['productId', 'status'],
+      where: { productId: { in: productIds } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+
+    const items = specs.map(({ product, ...spec }) => {
+      const rows = counts.filter((c) => c.productId === spec.productId);
+      const draftPlanCount = rows.find((r) => r.status === 'DRAFT')?._count._all ?? 0;
+      const executedPlanCount = rows.find((r) => r.status === 'EXECUTED')?._count._all ?? 0;
+      const lastPlanAt = rows.reduce<Date | null>((max, r) => {
+        const at = r._max.createdAt;
+        return at && (!max || at > max) ? at : max;
+      }, null);
+      return {
+        productId: spec.productId,
+        product,
+        spec,
+        hasDefaultShape: spec.defaultCutLengthCm != null,
+        draftPlanCount,
+        executedPlanCount,
+        lastPlanAt,
+      };
+    });
+
+    return { items, total, limit: take, offset: skip };
   }
 }

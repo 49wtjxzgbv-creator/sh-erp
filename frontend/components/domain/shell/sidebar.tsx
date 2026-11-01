@@ -28,6 +28,7 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  Scissors,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMobileNav } from '@/components/domain/shell/mobile-nav-context';
@@ -47,6 +48,7 @@ export const NAV_ITEMS = [
   { href: '/planner', labelKey: 'planner', icon: CalendarClock, permission: 'planner:read' },
   { href: '/catalog', labelKey: 'catalog', icon: Package },
   { href: '/bom', labelKey: 'bom', icon: ListTree },
+  { href: '/cutting', labelKey: 'cutting', icon: Scissors, permission: 'cutting:read' },
   { href: '/inventory', labelKey: 'inventory', icon: Warehouse },
   { href: '/quotations', labelKey: 'quotations', icon: FileText, permission: 'quotations:read' },
   { href: '/sales', labelKey: 'sales', icon: ShoppingCart },

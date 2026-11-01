@@ -875,6 +875,8 @@ model Product {
   stockRemnants     StockRemnant[]
   cuttingPlanStocks CuttingPlanStock[]
   cuttingPlanCuts   CuttingPlanCut[]
+  // Direct-product cutting (2026-11-01) — CuttingPlan.productId
+  cuttingPlans      CuttingPlan[]
 
   @@unique([companyId, article])
   @@unique([companyId, id]) // composite-FK target for WarehouseStock/StockMovement/InventoryItem/ProductCuttingSpec/StockRemnant/CuttingPlanStock/CuttingPlanCut
@@ -906,6 +908,17 @@ model ProductCuttingSpec {
   minRemnantLengthCm Decimal? @db.Decimal(8, 2) // BAR: leftover below this counts as waste, not a trackable remnant
   minRemnantAreaCm2  Decimal? @db.Decimal(10, 2) // SHEET: same idea, by area
   allowRotation      Boolean  @default(true) // SHEET only — whether a piece may be rotated 90° when nesting
+
+  // Direct-product cutting (2026-11-01): this product's own default piece-
+  // to-cut shape, used when "Порахувати розкрій" is run directly against
+  // the product (no assembly/BOM involved) — same {length, width, polygon}
+  // shape as AssemblyComponent's per-BOM-line cut fields, just scoped to
+  // the product itself and reused on every direct run instead of being
+  // re-entered per BOM line. Null means no default set yet; preview()
+  // against a bare productId rejects until these are populated.
+  defaultCutLengthCm     Decimal? @db.Decimal(8, 2)
+  defaultCutWidthCm      Decimal? @db.Decimal(8, 2)
+  defaultCutShapePolygon Json?    @db.JsonB
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -1802,17 +1815,24 @@ enum CuttingPlanStatus {
   EXECUTED
 }
 
-// Header for one "Порахувати розкрій" run against a single assembly/qty.
+// Header for one "Порахувати розкрій" run — either against a single
+// assembly/qty (assemblyId set, walks the BOM) or directly against a
+// single product/qty (productId set, direct-product cutting, 2026-11-01 —
+// uses that product's own ProductCuttingSpec.defaultCut* fields instead of
+// any AssemblyComponent). Exactly one of assemblyId/productId is set,
+// enforced by the cutting_plan_source_consistency CHECK constraint added
+// in the same migration that introduced productId.
 model CuttingPlan {
   id          String            @id @default(uuid()) @db.Uuid
   companyId   String            @db.Uuid
-  assemblyId  String            @db.Uuid
+  assemblyId  String?           @db.Uuid
+  productId   String?           @db.Uuid
   // Which warehouse remnants are drawn from at preview() and a new leftover
   // remnant is assigned to at execute() — resolved once up front (defaults
   // to the company's default warehouse) and kept for execute(), which
   // otherwise has no way to know where a freshly-created StockRemnant belongs.
   warehouseId String            @db.Uuid
-  qty         Decimal           @db.Decimal(14, 3) // units of the assembly this plan was computed for
+  qty         Decimal           @db.Decimal(14, 3) // units of the assembly, or pieces of the product, this plan was computed for
   status      CuttingPlanStatus @default(DRAFT)
   createdById String            @db.Uuid
 
@@ -1820,12 +1840,14 @@ model CuttingPlan {
   executedAt DateTime? @db.Timestamptz(3)
 
   company    Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly   Assembly           @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  assembly   Assembly?          @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  product    Product?           @relation(fields: [companyId, productId], references: [companyId, id]) // composite — kept Restrict (default)
   warehouse  Warehouse          @relation(fields: [companyId, warehouseId], references: [companyId, id]) // composite
   stockItems CuttingPlanStock[]
 
   @@unique([companyId, id]) // composite-FK target for CuttingPlanStock
   @@index([companyId, assemblyId])
+  @@index([companyId, productId])
   @@map("cutting_plans")
 }
 

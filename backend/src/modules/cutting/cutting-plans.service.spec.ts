@@ -11,14 +11,21 @@ describe('CuttingPlansService', () => {
       tenant: {
         assembly: { findUnique: jest.fn() },
         assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
-        productCuttingSpec: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+        productCuttingSpec: {
+          findFirst: jest.fn(),
+          findMany: jest.fn().mockResolvedValue([]),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+          count: jest.fn().mockResolvedValue(0),
+        },
         stockRemnant: {
           findMany: jest.fn().mockResolvedValue([]),
           update: jest.fn(),
           create: jest.fn().mockResolvedValue({ id: 'new-remnant-1' }),
           count: jest.fn().mockResolvedValue(0),
         },
-        cuttingPlan: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+        cuttingPlan: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
         cuttingPlanStock: { create: jest.fn(), update: jest.fn() },
         cuttingPlanCut: { createMany: jest.fn() },
         product: { findMany: jest.fn().mockResolvedValue([]) },
@@ -122,6 +129,142 @@ describe('CuttingPlansService', () => {
       await service.preview(user, { assemblyId: 'a1', qty: 1 });
 
       expect(prisma.tenant.cuttingPlanStock.create).not.toHaveBeenCalled();
+    });
+
+    it('throws when both assemblyId and productId are given', async () => {
+      await expect(service.preview(user, { assemblyId: 'a1', productId: 'p1', qty: 1 })).rejects.toThrow();
+    });
+
+    it('throws when neither assemblyId nor productId is given', async () => {
+      await expect(service.preview(user, { qty: 1 } as any)).rejects.toThrow();
+    });
+
+    it('throws when a direct-product preview has no cutting spec for the product', async () => {
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue(null);
+
+      await expect(service.preview(user, { productId: 'p1', qty: 1 })).rejects.toThrow();
+    });
+
+    it('throws when a direct-product preview has a spec but no default cut shape set', async () => {
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({ productId: 'p1', kind: 'BAR', defaultCutLengthCm: null });
+
+      await expect(service.preview(user, { productId: 'p1', qty: 1 })).rejects.toThrow();
+    });
+
+    it('direct-product preview with a manual BAR default shape persists a plan with productId set, no assemblyId', async () => {
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({
+        productId: 'p1',
+        kind: 'BAR',
+        stockLengthCm: 600,
+        kerfMm: 0,
+        minRemnantLengthCm: null,
+        defaultCutLengthCm: 150,
+        defaultCutWidthCm: null,
+        defaultCutShapePolygon: null,
+      });
+      prisma.tenant.stockRemnant.findMany.mockResolvedValue([]);
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', productId: 'p1', warehouseId: 'w1', qty: 3, status: 'DRAFT' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', productId: 'p1', warehouseId: 'w1', qty: 3, status: 'DRAFT', stockItems: [] });
+
+      const result = await service.preview(user, { productId: 'p1', qty: 3, warehouseId: 'w1' });
+
+      expect(prisma.tenant.cuttingPlan.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ assemblyId: null, productId: 'p1', warehouseId: 'w1', status: 'DRAFT' }) }),
+      );
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalled();
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalled();
+      expect(result.id).toBe('plan1');
+      // flattenCutDemand/assembly.findUnique must never be touched on the direct-product path
+      expect(prisma.tenant.assembly.findUnique).not.toHaveBeenCalled();
+      expect(prisma.tenant.assemblyComponent.findMany).not.toHaveBeenCalled();
+    });
+
+    it('direct-product preview with a default polygon shape routes through the irregular nester', async () => {
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({
+        productId: 'p1',
+        kind: 'SHEET',
+        stockLengthCm: 100,
+        stockWidthCm: 100,
+        kerfMm: 0,
+        allowRotation: false,
+        defaultCutLengthCm: 10,
+        defaultCutWidthCm: 10,
+        defaultCutShapePolygon: {
+          outerCm: [
+            [0, 0],
+            [10, 0],
+            [10, 10],
+            [0, 10],
+          ],
+          holesCm: [],
+        },
+      });
+      prisma.tenant.stockRemnant.findMany.mockResolvedValue([]);
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', productId: 'p1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', productId: 'p1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, { productId: 'p1', qty: 1 });
+
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([expect.objectContaining({ shapePolygonCm: expect.objectContaining({ outerCm: expect.any(Array) }) })]),
+        }),
+      );
+    });
+  });
+
+  describe('execute/getDetail on a productId-only plan', () => {
+    it('executes a direct-product plan without touching any assembly', async () => {
+      prisma.tenant.cuttingPlan.findUnique
+        .mockResolvedValueOnce({
+          id: 'plan1',
+          companyId: 'c1',
+          productId: 'p1',
+          assemblyId: null,
+          warehouseId: 'w1',
+          qty: 1,
+          status: 'DRAFT',
+          stockItems: [{ id: 'stock1', productId: 'p1', sourceKind: 'FRESH', remnantId: null, leftoverLengthCm: 10, leftoverWidthCm: null }],
+        })
+        .mockResolvedValueOnce({ id: 'plan1', productId: 'p1', assemblyId: null, warehouseId: 'w1', status: 'EXECUTED', stockItems: [] });
+      prisma.tenant.productCuttingSpec.findFirst.mockResolvedValue({ productId: 'p1', kind: 'BAR', minRemnantLengthCm: 50 });
+
+      const result = await service.execute(user, 'plan1');
+
+      expect(prisma.tenant.cuttingPlan.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'plan1' }, data: expect.objectContaining({ status: 'EXECUTED' }) }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ after: expect.objectContaining({ assemblyId: null, productId: 'p1' }) }));
+      expect(result.id).toBe('plan1');
+    });
+  });
+
+  describe('listCuttableProducts', () => {
+    it('merges per-product draft/executed plan counts onto each spec row', async () => {
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([
+        { productId: 'p1', kind: 'BAR', defaultCutLengthCm: 150, product: { id: 'p1', name: 'Rod', article: 'R1' } },
+        { productId: 'p2', kind: 'SHEET', defaultCutLengthCm: null, product: { id: 'p2', name: 'Sheet', article: 'S1' } },
+      ]);
+      prisma.tenant.productCuttingSpec.count.mockResolvedValue(2);
+      prisma.tenant.cuttingPlan.groupBy.mockResolvedValue([
+        { productId: 'p1', status: 'DRAFT', _count: { _all: 2 }, _max: { createdAt: new Date('2026-11-01') } },
+        { productId: 'p1', status: 'EXECUTED', _count: { _all: 1 }, _max: { createdAt: new Date('2026-10-01') } },
+      ]);
+
+      const result = await service.listCuttableProducts(user, {});
+
+      expect(result.total).toBe(2);
+      const p1 = result.items.find((i: any) => i.productId === 'p1')!;
+      expect(p1.draftPlanCount).toBe(2);
+      expect(p1.executedPlanCount).toBe(1);
+      expect(p1.hasDefaultShape).toBe(true);
+      expect(p1.lastPlanAt).toEqual(new Date('2026-11-01'));
+      const p2 = result.items.find((i: any) => i.productId === 'p2')!;
+      expect(p2.draftPlanCount).toBe(0);
+      expect(p2.hasDefaultShape).toBe(false);
+      expect(p2.lastPlanAt).toBeNull();
     });
   });
 

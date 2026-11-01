@@ -1,5 +1,6 @@
 import { apiClient } from './http';
 import type { DecimalString } from './decimal';
+import type { MatchedBomLine } from './ai';
 
 /**
  * Typed wrappers for backend/src/modules/cutting/ (CuttingPlansController).
@@ -23,6 +24,10 @@ export interface ProductCuttingSpec {
   minRemnantLengthCm: DecimalString | null;
   minRemnantAreaCm2: DecimalString | null;
   allowRotation: boolean;
+  /** Direct-product cutting (2026-11-01): this product's own default piece-to-cut shape, used by "Порахувати розкрій" when run directly against the product (no assembly). Null means no default set yet. */
+  defaultCutLengthCm: DecimalString | null;
+  defaultCutWidthCm: DecimalString | null;
+  defaultCutShapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
 }
 
 export interface UpsertProductCuttingSpecInput {
@@ -33,6 +38,9 @@ export interface UpsertProductCuttingSpecInput {
   minRemnantLengthCm?: number;
   minRemnantAreaCm2?: number;
   allowRotation?: boolean;
+  defaultCutLengthCm?: number;
+  defaultCutWidthCm?: number;
+  defaultCutShapePolygon?: { outerCm: [number, number][]; holesCm: [number, number][][] };
 }
 
 export function getProductCuttingSpec(productId: string): Promise<ProductCuttingSpec | null> {
@@ -45,6 +53,11 @@ export function upsertProductCuttingSpec(productId: string, dto: UpsertProductCu
 
 export function deleteProductCuttingSpec(productId: string): Promise<void> {
   return apiClient.delete<void>(`cutting/specs/${productId}`);
+}
+
+/** Direct-product cutting (2026-11-01): upload a STEP file and get back candidate piece shapes for this product's own default cut shape — same extraction "Креслення → специфікація" already uses for BOM lines, reused as-is. Caller picks one line and folds its lengthCm/widthCm/shapePolygon into upsertProductCuttingSpec. */
+export function extractDefaultCutShape(productId: string, fileAssetId: string): Promise<{ sourceFileAssetId: string; lines: MatchedBomLine[] }> {
+  return apiClient.post<{ sourceFileAssetId: string; lines: MatchedBomLine[] }>(`cutting/specs/${productId}/extract-default-shape`, { fileAssetId });
 }
 
 export interface CuttingPlanCut {
@@ -88,7 +101,10 @@ export interface CuttingPlanMaterial {
 
 export interface CuttingPlan {
   id: string;
-  assemblyId: string;
+  /** Null for a direct-product plan (productId set instead) — exactly one of the two is ever set. */
+  assemblyId: string | null;
+  /** Direct-product cutting (2026-11-01) — null for an assembly-sourced plan. */
+  productId: string | null;
   warehouseId: string;
   qty: DecimalString;
   status: CuttingPlanStatus;
@@ -99,7 +115,9 @@ export interface CuttingPlan {
 }
 
 export interface PreviewCuttingPlanInput {
-  assemblyId: string;
+  /** Exactly one of assemblyId/productId must be set. */
+  assemblyId?: string;
+  productId?: string;
   qty: number;
   warehouseId?: string;
 }
@@ -131,4 +149,19 @@ export interface StockRemnant {
 
 export function listRemnants(filter: { productId?: string; warehouseId?: string } = {}): Promise<StockRemnant[]> {
   return apiClient.get<StockRemnant[]>('cutting/remnants', { query: filter as Record<string, string> });
+}
+
+/** Direct-product cutting (2026-11-01): every product with a ProductCuttingSpec configured, enriched with draft/executed CuttingPlan counts — backs the top-level "Розкрій" list page. */
+export interface CuttableProduct {
+  productId: string;
+  product: { id: string; article: string; name: string };
+  spec: ProductCuttingSpec;
+  hasDefaultShape: boolean;
+  draftPlanCount: number;
+  executedPlanCount: number;
+  lastPlanAt: string | null;
+}
+
+export function listCuttableProducts(filter: { search?: string; limit?: number; offset?: number } = {}): Promise<{ items: CuttableProduct[]; total: number; limit: number; offset: number }> {
+  return apiClient.get('cutting/products', { query: filter as unknown as Record<string, string> });
 }

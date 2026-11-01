@@ -13,6 +13,9 @@ import { StepBomExtractionService } from './step-bom-extraction.service';
   imports: [InventoryModule, FinanceModule, FilesModule],
   controllers: [AssembliesController],
   providers: [AssembliesService, StepBomExtractionService],
-  exports: [AssembliesService],
+  // StepBomExtractionService also exported for CuttingModule (direct-
+  // product STEP-shape upload, 2026-11-01) — reuses extraction as-is, no
+  // BOM/assembly coupling in the service itself.
+  exports: [AssembliesService, StepBomExtractionService],
 })
 export class BomModule {}
