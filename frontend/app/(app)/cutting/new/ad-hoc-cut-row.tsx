@@ -11,12 +11,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { MaterialPicker } from './material-picker';
 
 export interface AdHocRowState {
   key: string;
+  /** "довільний розкрій" means the material is as free-form as the piece — either an existing catalog product (reuses its remnants) or a typed-in custom material (no catalog, no remnants). */
+  materialMode: 'existing' | 'custom';
   materialProductId: string;
   materialKind: 'BAR' | 'SHEET' | null;
+  customLabel: string;
+  customKind: 'BAR' | 'SHEET';
+  customStockLengthCm: string;
+  customStockWidthCm: string;
+  customKerfMm: string;
   label: string;
   cutLengthCm: string;
   cutWidthCm: string;
@@ -41,7 +49,7 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
   const [shapeCandidates, setShapeCandidates] = useState<MatchedBomLine[] | null>(null);
   const [shapeError, setShapeError] = useState<string | null>(null);
 
-  const isSheet = row.materialKind === 'SHEET';
+  const isSheet = row.materialMode === 'existing' ? row.materialKind === 'SHEET' : row.customKind === 'SHEET';
 
   function adoptShapeLine(line: MatchedBomLine) {
     onChange({
@@ -78,21 +86,73 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
 
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>{t('adHocMaterialLabel')}</Label>
-          <MaterialPicker
-            value={row.materialProductId || undefined}
-            onChange={(material) =>
-              onChange({ materialProductId: material?.productId ?? '', materialKind: material?.spec.kind ?? null })
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>{t('adHocPositionLabel')}</Label>
-          <Input value={row.label} onChange={(e) => onChange({ label: e.target.value })} placeholder={t('adHocPositionPlaceholder')} />
-        </div>
+      <div className="flex gap-1.5">
+        <Button type="button" size="sm" variant={row.materialMode === 'existing' ? 'default' : 'outline'} onClick={() => onChange({ materialMode: 'existing' })}>
+          {t('adHocModeExisting')}
+        </Button>
+        <Button type="button" size="sm" variant={row.materialMode === 'custom' ? 'default' : 'outline'} onClick={() => onChange({ materialMode: 'custom' })}>
+          {t('adHocModeCustom')}
+        </Button>
       </div>
+
+      {row.materialMode === 'existing' ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>{t('adHocMaterialLabel')}</Label>
+            <MaterialPicker
+              value={row.materialProductId || undefined}
+              onChange={(material) =>
+                onChange({ materialProductId: material?.productId ?? '', materialKind: material?.spec.kind ?? null })
+              }
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('adHocPositionLabel')}</Label>
+            <Input value={row.label} onChange={(e) => onChange({ label: e.target.value })} placeholder={t('adHocPositionPlaceholder')} />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 rounded-md bg-muted/50 p-2.5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>{t('adHocCustomNameLabel')}</Label>
+              <Input value={row.customLabel} onChange={(e) => onChange({ customLabel: e.target.value })} placeholder={t('adHocCustomNamePlaceholder')} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('kindLabel')}</Label>
+              <Select value={row.customKind} onValueChange={(v) => onChange({ customKind: v as 'BAR' | 'SHEET' })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BAR">{t('kindBar')}</SelectItem>
+                  <SelectItem value="SHEET">{t('kindSheet')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>{row.customKind === 'BAR' ? t('stockLengthLabelBar') : t('stockLengthLabelSheet')}</Label>
+              <Input type="number" step="any" min={0} value={row.customStockLengthCm} onChange={(e) => onChange({ customStockLengthCm: e.target.value })} />
+            </div>
+            {row.customKind === 'SHEET' && (
+              <div className="space-y-1.5">
+                <Label>{t('stockWidthLabel')}</Label>
+                <Input type="number" step="any" min={0} value={row.customStockWidthCm} onChange={(e) => onChange({ customStockWidthCm: e.target.value })} />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>{t('kerfLabel')}</Label>
+              <Input type="number" step="any" min={0} value={row.customKerfMm} onChange={(e) => onChange({ customKerfMm: e.target.value })} placeholder="3" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('adHocPositionLabel')}</Label>
+            <Input value={row.label} onChange={(e) => onChange({ label: e.target.value })} placeholder={t('adHocPositionPlaceholder')} />
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1.5">

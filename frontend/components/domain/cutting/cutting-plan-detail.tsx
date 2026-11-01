@@ -122,7 +122,9 @@ function MaterialCard({ material }: { material: CuttingPlanMaterial }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          {material.product ? `${material.product.name}${material.product.article ? ` (${material.product.article})` : ''}` : material.productId}
+          {material.product
+            ? `${material.product.name}${material.product.article ? ` (${material.product.article})` : ''}`
+            : (material.materialLabel ?? material.productId)}
         </CardTitle>
         <CardDescription className="flex flex-wrap gap-x-4">
           <span>{material.kind === 'SHEET' ? t('freshUnitsNeededSheet', { count: material.freshUnitsNeeded }) : t('freshUnitsNeededBar', { count: material.freshUnitsNeeded })}</span>
@@ -204,8 +206,8 @@ export function CuttingPlanDetail({ planId }: CuttingPlanDetailProps) {
         )}
       </div>
 
-      {plan.materials.map((material) => (
-        <MaterialCard key={material.productId} material={material} />
+      {plan.materials.map((material, i) => (
+        <MaterialCard key={material.productId ?? `custom-${i}`} material={material} />
       ))}
 
       {plan.status === 'DRAFT' && canWrite && (

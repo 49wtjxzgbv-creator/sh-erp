@@ -1863,8 +1863,12 @@ enum CuttingPlanStockSourceKind {
 model CuttingPlanStock {
   id            String                     @id @default(uuid()) @db.Uuid
   companyId     String                     @db.Uuid
+  // Ad-hoc multi-material worksheet (2026-11-01): nullable — a custom
+  // (catalog-free) material line has no product to point at. Exactly one
+  // of productId/customMaterialLabel is set.
   cuttingPlanId String                     @db.Uuid
-  productId     String                     @db.Uuid
+  productId     String?                    @db.Uuid
+  customMaterialLabel String?              @db.Text
   sourceKind    CuttingPlanStockSourceKind
   remnantId     String?                    @db.Uuid // single-column FK, set when sourceKind=REMNANT — not cascaded, a remnant outlives any one plan
   lengthCm      Decimal                    @db.Decimal(8, 2)
@@ -1887,7 +1891,7 @@ model CuttingPlanStock {
 
   company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   cuttingPlan CuttingPlan      @relation(fields: [companyId, cuttingPlanId], references: [companyId, id], onDelete: Cascade) // composite — a stock line has no meaning without its plan
-  product     Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  product     Product?         @relation(fields: [companyId, productId], references: [companyId, id]) // composite
   cuts        CuttingPlanCut[]
 
   @@unique([companyId, id]) // composite-FK target for CuttingPlanCut
@@ -1907,7 +1911,9 @@ model CuttingPlanCut {
   id                 String   @id @default(uuid()) @db.Uuid
   companyId          String   @db.Uuid
   cuttingPlanStockId String   @db.Uuid
-  productId          String   @db.Uuid
+  // Nullable for the same reason as CuttingPlanStock.productId — mirrors
+  // the owning stock row, null for a custom (catalog-free) material.
+  productId          String?  @db.Uuid
   pieceLengthCm      Decimal  @db.Decimal(8, 2)
   pieceWidthCm       Decimal? @db.Decimal(8, 2)
   posXCm             Decimal? @db.Decimal(8, 2) // SHEET diagram layout, from the optimizer's own packing output
@@ -1932,7 +1938,7 @@ model CuttingPlanCut {
 
   company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   cuttingPlanStock CuttingPlanStock @relation(fields: [companyId, cuttingPlanStockId], references: [companyId, id], onDelete: Cascade) // composite — a cut has no meaning without its stock item
-  product          Product          @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  product          Product?         @relation(fields: [companyId, productId], references: [companyId, id]) // composite
 
   @@index([cuttingPlanStockId])
   @@index([companyId])

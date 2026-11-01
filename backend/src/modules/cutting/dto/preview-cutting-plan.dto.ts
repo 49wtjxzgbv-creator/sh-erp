@@ -1,16 +1,60 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { DefaultCutShapePolygonDto } from './upsert-product-cutting-spec.dto';
 
-// Ad-hoc multi-material worksheet (2026-11-01): one typed-in position, no
-// catalog product of its own required — only the raw material it's cut
-// FROM (materialProductId) needs a ProductCuttingSpec. Same {length, width,
-// polygon} shape as AssemblyComponent/ProductCuttingSpec's own cut fields.
+// Ad-hoc multi-material worksheet (2026-11-01): the raw material a line is
+// cut from when there's no catalog product behind it at all — "довільний
+// розкрій" means not picking from the catalog for the material either, not
+// just the piece. Same {kind, stockLengthCm, stockWidthCm, kerfMm} shape as
+// ProductCuttingSpec's own fields, just typed in per line instead of saved.
+export class CustomMaterialDto {
+  @ApiProperty({ description: 'Free-text material name/type (e.g. "Алюміній", "Дерево") — shown as this group\'s label on the plan.' })
+  @IsString()
+  label!: string;
+
+  @ApiProperty({ enum: ['BAR', 'SHEET'] })
+  @IsEnum(['BAR', 'SHEET'])
+  kind!: 'BAR' | 'SHEET';
+
+  @ApiProperty({ description: 'BAR: length of one standard bar. SHEET: the sheet\'s own length.' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  stockLengthCm!: number;
+
+  @ApiPropertyOptional({ description: 'Required for SHEET (the sheet\'s other planar dimension), unused for BAR.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  stockWidthCm?: number;
+
+  @ApiPropertyOptional({ description: 'Saw/blade loss per cut, mm. Defaults to 3.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  kerfMm?: number;
+}
+
+// Ad-hoc multi-material worksheet (2026-11-01): one typed-in position. The
+// piece itself never needs a catalog product; the material it's cut from is
+// EITHER an existing product with a ProductCuttingSpec (materialProductId,
+// reuses that product's own remnants) OR a fully custom, catalog-free
+// material (customMaterial — no remnant tracking, nothing persisted on the
+// catalog). Exactly one of the two is set per line.
 export class AdHocCutLineDto {
-  @ApiProperty({ description: 'The raw-material product this piece is cut from — must have a ProductCuttingSpec.' })
+  @ApiPropertyOptional({ description: 'The raw-material product this piece is cut from — must have a ProductCuttingSpec. Exactly one of materialProductId/customMaterial must be set.' })
+  @IsOptional()
   @IsUUID()
-  materialProductId!: string;
+  materialProductId?: string;
+
+  @ApiPropertyOptional({ description: 'A catalog-free material typed in just for this worksheet — no product, no remnant tracking. Exactly one of materialProductId/customMaterial must be set.' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomMaterialDto)
+  customMaterial?: CustomMaterialDto;
 
   @ApiPropertyOptional({ description: 'Free-text label for this position (e.g. "кришка", "бокова панель") — shown on the plan\'s cut diagrams. Not a catalog product.' })
   @IsOptional()

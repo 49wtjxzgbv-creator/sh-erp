@@ -68,7 +68,8 @@ export function extractShape(fileAssetId: string): Promise<{ sourceFileAssetId: 
 export interface CuttingPlanCut {
   id: string;
   cuttingPlanStockId: string;
-  productId: string;
+  /** Ad-hoc multi-material worksheet (2026-11-01): null for a custom (catalog-free) material's cuts. */
+  productId: string | null;
   pieceLengthCm: DecimalString;
   pieceWidthCm: DecimalString | null;
   posXCm: DecimalString | null;
@@ -83,7 +84,10 @@ export interface CuttingPlanCut {
 export interface CuttingPlanStock {
   id: string;
   cuttingPlanId: string;
-  productId: string;
+  /** Ad-hoc multi-material worksheet (2026-11-01): null for a custom (catalog-free) material — see customMaterialLabel. */
+  productId: string | null;
+  /** The typed-in material name for a custom material — null for catalog-sourced stock. */
+  customMaterialLabel: string | null;
   sourceKind: CuttingPlanStockSourceKind;
   remnantId: string | null;
   lengthCm: DecimalString;
@@ -98,8 +102,11 @@ export interface CuttingPlanStock {
 }
 
 export interface CuttingPlanMaterial {
-  productId: string;
+  /** Ad-hoc multi-material worksheet (2026-11-01): null for a custom (catalog-free) material — see materialLabel. */
+  productId: string | null;
   product: { id: string; article: string; name: string; unitId: string } | null;
+  /** The typed-in material name for a custom material — null for a catalog-sourced one (use product.name/article instead). */
+  materialLabel: string | null;
   kind: CuttingStockKind | null;
   freshUnitsNeeded: number;
   remnantsUsed: number;
@@ -121,9 +128,19 @@ export interface CuttingPlan {
   materials: CuttingPlanMaterial[];
 }
 
-/** Ad-hoc multi-material worksheet (2026-11-01): one hand-typed position — no catalog product of its own required, only the raw material it's cut from (materialProductId). */
+/** Ad-hoc multi-material worksheet (2026-11-01): a catalog-free material typed in just for one worksheet — no product, no remnant tracking. */
+export interface CustomMaterial {
+  label: string;
+  kind: CuttingStockKind;
+  stockLengthCm: number;
+  stockWidthCm?: number;
+  kerfMm?: number;
+}
+
+/** Ad-hoc multi-material worksheet (2026-11-01): one hand-typed position. The piece never needs a catalog product; the material it's cut from is EITHER an existing product (materialProductId, reuses its remnants) OR a fully custom material (customMaterial, no catalog at all) — exactly one of the two. */
 export interface AdHocCutLine {
-  materialProductId: string;
+  materialProductId?: string;
+  customMaterial?: CustomMaterial;
   label?: string;
   qty: number;
   cutLengthCm: number;

@@ -34,6 +34,23 @@ interface CutDemandLine {
   pieceLabel: string | null;
 }
 
+/** A material group's resolved cutting spec — either read from a real ProductCuttingSpec or, for a catalog-free custom material, built in-memory straight from the request. Same shape either way so the per-material loop never needs to care which. */
+interface ResolvedMaterialSpec {
+  kind: 'BAR' | 'SHEET';
+  stockLengthCm: number;
+  stockWidthCm: number | null;
+  kerfMm: number;
+  allowRotation: boolean;
+}
+
+/** Which real product (if any) and/or custom-material label a demandByProduct group key resolves to. Always populated for every group key, regardless of source (assembly/direct-product groups are always real products; ad-hoc groups may be either). */
+interface MaterialGroupInfo {
+  productId: string | null;
+  customMaterialLabel: string | null;
+  /** Only set when productId is null. */
+  customSpec: ResolvedMaterialSpec | null;
+}
+
 /** A plain rectangle, as a 4-point polygon — lets a simple BAR/SHEET-rectangle component nest on the same sheet as a real irregular-contour one via the same polygon placement engine. */
 function rectangleAsPolygon(widthCm: number, heightCm: number): Point2D[] {
   return [
@@ -67,6 +84,7 @@ export class CuttingPlansService {
     this.validateExactlyOneSource(dto);
 
     const demandByProduct = new Map<string, CutDemandLine[]>();
+    const materialGroupInfo = new Map<string, MaterialGroupInfo>();
     let qty: number;
 
     if (dto.assemblyId) {
@@ -113,25 +131,66 @@ export class CuttingPlansService {
     } else {
       // Ad-hoc multi-material worksheet (2026-11-01): the client supplies
       // the demand directly — no assembly/BOM, no single product's saved
-      // default shape. Each line names its own raw material and is grouped
-      // into the SAME demandByProduct map the assembly path already builds,
-      // so a worksheet can freely mix several different materials in one
-      // plan with zero changes to the per-material loop below.
+      // default shape. Each line's material is EITHER an existing product
+      // (materialProductId, reuses that product's own remnants) OR a fully
+      // custom, catalog-free material (customMaterial — "довільний розкрій"
+      // means not picking from the catalog for the material either, per
+      // explicit user feedback; no remnant tracking for these, nothing
+      // touches the catalog). Both kinds land in the SAME demandByProduct
+      // map the assembly path already builds, grouped under a synthetic
+      // string key for custom materials — so a worksheet can freely mix
+      // real and custom materials in one plan with zero changes to the
+      // per-material loop below beyond resolving `spec` from either source.
       const lines = dto.lines!;
-      const materialIds = Array.from(new Set(lines.map((l) => l.materialProductId)));
-      const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: materialIds } } });
-      const specByProduct = new Map(specs.map((s) => [s.productId, s]));
-      const missing = materialIds.filter((id) => !specByProduct.has(id));
-      if (missing.length > 0) {
-        throw new CodedBadRequestException(
-          'CUTTING_LINE_MATERIAL_NO_SPEC',
-          `Для товарів без спеки розкрою не можна рахувати: ${missing.join(', ')}. Увімкніть "Матеріал для розкрою" на картці товару.`,
-        );
+
+      for (const line of lines) {
+        const sourcesGiven = [Boolean(line.materialProductId), Boolean(line.customMaterial)].filter(Boolean).length;
+        if (sourcesGiven !== 1) {
+          throw new CodedBadRequestException(
+            'CUTTING_LINE_MATERIAL_SOURCE_INVALID',
+            'Кожна позиція повинна мати або товар-матеріал, або власний (довільний) матеріал — не обидва і не жодного.',
+          );
+        }
+        if (line.customMaterial && line.customMaterial.kind === 'SHEET' && line.customMaterial.stockWidthCm == null) {
+          throw new CodedBadRequestException('CUTTING_SHEET_NEEDS_WIDTH', 'Для листового матеріалу потрібно вказати ширину листа.');
+        }
+      }
+
+      const materialIds = Array.from(new Set(lines.map((l) => l.materialProductId).filter((id): id is string => Boolean(id))));
+      if (materialIds.length > 0) {
+        const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: materialIds } } });
+        const specByProduct = new Map(specs.map((s) => [s.productId, s]));
+        const missing = materialIds.filter((id) => !specByProduct.has(id));
+        if (missing.length > 0) {
+          throw new CodedBadRequestException(
+            'CUTTING_LINE_MATERIAL_NO_SPEC',
+            `Для товарів без спеки розкрою не можна рахувати: ${missing.join(', ')}. Увімкніть "Матеріал для розкрою" на картці товару.`,
+          );
+        }
       }
 
       qty = lines.reduce((sum, l) => sum + Number(l.qty), 0);
       for (const line of lines) {
-        const group = demandByProduct.get(line.materialProductId) ?? [];
+        let groupKey: string;
+        if (line.materialProductId) {
+          groupKey = line.materialProductId;
+          if (!materialGroupInfo.has(groupKey)) {
+            materialGroupInfo.set(groupKey, { productId: groupKey, customMaterialLabel: null, customSpec: null });
+          }
+        } else {
+          const cm = line.customMaterial!;
+          const kerfMm = cm.kerfMm ?? 3;
+          groupKey = `custom:${cm.kind}:${cm.stockLengthCm}:${cm.stockWidthCm ?? ''}:${kerfMm}:${cm.label}`;
+          if (!materialGroupInfo.has(groupKey)) {
+            materialGroupInfo.set(groupKey, {
+              productId: null,
+              customMaterialLabel: cm.label,
+              customSpec: { kind: cm.kind, stockLengthCm: cm.stockLengthCm, stockWidthCm: cm.stockWidthCm ?? null, kerfMm, allowRotation: true },
+            });
+          }
+        }
+
+        const group = demandByProduct.get(groupKey) ?? [];
         group.push({
           cutLengthCm: Number(line.cutLengthCm),
           cutWidthCm: line.cutWidthCm != null ? Number(line.cutWidthCm) : null,
@@ -139,7 +198,17 @@ export class CuttingPlansService {
           shapePolygon: line.cutShapePolygon?.outerCm ? (line.cutShapePolygon as unknown as ShapePolygon) : null,
           pieceLabel: line.label ?? null,
         });
-        demandByProduct.set(line.materialProductId, group);
+        demandByProduct.set(groupKey, group);
+      }
+    }
+
+    // Assembly/direct-product group keys are always real productIds —
+    // fill those in now so the per-material loop below can treat every
+    // group uniformly regardless of source. (Ad-hoc already populated its
+    // own entries, real and custom, above.)
+    for (const groupKey of demandByProduct.keys()) {
+      if (!materialGroupInfo.has(groupKey)) {
+        materialGroupInfo.set(groupKey, { productId: groupKey, customMaterialLabel: null, customSpec: null });
       }
     }
 
@@ -149,25 +218,53 @@ export class CuttingPlansService {
       data: { assemblyId: dto.assemblyId ?? null, productId: dto.productId ?? null, warehouseId, qty, status: 'DRAFT', createdById: user.userId } as any,
     });
 
-    for (const [productId, lines] of demandByProduct) {
-      const spec = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId } });
-      // The product's cutting spec may have been removed after the BOM line
-      // was set with a cutLengthCm — this demand group is simply dropped
-      // rather than crashing the whole preview.
-      if (!spec) continue;
+    for (const [groupKey, lines] of demandByProduct) {
+      const groupInfo = materialGroupInfo.get(groupKey)!;
+      const { productId, customMaterialLabel } = groupInfo;
+      // Real-vs-custom fallback for the optimizer's own `label` field
+      // (always a non-empty string) — productId when this group has one,
+      // else the synthetic group key. Also doubles as the sentinel to
+      // detect "no real piece label was given" when persisting pieceLabel
+      // below (the optimizer carries `label` through to every output cut
+      // untouched, so comparing against this exact fallback recovers
+      // whether a real per-piece label was set).
+      const labelFallback = productId ?? groupKey;
 
-      const remnants = await this.prisma.tenant.stockRemnant.findMany({ where: { productId, warehouseId, status: 'AVAILABLE' } });
+      let spec: ResolvedMaterialSpec;
+      let remnants: { id: string; lengthCm: unknown; widthCm: unknown }[] = [];
+      if (productId) {
+        const dbSpec = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId } });
+        // The product's cutting spec may have been removed after the BOM
+        // line was set with a cutLengthCm — this demand group is simply
+        // dropped rather than crashing the whole preview.
+        if (!dbSpec) continue;
+        spec = {
+          kind: dbSpec.kind,
+          stockLengthCm: Number(dbSpec.stockLengthCm),
+          stockWidthCm: dbSpec.stockWidthCm != null ? Number(dbSpec.stockWidthCm) : null,
+          kerfMm: Number(dbSpec.kerfMm),
+          allowRotation: dbSpec.allowRotation,
+        };
+        remnants = await this.prisma.tenant.stockRemnant.findMany({ where: { productId, warehouseId, status: 'AVAILABLE' } });
+      } else {
+        // Custom (catalog-free) material (2026-11-01) — no remnants exist
+        // or ever get created for these (nothing in the catalog to tie a
+        // StockRemnant.productId to); `spec` was already fully resolved
+        // from the request when this group was first seen above.
+        spec = groupInfo.customSpec!;
+      }
 
       if (spec.kind === 'BAR') {
-        const demand: BarDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? productId, lengthCm: l.cutLengthCm, qty: l.qty }));
+        const demand: BarDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? labelFallback, lengthCm: l.cutLengthCm, qty: l.qty }));
         const availableRemnants: AvailableBarRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm) }));
-        const result = optimizeBarCutting(demand, Number(spec.stockLengthCm), Number(spec.kerfMm), availableRemnants);
+        const result = optimizeBarCutting(demand, spec.stockLengthCm, spec.kerfMm, availableRemnants);
 
         for (const stockItem of result.stockItems) {
           const stockRow = await this.prisma.tenant.cuttingPlanStock.create({
             data: {
               cuttingPlanId: plan.id,
               productId,
+              customMaterialLabel,
               sourceKind: stockItem.sourceKind,
               remnantId: stockItem.remnantId,
               lengthCm: stockItem.lengthCm,
@@ -180,7 +277,7 @@ export class CuttingPlansService {
                 cuttingPlanStockId: stockRow.id,
                 productId,
                 pieceLengthCm: c.pieceLengthCm,
-                pieceLabel: c.label !== productId ? c.label : null,
+                pieceLabel: c.label !== labelFallback ? c.label : null,
               })) as any,
             });
           }
@@ -192,19 +289,20 @@ export class CuttingPlansService {
         // the same grid/raster engine, so everything shares one set of
         // sheets/remnants.
         const demand: IrregularSheetDemandLine[] = lines.map((l) => ({
-          label: l.pieceLabel ?? productId,
+          label: l.pieceLabel ?? labelFallback,
           outerCm: l.shapePolygon ? l.shapePolygon.outerCm : rectangleAsPolygon(l.cutWidthCm ?? 0, l.cutLengthCm),
           holesCm: l.shapePolygon ? l.shapePolygon.holesCm : [],
           qty: l.qty,
         }));
         const availableRemnants: AvailableIrregularSheetRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm), widthCm: Number(r.widthCm ?? 0) }));
-        const result = optimizeIrregularSheetNesting(demand, Number(spec.stockLengthCm), Number(spec.stockWidthCm ?? 0), Number(spec.kerfMm), availableRemnants, spec.allowRotation);
+        const result = optimizeIrregularSheetNesting(demand, spec.stockLengthCm, spec.stockWidthCm ?? 0, spec.kerfMm, availableRemnants, spec.allowRotation);
 
         for (const stockItem of result.stockItems) {
           const stockRow = await this.prisma.tenant.cuttingPlanStock.create({
             data: {
               cuttingPlanId: plan.id,
               productId,
+              customMaterialLabel,
               sourceKind: stockItem.sourceKind,
               remnantId: stockItem.remnantId,
               lengthCm: stockItem.lengthCm,
@@ -227,21 +325,22 @@ export class CuttingPlansService {
                 posYCm: c.posYCm,
                 rotated: c.rotated,
                 shapePolygonCm: { outerCm: c.outerCm, holesCm: c.holesCm },
-                pieceLabel: c.label !== productId ? c.label : null,
+                pieceLabel: c.label !== labelFallback ? c.label : null,
               })) as any,
             });
           }
         }
       } else {
-        const demand: SheetDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? productId, widthCm: l.cutWidthCm ?? 0, heightCm: l.cutLengthCm, qty: l.qty }));
+        const demand: SheetDemandLine[] = lines.map((l) => ({ label: l.pieceLabel ?? labelFallback, widthCm: l.cutWidthCm ?? 0, heightCm: l.cutLengthCm, qty: l.qty }));
         const availableRemnants: AvailableSheetRemnant[] = remnants.map((r) => ({ remnantId: r.id, lengthCm: Number(r.lengthCm), widthCm: Number(r.widthCm ?? 0) }));
-        const result = optimizeSheetNesting(demand, Number(spec.stockLengthCm), Number(spec.stockWidthCm ?? 0), Number(spec.kerfMm), availableRemnants, spec.allowRotation);
+        const result = optimizeSheetNesting(demand, spec.stockLengthCm, spec.stockWidthCm ?? 0, spec.kerfMm, availableRemnants, spec.allowRotation);
 
         for (const stockItem of result.stockItems) {
           const stockRow = await this.prisma.tenant.cuttingPlanStock.create({
             data: {
               cuttingPlanId: plan.id,
               productId,
+              customMaterialLabel,
               sourceKind: stockItem.sourceKind,
               remnantId: stockItem.remnantId,
               lengthCm: stockItem.lengthCm,
@@ -260,7 +359,7 @@ export class CuttingPlansService {
                 posXCm: c.posXCm,
                 posYCm: c.posYCm,
                 rotated: c.rotated,
-                pieceLabel: c.label !== productId ? c.label : null,
+                pieceLabel: c.label !== labelFallback ? c.label : null,
               })) as any,
             });
           }
@@ -285,6 +384,10 @@ export class CuttingPlansService {
           data: { status: 'CONSUMED', consumedAt: new Date(), consumedInCuttingPlanId: plan.id },
         });
       }
+
+      // Custom (catalog-free) material (2026-11-01) — no product, so no
+      // ProductCuttingSpec and no remnant to ever create from its leftover.
+      if (!stockItem.productId) continue;
 
       const spec = await this.prisma.tenant.productCuttingSpec.findFirst({ where: { productId: stockItem.productId } });
       if (!spec) continue;
@@ -336,19 +439,31 @@ export class CuttingPlansService {
     });
     if (!plan) throw new CodedNotFoundException('CUTTING_PLAN_NOT_FOUND', `Cutting plan ${cuttingPlanId} not found.`);
 
-    const productIds = Array.from(new Set(plan.stockItems.map((s) => s.productId)));
+    // Ad-hoc multi-material worksheet (2026-11-01): a stock item may have
+    // no productId at all (a custom, catalog-free material) — group by
+    // productId when present, else by (customMaterialLabel, stock dims),
+    // which is safe because every stock row from the same preview()-time
+    // group necessarily shares the same nominal stock size + label (that's
+    // what "same material" meant when the demand was grouped).
+    const groupKeyOf = (s: { productId: string | null; customMaterialLabel: string | null; lengthCm: unknown; widthCm: unknown }) =>
+      s.productId ? `p:${s.productId}` : `c:${s.customMaterialLabel}:${s.lengthCm}:${s.widthCm ?? ''}`;
+
+    const productIds = Array.from(new Set(plan.stockItems.map((s) => s.productId).filter((id): id is string => id != null)));
     const products = await this.prisma.tenant.product.findMany({ where: { id: { in: productIds } } });
     const productById = new Map(products.map((p) => [p.id, p]));
 
     const specs = await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: productIds } } });
     const specByProduct = new Map(specs.map((s) => [s.productId, s]));
 
-    const materials = productIds.map((productId) => {
-      const stockItems = plan.stockItems.filter((s) => s.productId === productId);
+    const groupKeys = Array.from(new Set(plan.stockItems.map((s) => groupKeyOf(s))));
+    const materials = groupKeys.map((groupKey) => {
+      const stockItems = plan.stockItems.filter((s) => groupKeyOf(s) === groupKey);
+      const first = stockItems[0];
       return {
-        productId,
-        product: productById.get(productId) ?? null,
-        kind: specByProduct.get(productId)?.kind ?? null,
+        productId: first.productId,
+        product: first.productId ? (productById.get(first.productId) ?? null) : null,
+        materialLabel: first.customMaterialLabel ?? null,
+        kind: first.productId ? (specByProduct.get(first.productId)?.kind ?? null) : first.widthCm != null ? 'SHEET' : 'BAR',
         freshUnitsNeeded: stockItems.filter((s) => s.sourceKind === 'FRESH').length,
         remnantsUsed: stockItems.filter((s) => s.sourceKind === 'REMNANT').length,
         stockItems,

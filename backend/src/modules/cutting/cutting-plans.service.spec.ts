@@ -287,6 +287,115 @@ describe('CuttingPlansService', () => {
         expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ pieceLabel: 'панель' })]) }),
       );
     });
+
+    it('throws when a line has neither materialProductId nor customMaterial', async () => {
+      await expect(service.preview(user, { lines: [{ qty: 1, cutLengthCm: 10 }] } as any)).rejects.toThrow();
+    });
+
+    it('throws when a line has both materialProductId and customMaterial', async () => {
+      await expect(
+        service.preview(user, {
+          lines: [{ materialProductId: 'p1', customMaterial: { label: 'x', kind: 'BAR', stockLengthCm: 100 }, qty: 1, cutLengthCm: 10 }],
+        } as any),
+      ).rejects.toThrow();
+    });
+
+    it('throws when a custom SHEET material has no stockWidthCm', async () => {
+      await expect(
+        service.preview(user, {
+          lines: [{ customMaterial: { label: 'Алюміній', kind: 'SHEET', stockLengthCm: 100 }, qty: 1, cutLengthCm: 10 }],
+        } as any),
+      ).rejects.toThrow();
+    });
+
+    it('custom material: no catalog/remnant lookup, persists customMaterialLabel and null productId', async () => {
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, {
+        lines: [{ customMaterial: { label: 'Алюміній', kind: 'BAR', stockLengthCm: 300, kerfMm: 2 }, qty: 2, cutLengthCm: 90 }],
+      } as any);
+
+      // No per-material catalog/remnant lookup for a material that isn't a
+      // real product (getDetail()'s own unconditional findMany({in: []})
+      // at the end of preview() is unrelated and expected).
+      expect(prisma.tenant.productCuttingSpec.findFirst).not.toHaveBeenCalled();
+      expect(prisma.tenant.stockRemnant.findMany).not.toHaveBeenCalled();
+
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ productId: null, customMaterialLabel: 'Алюміній' }) }),
+      );
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ productId: null })]) }),
+      );
+    });
+
+    it('custom material: two lines with identical custom material merge into one group', async () => {
+      prisma.tenant.cuttingPlan.create.mockResolvedValue({ id: 'plan1', warehouseId: 'w1' });
+      prisma.tenant.cuttingPlanStock.create.mockResolvedValue({ id: 'stock1' });
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({ id: 'plan1', warehouseId: 'w1', status: 'DRAFT', stockItems: [] });
+
+      await service.preview(user, {
+        lines: [
+          { customMaterial: { label: 'Дерево', kind: 'BAR', stockLengthCm: 400 }, qty: 1, cutLengthCm: 100, label: 'планка 1' },
+          { customMaterial: { label: 'Дерево', kind: 'BAR', stockLengthCm: 400 }, qty: 1, cutLengthCm: 100, label: 'планка 2' },
+        ],
+      } as any);
+
+      // Both pieces nested together on shared stock -> only one "Нова
+      // штанга/лист" stock row created for a single 200cm-of-400cm demand.
+      expect(prisma.tenant.cuttingPlanStock.create).toHaveBeenCalledTimes(1);
+      expect(prisma.tenant.cuttingPlanCut.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.arrayContaining([expect.objectContaining({ pieceLabel: 'планка 1' }), expect.objectContaining({ pieceLabel: 'планка 2' })]),
+        }),
+      );
+    });
+
+    it('custom material: execute() never creates a StockRemnant for it', async () => {
+      prisma.tenant.cuttingPlan.findUnique
+        .mockResolvedValueOnce({
+          id: 'plan1',
+          companyId: 'c1',
+          assemblyId: null,
+          productId: null,
+          warehouseId: 'w1',
+          status: 'DRAFT',
+          stockItems: [{ id: 'stock1', productId: null, customMaterialLabel: 'Алюміній', sourceKind: 'FRESH', remnantId: null, leftoverLengthCm: 220, leftoverWidthCm: null }],
+        })
+        .mockResolvedValueOnce({ id: 'plan1', assemblyId: null, productId: null, warehouseId: 'w1', status: 'EXECUTED', stockItems: [] });
+
+      await service.execute(user, 'plan1');
+
+      expect(prisma.tenant.productCuttingSpec.findFirst).not.toHaveBeenCalled();
+      expect(prisma.tenant.stockRemnant.create).not.toHaveBeenCalled();
+      expect(prisma.tenant.cuttingPlan.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'plan1' }, data: expect.objectContaining({ status: 'EXECUTED' }) }),
+      );
+    });
+
+    it('getDetail groups custom-material stock items by label+dims, product null', async () => {
+      prisma.tenant.cuttingPlan.findUnique.mockResolvedValue({
+        id: 'plan1',
+        assemblyId: null,
+        productId: null,
+        warehouseId: 'w1',
+        status: 'DRAFT',
+        stockItems: [
+          { id: 's1', productId: null, customMaterialLabel: 'Алюміній', lengthCm: 300, widthCm: null, sourceKind: 'FRESH', cuts: [] },
+          { id: 's2', productId: null, customMaterialLabel: 'Алюміній', lengthCm: 300, widthCm: null, sourceKind: 'FRESH', cuts: [] },
+        ],
+      });
+
+      const detail = await service.getDetail(user, 'plan1');
+
+      expect(detail.materials).toHaveLength(1);
+      expect(detail.materials[0]).toEqual(
+        expect.objectContaining({ productId: null, product: null, materialLabel: 'Алюміній', kind: 'BAR' }),
+      );
+      expect(detail.materials[0].stockItems).toHaveLength(2);
+    });
   });
 
   describe('execute/getDetail on a productId-only plan', () => {

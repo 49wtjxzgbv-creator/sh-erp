@@ -15,7 +15,22 @@ import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { AdHocCutRow, type AdHocRowState } from './ad-hoc-cut-row';
 
 function newRow(): AdHocRowState {
-  return { key: crypto.randomUUID(), materialProductId: '', materialKind: null, label: '', cutLengthCm: '', cutWidthCm: '', shapePolygon: null, qty: '' };
+  return {
+    key: crypto.randomUUID(),
+    materialMode: 'existing',
+    materialProductId: '',
+    materialKind: null,
+    customLabel: '',
+    customKind: 'BAR',
+    customStockLengthCm: '',
+    customStockWidthCm: '',
+    customKerfMm: '',
+    label: '',
+    cutLengthCm: '',
+    cutWidthCm: '',
+    shapePolygon: null,
+    qty: '',
+  };
 }
 
 /**
@@ -47,7 +62,13 @@ export default function NewAdHocCuttingPlanPage() {
     setRows((prev) => prev.filter((r) => r.key !== key));
   }
 
-  const valid = rows.length > 0 && rows.every((r) => r.materialProductId && r.cutLengthCm && r.qty);
+  const valid =
+    rows.length > 0 &&
+    rows.every((r) => {
+      if (!r.cutLengthCm || !r.qty) return false;
+      if (r.materialMode === 'existing') return Boolean(r.materialProductId);
+      return Boolean(r.customLabel && r.customStockLengthCm && (r.customKind === 'BAR' || r.customStockWidthCm));
+    });
 
   async function handleCalculate() {
     if (!valid) return;
@@ -56,7 +77,17 @@ export default function NewAdHocCuttingPlanPage() {
       const plan = await preview.mutateAsync({
         warehouseId,
         lines: rows.map((r) => ({
-          materialProductId: r.materialProductId,
+          materialProductId: r.materialMode === 'existing' ? r.materialProductId : undefined,
+          customMaterial:
+            r.materialMode === 'custom'
+              ? {
+                  label: r.customLabel,
+                  kind: r.customKind,
+                  stockLengthCm: Number(r.customStockLengthCm),
+                  stockWidthCm: r.customKind === 'SHEET' ? Number(r.customStockWidthCm) : undefined,
+                  kerfMm: r.customKerfMm ? Number(r.customKerfMm) : undefined,
+                }
+              : undefined,
           label: r.label || undefined,
           qty: Number(r.qty),
           cutLengthCm: Number(r.cutLengthCm),
