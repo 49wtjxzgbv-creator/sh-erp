@@ -548,7 +548,7 @@
     "defaultShapeSectionTitle": "Direct-cutting piece shape",
     "defaultShapeSectionDescription": "The shape of the piece cut directly from this product, without a BOM — set manually or upload a STEP file.",
     "uploadStepLabel": "Upload STEP/DXF",
-    "shapeFromStepBadge": "Shape from STEP",
+    "shapeFromStepBadge": "Shape from file",
     "shapeExtractionEmpty": "No parts found in this file.",
     "pickExtractedShapeTitle": "Multiple parts found in this file — pick one",
     "backToCuttingList": "Back to cutting list",

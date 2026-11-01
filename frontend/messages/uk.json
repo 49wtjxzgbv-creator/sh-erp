@@ -550,7 +550,7 @@
     "defaultShapeSectionTitle": "Деталь для прямого розкрою",
     "defaultShapeSectionDescription": "Форма деталі, яку ріжуть з цього товару напряму, без специфікації — вкажіть розмір вручну або завантажте STEP-файл.",
     "uploadStepLabel": "Завантажити STEP/DXF",
-    "shapeFromStepBadge": "Форма з STEP",
+    "shapeFromStepBadge": "Форма з файлу",
     "shapeExtractionEmpty": "У файлі не знайдено жодної деталі.",
     "pickExtractedShapeTitle": "У файлі знайдено кілька деталей — оберіть потрібну",
     "backToCuttingList": "До списку розкрою",
