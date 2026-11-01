@@ -31,6 +31,16 @@ export function SessionBoundary({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated]);
 
+  // Covers the session getting cleared well AFTER the initial mount (e.g.
+  // restoreSession()'s own cross-tab identity-swap guard firing from a
+  // mid-session 401-retry) — the effect above only ever runs once, on the
+  // first !isHydrated render, so without this a cleared-mid-session tab
+  // would just render blank forever instead of sending the user back to
+  // /login.
+  useEffect(() => {
+    if (isHydrated && !accessToken) router.replace('/login');
+  }, [isHydrated, accessToken, router]);
+
   if (!isHydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">

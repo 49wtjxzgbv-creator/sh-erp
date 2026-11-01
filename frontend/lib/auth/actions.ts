@@ -2,6 +2,7 @@ import { useSessionStore } from './session-store';
 import { serializedRefresh } from './refresh-mutex';
 import { ApiError, type ApiErrorBody } from '../api-client/types';
 import { queryClient } from '@/app/providers';
+import { toast } from '@/lib/hooks/use-toast';
 
 /**
  * Client-side auth actions. These call our own same-origin app/api/auth/*
@@ -104,6 +105,7 @@ export async function logout(): Promise<void> {
  */
 export async function restoreSession(): Promise<boolean> {
   const previousUserId = useSessionStore.getState().userId;
+  const previousCompanyId = useSessionStore.getState().companyId;
   try {
     const result = await serializedRefresh('sh-erp-auth-refresh', '/api/auth/refresh');
     if (!result.ok) {
@@ -113,6 +115,25 @@ export async function restoreSession(): Promise<boolean> {
     }
     const session = result.body as SessionResponse;
     if (previousUserId && previousUserId !== session.userId) queryClient.clear();
+
+    // Real incident (2026-11-01): the httpOnly refresh cookie is one plain
+    // domain cookie shared by every tab in the browser, not scoped per tab.
+    // If a DIFFERENT tab logs in or impersonates another company after this
+    // tab already hydrated its own identity, this tab's later refresh (the
+    // 401-retry path above is the common trigger, mid-session, well after
+    // SessionBoundary's initial mount) would otherwise silently adopt
+    // whatever identity that other tab left in the cookie — so an action
+    // taken here, still showing this tab's original company in the UI,
+    // would actually read/write a different company's data. A tab's very
+    // first restore (previousUserId/previousCompanyId both still null) can
+    // never hit this — there is nothing yet to disagree with.
+    if (previousCompanyId && (previousUserId !== session.userId || previousCompanyId !== session.companyId)) {
+      useSessionStore.getState().clearSession();
+      queryClient.clear();
+      toast.error('В іншій вкладці відбувся вхід в інший акаунт чи компанію — увійдіть у цій вкладці ще раз.', 'Сесію змінено в іншій вкладці');
+      return false;
+    }
+
     useSessionStore.getState().setSession(session);
     return true;
   } catch {
