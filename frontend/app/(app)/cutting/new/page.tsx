@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Plus, Scissors } from 'lucide-react';
-import { usePreviewCuttingPlan, useCuttableProducts } from '@/lib/hooks/use-cutting';
+import { usePreviewCuttingPlan } from '@/lib/hooks/use-cutting';
 import { useWarehouses } from '@/lib/hooks/use-inventory';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -15,7 +15,7 @@ import { RequirePermission } from '@/components/domain/auth/require-permission';
 import { AdHocCutRow, type AdHocRowState } from './ad-hoc-cut-row';
 
 function newRow(): AdHocRowState {
-  return { key: crypto.randomUUID(), materialProductId: '', label: '', cutLengthCm: '', cutWidthCm: '', shapePolygon: null, qty: '' };
+  return { key: crypto.randomUUID(), materialProductId: '', materialKind: null, label: '', cutLengthCm: '', cutWidthCm: '', shapePolygon: null, qty: '' };
 }
 
 /**
@@ -33,14 +33,11 @@ export default function NewAdHocCuttingPlanPage() {
   const router = useRouter();
   const apiErrorMessage = useApiErrorMessage();
   const { data: warehouses } = useWarehouses();
-  const { data: materialsData } = useCuttableProducts({ limit: 200 });
   const preview = usePreviewCuttingPlan();
 
   const [rows, setRows] = useState<AdHocRowState[]>([newRow()]);
   const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-
-  const materials = materialsData?.items ?? [];
 
   function updateRow(key: string, patch: Partial<AdHocRowState>) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -86,7 +83,6 @@ export default function NewAdHocCuttingPlanPage() {
             <AdHocCutRow
               key={row.key}
               row={row}
-              materials={materials}
               onChange={(patch) => updateRow(row.key, patch)}
               onRemove={() => removeRow(row.key)}
               removable={rows.length > 1}

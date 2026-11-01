@@ -7,16 +7,16 @@ import { useExtractShape } from '@/lib/hooks/use-cutting';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { uploadFile } from '@/lib/api-client/files';
 import type { MatchedBomLine } from '@/lib/api-client/ai';
-import type { CuttableProduct } from '@/lib/api-client/cutting';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { MaterialPicker } from './material-picker';
 
 export interface AdHocRowState {
   key: string;
   materialProductId: string;
+  materialKind: 'BAR' | 'SHEET' | null;
   label: string;
   cutLengthCm: string;
   cutWidthCm: string;
@@ -26,14 +26,13 @@ export interface AdHocRowState {
 
 export interface AdHocCutRowProps {
   row: AdHocRowState;
-  materials: CuttableProduct[];
   onChange: (patch: Partial<AdHocRowState>) => void;
   onRemove: () => void;
   removable: boolean;
 }
 
 /** One position in the ad-hoc multi-material worksheet — own material/shape/qty, own STEP-upload state (why this is a separate component: useExtractShape must be called once per row, not inside the parent's .map()). */
-export function AdHocCutRow({ row, materials, onChange, onRemove, removable }: AdHocCutRowProps) {
+export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowProps) {
   const t = useTranslations('cutting');
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
@@ -42,8 +41,7 @@ export function AdHocCutRow({ row, materials, onChange, onRemove, removable }: A
   const [shapeCandidates, setShapeCandidates] = useState<MatchedBomLine[] | null>(null);
   const [shapeError, setShapeError] = useState<string | null>(null);
 
-  const material = materials.find((m) => m.productId === row.materialProductId);
-  const isSheet = material?.spec.kind === 'SHEET';
+  const isSheet = row.materialKind === 'SHEET';
 
   function adoptShapeLine(line: MatchedBomLine) {
     onChange({
@@ -83,18 +81,12 @@ export function AdHocCutRow({ row, materials, onChange, onRemove, removable }: A
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label>{t('adHocMaterialLabel')}</Label>
-          <Select value={row.materialProductId || undefined} onValueChange={(v) => onChange({ materialProductId: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder={t('adHocMaterialPlaceholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              {materials.map((m) => (
-                <SelectItem key={m.productId} value={m.productId}>
-                  {m.product.article} — {m.product.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MaterialPicker
+            value={row.materialProductId || undefined}
+            onChange={(material) =>
+              onChange({ materialProductId: material?.productId ?? '', materialKind: material?.spec.kind ?? null })
+            }
+          />
         </div>
         <div className="space-y-1.5">
           <Label>{t('adHocPositionLabel')}</Label>
