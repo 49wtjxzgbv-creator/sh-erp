@@ -126,29 +126,29 @@ export default function SupplierPortalCuttingPage() {
   // "деталі розкрою назва має бути випадаюче меню і пошук коли починаємо вводити
   // перші символи" (2026-11-02) — one combined, pre-built search index for every
   // row's name field (see CuttingLineRow's own EntityCombobox), catalog entries
-  // and open-order items alike; only items with a saved cutting spec are worth
-  // searching, since picking anything else would have no dimensions to adopt.
+  // and open-order items alike. EVERY item is searchable by name regardless of
+  // whether it has a saved cutting spec (2026-11-02 follow-up — "пише що нічого
+  // не знайдено": restricting the index to only cuttingSpec-bearing items made
+  // the search find nothing at all for a company that hasn't configured any
+  // yet, which is the common case; a spec is just an optional dimension
+  // pre-fill, not a requirement to be found by name at all).
   const pickerItems = useMemo<CuttingPickerItem[]>(() => {
-    const fromCatalog: CuttingPickerItem[] = catalog
-      .filter((c) => c.cuttingSpec)
-      .map((c) => ({
-        key: `catalog:${c.id}`,
-        displayLabel: `${c.article} — ${c.name}`,
-        source: 'catalog',
-        cutLengthCm: c.cuttingSpec!.defaultCutLengthCm ?? '',
-        cutWidthCm: c.cuttingSpec!.defaultCutWidthCm ?? '',
-        cutShapePolygon: c.cuttingSpec!.defaultCutShapePolygon ?? null,
-      }));
-    const fromStock: CuttingPickerItem[] = stockItems
-      .filter((s) => s.cuttingSpec)
-      .map((s) => ({
-        key: `order:${s.itemId}`,
-        displayLabel: `${s.article} — ${s.productName}`,
-        source: 'order',
-        cutLengthCm: s.cuttingSpec!.defaultCutLengthCm ?? '',
-        cutWidthCm: s.cuttingSpec!.defaultCutWidthCm ?? '',
-        cutShapePolygon: s.cuttingSpec!.defaultCutShapePolygon ?? null,
-      }));
+    const fromCatalog: CuttingPickerItem[] = catalog.map((c) => ({
+      key: `catalog:${c.id}`,
+      displayLabel: `${c.article} — ${c.name}`,
+      source: 'catalog',
+      cutLengthCm: c.cuttingSpec?.defaultCutLengthCm ?? '',
+      cutWidthCm: c.cuttingSpec?.defaultCutWidthCm ?? '',
+      cutShapePolygon: c.cuttingSpec?.defaultCutShapePolygon ?? null,
+    }));
+    const fromStock: CuttingPickerItem[] = stockItems.map((s) => ({
+      key: `order:${s.itemId}`,
+      displayLabel: `${s.article} — ${s.productName}`,
+      source: 'order',
+      cutLengthCm: s.cuttingSpec?.defaultCutLengthCm ?? '',
+      cutWidthCm: s.cuttingSpec?.defaultCutWidthCm ?? '',
+      cutShapePolygon: s.cuttingSpec?.defaultCutShapePolygon ?? null,
+    }));
     return [...fromCatalog, ...fromStock];
   }, [catalog, stockItems]);
 

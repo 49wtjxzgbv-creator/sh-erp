@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -76,6 +76,7 @@ export function CuttingLineRow({ row, isSheet, pickerItems, onChange, onRemove, 
           onOpenChange={setOpen}
           items={filteredItems}
           getKey={(item) => item.key}
+          leading={<Search className="h-4 w-4 shrink-0 text-muted-foreground" />}
           onSelect={(item) => {
             onChange({ label: item.displayLabel, cutLengthCm: item.cutLengthCm, cutWidthCm: item.cutWidthCm, cutShapePolygon: item.cutShapePolygon });
             setOpen(false);
