@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useTranslations } from 'next-intl';
+import { Eye, Download } from 'lucide-react';
 import { is3DModelFile, isGlbFile, isPdfFileByName, isImageFileByName } from './entity-documents-field';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -14,45 +16,59 @@ export interface PreviewableFile {
   downloadUrl: string;
 }
 
+function isPreviewable(name: string): boolean {
+  return is3DModelFile(name) || isImageFileByName(name) || isPdfFileByName(name);
+}
+
 /**
- * "має бути передогляд всіх цих файлів у програмі" (2026-11-02) — generic,
- * read-only in-app preview for a bare {id, originalName, downloadUrl}
- * (no upload/delete context, unlike EntityDocumentsField, which this
- * mirrors the dispatch logic of). No mimeType in hand here, so detection
- * is extension-only (isPdfFileByName/isImageFileByName, siblings of
- * EntityDocumentsField's own mimeType-aware checks). A directly-uploaded
- * .glb's `downloadUrl` already points at usable glb bytes — no
- * convertedDownloadUrl needed, this is never a STEP-conversion product.
- * Anything not recognized falls back to the plain download-in-new-tab
- * behavior this component replaces.
+ * "там де файли має бути кнопка передогляд і кнопка завантажити"
+ * (2026-11-02) — filename as plain text + two explicit icon buttons,
+ * mirroring `EntityDocumentsField`'s own eye/download pair exactly
+ * (`files.view`/`files.download` i18n keys reused directly) rather than
+ * one ambiguous "click the name" control. The eye button only renders for
+ * a type this component can actually preview (image/pdf/3d) — same
+ * `isViewable` gating EntityDocumentsField applies — download always
+ * renders, a real `<a download>` link rather than `window.open`, so the
+ * browser's native save-file flow handles it instead of just opening a
+ * new tab.
  */
 export function FilePreviewButton({ file, className }: { file: PreviewableFile; className?: string }) {
+  const t = useTranslations('files');
   const [open3D, setOpen3D] = useState(false);
   const [openPdf, setOpenPdf] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
-  function handleClick() {
+  function handlePreview() {
     if (is3DModelFile(file.originalName)) {
       setOpen3D(true);
     } else if (isImageFileByName(file.originalName)) {
       setLightboxSrc(file.downloadUrl);
     } else if (isPdfFileByName(file.originalName)) {
       setOpenPdf(true);
-    } else {
-      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
   return (
-    <>
-      <button
-        type="button"
-        className={className ?? 'truncate text-left text-sm text-primary underline-offset-2 hover:underline'}
-        title={file.originalName}
-        onClick={handleClick}
-      >
+    <div className={className ?? 'flex items-center gap-2'}>
+      <span className="min-w-0 flex-1 truncate text-sm" title={file.originalName}>
         {file.originalName}
-      </button>
+      </span>
+      {isPreviewable(file.originalName) && (
+        <button type="button" onClick={handlePreview} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label={t('view')} title={t('view')}>
+          <Eye className="h-4 w-4" />
+        </button>
+      )}
+      <a
+        href={file.downloadUrl}
+        download={file.originalName}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+        aria-label={t('download')}
+        title={t('download')}
+      >
+        <Download className="h-4 w-4" />
+      </a>
 
       {lightboxSrc && <PhotoLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
@@ -77,6 +93,6 @@ export function FilePreviewButton({ file, className }: { file: PreviewableFile; 
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
