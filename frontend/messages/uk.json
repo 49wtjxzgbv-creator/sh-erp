@@ -1975,7 +1975,8 @@
     "prStatusDRAFT": "Чернетка",
     "prStatusSENT": "Надіслано",
     "prStatusCONVERTED": "Перетворено на замовлення",
-    "prStatusCANCELLED": "Скасовано"
+    "prStatusCANCELLED": "Скасовано",
+    "attachFiles": "Файли"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

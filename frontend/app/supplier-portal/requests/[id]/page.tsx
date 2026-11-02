@@ -124,6 +124,7 @@ export default function SupplierPortalRequestDetailPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qty')}</TableHead>
                 <TableHead className="w-40">{t('yourPrice')}</TableHead>
+                <TableHead>{t('attachFiles')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -144,6 +145,25 @@ export default function SupplierPortalRequestDetailPage() {
                       value={prices[item.id] ?? ''}
                       onChange={(e) => setPrices((prev) => ({ ...prev, [item.id]: e.target.value }))}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {item.attachedFiles && item.attachedFiles.length > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {item.attachedFiles.map((file) => (
+                          <button
+                            key={file.id}
+                            type="button"
+                            className="truncate text-left text-sm text-primary underline-offset-2 hover:underline"
+                            title={file.originalName}
+                            onClick={() => window.open(file.downloadUrl, '_blank', 'noopener,noreferrer')}
+                          >
+                            {file.originalName}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

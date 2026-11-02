@@ -178,6 +178,23 @@ describe('FilesService', () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'file.deleted' }));
   });
 
+  it('listByIds resolves known ids to a name + presigned download URL each, skipping any id that is not found or soft-deleted', async () => {
+    prisma.tenant.fileAsset.findMany.mockResolvedValue([
+      { id: 'f1', originalName: 'invoice.pdf', storageKey: 'tenants/c1/product_document/product/p1/invoice.pdf' },
+    ]);
+
+    const result = await service.listByIds(user, ['f1', 'f-missing']);
+
+    expect(prisma.tenant.fileAsset.findMany).toHaveBeenCalledWith({ where: { id: { in: ['f1', 'f-missing'] }, deletedAt: null } });
+    expect(result).toEqual([{ id: 'f1', originalName: 'invoice.pdf', downloadUrl: 'https://r2.example.com/signed' }]);
+  });
+
+  it('listByIds returns an empty array without querying when given no ids', async () => {
+    const result = await service.listByIds(user, []);
+    expect(result).toEqual([]);
+    expect(prisma.tenant.fileAsset.findMany).not.toHaveBeenCalled();
+  });
+
   describe('getSpreadsheetPreview', () => {
     const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 

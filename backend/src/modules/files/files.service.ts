@@ -592,6 +592,28 @@ export class FilesService {
     return byEntityId;
   }
 
+  /**
+   * Resolves specific, already-known FileAsset ids straight to a name +
+   * presigned download URL each — for a caller that has a bare id list
+   * rather than an owning entity to query by (e.g. SupplierPortalService
+   * resolving PurchaseRequestItem.attachedFileIds, 2026-11-02, the same
+   * ids PurchaseRequestPdfService merges into the generated PDF). Minimal
+   * shape on purpose — just enough to render a download link — not the
+   * full FileAsset row listForEntity(ies) return.
+   */
+  async listByIds(user: FilesActor, fileAssetIds: string[]): Promise<{ id: string; originalName: string; downloadUrl: string }[]> {
+    if (fileAssetIds.length === 0) return [];
+
+    const files = await this.prisma.tenant.fileAsset.findMany({ where: { id: { in: fileAssetIds }, deletedAt: null } });
+    return Promise.all(
+      files.map(async (file) => ({
+        id: file.id,
+        originalName: file.originalName,
+        downloadUrl: await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey }), { expiresIn: DOWNLOAD_URL_TTL_SECONDS }),
+      })),
+    );
+  }
+
   /** Soft delete only — matches the schema-wide convention; the R2 object is left in place (a lifecycle rule handles real purging, out of scope for this module). */
   async delete(user: FilesActor, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });

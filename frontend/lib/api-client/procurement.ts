@@ -365,6 +365,8 @@ export interface PurchaseRequestItem {
   attachedFileIds: string[];
   /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseRequest) — the linked product's own PRODUCT_PHOTO, if any. */
   photoUrl?: string | null;
+  /** Only present on supplier-portal responses — attachedFileIds resolved to downloadable files (a stale/deleted id is silently dropped, not errored). */
+  attachedFiles?: { id: string; originalName: string; downloadUrl: string }[];
 }
 
 export interface PurchaseRequest {

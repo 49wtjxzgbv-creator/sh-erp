@@ -19,7 +19,7 @@ describe('SupplierPortalService', () => {
     };
     auditService = { record: jest.fn() };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
-    filesService = { listForEntities: jest.fn().mockResolvedValue({}) };
+    filesService = { listForEntities: jest.fn().mockResolvedValue({}), listByIds: jest.fn().mockResolvedValue([]) };
     service = new SupplierPortalService(
       prisma,
       auditService,
@@ -68,8 +68,8 @@ describe('SupplierPortalService', () => {
         id: 'pr1',
         status: 'SENT',
         items: [
-          { id: 'item1', productId: 'p1', articleSnapshot: 'ABC' },
-          { id: 'item2', productId: null, articleSnapshot: 'XYZ' },
+          { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', attachedFileIds: [] },
+          { id: 'item2', productId: null, articleSnapshot: 'XYZ', attachedFileIds: [] },
         ],
       });
       filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
@@ -78,17 +78,47 @@ describe('SupplierPortalService', () => {
 
       expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Product', ['p1'], ['PRODUCT_PHOTO']);
       expect(result.items).toEqual([
-        { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', photoUrl: 'https://example.com/p1.jpg' },
-        { id: 'item2', productId: null, articleSnapshot: 'XYZ', photoUrl: null },
+        { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', attachedFileIds: [], photoUrl: 'https://example.com/p1.jpg', attachedFiles: [] },
+        { id: 'item2', productId: null, articleSnapshot: 'XYZ', attachedFileIds: [], photoUrl: null, attachedFiles: [] },
       ]);
     });
 
     it('skips the photo lookup entirely when no line has a productId', async () => {
-      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({ id: 'pr1', status: 'SENT', items: [{ id: 'item1', productId: null }] });
+      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({
+        id: 'pr1',
+        status: 'SENT',
+        items: [{ id: 'item1', productId: null, attachedFileIds: [] }],
+      });
 
       await service.getPurchaseRequest(actor, 'pr1');
 
       expect(filesService.listForEntities).not.toHaveBeenCalled();
+    });
+
+    it("resolves each line's attachedFileIds to downloadable files, dropping any id that no longer resolves (2026-11-02)", async () => {
+      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({
+        id: 'pr1',
+        status: 'SENT',
+        items: [{ id: 'item1', productId: null, attachedFileIds: ['f1', 'f-stale'] }],
+      });
+      filesService.listByIds.mockResolvedValue([{ id: 'f1', originalName: 'invoice.pdf', downloadUrl: 'https://example.com/f1.pdf' }]);
+
+      const result = await service.getPurchaseRequest(actor, 'pr1');
+
+      expect(filesService.listByIds).toHaveBeenCalledWith(expect.anything(), ['f1', 'f-stale']);
+      expect(result.items[0].attachedFiles).toEqual([{ id: 'f1', originalName: 'invoice.pdf', downloadUrl: 'https://example.com/f1.pdf' }]);
+    });
+
+    it('skips the attached-files lookup entirely when no line has any attachedFileIds', async () => {
+      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({
+        id: 'pr1',
+        status: 'SENT',
+        items: [{ id: 'item1', productId: null, attachedFileIds: [] }],
+      });
+
+      await service.getPurchaseRequest(actor, 'pr1');
+
+      expect(filesService.listByIds).not.toHaveBeenCalled();
     });
   });
 
@@ -117,7 +147,10 @@ describe('SupplierPortalService', () => {
       number: 'ЗП-2026-0001',
       status: 'SENT',
       createdById: 'staff1',
-      items: [{ id: 'item1' }, { id: 'item2' }],
+      items: [
+        { id: 'item1', productId: null, attachedFileIds: [] },
+        { id: 'item2', productId: null, attachedFileIds: [] },
+      ],
     };
 
     it('rejects quoting a request that is not SENT', async () => {

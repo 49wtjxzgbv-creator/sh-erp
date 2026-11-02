@@ -1836,7 +1836,8 @@
     "prStatusDRAFT": "Draft",
     "prStatusSENT": "Sent",
     "prStatusCONVERTED": "Converted to order",
-    "prStatusCANCELLED": "Cancelled"
+    "prStatusCANCELLED": "Cancelled",
+    "attachFiles": "Files"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

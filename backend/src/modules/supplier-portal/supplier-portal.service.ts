@@ -66,6 +66,30 @@ export class SupplierPortalService {
     }));
   }
 
+  /**
+   * "також мають додаватися вкладені файли" (2026-11-02) — resolves
+   * PurchaseRequestItem.attachedFileIds (the same per-line product
+   * documents PurchaseRequestPdfService merges into the generated PDF) to
+   * downloadable links, so the supplier can get them straight from the
+   * live portal view instead of only ever through a one-off PDF. A
+   * missing/deleted id (stale selection, or the product's document was
+   * removed since) is silently dropped rather than surfaced as an error —
+   * same "don't fabricate, just omit" convention as the PDF renderer's own
+   * best-effort attachment merge.
+   */
+  private async attachAttachedFiles<T extends { attachedFileIds: string[] }>(
+    actor: RequestSupplierPortalUser,
+    items: T[],
+  ): Promise<(T & { attachedFiles: { id: string; originalName: string; downloadUrl: string }[] })[]> {
+    const allIds = [...new Set(items.flatMap((i) => i.attachedFileIds))];
+    const files = allIds.length > 0 ? await this.filesService.listByIds(this.asFilesActor(actor), allIds) : [];
+    const byId = new Map(files.map((f) => [f.id, f]));
+    return items.map((item) => ({
+      ...item,
+      attachedFiles: item.attachedFileIds.map((id) => byId.get(id)).filter((f): f is NonNullable<typeof f> => f != null),
+    }));
+  }
+
   async listPurchaseOrders(actor: RequestSupplierPortalUser) {
     const orders = await this.prisma.tenant.purchaseOrder.findMany({
       where: { supplierId: actor.supplierId },
@@ -173,7 +197,8 @@ export class SupplierPortalService {
       include: { items: true },
     });
     if (!request) throw new CodedNotFoundException('PURCHASE_REQUEST_NOT_FOUND', 'Purchase request not found.');
-    return { ...request, items: await this.attachPhotoUrls(actor, request.items) };
+    const withPhotos = await this.attachPhotoUrls(actor, request.items);
+    return { ...request, items: await this.attachAttachedFiles(actor, withPhotos) };
   }
 
   /** Supplier submits (or re-submits) a per-line quote. Only while SENT — once converted/cancelled the negotiation is over. */
