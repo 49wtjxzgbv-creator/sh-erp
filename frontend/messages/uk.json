@@ -1988,7 +1988,7 @@
     "cutDimensionsLabel": "Розмір деталі",
     "yourPricesTitle": "Ваші ціни",
     "supplierCostPriceLabel": "Собівартість (ваша нотатка)",
-    "supplierOfferedPriceLabel": "Ціна, за якою ви продасте нам",
+    "supplierOfferedPriceLabel": "Ціна продажу",
     "catalogSaveSuccess": "Збережено"
   },
   "apiErrors": {

@@ -1849,7 +1849,7 @@
     "cutDimensionsLabel": "Piece size",
     "yourPricesTitle": "Your prices",
     "supplierCostPriceLabel": "Cost price (your note)",
-    "supplierOfferedPriceLabel": "Price at which you'll sell this to us",
+    "supplierOfferedPriceLabel": "Sale price",
     "catalogSaveSuccess": "Saved"
   },
   "apiErrors": {
