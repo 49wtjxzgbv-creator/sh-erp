@@ -16,7 +16,7 @@ import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { SupplierCatalogEntry } from '@/lib/api-client/supplier-catalog';
 import { previewSupplierCutting, type SupplierCuttingResult } from '@/lib/api-client/supplier-cutting';
-import { CuttingLineRow, type CuttingLineRowState } from './cutting-line-row';
+import { CuttingLineRow, type CuttingLineRowState, type CuttingPickerItem } from './cutting-line-row';
 
 interface StockPickerRow {
   itemId: string;
@@ -52,8 +52,6 @@ export default function SupplierPortalCuttingPage() {
 
   const [catalog, setCatalog] = useState<SupplierCatalogEntry[]>([]);
   const [stockItems, setStockItems] = useState<StockPickerRow[]>([]);
-  const [catalogPickerKey, setCatalogPickerKey] = useState(0);
-  const [stockPickerKey, setStockPickerKey] = useState(0);
 
   const [result, setResult] = useState<SupplierCuttingResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -83,18 +81,6 @@ export default function SupplierPortalCuttingPage() {
 
   function removeLine(key: string) {
     setLines((prev) => prev.filter((l) => l.key !== key));
-  }
-
-  function addFromCuttingSpec(label: string, spec: SupplierCatalogEntry['cuttingSpec']) {
-    setLines((prev) => [
-      ...prev,
-      newLine({
-        label,
-        cutLengthCm: spec?.defaultCutLengthCm ?? '',
-        cutWidthCm: spec?.defaultCutWidthCm ?? '',
-        cutShapePolygon: spec?.defaultCutShapePolygon ?? null,
-      }),
-    ]);
   }
 
   async function handleSubmit() {
@@ -137,8 +123,34 @@ export default function SupplierPortalCuttingPage() {
     URL.revokeObjectURL(url);
   }
 
-  const catalogWithSpec = useMemo(() => catalog.filter((c) => c.cuttingSpec), [catalog]);
-  const stockWithSpec = useMemo(() => stockItems.filter((s) => s.cuttingSpec), [stockItems]);
+  // "деталі розкрою назва має бути випадаюче меню і пошук коли починаємо вводити
+  // перші символи" (2026-11-02) — one combined, pre-built search index for every
+  // row's name field (see CuttingLineRow's own EntityCombobox), catalog entries
+  // and open-order items alike; only items with a saved cutting spec are worth
+  // searching, since picking anything else would have no dimensions to adopt.
+  const pickerItems = useMemo<CuttingPickerItem[]>(() => {
+    const fromCatalog: CuttingPickerItem[] = catalog
+      .filter((c) => c.cuttingSpec)
+      .map((c) => ({
+        key: `catalog:${c.id}`,
+        displayLabel: `${c.article} — ${c.name}`,
+        source: 'catalog',
+        cutLengthCm: c.cuttingSpec!.defaultCutLengthCm ?? '',
+        cutWidthCm: c.cuttingSpec!.defaultCutWidthCm ?? '',
+        cutShapePolygon: c.cuttingSpec!.defaultCutShapePolygon ?? null,
+      }));
+    const fromStock: CuttingPickerItem[] = stockItems
+      .filter((s) => s.cuttingSpec)
+      .map((s) => ({
+        key: `order:${s.itemId}`,
+        displayLabel: `${s.article} — ${s.productName}`,
+        source: 'order',
+        cutLengthCm: s.cuttingSpec!.defaultCutLengthCm ?? '',
+        cutWidthCm: s.cuttingSpec!.defaultCutWidthCm ?? '',
+        cutShapePolygon: s.cuttingSpec!.defaultCutShapePolygon ?? null,
+      }));
+    return [...fromCatalog, ...fromStock];
+  }, [catalog, stockItems]);
 
   return (
     <div className="space-y-4">
@@ -199,62 +211,17 @@ export default function SupplierPortalCuttingPage() {
               key={row.key}
               row={row}
               isSheet={kind === 'SHEET'}
+              pickerItems={pickerItems}
               onChange={(patch) => updateLine(row.key, patch)}
               onRemove={() => removeLine(row.key)}
               removable={lines.length > 1}
             />
           ))}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine()])}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('cuttingAddManualLine')}
-            </Button>
-
-            {catalogWithSpec.length > 0 && (
-              <Select
-                key={`catalog-${catalogPickerKey}`}
-                onValueChange={(productSupplierId) => {
-                  const entry = catalog.find((c) => c.id === productSupplierId);
-                  if (entry) addFromCuttingSpec(`${entry.article} — ${entry.name}`, entry.cuttingSpec);
-                  setCatalogPickerKey((k) => k + 1);
-                }}
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder={t('cuttingAddFromCatalog')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {catalogWithSpec.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      {entry.article} — {entry.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {stockWithSpec.length > 0 && (
-              <Select
-                key={`stock-${stockPickerKey}`}
-                onValueChange={(itemId) => {
-                  const item = stockItems.find((s) => s.itemId === itemId);
-                  if (item) addFromCuttingSpec(`${item.article} — ${item.productName}`, item.cuttingSpec);
-                  setStockPickerKey((k) => k + 1);
-                }}
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder={t('cuttingAddFromOrders')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {stockWithSpec.map((item) => (
-                    <SelectItem key={item.itemId} value={item.itemId}>
-                      {item.article} — {item.productName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine()])}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('cuttingAddLine')}
+          </Button>
         </CardContent>
       </Card>
 

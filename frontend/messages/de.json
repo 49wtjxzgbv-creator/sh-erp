@@ -1881,9 +1881,6 @@
     "cuttingMaterialLabelPlaceholder": "e.g. 2mm metal sheet",
     "cuttingLinesTitle": "Parts to cut",
     "cuttingShapeFromSpecBadge": "Shape from catalog",
-    "cuttingAddManualLine": "Add manually",
-    "cuttingAddFromCatalog": "Add from catalog…",
-    "cuttingAddFromOrders": "Add from orders…",
     "cuttingCalculateButton": "Calculate cutting plan",
     "cuttingDefaultSheetLabel": "Sheet",
     "cuttingDefaultBarLabel": "Bar",
@@ -1891,7 +1888,12 @@
     "cuttingUnitsUsedSheet": "Sheets used: {count}",
     "cuttingUnitsUsedBar": "Bars used: {count}",
     "cuttingSheetNumber": "Sheet {number}",
-    "cuttingBarNumber": "Bar {number}"
+    "cuttingBarNumber": "Bar {number}",
+    "cuttingAddLine": "Add position",
+    "cuttingLineNamePlaceholder": "Start typing a name…",
+    "cuttingLineNoMatches": "No matches — you can type a name manually",
+    "cuttingSourceCatalog": "Catalog",
+    "cuttingSourceOrder": "Order"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

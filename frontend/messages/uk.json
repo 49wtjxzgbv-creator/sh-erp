@@ -2020,9 +2020,6 @@
     "cuttingMaterialLabelPlaceholder": "напр. Лист металу 2мм",
     "cuttingLinesTitle": "Деталі для розкрою",
     "cuttingShapeFromSpecBadge": "Форма з каталогу",
-    "cuttingAddManualLine": "Додати вручну",
-    "cuttingAddFromCatalog": "Додати з каталогу…",
-    "cuttingAddFromOrders": "Додати із замовлень…",
     "cuttingCalculateButton": "Розрахувати розкрій",
     "cuttingDefaultSheetLabel": "Лист",
     "cuttingDefaultBarLabel": "Штанга",
@@ -2030,7 +2027,12 @@
     "cuttingUnitsUsedSheet": "Використано листів: {count}",
     "cuttingUnitsUsedBar": "Використано штанг: {count}",
     "cuttingSheetNumber": "Лист {number}",
-    "cuttingBarNumber": "Штанга {number}"
+    "cuttingBarNumber": "Штанга {number}",
+    "cuttingAddLine": "Додати позицію",
+    "cuttingLineNamePlaceholder": "Почніть вводити назву…",
+    "cuttingLineNoMatches": "Нічого не знайдено — можна ввести назву вручну",
+    "cuttingSourceCatalog": "Каталог",
+    "cuttingSourceOrder": "Замовлення"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",
