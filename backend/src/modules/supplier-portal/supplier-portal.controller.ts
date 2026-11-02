@@ -10,6 +10,7 @@ import { CreatePurchaseOrderCommentDto } from '../procurement/dto/purchase-order
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
+import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -169,5 +170,33 @@ export class SupplierPortalController {
     @Body() dto: UpdateSupplierCatalogEntryDto,
   ) {
     return this.supplierPortalService.updateCatalogEntry(actor, id, dto);
+  }
+
+  @Get('dashboard-summary')
+  @ApiOperation({ summary: 'Counts for the portal dashboard — active orders, quotes awaiting a price, catalog size, upcoming/overdue delivery obligations.' })
+  async getDashboardSummary(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.getDashboardSummary(actor);
+  }
+
+  @Get('deliveries')
+  @ApiOperation({ summary: '"План виробництва" — every upcoming delivery obligation across all open orders, flattened and sorted soonest-first.' })
+  async listUpcomingDeliveries(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.listUpcomingDeliveries(actor);
+  }
+
+  @Get('stock')
+  @ApiOperation({ summary: '"Склад" — every still-outstanding open order line, with the supplier\'s own declared ready-not-shipped qty.' })
+  async listStock(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.listStock(actor);
+  }
+
+  @Patch('stock/:itemId')
+  @ApiOperation({ summary: 'Supplier declares how much of this line is already finished and sitting at their own premises — capped at what is still outstanding.' })
+  async updateSupplierReadyQty(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateSupplierReadyQtyDto,
+  ) {
+    return this.supplierPortalService.updateSupplierReadyQty(actor, itemId, dto);
   }
 }

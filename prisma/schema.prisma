@@ -2885,6 +2885,14 @@ model PurchaseOrderItem {
   actualPrice            Decimal? @db.Decimal(14, 2)
   supplierConfirmedPrice Decimal? @db.Decimal(14, 2) // supplier's own confirmed price via the portal — informational, does NOT overwrite expectedPrice/actualPrice (those stay internal staff's own numbers)
 
+  // "Склад" (2026-11-02): the supplier's own self-declared qty already
+  // finished and sitting at their premises, not yet shipped — a
+  // lightweight stand-in for a real ASN (advance shipping notice)
+  // integration. Supplier-entered only, never auto-derived from
+  // qtyReceived or anything else; capped at (qtyOrdered - qtyReceived) by
+  // SupplierPortalService#updateSupplierReadyQty, not by a DB constraint.
+  supplierReadyQty Decimal? @default(0) @db.Decimal(14, 3)
+
   // Links this purchase line back to the customer-order material
   // requirement it's covering (stock-reservation spec §5/§9) — single-
   // column FK — see header §cross-tenant (optional relation): most

@@ -11,6 +11,7 @@ import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.d
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
+import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
 import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
@@ -441,5 +442,171 @@ export class SupplierPortalService {
     });
 
     return this.getCatalogEntry(actor, id);
+  }
+
+  /**
+   * Shared backing query for the dashboard summary and "План виробництва"
+   * (2026-11-02) — every one of this supplier's OPEN orders (not yet fully
+   * DELIVERED), with each item's currently-operative delivery schedule (if
+   * any) and that schedule's own lines. Written once rather than
+   * duplicated between the two callers.
+   */
+  private async getOpenOrderItems(actor: RequestSupplierPortalUser) {
+    return this.prisma.tenant.purchaseOrder.findMany({
+      where: { supplierId: actor.supplierId, status: { not: 'DELIVERED' } },
+      include: {
+        items: {
+          include: {
+            currentDeliverySchedule: { include: { lines: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * "План виробництва" (2026-11-02) — every upcoming delivery obligation
+   * across ALL of this supplier's open orders, flattened to one row per
+   * (date, qty) commitment and sorted soonest-first. For an item with a
+   * negotiated delivery schedule, one row per DeliveryScheduleLine of the
+   * current version (PENDING/PROPOSED/CONFIRMED — REJECTED/SUPERSEDED
+   * versions are history, never current, so they can't reach here via
+   * `currentDeliverySchedule`). For an item with no schedule at all, one
+   * synthesized row from the order's own `expectedDeliveryDate` — skipped
+   * entirely if that's also unset, or if nothing is actually outstanding
+   * anymore (qtyOrdered - qtyReceived <= 0). Deliberately does NOT attempt
+   * to mark any individual line as "already shipped" — `qtyReceived` is a
+   * single aggregate per item, not attributable to one specific schedule
+   * line, so guessing would fabricate a status this data can't support.
+   */
+  async listUpcomingDeliveries(actor: RequestSupplierPortalUser) {
+    const orders = await this.getOpenOrderItems(actor);
+
+    const rows: {
+      orderId: string;
+      productId: string | null;
+      article: string;
+      productName: string;
+      date: Date;
+      qty: unknown;
+      scheduleStatus: string | null;
+    }[] = [];
+
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (item.currentDeliverySchedule) {
+          for (const line of item.currentDeliverySchedule.lines) {
+            rows.push({
+              orderId: order.id,
+              productId: item.productId,
+              article: item.articleSnapshot,
+              productName: item.productNameSnapshot,
+              date: line.date,
+              qty: line.qty,
+              scheduleStatus: item.currentDeliverySchedule.status,
+            });
+          }
+        } else if (order.expectedDeliveryDate) {
+          const remaining = Number(item.qtyOrdered) - Number(item.qtyReceived);
+          if (remaining > 0) {
+            rows.push({
+              orderId: order.id,
+              productId: item.productId,
+              article: item.articleSnapshot,
+              productName: item.productNameSnapshot,
+              date: order.expectedDeliveryDate,
+              qty: remaining,
+              scheduleStatus: null,
+            });
+          }
+        }
+      }
+    }
+
+    rows.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const photoRows = await this.attachPhotoUrls(actor, rows);
+    return { items: photoRows };
+  }
+
+  /**
+   * Дашборд (2026-11-02) — a handful of small counts for the KPI cards.
+   * Reuses `listUpcomingDeliveries` for the two delivery counts instead of
+   * a second query — both are small in-memory filters over the same
+   * already-fetched flat list.
+   */
+  async getDashboardSummary(actor: RequestSupplierPortalUser) {
+    const [activeOrdersCount, pendingQuotesCount, catalogCount, deliveries] = await Promise.all([
+      this.prisma.tenant.purchaseOrder.count({ where: { supplierId: actor.supplierId, status: { not: 'DELIVERED' } } }),
+      this.prisma.tenant.purchaseRequest.count({ where: { supplierId: actor.supplierId, status: 'SENT', supplierRespondedAt: null } }),
+      this.prisma.tenant.productSupplier.count({ where: { supplierId: actor.supplierId } }),
+      this.listUpcomingDeliveries(actor),
+    ]);
+
+    const now = new Date();
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const overdueDeliveriesCount = deliveries.items.filter((d) => d.date < now).length;
+    const upcomingDeliveriesCount = deliveries.items.filter((d) => d.date >= now && d.date <= in7Days).length;
+
+    return { activeOrdersCount, pendingQuotesCount, catalogCount, overdueDeliveriesCount, upcomingDeliveriesCount };
+  }
+
+  /**
+   * "Склад" (2026-11-02) — every open order line still outstanding
+   * (qtyOrdered - qtyReceived > 0), with the supplier's own declared
+   * ready-not-shipped qty alongside it.
+   */
+  async listStock(actor: RequestSupplierPortalUser) {
+    const orders = await this.getOpenOrderItems(actor);
+
+    const items = orders.flatMap((order) =>
+      order.items
+        .filter((item) => Number(item.qtyOrdered) - Number(item.qtyReceived) > 0)
+        .map((item) => ({
+          itemId: item.id,
+          orderId: order.id,
+          productId: item.productId,
+          article: item.articleSnapshot,
+          productName: item.productNameSnapshot,
+          orderDate: order.orderDate,
+          qtyOrdered: item.qtyOrdered,
+          qtyReceived: item.qtyReceived,
+          qtyRemaining: Number(item.qtyOrdered) - Number(item.qtyReceived),
+          supplierReadyQty: item.supplierReadyQty,
+        })),
+    );
+
+    const photoItems = await this.attachPhotoUrls(actor, items);
+    return { items: photoItems };
+  }
+
+  /** Supplier declares how much of this line is already finished and sitting at their own premises — capped at what's actually still outstanding, never more. */
+  async updateSupplierReadyQty(actor: RequestSupplierPortalUser, itemId: string, dto: UpdateSupplierReadyQtyDto) {
+    const item = await this.prisma.tenant.purchaseOrderItem.findFirst({
+      where: { id: itemId, purchaseOrder: { supplierId: actor.supplierId } },
+    });
+    if (!item) throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', 'Purchase order item not found.');
+
+    const remaining = Number(item.qtyOrdered) - Number(item.qtyReceived);
+    if (dto.supplierReadyQty > remaining) {
+      throw new CodedBadRequestException('SUPPLIER_READY_QTY_EXCEEDS_REMAINING', `Cannot declare more ready (${dto.supplierReadyQty}) than is still outstanding (${remaining}).`);
+    }
+
+    const updated = await this.prisma.tenant.purchaseOrderItem.update({
+      where: { id: itemId },
+      data: { supplierReadyQty: dto.supplierReadyQty },
+    });
+
+    await this.auditService.record({
+      companyId: actor.companyId,
+      actorUserId: null,
+      action: 'purchase_order_item.supplier_ready_qty_updated',
+      entityType: 'PurchaseOrderItem',
+      entityId: itemId,
+      after: { supplierReadyQty: dto.supplierReadyQty },
+      metadata: { supplierPortalUserId: actor.supplierPortalUserId, supplierId: actor.supplierId },
+    });
+
+    return updated;
   }
 }

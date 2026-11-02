@@ -11,10 +11,11 @@ describe('SupplierPortalService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        purchaseOrder: { findFirst: jest.fn() },
-        purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+        purchaseOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+        purchaseOrderItem: { findFirst: jest.fn(), update: jest.fn() },
+        purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         purchaseRequestItem: { update: jest.fn() },
-        productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+        productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
       },
     };
@@ -321,6 +322,181 @@ describe('SupplierPortalService', () => {
       expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'product_supplier.catalog_updated' }));
       expect(result.supplierCostPrice).toBe(10);
       expect(result.supplierOfferedPrice).toBe(50);
+    });
+  });
+
+  describe('listUpcomingDeliveries', () => {
+    it("scopes to the caller's own supplierId and excludes DELIVERED orders", async () => {
+      await service.listUpcomingDeliveries(actor);
+      expect(prisma.tenant.purchaseOrder.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { supplierId: 's1', status: { not: 'DELIVERED' } } }),
+      );
+    });
+
+    it('flattens one row per delivery-schedule line, sorted soonest-first', async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po1',
+          expectedDeliveryDate: null,
+          items: [
+            {
+              productId: 'p1',
+              articleSnapshot: 'ABC',
+              productNameSnapshot: 'Widget',
+              qtyOrdered: 100,
+              qtyReceived: 20,
+              currentDeliverySchedule: {
+                status: 'PENDING',
+                lines: [
+                  { date: new Date('2026-12-01'), qty: 40 },
+                  { date: new Date('2026-11-10'), qty: 20 },
+                  { date: new Date('2026-11-20'), qty: 40 },
+                ],
+              },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listUpcomingDeliveries(actor);
+
+      expect(result.items.map((i: any) => i.date.toISOString())).toEqual([
+        new Date('2026-11-10').toISOString(),
+        new Date('2026-11-20').toISOString(),
+        new Date('2026-12-01').toISOString(),
+      ]);
+      expect(result.items[0]).toMatchObject({ orderId: 'po1', article: 'ABC', qty: 20, scheduleStatus: 'PENDING' });
+    });
+
+    it("synthesizes one row from the order's own expectedDeliveryDate when an item has no schedule at all", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po2',
+          expectedDeliveryDate: new Date('2026-11-15'),
+          items: [
+            {
+              productId: 'p2',
+              articleSnapshot: 'XYZ',
+              productNameSnapshot: 'Gadget',
+              qtyOrdered: 50,
+              qtyReceived: 10,
+              currentDeliverySchedule: null,
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listUpcomingDeliveries(actor);
+
+      expect(result.items).toEqual([
+        expect.objectContaining({ orderId: 'po2', article: 'XYZ', qty: 40, scheduleStatus: null }),
+      ]);
+    });
+
+    it('skips an unscheduled item with no expectedDeliveryDate, and one with nothing actually outstanding', async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po3',
+          expectedDeliveryDate: null,
+          items: [{ productId: 'p3', articleSnapshot: 'NODATE', productNameSnapshot: '-', qtyOrdered: 10, qtyReceived: 0, currentDeliverySchedule: null }],
+        },
+        {
+          id: 'po4',
+          expectedDeliveryDate: new Date('2026-11-15'),
+          items: [{ productId: 'p4', articleSnapshot: 'DONE', productNameSnapshot: '-', qtyOrdered: 10, qtyReceived: 10, currentDeliverySchedule: null }],
+        },
+      ]);
+
+      const result = await service.listUpcomingDeliveries(actor);
+
+      expect(result.items).toEqual([]);
+    });
+  });
+
+  describe('getDashboardSummary', () => {
+    it('returns the four plain counts plus overdue/upcoming delivery buckets', async () => {
+      prisma.tenant.purchaseOrder.count.mockResolvedValue(3);
+      prisma.tenant.purchaseRequest.count.mockResolvedValue(2);
+      prisma.tenant.productSupplier.count.mockResolvedValue(7);
+
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const inTwoDays = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      const inThirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po1',
+          expectedDeliveryDate: null,
+          items: [
+            {
+              productId: 'p1',
+              articleSnapshot: 'A',
+              productNameSnapshot: '-',
+              qtyOrdered: 10,
+              qtyReceived: 0,
+              currentDeliverySchedule: { status: 'PENDING', lines: [{ date: yesterday, qty: 5 }, { date: inTwoDays, qty: 3 }, { date: inThirtyDays, qty: 2 }] },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getDashboardSummary(actor);
+
+      expect(result).toEqual({
+        activeOrdersCount: 3,
+        pendingQuotesCount: 2,
+        catalogCount: 7,
+        overdueDeliveriesCount: 1,
+        upcomingDeliveriesCount: 1,
+      });
+      expect(prisma.tenant.purchaseOrder.count).toHaveBeenCalledWith({ where: { supplierId: 's1', status: { not: 'DELIVERED' } } });
+      expect(prisma.tenant.purchaseRequest.count).toHaveBeenCalledWith({ where: { supplierId: 's1', status: 'SENT', supplierRespondedAt: null } });
+      expect(prisma.tenant.productSupplier.count).toHaveBeenCalledWith({ where: { supplierId: 's1' } });
+    });
+  });
+
+  describe('listStock', () => {
+    it('includes only items with something still outstanding, carrying supplierReadyQty', async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po1',
+          orderDate: new Date('2026-10-01'),
+          items: [
+            { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 30 },
+            { id: 'item2', productId: 'p2', articleSnapshot: 'B', productNameSnapshot: '-', qtyOrdered: 10, qtyReceived: 10, supplierReadyQty: 0 },
+          ],
+        },
+      ]);
+
+      const result = await service.listStock(actor);
+
+      expect(result.items).toEqual([
+        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30 }),
+      ]);
+    });
+  });
+
+  describe('updateSupplierReadyQty', () => {
+    it('404s for an item not belonging to this supplier', async () => {
+      prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue(null);
+      await expect(service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 10 })).rejects.toThrow();
+      expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects declaring more ready than is actually still outstanding', async () => {
+      prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
+      await expect(service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 90 })).rejects.toThrow();
+      expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    it('updates and audit-logs when within bounds', async () => {
+      prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
+      prisma.tenant.purchaseOrderItem.update.mockResolvedValue({ id: 'item1', supplierReadyQty: 50 });
+
+      const result = await service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 50 });
+
+      expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { supplierReadyQty: 50 } });
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order_item.supplier_ready_qty_updated' }));
+      expect(result.supplierReadyQty).toBe(50);
     });
   });
 });

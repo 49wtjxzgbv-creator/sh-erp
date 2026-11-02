@@ -167,6 +167,8 @@ export interface PurchaseOrderItem {
   deliverySchedules?: DeliverySchedule[];
   /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseOrder) — the linked product's own PRODUCT_PHOTO, if any. */
   photoUrl?: string | null;
+  /** "Склад" — the supplier's own declared qty already finished and sitting at their premises, not yet shipped. Supplier-entered only. */
+  supplierReadyQty: DecimalString | null;
 }
 
 export type DeliveryScheduleStatus = 'PENDING' | 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED';

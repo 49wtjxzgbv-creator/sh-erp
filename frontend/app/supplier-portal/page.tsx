@@ -1,259 +1,97 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { ShoppingCart, FileText, Package, CalendarClock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { LoadingBlock } from '@/components/ui/loading-block';
+import { cn } from '@/lib/utils';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
-import type { PurchaseOrderStatus, PurchaseRequestStatus } from '@/lib/api-client/procurement';
-import type { SupplierCatalogEntry } from '@/lib/api-client/supplier-catalog';
 
-interface PortalPurchaseOrderRow {
-  id: string;
-  orderDate: string;
-  status: PurchaseOrderStatus;
-  expectedDeliveryDate: string | null;
-  supplierConfirmedAt: string | null;
-  items: { id: string }[];
+interface DashboardSummary {
+  activeOrdersCount: number;
+  pendingQuotesCount: number;
+  catalogCount: number;
+  overdueDeliveriesCount: number;
+  upcomingDeliveriesCount: number;
 }
 
-interface PortalPurchaseRequestRow {
-  id: string;
-  number: string;
-  createdAt: string;
-  status: PurchaseRequestStatus;
-  supplierRespondedAt: string | null;
-  items: { id: string }[];
-}
-
-const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success'> = {
-  ORDERED: 'secondary',
-  PARTIAL: 'warning',
-  DELIVERED: 'success',
-};
-
-const REQUEST_STATUS_VARIANT: Record<PurchaseRequestStatus, 'secondary' | 'warning' | 'success'> = {
-  DRAFT: 'secondary',
-  SENT: 'warning',
-  CONVERTED: 'success',
-  CANCELLED: 'secondary',
-};
-
-export default function SupplierPortalOrdersPage() {
+/**
+ * Дашборд (2026-11-02) — the new portal homepage, replacing the old
+ * stacked-cards-of-everything root page (orders/requests/catalog each now
+ * have their own route, linked from the sidebar). Same inline KPI-card
+ * visual language as the main app's own dashboard
+ * (`frontend/app/(app)/dashboard/page.tsx:108-129`) — icon-badge + big
+ * number + label, `Link`-wrapped `Card`, destructive tint for a "warn"
+ * state — no shared component exists for this anywhere in the codebase, so
+ * this mirrors the pattern inline rather than inventing one.
+ */
+export default function SupplierPortalDashboardPage() {
   const t = useTranslations('supplierPortal');
-  const router = useRouter();
-  const [orders, setOrders] = useState<PortalPurchaseOrderRow[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState<PortalPurchaseRequestRow[]>([]);
-  const [requestsLoading, setRequestsLoading] = useState(true);
-  const [catalog, setCatalog] = useState<SupplierCatalogEntry[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Deliberately swallows the error rather than surfacing it — the one
-      // expected case (2026-08-21 P2) is a supplier who logged in with only
-      // a PENDING connection (self-registered, found by a company, not yet
-      // accepted): SupplierPortalScopeInterceptor 404s this endpoint until
-      // acceptance, which is indistinguishable here from "no orders yet" —
-      // the same empty state already covers it correctly.
-      const res = await supplierPortalApi.get<{ items: PortalPurchaseOrderRow[] }>('supplier-portal/purchase-orders');
-      setOrders(res.items);
+      const res = await supplierPortalApi.get<DashboardSummary>('supplier-portal/dashboard-summary');
+      setSummary(res);
     } catch {
-      setOrders([]);
+      setSummary(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const loadRequests = useCallback(async () => {
-    setRequestsLoading(true);
-    try {
-      // Same swallow-on-error convention as orders' load() above.
-      const res = await supplierPortalApi.get<{ items: PortalPurchaseRequestRow[] }>('supplier-portal/purchase-requests');
-      setRequests(res.items);
-    } catch {
-      setRequests([]);
-    } finally {
-      setRequestsLoading(false);
-    }
-  }, []);
-
-  const loadCatalog = useCallback(async () => {
-    setCatalogLoading(true);
-    try {
-      // Same swallow-on-error convention as orders'/requests' load() above.
-      const res = await supplierPortalApi.get<{ items: SupplierCatalogEntry[] }>('supplier-portal/catalog');
-      setCatalog(res.items);
-    } catch {
-      setCatalog([]);
-    } finally {
-      setCatalogLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     load();
-    loadRequests();
-    loadCatalog();
-  }, [load, loadRequests, loadCatalog]);
+  }, [load]);
+
+  if (loading) {
+    return <LoadingBlock />;
+  }
+
+  const hasOverdue = (summary?.overdueDeliveriesCount ?? 0) > 0;
+
+  const cards = [
+    { href: '/supplier-portal/orders', icon: ShoppingCart, label: t('kpiActiveOrders'), value: summary?.activeOrdersCount ?? 0 },
+    { href: '/supplier-portal/requests', icon: FileText, label: t('kpiPendingQuotes'), value: summary?.pendingQuotesCount ?? 0 },
+    { href: '/supplier-portal/catalog', icon: Package, label: t('kpiCatalogSize'), value: summary?.catalogCount ?? 0 },
+    {
+      href: '/supplier-portal/deliveries',
+      icon: CalendarClock,
+      label: t('kpiUpcomingDeliveries'),
+      value: summary?.upcomingDeliveriesCount ?? 0,
+      warn: hasOverdue,
+      extra: hasOverdue ? t('kpiOverdueDeliveries', { count: summary?.overdueDeliveriesCount ?? 0 }) : null,
+    },
+  ];
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('yourPurchaseOrders')}</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('yourPurchaseOrders')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('orderDate')}</TableHead>
-                <TableHead>{t('status')}</TableHead>
-                <TableHead>{t('expectedDeliveryDate')}</TableHead>
-                <TableHead>{t('lineCount')}</TableHead>
-                <TableHead>{t('confirmed')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('loading')}
-                  </TableCell>
-                </TableRow>
-              ) : orders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('noOrders')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                orders.map((o) => (
-                  <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/${o.id}`)}>
-                    <TableCell>{new Date(o.orderDate).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_VARIANT[o.status]}>{t(`status${o.status}`)}</Badge>
-                    </TableCell>
-                    <TableCell>{o.expectedDeliveryDate ? new Date(o.expectedDeliveryDate).toLocaleDateString() : '—'}</TableCell>
-                    <TableCell>{o.items.length}</TableCell>
-                    <TableCell>
-                      {o.supplierConfirmedAt ? (
-                        <Badge variant="success">{t('yes')}</Badge>
-                      ) : (
-                        <Badge variant="secondary">{t('no')}</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('yourPurchaseRequests')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('requestNumber')}</TableHead>
-                <TableHead>{t('orderDate')}</TableHead>
-                <TableHead>{t('status')}</TableHead>
-                <TableHead>{t('lineCount')}</TableHead>
-                <TableHead>{t('quoted')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {requestsLoading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('loading')}
-                  </TableCell>
-                </TableRow>
-              ) : requests.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('noRequests')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                requests.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/requests/${r.id}`)}>
-                    <TableCell>{r.number}</TableCell>
-                    <TableCell>{new Date(r.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={REQUEST_STATUS_VARIANT[r.status]}>{t(`prStatus${r.status}`)}</Badge>
-                    </TableCell>
-                    <TableCell>{r.items.length}</TableCell>
-                    <TableCell>
-                      {r.supplierRespondedAt ? (
-                        <Badge variant="success">{t('yes')}</Badge>
-                      ) : (
-                        <Badge variant="secondary">{t('no')}</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('yourCatalog')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12" />
-                <TableHead>{t('article')}</TableHead>
-                <TableHead>{t('productName')}</TableHead>
-                <TableHead>{t('yourPrice')}</TableHead>
-                <TableHead>{t('cuttingSpecLabel')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {catalogLoading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('loading')}
-                  </TableCell>
-                </TableRow>
-              ) : catalog.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    {t('noCatalogEntries')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                catalog.map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/catalog/${c.id}`)}>
-                    <TableCell>
-                      <Avatar src={c.photoUrl} size="sm" />
-                    </TableCell>
-                    <TableCell>{c.article}</TableCell>
-                    <TableCell className="max-w-[260px] truncate" title={c.name}>{c.name}</TableCell>
-                    <TableCell>{c.supplierOfferedPrice ?? '—'}</TableCell>
-                    <TableCell>{c.cuttingSpec && <Badge variant="secondary">{t('cuttingSpecLabel')}</Badge>}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <div>
+        <h1 className="text-xl font-semibold">{t('navDashboard')}</h1>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map(({ href, icon: Icon, label, value, warn, extra }) => (
+          <Link key={href} href={href}>
+            <Card className={cn('transition-colors hover:border-primary/50', warn && 'border-destructive/50 bg-destructive/5')}>
+              <CardHeader className="flex-row items-center gap-3 space-y-0">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <CardTitle className="text-base">{label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={cn('text-2xl font-semibold', warn && 'text-destructive')}>{value}</p>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                {extra && <p className="mt-1 text-xs font-medium text-destructive">{extra}</p>}
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
