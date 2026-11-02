@@ -32,9 +32,19 @@ interface View {
   offsetY: number;
 }
 
-const DEFAULT_STROKE = '#1f2937';
-const BACKGROUND = '#f3f4f6';
-const MEASURE_COLOR = '#dc2626';
+// "там dxf файли... всі лінії креслень світлі фон світлий і нічого не
+// видно" (2026-11-02) — most real-world DXFs (especially laser/CNC-cutting
+// exports, this app's own cutting module included) either carry an
+// explicit true-color that's white/light (meant for a black canvas in the
+// machine's own software) or no color at all ("ByLayer", unresolved by
+// dxf-parser — see dxf-geometry.ts's own colorFor() comment), which this
+// viewer already fell back to a DARK stroke for. Either way the drawing
+// was invisible against the previous light background. Dark canvas + a
+// light default stroke matches the convention these files were actually
+// authored for.
+const DEFAULT_STROKE = '#e5e7eb';
+const BACKGROUND = '#18181b';
+const MEASURE_COLOR = '#f87171';
 
 interface Measurement {
   start: Pt | null;
