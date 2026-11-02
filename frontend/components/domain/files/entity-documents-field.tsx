@@ -45,7 +45,8 @@ export function isGlbFile(name: string): boolean {
 export function is3DModelFile(name: string): boolean {
   return isStepFile(name) || isGlbFile(name);
 }
-function isDxfFile(name: string): boolean {
+/** Exported — FilePreviewButton needs the same check for its own dxf preview path. */
+export function isDxfFile(name: string): boolean {
   return /\.dxf$/i.test(name);
 }
 function isPdfFile(mimeType: string, name: string): boolean {

@@ -4,11 +4,12 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { Eye, Download } from 'lucide-react';
-import { is3DModelFile, isGlbFile, isPdfFileByName, isImageFileByName } from './entity-documents-field';
+import { is3DModelFile, isGlbFile, isDxfFile, isPdfFileByName, isImageFileByName } from './entity-documents-field';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const Step3DViewer = dynamic(() => import('./step-3d-viewer').then((m) => m.Step3DViewer), { ssr: false });
+const Dxf2DViewer = dynamic(() => import('./dxf-2d-viewer').then((m) => m.Dxf2DViewer), { ssr: false });
 
 export interface PreviewableFile {
   id: string;
@@ -17,7 +18,7 @@ export interface PreviewableFile {
 }
 
 function isPreviewable(name: string): boolean {
-  return is3DModelFile(name) || isImageFileByName(name) || isPdfFileByName(name);
+  return is3DModelFile(name) || isDxfFile(name) || isImageFileByName(name) || isPdfFileByName(name);
 }
 
 /**
@@ -26,7 +27,7 @@ function isPreviewable(name: string): boolean {
  * mirroring `EntityDocumentsField`'s own eye/download pair exactly
  * (`files.view`/`files.download` i18n keys reused directly) rather than
  * one ambiguous "click the name" control. The eye button only renders for
- * a type this component can actually preview (image/pdf/3d) — same
+ * a type this component can actually preview (image/pdf/3d/dxf) — same
  * `isViewable` gating EntityDocumentsField applies — download always
  * renders, a real `<a download>` link rather than `window.open`, so the
  * browser's native save-file flow handles it instead of just opening a
@@ -35,12 +36,15 @@ function isPreviewable(name: string): boolean {
 export function FilePreviewButton({ file, className }: { file: PreviewableFile; className?: string }) {
   const t = useTranslations('files');
   const [open3D, setOpen3D] = useState(false);
+  const [openDxf, setOpenDxf] = useState(false);
   const [openPdf, setOpenPdf] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   function handlePreview() {
     if (is3DModelFile(file.originalName)) {
       setOpen3D(true);
+    } else if (isDxfFile(file.originalName)) {
+      setOpenDxf(true);
     } else if (isImageFileByName(file.originalName)) {
       setLightboxSrc(file.downloadUrl);
     } else if (isPdfFileByName(file.originalName)) {
@@ -80,6 +84,15 @@ export function FilePreviewButton({ file, className }: { file: PreviewableFile; 
           <div className="min-h-0 flex-1">
             {open3D && <Step3DViewer url={file.downloadUrl} glbUrl={isGlbFile(file.originalName) ? file.downloadUrl : undefined} />}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openDxf} onOpenChange={setOpenDxf}>
+        <DialogContent className="flex h-[85vh] w-[95vw] max-w-4xl flex-col">
+          <DialogHeader>
+            <DialogTitle className="truncate">{file.originalName}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">{openDxf && <Dxf2DViewer url={file.downloadUrl} />}</div>
         </DialogContent>
       </Dialog>
 
