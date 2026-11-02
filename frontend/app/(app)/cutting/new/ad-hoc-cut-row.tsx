@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { MaterialPicker } from './material-picker';
+import { ShapePolygonPreview } from '@/components/domain/cutting/shape-polygon-preview';
 
 export interface AdHocRowState {
   key: string;
@@ -185,7 +186,12 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
         <Button type="button" variant="outline" size="sm" loading={extractShape.isPending} onClick={() => fileInputRef.current?.click()}>
           {t('uploadStepLabel')}
         </Button>
-        {row.shapePolygon && <Badge variant="secondary">{t('shapeFromStepBadge')}</Badge>}
+        {row.shapePolygon && (
+          <div className="flex items-center gap-2">
+            <ShapePolygonPreview outerCm={row.shapePolygon.outerCm} holesCm={row.shapePolygon.holesCm} className="h-10 w-10 rounded border border-border bg-muted" />
+            <Badge variant="secondary">{t('shapeFromStepBadge')}</Badge>
+          </div>
+        )}
         {removable && (
           <Button type="button" variant="ghost" size="icon" className="ml-auto" onClick={onRemove}>
             <Trash2 className="h-4 w-4" />
@@ -197,7 +203,8 @@ export function AdHocCutRow({ row, onChange, onRemove, removable }: AdHocCutRowP
         <div className="space-y-1.5 rounded-md bg-muted p-2">
           <p className="text-xs font-medium">{t('pickExtractedShapeTitle')}</p>
           {shapeCandidates.map((line, i) => (
-            <Button key={i} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => adoptShapeLine(line)}>
+            <Button key={i} type="button" variant="ghost" size="sm" className="h-auto w-full justify-start gap-2 py-1.5" onClick={() => adoptShapeLine(line)}>
+              {line.shapePolygon && <ShapePolygonPreview outerCm={line.shapePolygon.outerCm} holesCm={line.shapePolygon.holesCm} className="h-8 w-8 shrink-0 rounded border border-border bg-background" />}
               {line.rawName} — {line.dimensions ?? '—'}
             </Button>
           ))}

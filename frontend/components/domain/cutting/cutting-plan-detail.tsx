@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Scissors } from 'lucide-react';
+import { ArrowLeft, Download, Scissors } from 'lucide-react';
 import { useCuttingPlan, useExecuteCuttingPlan } from '@/lib/hooks/use-cutting';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import type { CuttingPlanMaterial, CuttingPlanStock } from '@/lib/api-client/cutting';
+import { polygonToPathD } from './shape-polygon-preview';
+import { useExportStockItemDxf } from '@/lib/hooks/use-cutting';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -66,12 +68,6 @@ function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
   );
 }
 
-/** Builds an SVG path `d` string for a polygon with holes (even-odd fill rule punches the holes out) — one `M...Z` ring per outer/hole loop. */
-function polygonToPathD(outerCm: [number, number][], holesCm: [number, number][][]): string {
-  const ring = (pts: [number, number][]) => `M ${pts.map(([x, y]) => `${x},${y}`).join(' L ')} Z`;
-  return [ring(outerCm), ...holesCm.map(ring)].join(' ');
-}
-
 /**
  * One лист's nesting layout. Irregular-shape nesting (2026-11-01): when a
  * cut carries `shapePolygonCm`, draws its real contour (holes punched out
@@ -115,8 +111,9 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
   );
 }
 
-function MaterialCard({ material }: { material: CuttingPlanMaterial }) {
+function MaterialCard({ planId, material }: { planId: string; material: CuttingPlanMaterial }) {
   const t = useTranslations('cutting');
+  const exportDxf = useExportStockItemDxf(planId);
 
   return (
     <Card>
@@ -144,6 +141,12 @@ function MaterialCard({ material }: { material: CuttingPlanMaterial }) {
               <p className="text-xs text-muted-foreground">
                 {t('usedWasteAreaLabel', { used: toNumber(stockItem.usedAreaCm2) ?? 0, waste: toNumber(stockItem.wasteAreaCm2) ?? 0 })}
               </p>
+            )}
+            {material.kind === 'SHEET' && (
+              <Button type="button" variant="outline" size="sm" loading={exportDxf.isPending} onClick={() => exportDxf.mutate(stockItem.id)}>
+                <Download className="mr-2 h-4 w-4" />
+                {t('exportDxfButton')}
+              </Button>
             )}
           </div>
         ))}
@@ -207,7 +210,7 @@ export function CuttingPlanDetail({ planId }: CuttingPlanDetailProps) {
       </div>
 
       {plan.materials.map((material, i) => (
-        <MaterialCard key={material.productId ?? `custom-${i}`} material={material} />
+        <MaterialCard key={material.productId ?? `custom-${i}`} planId={planId} material={material} />
       ))}
 
       {plan.status === 'DRAFT' && canWrite && (

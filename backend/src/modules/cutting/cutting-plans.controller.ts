@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CuttingPlansService } from './cutting-plans.service';
@@ -77,6 +78,21 @@ export class CuttingPlansController {
   @ApiOperation({ summary: 'DRAFT -> EXECUTED: mark consumed remnants, create new leftover remnants ("Виконати розкрій"). Never touches WarehouseStock.qty.' })
   async execute(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.cuttingPlansService.execute(user, id);
+  }
+
+  @Get(':id/stock-items/:stockItemId/dxf')
+  @RequirePermissions('cutting:read')
+  @ApiOperation({
+    summary:
+      'Download the computed nesting layout for one sheet stock item as a DXF file, ready to load into cutting-machine/CAM software ("Завантажити DXF"). SHEET-kind only — a BAR cut list has no 2D layout to export.',
+  })
+  async exportStockItemDxf(@CurrentUser() user: RequestUser, @Param('id') id: string, @Param('stockItemId') stockItemId: string, @Res() res: Response) {
+    const { content, filename } = await this.cuttingPlansService.exportStockItemDxf(user, id, stockItemId);
+    res.set({
+      'Content-Type': 'application/dxf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(content);
   }
 
   @Get('remnants')

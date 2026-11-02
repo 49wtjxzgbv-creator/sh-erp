@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { ShapePolygonPreview } from './shape-polygon-preview';
 
 const STEP_EXTENSION = /\.(step|stp)$/i;
 
@@ -280,7 +281,12 @@ export function ProductCuttingSpecCard({ productId, readOnly }: ProductCuttingSp
                   <Button type="button" variant="outline" size="sm" loading={extractShape.isPending} onClick={() => fileInputRef.current?.click()}>
                     {t('uploadStepLabel')}
                   </Button>
-                  {defaultShapePolygon && <Badge variant="secondary">{t('shapeFromStepBadge')}</Badge>}
+                  {defaultShapePolygon && (
+                    <div className="flex items-center gap-2">
+                      <ShapePolygonPreview outerCm={defaultShapePolygon.outerCm} holesCm={defaultShapePolygon.holesCm} className="h-10 w-10 rounded border border-border bg-muted" />
+                      <Badge variant="secondary">{t('shapeFromStepBadge')}</Badge>
+                    </div>
+                  )}
                 </div>
               )}
               {shapeError && <p className="text-xs text-destructive">{shapeError}</p>}
@@ -288,7 +294,8 @@ export function ProductCuttingSpecCard({ productId, readOnly }: ProductCuttingSp
                 <div className="space-y-1.5 rounded-md bg-muted p-2">
                   <p className="text-xs font-medium">{t('pickExtractedShapeTitle')}</p>
                   {shapeCandidates.map((line, i) => (
-                    <Button key={i} type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => adoptShapeLine(line)}>
+                    <Button key={i} type="button" variant="ghost" size="sm" className="h-auto w-full justify-start gap-2 py-1.5" onClick={() => adoptShapeLine(line)}>
+                      {line.shapePolygon && <ShapePolygonPreview outerCm={line.shapePolygon.outerCm} holesCm={line.shapePolygon.holesCm} className="h-8 w-8 shrink-0 rounded border border-border bg-background" />}
                       {line.rawName} — {line.dimensions ?? '—'}
                     </Button>
                   ))}

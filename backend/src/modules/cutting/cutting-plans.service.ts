@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { PreviewCuttingPlanDto } from './dto/preview-cutting-plan.dto';
 import { QueryCuttableProductsDto } from './dto/query-cuttable-products.dto';
 import { UpsertProductCuttingSpecDto } from './dto/upsert-product-cutting-spec.dto';
+import { DxfExportService } from './dxf-export.service';
 import {
   AvailableBarRemnant,
   AvailableIrregularSheetRemnant,
@@ -78,6 +79,7 @@ export class CuttingPlansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly dxfExportService: DxfExportService,
   ) {}
 
   async preview(user: RequestUser, dto: PreviewCuttingPlanDto) {
@@ -442,6 +444,45 @@ export class CuttingPlansService {
     });
 
     return this.getDetail(user, plan.id);
+  }
+
+  /**
+   * DXF export (2026-11-02) of one physical sheet's already-computed
+   * nesting layout — see dxf-export.service.ts's own header for why only
+   * SHEET-kind stock items qualify (a BAR cut has no 2D position at all).
+   * Available as soon as a plan is DRAFT, same as preview()'s own output —
+   * deliberately not gated on execute(), a separate remnant-bookkeeping
+   * decision.
+   */
+  async exportStockItemDxf(user: RequestUser, cuttingPlanId: string, stockItemId: string) {
+    const stockItem = await this.prisma.tenant.cuttingPlanStock.findUnique({
+      where: { id: stockItemId },
+      include: { cuts: true, product: true },
+    });
+    if (!stockItem || stockItem.cuttingPlanId !== cuttingPlanId) {
+      throw new CodedNotFoundException('CUTTING_STOCK_ITEM_NOT_FOUND', `Stock item ${stockItemId} not found on plan ${cuttingPlanId}.`);
+    }
+    if (stockItem.widthCm == null) {
+      throw new CodedBadRequestException('CUTTING_DXF_EXPORT_SHEET_ONLY', 'Експорт у DXF доступний лише для листового матеріалу.');
+    }
+
+    const content = this.dxfExportService.buildStockItemDxf({
+      lengthCm: Number(stockItem.lengthCm),
+      widthCm: Number(stockItem.widthCm),
+      cuts: stockItem.cuts.map((c) => ({
+        pieceLengthCm: Number(c.pieceLengthCm),
+        pieceWidthCm: c.pieceWidthCm != null ? Number(c.pieceWidthCm) : null,
+        posXCm: c.posXCm != null ? Number(c.posXCm) : null,
+        posYCm: c.posYCm != null ? Number(c.posYCm) : null,
+        shapePolygonCm: (c.shapePolygonCm as unknown as ShapePolygon | null) ?? null,
+      })),
+    });
+
+    const label = stockItem.product?.article || stockItem.product?.name || stockItem.customMaterialLabel || 'rozkrij';
+    const safeLabel = label.replace(/[^\p{L}\p{N}_-]+/gu, '_');
+    const filename = `${safeLabel}-${stockItem.id.slice(0, 8)}.dxf`;
+
+    return { content, filename };
   }
 
   async getDetail(user: RequestUser, cuttingPlanId: string) {

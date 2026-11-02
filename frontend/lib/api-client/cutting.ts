@@ -170,6 +170,11 @@ export function getCuttingPlan(id: string): Promise<CuttingPlan> {
   return apiClient.get<CuttingPlan>(`cutting/${id}`);
 }
 
+/** DXF of one sheet's already-computed nesting layout — see cutting-plans.controller.ts's own route for why this is SHEET-only. */
+export function exportStockItemDxf(planId: string, stockItemId: string): Promise<Blob> {
+  return apiClient.getBlob(`cutting/${planId}/stock-items/${stockItemId}/dxf`);
+}
+
 export interface StockRemnant {
   id: string;
   productId: string;

@@ -1,9 +1,11 @@
 import { CuttingPlansService } from './cutting-plans.service';
+import { DxfExportService } from './dxf-export.service';
 
 describe('CuttingPlansService', () => {
   let service: CuttingPlansService;
   let prisma: any;
   let audit: any;
+  let dxfExportService: DxfExportService;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   beforeEach(() => {
@@ -26,7 +28,7 @@ describe('CuttingPlansService', () => {
           count: jest.fn().mockResolvedValue(0),
         },
         cuttingPlan: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), groupBy: jest.fn().mockResolvedValue([]) },
-        cuttingPlanStock: { create: jest.fn(), update: jest.fn() },
+        cuttingPlanStock: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
         cuttingPlanCut: { createMany: jest.fn() },
         product: { findMany: jest.fn().mockResolvedValue([]) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'w1' }) },
@@ -34,7 +36,8 @@ describe('CuttingPlansService', () => {
       },
     };
     audit = { record: jest.fn() };
-    service = new CuttingPlansService(prisma, audit);
+    dxfExportService = new DxfExportService();
+    service = new CuttingPlansService(prisma, audit, dxfExportService);
   });
 
   describe('preview', () => {
@@ -563,6 +566,69 @@ describe('CuttingPlansService', () => {
 
       expect(prisma.tenant.productCuttingSpec.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'spec1' } }));
       expect(prisma.tenant.productCuttingSpec.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('exportStockItemDxf', () => {
+    it('throws 404 when the stock item does not exist', async () => {
+      prisma.tenant.cuttingPlanStock.findUnique.mockResolvedValue(null);
+
+      await expect(service.exportStockItemDxf(user, 'plan1', 'missing')).rejects.toThrow();
+    });
+
+    it('throws 404 when the stock item belongs to a different plan', async () => {
+      prisma.tenant.cuttingPlanStock.findUnique.mockResolvedValue({ id: 's1', cuttingPlanId: 'other-plan', widthCm: 100, lengthCm: 200, cuts: [], product: null });
+
+      await expect(service.exportStockItemDxf(user, 'plan1', 's1')).rejects.toThrow();
+    });
+
+    it('rejects a BAR-kind stock item (no widthCm)', async () => {
+      prisma.tenant.cuttingPlanStock.findUnique.mockResolvedValue({ id: 's1', cuttingPlanId: 'plan1', widthCm: null, lengthCm: 300, cuts: [], product: null });
+
+      await expect(service.exportStockItemDxf(user, 'plan1', 's1')).rejects.toThrow();
+    });
+
+    it('builds a DXF for a SHEET stock item, naming the file after the product article', async () => {
+      prisma.tenant.cuttingPlanStock.findUnique.mockResolvedValue({
+        id: 's1',
+        cuttingPlanId: 'plan1',
+        lengthCm: 200,
+        widthCm: 100,
+        customMaterialLabel: null,
+        product: { article: 'SH-123', name: 'Фанера' },
+        cuts: [
+          { pieceLengthCm: 50, pieceWidthCm: 40, posXCm: 10, posYCm: 10, shapePolygonCm: null },
+          {
+            pieceLengthCm: 0,
+            pieceWidthCm: null,
+            posXCm: null,
+            posYCm: null,
+            shapePolygonCm: { outerCm: [[0, 0], [20, 0], [20, 20], [0, 20]], holesCm: [] },
+          },
+        ],
+      });
+
+      const result = await service.exportStockItemDxf(user, 'plan1', 's1');
+
+      expect(result.filename).toBe('SH-123-s1.dxf');
+      expect(result.content).toContain('LWPOLYLINE');
+      expect(result.content).toContain('ENTITIES');
+    });
+
+    it('falls back to the custom material label when there is no catalog product', async () => {
+      prisma.tenant.cuttingPlanStock.findUnique.mockResolvedValue({
+        id: 's1',
+        cuttingPlanId: 'plan1',
+        lengthCm: 200,
+        widthCm: 100,
+        customMaterialLabel: 'ДСП 16мм',
+        product: null,
+        cuts: [],
+      });
+
+      const result = await service.exportStockItemDxf(user, 'plan1', 's1');
+
+      expect(result.filename).toBe('ДСП_16мм-s1.dxf');
     });
   });
 });

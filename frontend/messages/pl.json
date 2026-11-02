@@ -595,6 +595,7 @@
     "leftoverLabel": "Leftover",
     "leftoverNone": "No leftover",
     "usedWasteAreaLabel": "Used {used} cm², waste {waste} cm²",
+    "exportDxfButton": "Download DXF",
     "executeCuttingPlan": "Execute cutting plan",
     "executeCuttingPlanConfirm": "Mark used remnants as consumed and save new leftovers to stock?",
     "executed": "Executed",

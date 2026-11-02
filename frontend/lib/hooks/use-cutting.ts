@@ -10,6 +10,7 @@ import {
   previewCuttingPlan,
   executeCuttingPlan,
   getCuttingPlan,
+  exportStockItemDxf,
   listRemnants,
   listCuttableProducts,
   type UpsertProductCuttingSpecInput,
@@ -76,4 +77,25 @@ export function useExecuteCuttingPlan(id: string) {
 
 export function useRemnants(filter: { productId?: string; warehouseId?: string } = {}) {
   return useQuery({ queryKey: remnantsKey(filter), queryFn: () => listRemnants(filter) });
+}
+
+/**
+ * Downloads one sheet stock item's computed nesting layout as a DXF file —
+ * same throwaway object-URL/anchor-click download as useExportProducts(),
+ * just keyed by stockItemId since a plan can have several sheets.
+ */
+export function useExportStockItemDxf(planId: string) {
+  return useMutation({
+    mutationFn: async (stockItemId: string) => {
+      const blob = await exportStockItemDxf(planId, stockItemId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rozkrij-${stockItemId.slice(0, 8)}.dxf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
 }

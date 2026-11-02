@@ -597,6 +597,7 @@
     "leftoverLabel": "Залишок",
     "leftoverNone": "Без залишку",
     "usedWasteAreaLabel": "Використано {used} см², відходи {waste} см²",
+    "exportDxfButton": "Завантажити DXF",
     "executeCuttingPlan": "Виконати розкрій",
     "executeCuttingPlanConfirm": "Позначити використані обрізки витраченими і зберегти нові залишки на склад?",
     "executed": "Виконано",
