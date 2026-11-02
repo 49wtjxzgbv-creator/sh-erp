@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Ruler } from 'lucide-react';
-import type { Segment, TextLabel, BBox, Pt } from './dxf-geometry';
+import { decodeDxfText, type Segment, type TextLabel, type BBox, type Pt } from './dxf-geometry';
 import type { DxfParseRequest, DxfParseResponse } from './dxf-parser.worker';
 
 /**
@@ -94,11 +94,12 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
     async function load() {
       setState('loading');
       try {
-        const text = await fetch(url).then((r) => {
+        const buffer = await fetch(url).then((r) => {
           if (!r.ok) throw new Error(`Failed to download drawing (${r.status})`);
-          return r.text();
+          return r.arrayBuffer();
         });
         if (cancelled) return;
+        const text = decodeDxfText(buffer);
 
         const { segments, labels, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
         if (cancelled) return;

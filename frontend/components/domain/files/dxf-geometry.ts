@@ -68,6 +68,63 @@ export function resolveUnitLabel(dxf: IDxf): string | null {
   return typeof raw === 'number' ? (INSUNITS_LABELS[raw] ?? null) : null;
 }
 
+/** `$DWGCODEPAGE` (group code 3) values actually seen from real exports → a `TextDecoder`-recognized encoding label. */
+const DXF_CODEPAGE_TO_ENCODING: Record<string, string> = {
+  ANSI_1250: 'windows-1250',
+  ANSI_1251: 'windows-1251',
+  ANSI_1252: 'windows-1252',
+  ANSI_1253: 'windows-1253',
+  ANSI_1254: 'windows-1254',
+  ANSI_1255: 'windows-1255',
+  ANSI_1256: 'windows-1256',
+  ANSI_1257: 'windows-1257',
+  ANSI_1258: 'windows-1258',
+  ANSI_874: 'windows-874',
+  ANSI_932: 'shift-jis',
+  ANSI_936: 'gbk',
+  ANSI_949: 'euc-kr',
+  ANSI_950: 'big5',
+};
+
+/**
+ * DXF ASCII files are plain bytes in whatever codepage AutoCAD declared via
+ * the `$DWGCODEPAGE` header variable — NOT necessarily UTF-8. A
+ * Ukrainian/Russian drawing exported from AutoCAD is typically `ANSI_1251`
+ * (Windows-1251 Cyrillic); decoding those bytes as UTF-8 (the default for
+ * `fetch(...).then(r => r.text())`) corrupts every non-ASCII character into
+ * replacement glyphs — "якісь знаки питання" (2026-11-02), only visible
+ * once this viewer started actually rendering TEXT/MTEXT content. Sniffs
+ * the header for the real codepage before committing to a decoder; Latin-1
+ * is used only for the sniff itself since it's a lossless 1:1 byte→codepoint
+ * mapping, so the ASCII header keywords are found correctly no matter what
+ * the body's actual encoding turns out to be.
+ */
+export function decodeDxfText(buffer: ArrayBuffer): string {
+  const sniffed = new TextDecoder('latin1').decode(buffer);
+  const match = /\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*([A-Za-z0-9_]+)/.exec(sniffed);
+  const encoding = match ? DXF_CODEPAGE_TO_ENCODING[match[1].toUpperCase()] : undefined;
+  if (!encoding) return new TextDecoder('utf-8').decode(buffer);
+  try {
+    return new TextDecoder(encoding).decode(buffer);
+  } catch {
+    return new TextDecoder('utf-8').decode(buffer); // unsupported label in this browser — fall back rather than throw
+  }
+}
+
+/**
+ * AutoCAD's own escape for embedding any Unicode character inside an
+ * otherwise single-byte-codepage-safe DXF text string (`\U+XXXX`, exactly 4
+ * hex digits — the same mechanism used for Cyrillic/CJK/any non-ASCII
+ * annotation text regardless of `$DWGCODEPAGE`, and a common alternative to
+ * raw codepage bytes). `dxf-parser` passes these straight through
+ * unresolved, same as it does for codepage bytes. A surrogate pair (two
+ * consecutive `\U+XXXX` escapes) resolves correctly with a plain
+ * `fromCharCode`-per-escape replace, since JS strings are already UTF-16.
+ */
+function decodeUnicodeEscapes(text: string): string {
+  return text.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 export function computeBoundingBox(segments: Segment[], labels: TextLabel[] = []): BBox {
   let minX = Infinity;
   let minY = Infinity;
@@ -206,7 +263,7 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           const e = entity as ITextEntity;
           labels.push({
             position: transform(e.startPoint),
-            text: e.text ?? '',
+            text: decodeUnicodeEscapes(e.text ?? ''),
             height: e.textHeight || DEFAULT_LABEL_HEIGHT,
             // Does not compose with an enclosing INSERT's own rotation (unlike point-based
             // geometry, which transforms correctly through `transform`) — a text entity nested
@@ -225,7 +282,7 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
             e.rotation != null ? (e.rotation * Math.PI) / 180 : e.directionVector ? Math.atan2(e.directionVector.y, e.directionVector.x) : 0;
           labels.push({
             position: transform(e.position),
-            text: cleanMtext(e.text ?? ''),
+            text: decodeUnicodeEscapes(cleanMtext(e.text ?? '')),
             height: e.height || DEFAULT_LABEL_HEIGHT,
             rotation,
             color,
@@ -244,9 +301,16 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
             // text, so the dimension value is still visible even without the full
             // extension-line/arrow geometry.
             const pos = e.middleOfText ?? e.anchorPoint;
-            const text = e.text && e.text !== '<>' ? e.text : e.actualMeasurement != null ? String(Math.round(e.actualMeasurement * 100) / 100) : null;
-            if (pos && text) {
-              labels.push({ position: transform(pos), text, height: DEFAULT_LABEL_HEIGHT, rotation: ((e.angle || 0) * Math.PI) / 180, color });
+            const rawText =
+              e.text && e.text !== '<>' ? e.text : e.actualMeasurement != null ? String(Math.round(e.actualMeasurement * 100) / 100) : null;
+            if (pos && rawText) {
+              labels.push({
+                position: transform(pos),
+                text: decodeUnicodeEscapes(rawText),
+                height: DEFAULT_LABEL_HEIGHT,
+                rotation: ((e.angle || 0) * Math.PI) / 180,
+                color,
+              });
             }
           }
           break;
