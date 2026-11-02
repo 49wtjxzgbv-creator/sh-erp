@@ -367,7 +367,7 @@ export class SupplierPortalService {
       };
     },
     photoUrl: string | null,
-    files: { id: string; originalName: string; downloadUrl: string }[],
+    files: unknown[],
   ) {
     return {
       id: entry.id,
@@ -393,6 +393,18 @@ export class SupplierPortalService {
     };
   }
 
+  /**
+   * "щоб візуально був як у виробника також з можливістю перегляду 3д
+   * моделі та ар на телефоні" (2026-11-02) — the full, unmapped FileAsset
+   * rows `filesService.listForEntities` already returns (storageKey,
+   * mimeType, conversionStatus, convertedDownloadUrl,
+   * optimizedDownloadUrl, mobileOptimizedDownloadUrl,
+   * arOptimizedDownloadUrl, ...) pass straight through as `files` now,
+   * same shape the main `/catalog` page's own `View3DButton`/`ArViewButton`
+   * already consume there — no truncation to {id, originalName,
+   * downloadUrl} anymore, that would silently drop every field those two
+   * components actually need.
+   */
   async listCatalog(actor: RequestSupplierPortalUser) {
     const entries = await this.prisma.tenant.productSupplier.findMany({
       where: { supplierId: actor.supplierId },
@@ -400,8 +412,18 @@ export class SupplierPortalService {
       include: { product: { include: { cuttingSpec: true } } },
     });
     const productIds = entries.map((e) => e.productId);
-    const photos = productIds.length > 0 ? await this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']) : {};
-    return { items: entries.map((e) => this.toSupplierCatalogEntry(e as any, (photos as any)[e.productId]?.[0]?.downloadUrl ?? null, [])) };
+    const [photos, documents] =
+      productIds.length > 0
+        ? await Promise.all([
+            this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']),
+            this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_DOCUMENT']),
+          ])
+        : [{}, {}];
+    return {
+      items: entries.map((e) =>
+        this.toSupplierCatalogEntry(e as any, (photos as any)[e.productId]?.[0]?.downloadUrl ?? null, (documents as any)[e.productId] ?? []),
+      ),
+    };
   }
 
   async getCatalogEntry(actor: RequestSupplierPortalUser, id: string) {
@@ -416,7 +438,7 @@ export class SupplierPortalService {
       this.filesService.listForEntities(this.asFilesActor(actor), 'Product', [entry.productId], ['PRODUCT_DOCUMENT']),
     ]);
     const photoUrl = (photos as any)[entry.productId]?.[0]?.downloadUrl ?? null;
-    const files = ((documents as any)[entry.productId] ?? []).map((f: any) => ({ id: f.id, originalName: f.originalName, downloadUrl: f.downloadUrl }));
+    const files = (documents as any)[entry.productId] ?? [];
 
     return this.toSupplierCatalogEntry(entry as any, photoUrl, files);
   }

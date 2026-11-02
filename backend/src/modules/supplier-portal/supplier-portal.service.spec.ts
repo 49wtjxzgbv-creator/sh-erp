@@ -214,7 +214,9 @@ describe('SupplierPortalService', () => {
           product: { article: 'ABC', name: 'Widget', weightPerUnitKg: '1.500', cuttingSpec: null },
         },
       ]);
-      filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
+      filesService.listForEntities.mockImplementation((_actor: any, _type: string, _ids: string[], domains: string[]) =>
+        domains.includes('PRODUCT_PHOTO') ? Promise.resolve({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] }) : Promise.resolve({}),
+      );
 
       const result = await service.listCatalog(actor);
 
@@ -238,6 +240,29 @@ describe('SupplierPortalService', () => {
       ]);
       expect(result.items[0]).not.toHaveProperty('price');
       expect(result.items[0]).not.toHaveProperty('isDefault');
+    });
+
+    it("passes through the full file rows (not truncated) so View3DButton/ArViewButton have what they need (2026-11-02)", async () => {
+      prisma.tenant.productSupplier.findMany.mockResolvedValue([
+        {
+          id: 'ps1',
+          productId: 'p1',
+          price: null,
+          isDefault: false,
+          supplierCostPrice: null,
+          supplierOfferedPrice: null,
+          createdAt: new Date('2026-11-01'),
+          product: { article: 'ABC', name: 'Widget', weightPerUnitKg: null, cuttingSpec: null },
+        },
+      ]);
+      const modelFile = { id: 'f1', originalName: 'model.glb', downloadUrl: 'https://example.com/f1.glb', mimeType: 'model/gltf-binary', arOptimizedDownloadUrl: 'https://example.com/f1-ar.glb' };
+      filesService.listForEntities.mockImplementation((_actor: any, _type: string, _ids: string[], domains: string[]) =>
+        domains.includes('PRODUCT_DOCUMENT') ? Promise.resolve({ p1: [modelFile] }) : Promise.resolve({}),
+      );
+
+      const result = await service.listCatalog(actor);
+
+      expect(result.items[0].files).toEqual([modelFile]);
     });
   });
 

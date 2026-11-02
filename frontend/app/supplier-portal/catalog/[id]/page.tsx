@@ -10,22 +10,36 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { FilePreviewButton } from '@/components/domain/files/file-preview-button';
+import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
+import { View3DButton } from '@/components/domain/files/view-3d-button';
+import { ArViewButton } from '@/components/domain/files/ar-view-button';
 import { ShapePolygonPreview } from '@/components/domain/cutting/shape-polygon-preview';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { SupplierCatalogEntry } from '@/lib/api-client/supplier-catalog';
+import type { FileAssetWithUrl } from '@/lib/api-client/files';
+
+/** Same AR variant-preference logic as the catalog list page / staff /catalog page — always prefer the de-instanced arOptimizedDownloadUrl. */
+function resolveArGlbUrl(files: FileAssetWithUrl[]): string | null {
+  const modelDoc = files.find((f) => is3DModelFile(f.originalName));
+  if (!modelDoc) return null;
+  if (isGlbFile(modelDoc.originalName)) {
+    return modelDoc.arOptimizedDownloadUrl || modelDoc.mobileOptimizedDownloadUrl || modelDoc.optimizedDownloadUrl || modelDoc.downloadUrl;
+  }
+  return modelDoc.convertedDownloadUrl ?? null;
+}
 
 /**
  * Supplier-portal product catalog detail (2026-11-02) — one entry
  * (`ProductSupplier` row) auto-populated whenever this product was sent to
  * the supplier via a purchase order/sent purchase request
  * (SupplierCatalogService#ensureCatalogEntries). Read-only everywhere
- * except the two supplier-own price fields at the bottom — photo, files
- * (including the product's own .glb, previewed in-app via
- * FilePreviewButton — no separate 3D-quick-look button needed, clicking
- * the filename already opens the same Step3DViewer dialog), weight (the
- * only physical attribute Product actually has), and the cutting spec
- * when one is configured are all just the company's own product data.
+ * except the two supplier-own price fields at the bottom — photo (with the
+ * same View3DButton/ArViewButton quick-look treatment as the catalog list
+ * page, "щоб візуально був як у виробника", 2026-11-02), the full file
+ * list (previewed in-app via FilePreviewButton), weight (the only physical
+ * attribute Product actually has), and the cutting spec when one is
+ * configured are all just the company's own product data.
  */
 export default function SupplierPortalCatalogDetailPage() {
   const params = useParams<{ id: string }>();
@@ -87,10 +101,17 @@ export default function SupplierPortalCatalogDetailPage() {
     }
   }
 
+  const modelDoc = entry.files.find((f) => is3DModelFile(f.originalName));
+  const arGlbUrl = resolveArGlbUrl(entry.files);
+
   return (
     <div className="max-w-2xl space-y-4">
       <div className="flex items-center gap-3">
-        <Avatar src={entry.photoUrl} size="lg" />
+        <div className="flex flex-col items-center gap-1">
+          <Avatar src={entry.photoUrl} size="lg" />
+          {modelDoc && <View3DButton file={modelDoc} className="px-1.5 py-0.5 text-[10px]" />}
+          {arGlbUrl && <ArViewButton getGlbUrl={() => Promise.resolve(arGlbUrl)} className="px-1.5 py-0.5 text-[10px]" />}
+        </div>
         <div>
           <h2 className="text-lg font-semibold">{entry.name}</h2>
           <p className="text-sm text-muted-foreground">{entry.article}</p>

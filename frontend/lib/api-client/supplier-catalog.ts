@@ -1,5 +1,6 @@
 import type { DecimalString } from './decimal';
 import type { CuttingStockKind } from './cutting';
+import type { FileAssetWithUrl } from './files';
 
 /**
  * Typed shape for SupplierPortalService's catalog endpoints
@@ -15,7 +16,8 @@ export interface SupplierCatalogEntry {
   name: string;
   weightPerUnitKg: DecimalString | null;
   photoUrl: string | null;
-  files: { id: string; originalName: string; downloadUrl: string }[];
+  /** Full FileAsset rows (not truncated) — same shape the main /catalog page's View3DButton/ArViewButton already consume, so the supplier portal can offer the same 3D/AR quick-look. */
+  files: FileAssetWithUrl[];
   cuttingSpec: {
     kind: CuttingStockKind;
     stockLengthCm: DecimalString;
