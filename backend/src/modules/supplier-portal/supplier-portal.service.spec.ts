@@ -524,6 +524,24 @@ describe('SupplierPortalService', () => {
         }),
       ]);
     });
+
+    it("carries the picked item's own product documents (incl. a GLB model), for the cutting tool's GLB-dimension fallback", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po1',
+          orderDate: new Date('2026-10-01'),
+          items: [
+            { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 0 },
+          ],
+        },
+      ]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ id: 'f1', originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb' }] });
+
+      const result = await service.listStock(actor);
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Product', ['p1'], ['PRODUCT_DOCUMENT']);
+      expect(result.items).toEqual([expect.objectContaining({ itemId: 'item1', files: [{ id: 'f1', originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb' }] })]);
+    });
   });
 
   describe('updateSupplierReadyQty', () => {

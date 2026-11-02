@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Trash2, Search } from 'lucide-react';
+import { Trash2, Search, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,8 @@ export interface CuttingPickerItem {
   cutLengthCm: string;
   cutWidthCm: string;
   cutShapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
+  /** "воно ж розміри має витягувати для розкрою з файлів глб" (2026-11-03) — when there's no saved cuttingSpec dimension, fall back to measuring the product's own 3D model's bounding box instead of leaving the row blank. */
+  glbUrl: string | null;
 }
 
 export interface CuttingLineRowProps {
@@ -58,12 +60,44 @@ export function CuttingLineRow({ row, isSheet, pickerItems, onChange, onRemove, 
   const t = useTranslations('supplierPortal');
   const tCutting = useTranslations('cutting');
   const [open, setOpen] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
+  const [measureError, setMeasureError] = useState<string | null>(null);
+  // Guards against a stale GLB measurement landing after the supplier has already
+  // picked a DIFFERENT item (or removed this row) while the fetch+parse was in flight.
+  const selectionToken = useRef(0);
 
   const filteredItems = useMemo(() => {
     const query = row.label.trim().toLowerCase();
     if (!query) return pickerItems;
     return pickerItems.filter((item) => item.displayLabel.toLowerCase().includes(query));
   }, [row.label, pickerItems]);
+
+  async function handleSelect(item: CuttingPickerItem) {
+    setOpen(false);
+    setMeasureError(null);
+    const token = ++selectionToken.current;
+
+    if (item.cutLengthCm && (!isSheet || item.cutWidthCm)) {
+      onChange({ label: item.displayLabel, cutLengthCm: item.cutLengthCm, cutWidthCm: item.cutWidthCm, cutShapePolygon: item.cutShapePolygon });
+      return;
+    }
+
+    onChange({ label: item.displayLabel, cutShapePolygon: item.cutShapePolygon });
+    if (!item.glbUrl) return;
+
+    setMeasuring(true);
+    try {
+      const { computeGlbDimensions } = await import('@/components/domain/files/step-3d-viewer');
+      const dims = await computeGlbDimensions(item.glbUrl);
+      if (selectionToken.current !== token) return; // a different selection landed first
+      if (dims) onChange({ cutLengthCm: String(dims.lengthCm.toFixed(1)), cutWidthCm: String(dims.widthCm.toFixed(1)) });
+      else setMeasureError(t('cuttingGlbMeasureEmpty'));
+    } catch {
+      if (selectionToken.current === token) setMeasureError(t('cuttingGlbMeasureFailed'));
+    } finally {
+      if (selectionToken.current === token) setMeasuring(false);
+    }
+  }
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3">
@@ -77,10 +111,7 @@ export function CuttingLineRow({ row, isSheet, pickerItems, onChange, onRemove, 
           items={filteredItems}
           getKey={(item) => item.key}
           leading={<Search className="h-4 w-4 shrink-0 text-muted-foreground" />}
-          onSelect={(item) => {
-            onChange({ label: item.displayLabel, cutLengthCm: item.cutLengthCm, cutWidthCm: item.cutWidthCm, cutShapePolygon: item.cutShapePolygon });
-            setOpen(false);
-          }}
+          onSelect={handleSelect}
           placeholder={t('cuttingLineNamePlaceholder')}
           emptyLabel={t('cuttingLineNoMatches')}
           renderItem={(item) => (
@@ -99,14 +130,21 @@ export function CuttingLineRow({ row, isSheet, pickerItems, onChange, onRemove, 
       </div>
       <div className="w-28 space-y-1.5">
         <Label>{tCutting('cutLengthLabel')}</Label>
-        <Input type="number" step="any" min={0} value={row.cutLengthCm} onChange={(e) => onChange({ cutLengthCm: e.target.value })} />
+        <Input type="number" step="any" min={0} value={row.cutLengthCm} onChange={(e) => onChange({ cutLengthCm: e.target.value })} disabled={measuring} />
       </div>
       {isSheet && (
         <div className="w-28 space-y-1.5">
           <Label>{tCutting('cutWidthLabel')}</Label>
-          <Input type="number" step="any" min={0} value={row.cutWidthCm} onChange={(e) => onChange({ cutWidthCm: e.target.value })} />
+          <Input type="number" step="any" min={0} value={row.cutWidthCm} onChange={(e) => onChange({ cutWidthCm: e.target.value })} disabled={measuring} />
         </div>
       )}
+      {measuring && (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('cuttingGlbMeasuring')}
+        </span>
+      )}
+      {measureError && <p className="text-xs text-destructive">{measureError}</p>}
       {row.cutShapePolygon && (
         <div className="flex items-center gap-2">
           <ShapePolygonPreview outerCm={row.cutShapePolygon.outerCm} holesCm={row.cutShapePolygon.holesCm} className="h-10 w-10 rounded border border-border bg-muted" />

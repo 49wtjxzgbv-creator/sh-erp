@@ -593,7 +593,13 @@ export class SupplierPortalService {
     // is a plain cross-tenant-safe scalar column, not a navigable Prisma relation (see its
     // own schema comment), so this is a separate batched lookup rather than an `include`.
     const productIds = Array.from(new Set(openItems.map(({ item }) => item.productId).filter((id): id is string => id != null)));
-    const specs = productIds.length > 0 ? await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: productIds } } }) : [];
+    const [specs, documents] = await Promise.all([
+      productIds.length > 0 ? this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: productIds } } }) : Promise.resolve([]),
+      // "воно ж розміри має витягувати для розкрою з файлів глб" (2026-11-03) — a product's own 3D
+      // model (PRODUCT_DOCUMENT domain, same as listCatalog's own file-fetching) lets the cutting
+      // tool fall back to a GLB bounding-box measurement when no cuttingSpec was ever configured.
+      productIds.length > 0 ? this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_DOCUMENT']) : Promise.resolve({}),
+    ]);
     const specByProduct = new Map(specs.map((s) => [s.productId, s]));
 
     const items = openItems.map(({ order, item }) => {
@@ -619,6 +625,7 @@ export class SupplierPortalService {
               defaultCutShapePolygon: spec.defaultCutShapePolygon,
             }
           : null,
+        files: item.productId ? (documents as any)[item.productId] ?? [] : [],
       };
     });
 

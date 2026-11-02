@@ -1893,7 +1893,10 @@
     "cuttingLineNamePlaceholder": "Start typing a name…",
     "cuttingLineNoMatches": "No matches — you can type a name manually",
     "cuttingSourceCatalog": "Catalog",
-    "cuttingSourceOrder": "Order"
+    "cuttingSourceOrder": "Order",
+    "cuttingGlbMeasuring": "Measuring dimensions from the 3D model…",
+    "cuttingGlbMeasureEmpty": "Could not determine dimensions from the 3D model — enter manually",
+    "cuttingGlbMeasureFailed": "Could not load the 3D model to measure — enter dimensions manually"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

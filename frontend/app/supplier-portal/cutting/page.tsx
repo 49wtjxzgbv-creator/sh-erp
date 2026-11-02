@@ -14,6 +14,8 @@ import { SheetStockDiagram, BarStockDiagram } from '@/components/domain/cutting/
 import { toNumber } from '@/lib/api-client/decimal';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { isGlbFile } from '@/components/domain/files/entity-documents-field';
+import type { FileAssetWithUrl } from '@/lib/api-client/files';
 import type { SupplierCatalogEntry } from '@/lib/api-client/supplier-catalog';
 import { previewSupplierCutting, type SupplierCuttingResult } from '@/lib/api-client/supplier-cutting';
 import { CuttingLineRow, type CuttingLineRowState, type CuttingPickerItem } from './cutting-line-row';
@@ -23,6 +25,12 @@ interface StockPickerRow {
   article: string;
   productName: string;
   cuttingSpec: SupplierCatalogEntry['cuttingSpec'];
+  files: FileAssetWithUrl[];
+}
+
+/** "воно ж розміри має витягувати для розкрою з файлів глб" (2026-11-03) — same resolution CuttingLineRow needs for its GLB-dimension fallback, just the plain `downloadUrl` (not the AR-optimized variant chain `resolveArGlbUrl` elsewhere in this app uses) since this is a one-off measurement, not an AR render — same convention already established by `PackagingDimensionsFromModelCalculator` in assembly-form.tsx. */
+function resolveGlbUrl(files: FileAssetWithUrl[]): string | null {
+  return files.find((f) => isGlbFile(f.originalName))?.downloadUrl ?? null;
 }
 
 function newLine(partial: Partial<CuttingLineRowState> = {}): CuttingLineRowState {
@@ -140,6 +148,7 @@ export default function SupplierPortalCuttingPage() {
       cutLengthCm: c.cuttingSpec?.defaultCutLengthCm ?? '',
       cutWidthCm: c.cuttingSpec?.defaultCutWidthCm ?? '',
       cutShapePolygon: c.cuttingSpec?.defaultCutShapePolygon ?? null,
+      glbUrl: resolveGlbUrl(c.files),
     }));
     const fromStock: CuttingPickerItem[] = stockItems.map((s) => ({
       key: `order:${s.itemId}`,
@@ -148,6 +157,7 @@ export default function SupplierPortalCuttingPage() {
       cutLengthCm: s.cuttingSpec?.defaultCutLengthCm ?? '',
       cutWidthCm: s.cuttingSpec?.defaultCutWidthCm ?? '',
       cutShapePolygon: s.cuttingSpec?.defaultCutShapePolygon ?? null,
+      glbUrl: resolveGlbUrl(s.files),
     }));
     return [...fromCatalog, ...fromStock];
   }, [catalog, stockItems]);

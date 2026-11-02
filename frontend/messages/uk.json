@@ -2032,7 +2032,10 @@
     "cuttingLineNamePlaceholder": "Почніть вводити назву…",
     "cuttingLineNoMatches": "Нічого не знайдено — можна ввести назву вручну",
     "cuttingSourceCatalog": "Каталог",
-    "cuttingSourceOrder": "Замовлення"
+    "cuttingSourceOrder": "Замовлення",
+    "cuttingGlbMeasuring": "Вимірюємо розміри з 3D-моделі…",
+    "cuttingGlbMeasureEmpty": "Не вдалося визначити розміри з 3D-моделі — введіть вручну",
+    "cuttingGlbMeasureFailed": "Не вдалося завантажити 3D-модель для вимірювання — введіть розміри вручну"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",
