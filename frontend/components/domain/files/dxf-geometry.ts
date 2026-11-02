@@ -13,6 +13,10 @@ import type {
   ITextEntity,
   IMtextEntity,
   IDimensionEntity,
+  ISolidEntity,
+  I3DfaceEntity,
+  ILayer,
+  ILineType,
 } from 'dxf-parser';
 
 /**
@@ -27,6 +31,14 @@ export interface Pt {
 }
 
 export interface Segment {
+  points: Pt[];
+  color: string | null;
+  /** Absolute dash-pattern lengths (world units, already positive — DXF's own negative-for-gap sign is stripped) from the entity's LTYPE table row; `null` means solid/continuous. Scale by the current zoom before handing to `ctx.setLineDash`. */
+  dash: number[] | null;
+}
+
+/** SOLID/3DFACE content — filled, not stroked, so kept out of `Segment` the same way `TextLabel` is. */
+export interface Fill {
   points: Pt[];
   color: string | null;
 }
@@ -56,6 +68,7 @@ export interface TextLabel {
 export interface ExtractedGeometry {
   segments: Segment[];
   labels: TextLabel[];
+  fills: Fill[];
 }
 
 export interface BBox {
@@ -137,13 +150,47 @@ function decodeUnicodeEscapes(text: string): string {
   return text.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-export function computeBoundingBox(segments: Segment[], labels: TextLabel[] = []): BBox {
+/**
+ * AutoCAD's older, single-line special-character codes — predates
+ * `\U+XXXX` and still shows up constantly in real shop drawings (confirmed:
+ * a real file's ⌀15h6/⌀16/⌀14,3 callouts were all written as literal
+ * "%%c15"/"%%c16"/"%%c14,3" text — rendering the raw "%%c" instead of ⌀ is
+ * exactly what read as "накладення тексту"/garbled symbols (2026-11-02):
+ * the un-decoded "%%c" sat immediately beside the following number with no
+ * real DXF-authored gap, since AutoCAD budgeted space for one ⌀ glyph, not
+ * four literal characters). `%%u`/`%%o` (underline/overline toggles) have
+ * no glyph of their own — this viewer doesn't do partial-run underlining,
+ * so they're stripped rather than left as visible garbage.
+ */
+function decodeSpecialCodes(text: string): string {
+  return text
+    .replace(/%%[uUoO]/g, '')
+    .replace(/%%[cC]/g, '⌀')
+    .replace(/%%[dD]/g, '°')
+    .replace(/%%[pP]/g, '±')
+    .replace(/%%%/g, '%');
+}
+
+/** Combines both of this file's text-code decoders, applied to every label's final text in the order they're found in the wild (one doesn't shadow the other — `%%` and `\U+` never overlap). */
+function resolveTextCodes(text: string): string {
+  return decodeUnicodeEscapes(decodeSpecialCodes(text));
+}
+
+export function computeBoundingBox(segments: Segment[], labels: TextLabel[] = [], fills: Fill[] = []): BBox {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const seg of segments) {
     for (const p of seg.points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  for (const fill of fills) {
+    for (const p of fill.points) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
@@ -171,65 +218,97 @@ export function computeBoundingBox(segments: Segment[], labels: TextLabel[] = []
  * referenced anonymous block, same as INSERT — AutoCAD always expresses
  * that block's geometry directly in world coordinates, so no extra
  * offset/rotation/scale is needed beyond the transform already active at
- * that point in the entity tree). HATCH, SOLID and 3DFACE are still
- * silently skipped — out of scope for "what does this part look like."
+ * that point in the entity tree); SOLID/3DFACE are drawn as filled
+ * polygons. Color/line-type resolve against the LAYER/LTYPE tables for
+ * "ByLayer" entities, and an entity on a hidden/frozen layer is skipped
+ * entirely. HATCH is still silently skipped — `dxf-parser` itself has no
+ * HATCH entity handler at all (not a scope choice on this file's part;
+ * confirmed by its own missing `entities/hatch.js`), so there is no
+ * boundary/pattern data here to render even if this file wanted to.
  */
 export function extractGeometry(dxf: IDxf): ExtractedGeometry {
   const segments: Segment[] = [];
   const labels: TextLabel[] = [];
+  const fills: Fill[] = [];
   const blocksByName = dxf.blocks ?? {};
+  const layersByName: Record<string, ILayer> = dxf.tables?.layer?.layers ?? {};
+  const lineTypesByName: Record<string, ILineType> = dxf.tables?.lineType?.lineTypes ?? {};
   const onStack = new Set<string>();
 
   function colorFor(entity: IEntity): string | null {
     // `entity.color` is a resolved 24-bit RGB int only when the entity carries an explicit true color (DXF
-    // code 420). `colorIndex` 256 ("ByLayer") / 0 ("ByBlock") aren't resolved against the LAYER table by
-    // dxf-parser, so anything else falls back to the default stroke rather than guessing a color.
+    // code 420). `colorIndex` 0 ("ByBlock") isn't resolvable without tracking the enclosing INSERT's own
+    // color through the whole call chain — out of scope, same fallback as before. 256 ("ByLayer") IS
+    // resolvable: dxf-parser already resolves each LAYER table row's own color into `ILayer.color`.
     if (typeof entity.color === 'number' && entity.color > 0) return `#${entity.color.toString(16).padStart(6, '0')}`;
+    if (entity.colorIndex === 256 || entity.colorIndex == null) {
+      const layerColor = layersByName[entity.layer]?.color;
+      if (typeof layerColor === 'number' && layerColor > 0) return `#${layerColor.toString(16).padStart(6, '0')}`;
+    }
     return null;
   }
 
-  function pushPolyline(points: Pt[], color: string | null) {
-    if (points.length >= 2) segments.push({ points, color });
+  function dashFor(entity: IEntity): number[] | null {
+    const name = entity.lineType;
+    // "ByLayer"/"ByBlock" line types aren't resolvable the same way color is — dxf-parser's own `ILayer`
+    // type has no line-type field to fall back to, so these just render solid rather than guessing.
+    if (!name || name === 'Continuous' || name === 'ByLayer' || name === 'ByBlock') return null;
+    const pattern = lineTypesByName[name]?.pattern;
+    if (!pattern?.length) return null;
+    // dxf-parser's own `ILineType.pattern` type says `string[]`, but real parsed values are numbers
+    // (confirmed against an actual file) — `Number(...)` so neither shape breaks this.
+    return pattern.map((v) => Math.abs(Number(v)));
+  }
+
+  function isLayerHidden(layerName: string): boolean {
+    const layer = layersByName[layerName];
+    return layer ? !layer.visible || layer.frozen : false;
+  }
+
+  function pushPolyline(points: Pt[], color: string | null, dash: number[] | null) {
+    if (points.length >= 2) segments.push({ points, color, dash });
   }
 
   function visitEntities(entities: IEntity[], transform: (p: Pt) => Pt, depth: number) {
     if (depth > 8) return; // guards against pathological block nesting
     for (const entity of entities) {
+      if (isLayerHidden(entity.layer) || entity.visible === false) continue;
       const color = colorFor(entity);
+      const dash = dashFor(entity);
       switch (entity.type) {
         case 'LINE': {
           const e = entity as ILineEntity;
-          pushPolyline(e.vertices.map(transform), color);
+          pushPolyline(e.vertices.map(transform), color, dash);
           break;
         }
         case 'LWPOLYLINE': {
           const e = entity as ILwpolylineEntity;
-          pushPolyline(polylineToPoints(e.vertices, Boolean(e.shape)).map(transform), color);
+          pushPolyline(polylineToPoints(e.vertices, Boolean(e.shape)).map(transform), color, dash);
           break;
         }
         case 'POLYLINE': {
           const e = entity as IPolylineEntity;
-          pushPolyline(polylineToPoints(e.vertices, Boolean(e.shape)).map(transform), color);
+          pushPolyline(polylineToPoints(e.vertices, Boolean(e.shape)).map(transform), color, dash);
           break;
         }
         case 'CIRCLE': {
           const e = entity as ICircleEntity;
-          pushPolyline(arcToPoints(e.center, e.radius, 0, Math.PI * 2, 64).map(transform), color);
+          pushPolyline(arcToPoints(e.center, e.radius, 0, Math.PI * 2, 64).map(transform), color, dash);
           break;
         }
         case 'ARC': {
           const e = entity as IArcEntity;
-          pushPolyline(arcToPoints(e.center, e.radius, e.startAngle, e.endAngle, 48).map(transform), color);
+          pushPolyline(arcToPoints(e.center, e.radius, e.startAngle, e.endAngle, 48).map(transform), color, dash);
           break;
         }
         case 'ELLIPSE': {
-          pushPolyline(ellipseToPoints(entity as IEllipseEntity).map(transform), color);
+          pushPolyline(ellipseToPoints(entity as IEllipseEntity).map(transform), color, dash);
           break;
         }
         case 'SPLINE': {
           const e = entity as ISplineEntity;
           const pts = (e.fitPoints?.length ? e.fitPoints : e.controlPoints) ?? [];
-          pushPolyline(pts.map(transform), color);
+          pushPolyline(pts.map(transform), color, dash);
           break;
         }
         case 'POINT': {
@@ -237,7 +316,25 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           const p = transform(e.position);
           // Drawn as a near-zero-length dash rather than dropped — a lone DXF POINT usually marks a real
           // reference location (e.g. a drill center), and silently skipping it would make it look missing.
-          segments.push({ points: [{ x: p.x - 1e-4, y: p.y }, { x: p.x + 1e-4, y: p.y }], color });
+          segments.push({ points: [{ x: p.x - 1e-4, y: p.y }, { x: p.x + 1e-4, y: p.y }], color, dash: null });
+          break;
+        }
+        case 'SOLID': {
+          const e = entity as ISolidEntity;
+          const pts = e.points.map(transform);
+          // DXF's own well-known SOLID quirk: a quad's 4 corners are stored P1,P2,P3,P4, but that literal
+          // order draws a bowtie (self-intersecting) — the non-crossing order swaps the last two. A
+          // triangle (P4 duplicates P3) is unaffected either way.
+          const ordered =
+            pts.length === 4 && Math.hypot(e.points[2].x - e.points[3].x, e.points[2].y - e.points[3].y) > 1e-9
+              ? [pts[0], pts[1], pts[3], pts[2]]
+              : pts;
+          fills.push({ points: ordered, color });
+          break;
+        }
+        case '3DFACE': {
+          const e = entity as I3DfaceEntity;
+          fills.push({ points: e.vertices.map(transform), color });
           break;
         }
         case 'INSERT': {
@@ -283,7 +380,7 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           const anchor = (halign !== 0 || valign !== 0) && e.endPoint ? e.endPoint : e.startPoint;
           labels.push({
             position: transform(anchor),
-            text: decodeUnicodeEscapes(e.text ?? ''),
+            text: resolveTextCodes(e.text ?? ''),
             height: e.textHeight || DEFAULT_LABEL_HEIGHT,
             // Does not compose with an enclosing INSERT's own rotation (unlike point-based
             // geometry, which transforms correctly through `transform`) — a text entity nested
@@ -305,7 +402,7 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           const [anchorH, anchorV] = mtextAttachmentPointToAnchor(e.attachmentPoint ?? 1);
           labels.push({
             position: transform(e.position),
-            text: decodeUnicodeEscapes(cleanMtext(e.text ?? '')),
+            text: resolveTextCodes(cleanMtext(e.text ?? '')),
             height: e.height || DEFAULT_LABEL_HEIGHT,
             rotation,
             color,
@@ -331,7 +428,7 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
             if (pos && rawText) {
               labels.push({
                 position: transform(pos),
-                text: decodeUnicodeEscapes(rawText),
+                text: resolveTextCodes(rawText),
                 height: DEFAULT_LABEL_HEIGHT,
                 rotation: ((e.angle || 0) * Math.PI) / 180,
                 color,
@@ -343,13 +440,13 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           break;
         }
         default:
-          break; // HATCH/SOLID/3DFACE/ATTDEF — geometry-only preview, see file header comment
+          break; // HATCH/ATTDEF — see file header comment (HATCH: dxf-parser itself can't parse it)
       }
     }
   }
 
   visitEntities(dxf.entities ?? [], (p) => p, 0);
-  return { segments, labels };
+  return { segments, labels, fills };
 }
 
 /** Fallback text height (drawing units) when an entity doesn't carry one — a dimension's own synthesized fallback label, or a TEXT/MTEXT with `height`/`textHeight` of 0. */

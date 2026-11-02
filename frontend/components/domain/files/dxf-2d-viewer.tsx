@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Ruler } from 'lucide-react';
-import { decodeDxfText, type Segment, type TextLabel, type BBox, type Pt } from './dxf-geometry';
+import { decodeDxfText, type Segment, type TextLabel, type Fill, type BBox, type Pt } from './dxf-geometry';
 import type { DxfParseRequest, DxfParseResponse } from './dxf-parser.worker';
 
 /**
@@ -36,12 +36,13 @@ interface View {
 // видно" (2026-11-02) — most real-world DXFs (especially laser/CNC-cutting
 // exports, this app's own cutting module included) either carry an
 // explicit true-color that's white/light (meant for a black canvas in the
-// machine's own software) or no color at all ("ByLayer", unresolved by
-// dxf-parser — see dxf-geometry.ts's own colorFor() comment), which this
-// viewer already fell back to a DARK stroke for. Either way the drawing
-// was invisible against the previous light background. Dark canvas + a
-// light default stroke matches the convention these files were actually
-// authored for.
+// machine's own software) or no resolvable color at all (an entity whose
+// own color/layer-color genuinely can't be resolved — see dxf-geometry.ts's
+// own `colorFor()` comment for the one remaining unresolvable case,
+// "ByBlock"), which this viewer already fell back to a DARK stroke for.
+// Either way the drawing was invisible against the previous light
+// background. Dark canvas + a light default stroke matches the convention
+// these files were actually authored for.
 const DEFAULT_STROKE = '#e5e7eb';
 const BACKGROUND = '#18181b';
 const MEASURE_COLOR = '#f87171';
@@ -69,6 +70,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
   const segmentsRef = useRef<Segment[]>([]);
   const labelsRef = useRef<TextLabel[]>([]);
+  const fillsRef = useRef<Fill[]>([]);
   const bboxRef = useRef<BBox | null>(null);
   const unitLabelRef = useRef<string | null>(null);
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -101,11 +103,12 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
         if (cancelled) return;
         const text = decodeDxfText(buffer);
 
-        const { segments, labels, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
+        const { segments, labels, fills, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
         if (cancelled) return;
 
         segmentsRef.current = segments;
         labelsRef.current = labels;
+        fillsRef.current = fills;
         bboxRef.current = bbox;
         unitLabelRef.current = unitLabel;
         setState('ready');
@@ -139,15 +142,30 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       ctx!.fillRect(0, 0, w, h);
       ctx!.lineWidth = 1;
 
+      // Fills (SOLID/3DFACE — dimension arrowheads are the common case) drawn first, so the
+      // dimension/extension lines and text sit visually on top of them, same as a real CAD render.
+      for (const fill of fillsRef.current) {
+        if (fill.points.length < 3) continue;
+        ctx!.fillStyle = fill.color ?? DEFAULT_STROKE;
+        ctx!.beginPath();
+        const [first, ...rest] = fill.points;
+        ctx!.moveTo(offsetX + first.x * scale, offsetY - first.y * scale);
+        for (const p of rest) ctx!.lineTo(offsetX + p.x * scale, offsetY - p.y * scale);
+        ctx!.closePath();
+        ctx!.fill();
+      }
+
       for (const seg of segmentsRef.current) {
         if (seg.points.length < 2) continue;
         ctx!.strokeStyle = seg.color ?? DEFAULT_STROKE;
+        ctx!.setLineDash(seg.dash ? seg.dash.map((d) => Math.max(d * scale, 0.5)) : []);
         ctx!.beginPath();
         const [first, ...rest] = seg.points;
         ctx!.moveTo(offsetX + first.x * scale, offsetY - first.y * scale);
         for (const p of rest) ctx!.lineTo(offsetX + p.x * scale, offsetY - p.y * scale);
         ctx!.stroke();
       }
+      ctx!.setLineDash([]);
 
       for (const label of labelsRef.current) drawLabel(label);
 
@@ -458,7 +476,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
 function parseInWorker(
   text: string,
   onWorker: (worker: Worker) => void,
-): Promise<{ segments: Segment[]; labels: TextLabel[]; bbox: BBox; unitLabel: string | null }> {
+): Promise<{ segments: Segment[]; labels: TextLabel[]; fills: Fill[]; bbox: BBox; unitLabel: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./dxf-parser.worker.ts', import.meta.url));
     onWorker(worker);
@@ -472,7 +490,13 @@ function parseInWorker(
       clearTimeout(timeout);
       worker.terminate();
       if (event.data.ok)
-        resolve({ segments: event.data.segments, labels: event.data.labels, bbox: event.data.bbox, unitLabel: event.data.unitLabel });
+        resolve({
+          segments: event.data.segments,
+          labels: event.data.labels,
+          fills: event.data.fills,
+          bbox: event.data.bbox,
+          unitLabel: event.data.unitLabel,
+        });
       else reject(new Error(event.data.error));
     };
     worker.onerror = (event) => {
