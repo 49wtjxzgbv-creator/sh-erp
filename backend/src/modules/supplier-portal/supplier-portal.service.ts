@@ -3,9 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { DeliverySchedulesService } from '../procurement/delivery-schedules.service';
 import { PurchaseOrderCommentsService } from '../procurement/purchase-order-comments.service';
-import { FilesService } from '../files/files.service';
+import { FilesActor, FilesService } from '../files/files.service';
 import { EmailService } from '../notifications/email.service';
-import type { RequestUser } from '../../common/decorators/current-user.decorator';
 import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
@@ -34,9 +33,7 @@ export class SupplierPortalService {
   ) {}
 
   /**
-   * `FilesService`'s methods are typed against the staff `RequestUser` shape
-   * (`{userId, companyId, email, roleId}`) but only ever read `companyId`/
-   * `userId` off it (for the storage key + `uploadedById`/audit actor) — the
+   * `FilesService` only needs `{userId, companyId}` (`FilesActor`) — the
    * ambient RLS scoping that actually protects the query comes from
    * `SupplierPortalScopeInterceptor`'s own transaction, same as every other
    * `this.prisma.tenant` call in this class. `uploadedById` is a bare
@@ -44,8 +41,8 @@ export class SupplierPortalService {
    * `SupplierPortalUserId` there is exactly the same "external actor"
    * pattern already used for `DeliverySchedule.respondedById`.
    */
-  private asFilesActor(actor: RequestSupplierPortalUser): RequestUser {
-    return { userId: actor.supplierPortalUserId, companyId: actor.companyId, email: '', roleId: '' };
+  private asFilesActor(actor: RequestSupplierPortalUser): FilesActor {
+    return { userId: actor.supplierPortalUserId, companyId: actor.companyId };
   }
 
   async listPurchaseOrders(actor: RequestSupplierPortalUser) {

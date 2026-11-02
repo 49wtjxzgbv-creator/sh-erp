@@ -234,7 +234,13 @@ function SupplierPortalDocumentsPanel({ orderId }: { orderId: string }) {
           ))}
         </ul>
         <div className="space-y-1.5">
-          <input type="file" onChange={handleFileSelected} disabled={uploading} className="text-sm" />
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.docx"
+            onChange={handleFileSelected}
+            disabled={uploading}
+            className="text-sm"
+          />
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       </CardContent>

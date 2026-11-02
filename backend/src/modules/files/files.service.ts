@@ -6,7 +6,6 @@ import { randomUUID } from 'node:crypto';
 import * as ExcelJS from 'exceljs';
 import type { FileDomain } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
 import { createR2Client, R2_BUCKET } from './r2-client';
 import { CreatePresignedUploadDto } from './dto/create-presigned-upload.dto';
@@ -22,6 +21,22 @@ const MAX_PREVIEW_SIZE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_ROWS = 500;
 const MAX_PREVIEW_COLS = 50;
 const MAX_PREVIEW_SHEETS = 10;
+
+/**
+ * Every FilesService method only ever needs the actor's userId (for
+ * uploadedById/audit actor) and companyId (for the storage key — the real
+ * tenant scoping comes from the caller's own `prisma.tenant` RLS context,
+ * not from this value). Narrower than the staff `RequestUser` on purpose:
+ * a non-staff caller like SupplierPortalService can pass its own actor
+ * shape directly (`{userId: supplierPortalUserId, companyId}`) instead of
+ * fabricating fake `email`/`roleId` strings just to satisfy a wider type
+ * it doesn't actually have. `RequestUser` itself still satisfies this
+ * structurally, so no staff call site needs to change.
+ */
+export interface FilesActor {
+  userId: string;
+  companyId: string;
+}
 
 @Injectable()
 export class FilesService {
@@ -40,7 +55,7 @@ export class FilesService {
    * to hand back) and a short-lived presigned PUT URL the client uploads
    * directly to R2. Key layout: `tenants/{companyId}/{domain}/{entityType}/{entityId}/{filename}`.
    */
-  async createPresignedUpload(user: RequestUser, dto: CreatePresignedUploadDto) {
+  async createPresignedUpload(user: FilesActor, dto: CreatePresignedUploadDto) {
     const safeName = sanitizeFilename(dto.originalName);
     const safeMimeType = sanitizeMimeType(dto.mimeType);
     const storageKey = `tenants/${user.companyId}/${dto.domain.toLowerCase()}/${dto.entityType.toLowerCase()}/${dto.entityId}/${randomUUID()}-${safeName}`;
@@ -92,7 +107,7 @@ export class FilesService {
    * declared size — protects against a client claiming "uploaded" when it
    * didn't, or uploading something other than what it declared.
    */
-  async confirmUpload(user: RequestUser, fileAssetId: string) {
+  async confirmUpload(user: FilesActor, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
@@ -162,7 +177,7 @@ export class FilesService {
    * `FileAsset` fit.
    */
   async uploadEphemeralExport(
-    user: RequestUser,
+    user: FilesActor,
     input: { filename: string; mimeType: string; body: Buffer },
   ): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
     const safeName = sanitizeFilename(input.filename);
@@ -397,7 +412,7 @@ export class FilesService {
     return { fileAssetId: fileAsset.id };
   }
 
-  async getDownloadUrl(user: RequestUser, fileAssetId: string) {
+  async getDownloadUrl(user: FilesActor, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
@@ -416,7 +431,7 @@ export class FilesService {
    * in-process (SupplierRequestDocumentsPdfService merging attached PDFs
    * into one real PDF, 2026-09-23).
    */
-  async getFileAssetBytes(user: RequestUser, fileAssetId: string): Promise<{ bytes: Buffer; mimeType: string; originalName: string }> {
+  async getFileAssetBytes(user: FilesActor, fileAssetId: string): Promise<{ bytes: Buffer; mimeType: string; originalName: string }> {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
     const bytes = await this.getObjectBytes(fileAsset.storageKey);
@@ -437,7 +452,7 @@ export class FilesService {
    * (products-import-export.service.ts) and returns plain JSON rows — no
    * new R2 CORS configuration required.
    */
-  async getSpreadsheetPreview(user: RequestUser, fileAssetId: string) {
+  async getSpreadsheetPreview(user: FilesActor, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
     if (!SPREADSHEET_PREVIEW_MIME_TYPES.includes(fileAsset.mimeType)) {
@@ -487,7 +502,7 @@ export class FilesService {
     return Buffer.concat(chunks);
   }
 
-  async listForEntity(user: RequestUser, entityType: string, entityId: string, domains?: FileDomain[]) {
+  async listForEntity(user: FilesActor, entityType: string, entityId: string, domains?: FileDomain[]) {
     return this.prisma.tenant.fileAsset.findMany({
       where: { entityType, entityId, deletedAt: null, ...(domains ? { domain: { in: domains } } : {}) },
       orderBy: { createdAt: 'desc' },
@@ -509,7 +524,7 @@ export class FilesService {
    * cheap and is what actually avoids the N+1 this endpoint exists for;
    * returning bare `storageKey`s would just move the N+1 to the client.
    */
-  async listForEntities(user: RequestUser, entityType: string, entityIds: string[], domains?: FileDomain[]) {
+  async listForEntities(user: FilesActor, entityType: string, entityIds: string[], domains?: FileDomain[]) {
     if (entityIds.length === 0) return {};
 
     const files = await this.prisma.tenant.fileAsset.findMany({
@@ -578,7 +593,7 @@ export class FilesService {
   }
 
   /** Soft delete only — matches the schema-wide convention; the R2 object is left in place (a lifecycle rule handles real purging, out of scope for this module). */
-  async delete(user: RequestUser, fileAssetId: string) {
+  async delete(user: FilesActor, fileAssetId: string) {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
