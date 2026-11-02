@@ -46,6 +46,26 @@ export class SupplierPortalService {
     return { userId: actor.supplierPortalUserId, companyId: actor.companyId };
   }
 
+  /**
+   * "у порталі постачальника перед артикулом має бути фото товару"
+   * (2026-11-02) — same PRODUCT_PHOTO lookup PurchaseRequestPdfService
+   * already does for the generated PDF (`item.photoUrl`), just reused for
+   * the live portal views instead of a static document. Detail views
+   * only (not the dashboard list — no per-line article column there to
+   * put a photo next to), so this isn't paid on every dashboard load.
+   */
+  private async attachPhotoUrls<T extends { productId: string | null }>(
+    actor: RequestSupplierPortalUser,
+    items: T[],
+  ): Promise<(T & { photoUrl: string | null })[]> {
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => v != null))];
+    const photos = productIds.length > 0 ? await this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']) : {};
+    return items.map((item) => ({
+      ...item,
+      photoUrl: item.productId ? ((photos as any)[item.productId]?.[0]?.downloadUrl ?? null) : null,
+    }));
+  }
+
   async listPurchaseOrders(actor: RequestSupplierPortalUser) {
     const orders = await this.prisma.tenant.purchaseOrder.findMany({
       where: { supplierId: actor.supplierId },
@@ -69,7 +89,7 @@ export class SupplierPortalService {
     // Same id but a different supplier's order (or a nonexistent id) both
     // 404 identically — never distinguish "not yours" from "doesn't exist".
     if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
-    return order;
+    return { ...order, items: await this.attachPhotoUrls(actor, order.items) };
   }
 
   async confirmPurchaseOrder(actor: RequestSupplierPortalUser, id: string, dto: ConfirmPurchaseOrderDto) {
@@ -153,7 +173,7 @@ export class SupplierPortalService {
       include: { items: true },
     });
     if (!request) throw new CodedNotFoundException('PURCHASE_REQUEST_NOT_FOUND', 'Purchase request not found.');
-    return request;
+    return { ...request, items: await this.attachPhotoUrls(actor, request.items) };
   }
 
   /** Supplier submits (or re-submits) a per-line quote. Only while SENT — once converted/cancelled the negotiation is over. */

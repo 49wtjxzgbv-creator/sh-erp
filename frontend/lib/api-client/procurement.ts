@@ -165,6 +165,8 @@ export interface PurchaseOrderItem {
   currentDeliveryScheduleId: string | null;
   /** Full version history (Phase 1) — includes SUPERSEDED/REJECTED rows on purpose, for a transparent history in the UI. */
   deliverySchedules?: DeliverySchedule[];
+  /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseOrder) — the linked product's own PRODUCT_PHOTO, if any. */
+  photoUrl?: string | null;
 }
 
 export type DeliveryScheduleStatus = 'PENDING' | 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED';
@@ -361,6 +363,8 @@ export interface PurchaseRequestItem {
   supplierQuotedPrice: DecimalString | null;
   /** FileAsset ids (from this line's linked product's own PRODUCT_DOCUMENT attachments) merged as extra pages onto the generated PDF. */
   attachedFileIds: string[];
+  /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseRequest) — the linked product's own PRODUCT_PHOTO, if any. */
+  photoUrl?: string | null;
 }
 
 export interface PurchaseRequest {

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -410,6 +411,7 @@ export default function SupplierPortalOrderDetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12" />
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qtyOrdered')}</TableHead>
@@ -420,6 +422,9 @@ export default function SupplierPortalOrderDetailPage() {
             <TableBody>
               {(order.items ?? []).map((item) => (
                 <TableRow key={item.id}>
+                  <TableCell>
+                    <Avatar src={item.photoUrl} size="sm" />
+                  </TableCell>
                   <TableCell>{item.articleSnapshot}</TableCell>
                   <TableCell className="max-w-[260px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
                   <TableCell>{item.qtyOrdered}</TableCell>

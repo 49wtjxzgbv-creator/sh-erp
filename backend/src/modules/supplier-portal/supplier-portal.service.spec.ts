@@ -5,11 +5,13 @@ describe('SupplierPortalService', () => {
   let prisma: any;
   let auditService: any;
   let emailService: any;
+  let filesService: any;
   const actor = { supplierPortalUserId: 'spu1', supplierOrganizationId: 'org1', activeConnectionId: 'conn1', companyId: 'c1', supplierId: 's1' } as any;
 
   beforeEach(() => {
     prisma = {
       tenant: {
+        purchaseOrder: { findFirst: jest.fn() },
         purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
         purchaseRequestItem: { update: jest.fn() },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
@@ -17,12 +19,13 @@ describe('SupplierPortalService', () => {
     };
     auditService = { record: jest.fn() };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
+    filesService = { listForEntities: jest.fn().mockResolvedValue({}) };
     service = new SupplierPortalService(
       prisma,
       auditService,
       {} as any, // deliverySchedulesService — unused by these tests
       {} as any, // commentsService — unused by these tests
-      {} as any, // filesService — unused by these tests
+      filesService,
       emailService,
     );
   });
@@ -58,6 +61,53 @@ describe('SupplierPortalService', () => {
       prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({ id: 'pr1', status: 'SENT', items: [] });
       const result = await service.getPurchaseRequest(actor, 'pr1');
       expect(result).toEqual({ id: 'pr1', status: 'SENT', items: [] });
+    });
+
+    it("attaches each line's product photo URL ahead of the article (2026-11-02)", async () => {
+      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({
+        id: 'pr1',
+        status: 'SENT',
+        items: [
+          { id: 'item1', productId: 'p1', articleSnapshot: 'ABC' },
+          { id: 'item2', productId: null, articleSnapshot: 'XYZ' },
+        ],
+      });
+      filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
+
+      const result = await service.getPurchaseRequest(actor, 'pr1');
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Product', ['p1'], ['PRODUCT_PHOTO']);
+      expect(result.items).toEqual([
+        { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', photoUrl: 'https://example.com/p1.jpg' },
+        { id: 'item2', productId: null, articleSnapshot: 'XYZ', photoUrl: null },
+      ]);
+    });
+
+    it('skips the photo lookup entirely when no line has a productId', async () => {
+      prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({ id: 'pr1', status: 'SENT', items: [{ id: 'item1', productId: null }] });
+
+      await service.getPurchaseRequest(actor, 'pr1');
+
+      expect(filesService.listForEntities).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getPurchaseOrder', () => {
+    it('404s for an order belonging to a different supplier', async () => {
+      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue(null);
+      await expect(service.getPurchaseOrder(actor, 'po1')).rejects.toThrow();
+    });
+
+    it("attaches each line's product photo URL", async () => {
+      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po1',
+        items: [{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC' }],
+      });
+      filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
+
+      const result = await service.getPurchaseOrder(actor, 'po1');
+
+      expect(result.items).toEqual([{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC', photoUrl: 'https://example.com/p1.jpg' }]);
     });
   });
 
