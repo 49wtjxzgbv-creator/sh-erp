@@ -8,6 +8,7 @@ import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 import { CreatePurchaseOrderCommentDto } from '../procurement/dto/purchase-order-comment.dto';
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
+import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -123,5 +124,27 @@ export class SupplierPortalController {
     @Param('fileId') fileId: string,
   ) {
     return this.supplierPortalService.getFileDownloadUrl(actor, id, fileId);
+  }
+
+  @Get('purchase-requests')
+  @ApiOperation({ summary: "This supplier's own purchase requests (заявки на прорахунок) — DRAFT ones excluded, staff hasn't sent those yet." })
+  async listPurchaseRequests(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.listPurchaseRequests(actor);
+  }
+
+  @Get('purchase-requests/:id')
+  @ApiOperation({ summary: "One of this supplier's own purchase requests. 404s (not 403s) for anyone else's, or a DRAFT one." })
+  async getPurchaseRequest(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.getPurchaseRequest(actor, id);
+  }
+
+  @Post('purchase-requests/:id/quote')
+  @ApiOperation({ summary: 'Supplier submits (or re-submits) a per-line quoted price. Only while the request is SENT.' })
+  async quotePurchaseRequest(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: QuotePurchaseRequestDto,
+  ) {
+    return this.supplierPortalService.quotePurchaseRequest(actor, id, dto);
   }
 }

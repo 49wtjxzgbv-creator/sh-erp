@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CodedBadRequestException, CodedConflictException, CodedNotFoundException } from '../../common/api-exceptions';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
+import { EmailService } from '../notifications/email.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
 import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
@@ -28,6 +29,8 @@ import {
  */
 @Injectable()
 export class PurchaseRequestsService {
+  private readonly logger = new Logger(PurchaseRequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
@@ -35,6 +38,7 @@ export class PurchaseRequestsService {
     private readonly pdfRenderer: PurchaseRequestRendererService,
     private readonly pdfService: PurchaseRequestPdfService,
     private readonly filesService: FilesService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -178,7 +182,7 @@ export class PurchaseRequestsService {
     return after;
   }
 
-  /** DRAFT -> SENT marker only (no PDF/email) — editing stays allowed afterward, unlike Quotation's hard lock, since this is an internal tracker staff keep updating as the supplier calls back with prices. */
+  /** DRAFT -> SENT marker only (no PDF/email to staff) — editing stays allowed afterward, unlike Quotation's hard lock, since this is an internal tracker staff keep updating as the supplier calls back with prices. Still a real "I'm sending this to the supplier" moment though, so it's the hook point for the (best-effort) supplier-portal notification below. */
   async send(user: RequestUser, id: string) {
     const before = await this.findOne(user, id);
     this.assertEditable(before);
@@ -192,7 +196,45 @@ export class PurchaseRequestsService {
       before,
       after: request,
     });
+
+    await this.notifySupplierPortalIfConnected(user, request);
     return request;
+  }
+
+  /**
+   * "коли я роблю заявку на прорахунок постачальнику також має надсилатись
+   * у акаунт постачальника якщо він підключений" (2026-11-02): best-effort
+   * (never fails send() itself, same swallow-and-log shape as
+   * SupplierPortalService#notifyStaff) — the request becomes visible in
+   * the portal purely via SupplierPortalService#listPurchaseRequests'
+   * own `where: {supplierId, status: {not: 'DRAFT'}}` query the moment
+   * status flips to SENT above; this email is just a heads-up so the
+   * supplier doesn't have to think to go check. Silently does nothing for
+   * a free-text-only supplier (no `supplierId`, hence no `Supplier` row to
+   * look a connection up for) or one with no ACTIVE connection.
+   */
+  private async notifySupplierPortalIfConnected(
+    user: RequestUser,
+    request: { id: string; number: string; supplierId: string | null },
+  ): Promise<void> {
+    if (!request.supplierId) return;
+    try {
+      const connection = await this.prisma.tenant.supplierConnection.findUnique({
+        where: { supplierId: request.supplierId },
+        include: { supplierOrganization: { include: { portalUser: true } } },
+      });
+      const portalUser = connection?.supplierOrganization.portalUser;
+      if (connection?.status !== 'ACTIVE' || !portalUser?.active) return;
+
+      const company = await this.prisma.tenant.company.findUnique({ where: { id: user.companyId } });
+      await this.emailService.send(
+        portalUser.email,
+        'Нова заявка на прорахунок — SH ERP',
+        `Компанія «${company?.name ?? ''}» надіслала вам заявку на прорахунок ${request.number}. Увійдіть у портал постачальника, щоб переглянути позиції та внести ціни.`,
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to send supplier-portal new-request notification (request=${request.id}): ${err}`);
+    }
   }
 
   async cancel(user: RequestUser, id: string) {
@@ -235,7 +277,16 @@ export class PurchaseRequestsService {
         articleSnapshot: item.articleSnapshot,
         productNameSnapshot: item.productNameSnapshot,
         qtyOrdered: Number(item.qty),
-        expectedPrice: item.expectedPrice != null ? Number(item.expectedPrice) : undefined,
+        // Prefer the supplier's own quoted price (2026-11-02) — otherwise a
+        // submitted quote would sit inert and staff would have to manually
+        // retype it here before converting. Falls back to staff's own
+        // expectedPrice when the supplier hasn't quoted this line.
+        expectedPrice:
+          item.supplierQuotedPrice != null
+            ? Number(item.supplierQuotedPrice)
+            : item.expectedPrice != null
+              ? Number(item.expectedPrice)
+              : undefined,
       })),
     });
 

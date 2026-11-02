@@ -9,7 +9,8 @@ import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
-import { CodedNotFoundException } from '../../common/api-exceptions';
+import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
+import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
  * The supplier-side view of purchase orders — `this.prisma.tenant` here is
@@ -109,23 +110,98 @@ export class SupplierPortalService {
       metadata: { supplierPortalUserId: actor.supplierPortalUserId, supplierId: actor.supplierId },
     });
 
-    await this.notifyStaffOrderConfirmed(order.createdById, order.id);
+    await this.notifyStaff(
+      order.createdById,
+      'Постачальник підтвердив замовлення — SH ERP',
+      `Постачальник підтвердив ціни та/або дату постачання по замовленню ${order.id}. Увійдіть у систему, щоб переглянути деталі.`,
+    );
     return updated;
   }
 
-  /** Phase 2 — best-effort email to the order's creator, same swallow-and-log shape as DeliverySchedulesService#notify. */
-  private async notifyStaffOrderConfirmed(createdById: string, orderId: string): Promise<void> {
+  /** Phase 2 — best-effort email to a staff member, same swallow-and-log shape as DeliverySchedulesService#notify. Shared by every supplier-action-notifies-staff path in this service (PO confirmed, PR quoted). */
+  private async notifyStaff(staffUserId: string, subject: string, text: string): Promise<void> {
     try {
-      const staffUser = await this.prisma.tenant.user.findUnique({ where: { id: createdById } });
+      const staffUser = await this.prisma.tenant.user.findUnique({ where: { id: staffUserId } });
       if (!staffUser) return;
-      await this.emailService.send(
-        staffUser.email,
-        'Постачальник підтвердив замовлення — SH ERP',
-        `Постачальник підтвердив ціни та/або дату постачання по замовленню ${orderId}. Увійдіть у систему, щоб переглянути деталі.`,
-      );
+      await this.emailService.send(staffUser.email, subject, text);
     } catch (err) {
-      this.logger.warn(`Failed to send order-confirmed notification (order=${orderId}): ${err}`);
+      this.logger.warn(`Failed to send staff notification (staffUserId=${staffUserId}, subject=${subject}): ${err}`);
     }
+  }
+
+  /**
+   * Supplier-portal exposure for PurchaseRequest ("заявка на прорахунок",
+   * 2026-11-02) — same direct-prisma-query style as listPurchaseOrders/
+   * getPurchaseOrder rather than delegating to PurchaseRequestsService
+   * (which lives in ProcurementModule and stays staff-only). DRAFT is
+   * excluded from both list and get — that status means staff hasn't
+   * decided to send it yet, so it must be invisible (and un-enumerable,
+   * same 404-not-403 convention) to the supplier.
+   */
+  async listPurchaseRequests(actor: RequestSupplierPortalUser) {
+    const items = await this.prisma.tenant.purchaseRequest.findMany({
+      where: { supplierId: actor.supplierId, status: { not: 'DRAFT' } },
+      orderBy: { createdAt: 'desc' },
+      include: { items: true },
+    });
+    return { items };
+  }
+
+  async getPurchaseRequest(actor: RequestSupplierPortalUser, id: string) {
+    const request = await this.prisma.tenant.purchaseRequest.findFirst({
+      where: { id, supplierId: actor.supplierId, status: { not: 'DRAFT' } },
+      include: { items: true },
+    });
+    if (!request) throw new CodedNotFoundException('PURCHASE_REQUEST_NOT_FOUND', 'Purchase request not found.');
+    return request;
+  }
+
+  /** Supplier submits (or re-submits) a per-line quote. Only while SENT — once converted/cancelled the negotiation is over. */
+  async quotePurchaseRequest(actor: RequestSupplierPortalUser, id: string, dto: QuotePurchaseRequestDto) {
+    const request = await this.getPurchaseRequest(actor, id); // re-checks ownership+visibility; throws 404 for anyone else's or a DRAFT request
+
+    if (request.status !== 'SENT') {
+      throw new CodedBadRequestException('SUPPLIER_PORTAL_REQUEST_NOT_OPEN', 'This purchase request is no longer open for quoting.');
+    }
+
+    const itemIds = new Set((request.items as any[]).map((i) => i.id));
+    for (const line of dto.items) {
+      if (!itemIds.has(line.id)) {
+        throw new CodedNotFoundException('SUPPLIER_PORTAL_LINE_NOT_FOUND', `Line ${line.id} does not belong to this purchase request.`);
+      }
+    }
+
+    await Promise.all(
+      dto.items.map((line) =>
+        this.prisma.tenant.purchaseRequestItem.update({
+          where: { id: line.id },
+          data: { supplierQuotedPrice: line.quotedPrice },
+        }),
+      ),
+    );
+
+    const updated = await this.prisma.tenant.purchaseRequest.update({
+      where: { id },
+      data: { supplierRespondedAt: new Date() },
+      include: { items: true },
+    });
+
+    await this.auditService.record({
+      companyId: actor.companyId,
+      actorUserId: null, // not a User row — see metadata for who actually did this
+      action: 'purchase_request.supplier_quoted',
+      entityType: 'PurchaseRequest',
+      entityId: id,
+      after: { items: dto.items },
+      metadata: { supplierPortalUserId: actor.supplierPortalUserId, supplierId: actor.supplierId },
+    });
+
+    await this.notifyStaff(
+      request.createdById,
+      'Постачальник надіслав ціни — SH ERP',
+      `Постачальник надіслав ціни по заявці на прорахунок ${request.number}. Увійдіть у систему, щоб переглянути деталі.`,
+    );
+    return updated;
   }
 
   /** Confirms the current PENDING delivery schedule as-is (Phase 1). */

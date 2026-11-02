@@ -55,6 +55,8 @@ interface EditableItemRow {
   productNameSnapshot: string;
   qty: string;
   expectedPrice: string;
+  /** Read-only — the supplier's own typed-in quote via the portal, display-only, never sent back on save. */
+  supplierQuotedPrice: string;
   attachedFileIds: string[];
 }
 
@@ -107,6 +109,7 @@ export default function PurchaseRequestDetailPage() {
         productNameSnapshot: item.productNameSnapshot,
         qty: String(item.qty),
         expectedPrice: item.expectedPrice != null ? String(item.expectedPrice) : '',
+        supplierQuotedPrice: item.supplierQuotedPrice != null ? String(item.supplierQuotedPrice) : '',
         attachedFileIds: item.attachedFileIds ?? [],
       })),
     );
@@ -121,7 +124,7 @@ export default function PurchaseRequestDetailPage() {
   const canEdit = canManage && isEditable;
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '', attachedFileIds: [] }]);
+    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '', supplierQuotedPrice: '', attachedFileIds: [] }]);
     setItemsDirty(true);
   }
   function removeRow(key: string) {
@@ -409,6 +412,7 @@ export default function PurchaseRequestDetailPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead className="w-28">{t('qty')}</TableHead>
                 <TableHead className="w-28">{t('expectedPrice')}</TableHead>
+                <TableHead className="w-28">{t('supplierQuotedPrice')}</TableHead>
                 <TableHead className="w-40">{t('attachFiles')}</TableHead>
                 {canEdit && <TableHead className="w-10" />}
               </TableRow>
@@ -416,7 +420,7 @@ export default function PurchaseRequestDetailPage() {
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                     {tc('noResults')}
                   </TableCell>
                 </TableRow>
@@ -464,6 +468,7 @@ export default function PurchaseRequestDetailPage() {
                         row.expectedPrice || '—'
                       )}
                     </TableCell>
+                    <TableCell>{row.supplierQuotedPrice || '—'}</TableCell>
                     <TableCell>
                       {canEdit ? (
                         <ItemFileAttachmentsPicker

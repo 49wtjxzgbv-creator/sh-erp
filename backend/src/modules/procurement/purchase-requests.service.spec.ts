@@ -19,6 +19,7 @@ describe('PurchaseRequestsService', () => {
   let pdfRenderer: any;
   let pdfService: any;
   let filesService: any;
+  let emailService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const request = {
@@ -47,8 +48,10 @@ describe('PurchaseRequestsService', () => {
           update: jest.fn(),
           delete: jest.fn(),
         },
-        purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+        purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn() },
         supplier: { findUnique: jest.fn() },
+        supplierConnection: { findUnique: jest.fn().mockResolvedValue(null) },
+        company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
         companyBranding: { findUnique: jest.fn().mockResolvedValue(null) },
         $queryRaw: jest.fn().mockResolvedValue([{ lastValue: 1 }]),
       },
@@ -58,7 +61,8 @@ describe('PurchaseRequestsService', () => {
     pdfRenderer = { renderHtml: jest.fn().mockReturnValue('<html></html>') };
     pdfService = { generateAndStore: jest.fn().mockResolvedValue('file-1') };
     filesService = { listForEntities: jest.fn().mockResolvedValue({}), getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.com/logo.png' }) };
-    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService, filesService);
+    emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
+    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService, filesService, emailService);
   });
 
   describe('create', () => {
@@ -123,6 +127,7 @@ describe('PurchaseRequestsService', () => {
 
   describe('send', () => {
     it('flips status to SENT and sets sentAt', async () => {
+      prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...request, status: 'SENT', sentAt: new Date() });
       await service.send(user, 'pr1');
       expect(prisma.tenant.purchaseRequest.update).toHaveBeenCalledWith({
         where: { id: 'pr1' },
@@ -133,6 +138,58 @@ describe('PurchaseRequestsService', () => {
     it.each(['CONVERTED', 'CANCELLED'])('rejects sending a %s request', async (status) => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, status });
       await expect(service.send(user, 'pr1')).rejects.toThrow(BadRequestException);
+    });
+
+    describe('supplier-portal notification', () => {
+      beforeEach(() => {
+        prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...request, status: 'SENT', sentAt: new Date() });
+      });
+
+      it('emails the supplier portal user when the connection is ACTIVE and the account is active', async () => {
+        prisma.tenant.supplierConnection.findUnique.mockResolvedValue({
+          status: 'ACTIVE',
+          supplierOrganization: { portalUser: { email: 'supplier@example.com', active: true } },
+        });
+
+        await service.send(user, 'pr1');
+
+        expect(emailService.send).toHaveBeenCalledWith('supplier@example.com', expect.any(String), expect.stringContaining('ЗП-2026-0001'));
+      });
+
+      it('does not email when the connection is PENDING', async () => {
+        prisma.tenant.supplierConnection.findUnique.mockResolvedValue({
+          status: 'PENDING',
+          supplierOrganization: { portalUser: { email: 'supplier@example.com', active: true } },
+        });
+
+        await service.send(user, 'pr1');
+
+        expect(emailService.send).not.toHaveBeenCalled();
+      });
+
+      it('does not email when there is no connection at all', async () => {
+        prisma.tenant.supplierConnection.findUnique.mockResolvedValue(null);
+
+        await service.send(user, 'pr1');
+
+        expect(emailService.send).not.toHaveBeenCalled();
+      });
+
+      it('does not email, and does not even look up a connection, for a free-text-only supplier (no supplierId)', async () => {
+        prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, supplierId: null });
+        prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...request, supplierId: null, status: 'SENT', sentAt: new Date() });
+
+        await service.send(user, 'pr1');
+
+        expect(prisma.tenant.supplierConnection.findUnique).not.toHaveBeenCalled();
+        expect(emailService.send).not.toHaveBeenCalled();
+      });
+
+      it('still succeeds (send is never blocked) when the notification lookup throws', async () => {
+        prisma.tenant.supplierConnection.findUnique.mockRejectedValue(new Error('db hiccup'));
+
+        await expect(service.send(user, 'pr1')).resolves.toBeDefined();
+      });
     });
   });
 
@@ -171,6 +228,42 @@ describe('PurchaseRequestsService', () => {
     it('rejects converting a CANCELLED request', async () => {
       prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({ ...request, status: 'CANCELLED' });
       await expect(service.convertToOrder(user, 'pr1')).rejects.toThrow(ConflictException);
+    });
+
+    it("prefers the supplier's quoted price over staff's expectedPrice when both are set", async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({
+        ...request,
+        items: [{ ...request.items[0], expectedPrice: 50, supplierQuotedPrice: 42 }],
+      });
+      await service.convertToOrder(user, 'pr1');
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ items: [expect.objectContaining({ expectedPrice: 42 })] }),
+      );
+    });
+
+    it('falls back to expectedPrice when the supplier has not quoted this line', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({
+        ...request,
+        items: [{ ...request.items[0], expectedPrice: 50, supplierQuotedPrice: null }],
+      });
+      await service.convertToOrder(user, 'pr1');
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ items: [expect.objectContaining({ expectedPrice: 50 })] }),
+      );
+    });
+
+    it('leaves expectedPrice undefined when neither a quote nor an expected price was ever set', async () => {
+      prisma.tenant.purchaseRequest.findUnique.mockResolvedValue({
+        ...request,
+        items: [{ ...request.items[0], expectedPrice: null, supplierQuotedPrice: null }],
+      });
+      await service.convertToOrder(user, 'pr1');
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ items: [expect.objectContaining({ expectedPrice: undefined })] }),
+      );
     });
   });
 

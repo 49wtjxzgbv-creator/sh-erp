@@ -357,6 +357,8 @@ export interface PurchaseRequestItem {
   productNameSnapshot: string;
   qty: DecimalString;
   expectedPrice: DecimalString | null;
+  /** The supplier's own typed-in quote via the supplier portal — informational; convertToOrder() prefers it over expectedPrice when set. */
+  supplierQuotedPrice: DecimalString | null;
   /** FileAsset ids (from this line's linked product's own PRODUCT_DOCUMENT attachments) merged as extra pages onto the generated PDF. */
   attachedFileIds: string[];
 }
@@ -376,6 +378,8 @@ export interface PurchaseRequest {
   createdById: string;
   createdAt: string;
   sentAt: string | null;
+  /** Set/overwritten each time the supplier submits (or re-submits) a quote via the portal — mirrors PurchaseOrder.supplierConfirmedAt. */
+  supplierRespondedAt: string | null;
   /** Set/overwritten each time "Сформувати PDF" is used — rendered from whatever is filled in at that moment, independent of status/sentAt. */
   pdfFileId: string | null;
   /** Present on create/findOne/saveItems responses; not on query() list rows. */
