@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Ruler } from 'lucide-react';
-import type { Segment, BBox, Pt } from './dxf-geometry';
+import type { Segment, TextLabel, BBox, Pt } from './dxf-geometry';
 import type { DxfParseRequest, DxfParseResponse } from './dxf-parser.worker';
 
 /**
@@ -68,6 +68,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
   const [measureMode, setMeasureMode] = useState(false);
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
   const segmentsRef = useRef<Segment[]>([]);
+  const labelsRef = useRef<TextLabel[]>([]);
   const bboxRef = useRef<BBox | null>(null);
   const unitLabelRef = useRef<string | null>(null);
   const viewRef = useRef<View>({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -99,10 +100,11 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
         });
         if (cancelled) return;
 
-        const { segments, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
+        const { segments, labels, bbox, unitLabel } = await parseInWorker(text, (w) => (worker = w));
         if (cancelled) return;
 
         segmentsRef.current = segments;
+        labelsRef.current = labels;
         bboxRef.current = bbox;
         unitLabelRef.current = unitLabel;
         setState('ready');
@@ -146,7 +148,31 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
         ctx!.stroke();
       }
 
+      for (const label of labelsRef.current) drawLabel(label);
+
       drawMeasurement();
+    }
+
+    /**
+     * DXF rotation is CCW-positive in its own (unflipped) Y-up coordinate
+     * system; this canvas draws DXF Y negated (`offsetY - y*scale`, see
+     * `toScreen`), so a rotation that reads correctly on-screen is the
+     * NEGATED stored angle — same flip already applied to every point
+     * coordinate, just applied to an angle instead.
+     */
+    function drawLabel(label: TextLabel) {
+      const { scale } = viewRef.current;
+      const p = toScreen(label.position);
+      const fontSize = Math.max(label.height * scale, 1);
+      ctx!.save();
+      ctx!.translate(p.x, p.y);
+      ctx!.rotate(-label.rotation);
+      ctx!.font = `${fontSize}px sans-serif`;
+      ctx!.fillStyle = label.color ?? DEFAULT_STROKE;
+      ctx!.textBaseline = 'alphabetic';
+      const lines = label.text.split('\n');
+      lines.forEach((line, i) => ctx!.fillText(line, 0, i * fontSize * 1.2));
+      ctx!.restore();
     }
 
     function toScreen(p: Pt): Pt {
@@ -408,7 +434,7 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
 function parseInWorker(
   text: string,
   onWorker: (worker: Worker) => void,
-): Promise<{ segments: Segment[]; bbox: BBox; unitLabel: string | null }> {
+): Promise<{ segments: Segment[]; labels: TextLabel[]; bbox: BBox; unitLabel: string | null }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./dxf-parser.worker.ts', import.meta.url));
     onWorker(worker);
@@ -421,7 +447,8 @@ function parseInWorker(
     worker.onmessage = (event: MessageEvent<DxfParseResponse>) => {
       clearTimeout(timeout);
       worker.terminate();
-      if (event.data.ok) resolve({ segments: event.data.segments, bbox: event.data.bbox, unitLabel: event.data.unitLabel });
+      if (event.data.ok)
+        resolve({ segments: event.data.segments, labels: event.data.labels, bbox: event.data.bbox, unitLabel: event.data.unitLabel });
       else reject(new Error(event.data.error));
     };
     worker.onerror = (event) => {

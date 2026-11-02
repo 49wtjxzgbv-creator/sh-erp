@@ -1,5 +1,5 @@
 /**
- * `DxfParser.parseSync` plus this file's own `extractSegments`/
+ * `DxfParser.parseSync` plus this file's own `extractGeometry`/
  * `computeBoundingBox` are synchronous, CPU-bound work — for a real
  * shop-floor DXF (thousands of entities, e.g. a laser-cut nesting sheet
  * with hundreds of parts) that can take long enough on the main thread to
@@ -17,14 +17,14 @@
  * below go through a narrow `self as WorkerGlobal` cast instead.
  */
 import DxfParser from 'dxf-parser';
-import { extractSegments, computeBoundingBox, resolveUnitLabel, type Segment, type BBox } from './dxf-geometry';
+import { extractGeometry, computeBoundingBox, resolveUnitLabel, type Segment, type TextLabel, type BBox } from './dxf-geometry';
 
 export interface DxfParseRequest {
   text: string;
 }
 
 export type DxfParseResponse =
-  | { ok: true; segments: Segment[]; bbox: BBox; unitLabel: string | null }
+  | { ok: true; segments: Segment[]; labels: TextLabel[]; bbox: BBox; unitLabel: string | null }
   | { ok: false; error: string };
 
 interface WorkerGlobal {
@@ -39,10 +39,10 @@ worker.onmessage = (event) => {
     const dxf = new DxfParser().parseSync(event.data.text);
     if (!dxf) throw new Error('Could not parse DXF file.');
 
-    const segments = extractSegments(dxf);
-    if (segments.length === 0) throw new Error('No supported geometry found in file.');
+    const { segments, labels } = extractGeometry(dxf);
+    if (segments.length === 0 && labels.length === 0) throw new Error('No supported geometry found in file.');
 
-    worker.postMessage({ ok: true, segments, bbox: computeBoundingBox(segments), unitLabel: resolveUnitLabel(dxf) });
+    worker.postMessage({ ok: true, segments, labels, bbox: computeBoundingBox(segments, labels), unitLabel: resolveUnitLabel(dxf) });
   } catch (err) {
     worker.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }

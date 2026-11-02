@@ -1,4 +1,19 @@
-import type { IDxf, IEntity, IInsertEntity, ILineEntity, ILwpolylineEntity, IPolylineEntity, ICircleEntity, IArcEntity, IEllipseEntity, ISplineEntity, IPointEntity } from 'dxf-parser';
+import type {
+  IDxf,
+  IEntity,
+  IInsertEntity,
+  ILineEntity,
+  ILwpolylineEntity,
+  IPolylineEntity,
+  ICircleEntity,
+  IArcEntity,
+  IEllipseEntity,
+  ISplineEntity,
+  IPointEntity,
+  ITextEntity,
+  IMtextEntity,
+  IDimensionEntity,
+} from 'dxf-parser';
 
 /**
  * Pure geometry extraction shared between `dxf-2d-viewer.tsx` (which only
@@ -14,6 +29,21 @@ export interface Pt {
 export interface Segment {
   points: Pt[];
   color: string | null;
+}
+
+/** TEXT/MTEXT content — "тепер не видно розміри і текст" (2026-11-02), a separate array from `Segment` since it's drawn with `fillText`, not stroked. */
+export interface TextLabel {
+  position: Pt;
+  text: string;
+  height: number;
+  /** Radians, CCW-positive in DXF's own (unflipped) coordinate system — the viewer negates this when drawing, since its canvas Y axis is flipped relative to DXF's. */
+  rotation: number;
+  color: string | null;
+}
+
+export interface ExtractedGeometry {
+  segments: Segment[];
+  labels: TextLabel[];
 }
 
 export interface BBox {
@@ -38,7 +68,7 @@ export function resolveUnitLabel(dxf: IDxf): string | null {
   return typeof raw === 'number' ? (INSUNITS_LABELS[raw] ?? null) : null;
 }
 
-export function computeBoundingBox(segments: Segment[]): BBox {
+export function computeBoundingBox(segments: Segment[], labels: TextLabel[] = []): BBox {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -51,19 +81,33 @@ export function computeBoundingBox(segments: Segment[]): BBox {
       if (p.y > maxY) maxY = p.y;
     }
   }
+  // Only the label's anchor point, not its real text extent — text is
+  // small relative to real geometry in practice, and estimating actual
+  // glyph-width bounds pre-render isn't worth it for a fit-to-view
+  // approximation.
+  for (const label of labels) {
+    if (label.position.x < minX) minX = label.position.x;
+    if (label.position.x > maxX) maxX = label.position.x;
+    if (label.position.y < minY) minY = label.position.y;
+    if (label.position.y > maxY) maxY = label.position.y;
+  }
   return { minX, minY, maxX, maxY };
 }
 
 /**
  * Geometry-only preview: LINE/LWPOLYLINE/POLYLINE (bulge segments expanded
  * into arcs)/CIRCLE/ARC/ELLIPSE/SPLINE/POINT/INSERT (block references,
- * flattened with position/rotation/scale/array-copy) are drawn; TEXT,
- * MTEXT, DIMENSION, HATCH, SOLID and 3DFACE are silently skipped — this is
- * "what does this part look like", not a full CAD viewer, and skipping
- * text avoids pulling in a font-rendering dependency for it.
+ * flattened with position/rotation/scale/array-copy) are drawn as segments;
+ * TEXT/MTEXT/DIMENSION are drawn as labels (DIMENSION by flattening its
+ * referenced anonymous block, same as INSERT — AutoCAD always expresses
+ * that block's geometry directly in world coordinates, so no extra
+ * offset/rotation/scale is needed beyond the transform already active at
+ * that point in the entity tree). HATCH, SOLID and 3DFACE are still
+ * silently skipped — out of scope for "what does this part look like."
  */
-export function extractSegments(dxf: IDxf): Segment[] {
+export function extractGeometry(dxf: IDxf): ExtractedGeometry {
   const segments: Segment[] = [];
+  const labels: TextLabel[] = [];
   const blocksByName = dxf.blocks ?? {};
   const onStack = new Set<string>();
 
@@ -158,14 +202,82 @@ export function extractSegments(dxf: IDxf): Segment[] {
           onStack.delete(e.name);
           break;
         }
+        case 'TEXT': {
+          const e = entity as ITextEntity;
+          labels.push({
+            position: transform(e.startPoint),
+            text: e.text ?? '',
+            height: e.textHeight || DEFAULT_LABEL_HEIGHT,
+            // Does not compose with an enclosing INSERT's own rotation (unlike point-based
+            // geometry, which transforms correctly through `transform`) — a text entity nested
+            // inside a rotated block will render at the right position but un-rotated. Accepted
+            // as out of scope: dimension/label text inside rotated blocks is rare in real shop
+            // files, and getting it right needs `transform` to expose its own rotation angle,
+            // not just a point-mapping function.
+            rotation: ((e.rotation || 0) * Math.PI) / 180,
+            color,
+          });
+          break;
+        }
+        case 'MTEXT': {
+          const e = entity as IMtextEntity;
+          const rotation =
+            e.rotation != null ? (e.rotation * Math.PI) / 180 : e.directionVector ? Math.atan2(e.directionVector.y, e.directionVector.x) : 0;
+          labels.push({
+            position: transform(e.position),
+            text: cleanMtext(e.text ?? ''),
+            height: e.height || DEFAULT_LABEL_HEIGHT,
+            rotation,
+            color,
+          });
+          break;
+        }
+        case 'DIMENSION': {
+          const e = entity as IDimensionEntity;
+          const block = e.block ? blocksByName[e.block] : undefined;
+          if (block && !onStack.has(e.block)) {
+            onStack.add(e.block);
+            visitEntities(block.entities, transform, depth + 1);
+            onStack.delete(e.block);
+          } else {
+            // Some exporters omit the anonymous block — fall back to just the measurement
+            // text, so the dimension value is still visible even without the full
+            // extension-line/arrow geometry.
+            const pos = e.middleOfText ?? e.anchorPoint;
+            const text = e.text && e.text !== '<>' ? e.text : e.actualMeasurement != null ? String(Math.round(e.actualMeasurement * 100) / 100) : null;
+            if (pos && text) {
+              labels.push({ position: transform(pos), text, height: DEFAULT_LABEL_HEIGHT, rotation: ((e.angle || 0) * Math.PI) / 180, color });
+            }
+          }
+          break;
+        }
         default:
-          break; // TEXT/MTEXT/DIMENSION/HATCH/SOLID/3DFACE/ATTDEF — geometry-only preview, see file header comment
+          break; // HATCH/SOLID/3DFACE/ATTDEF — geometry-only preview, see file header comment
       }
     }
   }
 
   visitEntities(dxf.entities ?? [], (p) => p, 0);
-  return segments;
+  return { segments, labels };
+}
+
+/** Fallback text height (drawing units) when an entity doesn't carry one — a dimension's own synthesized fallback label, or a TEXT/MTEXT with `height`/`textHeight` of 0. */
+const DEFAULT_LABEL_HEIGHT = 2.5;
+
+/**
+ * Strips MTEXT's inline formatting codes down to the plain drawn text —
+ * this viewer renders filled text as-is, it doesn't apply the formatting
+ * itself (`\P` paragraph breaks, `{...}` grouping, and property codes like
+ * `\W0.7;`/`\H2.5;`/`\C1;`/`\L`/`\l`/`\O`/`\o`/`\K`/`\k`).
+ */
+function cleanMtext(raw: string): string {
+  return raw
+    .replace(/\\P/g, '\n')
+    .replace(/\\~/g, ' ')
+    .replace(/\\[LlOoKk]/g, '')
+    .replace(/\\[A-Za-z][^;\\{}]*;/g, '')
+    .replace(/[{}]/g, '')
+    .replace(/\\\\/g, '\\');
 }
 
 /** DXF's bulge-per-vertex convention: `vertices[i].bulge` describes the segment from vertex i to i+1. */
