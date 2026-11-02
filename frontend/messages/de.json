@@ -1896,7 +1896,9 @@
     "cuttingSourceOrder": "Order",
     "cuttingGlbMeasuring": "Measuring dimensions from the 3D model…",
     "cuttingGlbMeasureEmpty": "Could not determine dimensions from the 3D model — enter manually",
-    "cuttingGlbMeasureFailed": "Could not load the 3D model to measure — enter dimensions manually"
+    "cuttingGlbMeasureFailed": "Could not load the 3D model to measure — enter dimensions manually",
+    "cuttingErrorStockDims": "Enter the material's length (and width, for a sheet) — greater than zero.",
+    "cuttingErrorLineDims": "Fill in qty and dimensions (length, and width for a sheet) for every line — greater than zero."
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

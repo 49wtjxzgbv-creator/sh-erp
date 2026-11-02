@@ -91,9 +91,35 @@ export default function SupplierPortalCuttingPage() {
     setLines((prev) => prev.filter((l) => l.key !== key));
   }
 
+  /**
+   * "material.stockLengthCm must not be less than 0.01" (2026-11-03) — the
+   * raw class-validator message leaking straight to the UI untranslated
+   * (`useApiErrorMessage`'s own documented limitation: a validation string
+   * has no stable `code` to translate against, see its header comment).
+   * Validating client-side before the request ever goes out means the
+   * supplier sees a normal Ukrainian message instead of that English DTO
+   * string — the real fix is never letting the request leave with a zero
+   * dimension, not translating the backend's rejection of it.
+   */
+  function validateBeforeSubmit(): string | null {
+    const stockLengthOk = Number(stockLengthCm || 0) > 0;
+    const stockWidthOk = kind !== 'SHEET' || Number(stockWidthCm || 0) > 0;
+    if (!stockLengthOk || !stockWidthOk) return t('cuttingErrorStockDims');
+
+    const linesOk = lines.every((l) => Number(l.qty || 0) > 0 && Number(l.cutLengthCm || 0) > 0 && (kind !== 'SHEET' || Number(l.cutWidthCm || 0) > 0));
+    if (!linesOk) return t('cuttingErrorLineDims');
+
+    return null;
+  }
+
   async function handleSubmit() {
     setError(null);
     setResult(null);
+    const validationError = validateBeforeSubmit();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await previewSupplierCutting({
