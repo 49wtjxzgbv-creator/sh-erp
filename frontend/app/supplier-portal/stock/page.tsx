@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Avatar } from '@/components/ui/avatar';
@@ -42,6 +42,7 @@ export default function SupplierPortalStockPage() {
 
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -80,6 +81,12 @@ export default function SupplierPortalStockPage() {
     }
   }
 
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => row.article.toLowerCase().includes(query) || row.productName.toLowerCase().includes(query));
+  }, [rows, search]);
+
   if (loading) {
     return <LoadingBlock />;
   }
@@ -91,7 +98,8 @@ export default function SupplierPortalStockPage() {
         <CardHeader>
           <CardTitle className="text-base">{t('navStock')}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <Input placeholder={t('catalogSearchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -105,14 +113,14 @@ export default function SupplierPortalStockPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {t('noStockItems')}
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row) => (
+                filteredRows.map((row) => (
                   <TableRow key={row.itemId}>
                     <TableCell>
                       <Avatar src={row.photoUrl} size="sm" />

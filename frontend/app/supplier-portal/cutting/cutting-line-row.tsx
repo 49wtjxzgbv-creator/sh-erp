@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Trash2, Search, Loader2 } from 'lucide-react';
+import { Avatar } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,8 @@ export interface CuttingPickerItem {
   cutShapePolygon: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
   /** "воно ж розміри має витягувати для розкрою з файлів глб" (2026-11-03) — when there's no saved cuttingSpec dimension, fall back to measuring the product's own 3D model's bounding box instead of leaving the row blank. */
   glbUrl: string | null;
+  /** "додай в пошук там де розкрій перед артикулом фото" (2026-11-03) — shown before the article/name in the dropdown, same as every other product list in this portal. */
+  photoUrl: string | null;
 }
 
 export interface CuttingLineRowProps {
@@ -116,6 +119,7 @@ export function CuttingLineRow({ row, isSheet, pickerItems, onChange, onRemove, 
           emptyLabel={t('cuttingLineNoMatches')}
           renderItem={(item) => (
             <span className="flex items-center gap-2">
+              <Avatar src={item.photoUrl} size="sm" className="shrink-0" zoomable={false} />
               <span className="truncate">{item.displayLabel}</span>
               <Badge variant="outline" className="ml-auto shrink-0 text-[10px]">
                 {item.source === 'catalog' ? t('cuttingSourceCatalog') : t('cuttingSourceOrder')}

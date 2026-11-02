@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/domain/data-table/data-table';
 import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { View3DButton } from '@/components/domain/files/view-3d-button';
@@ -38,6 +39,7 @@ export default function SupplierPortalCatalogPage() {
   const router = useRouter();
   const [catalog, setCatalog] = useState<SupplierCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,12 +88,19 @@ export default function SupplierPortalCatalogPage() {
     [t],
   );
 
+  const filteredCatalog = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return catalog;
+    return catalog.filter((c) => c.article.toLowerCase().includes(query) || c.name.toLowerCase().includes(query));
+  }, [catalog, search]);
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{t('yourCatalog')}</h1>
+      <Input placeholder={t('catalogSearchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
       <DataTable
         columns={columns}
-        data={catalog}
+        data={filteredCatalog}
         isLoading={loading}
         onRowClick={(row) => router.push(`/supplier-portal/catalog/${row.id}`)}
       />

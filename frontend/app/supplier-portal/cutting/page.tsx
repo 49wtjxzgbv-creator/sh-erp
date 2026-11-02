@@ -26,6 +26,7 @@ interface StockPickerRow {
   productName: string;
   cuttingSpec: SupplierCatalogEntry['cuttingSpec'];
   files: FileAssetWithUrl[];
+  photoUrl: string | null;
 }
 
 /** "воно ж розміри має витягувати для розкрою з файлів глб" (2026-11-03) — same resolution CuttingLineRow needs for its GLB-dimension fallback, just the plain `downloadUrl` (not the AR-optimized variant chain `resolveArGlbUrl` elsewhere in this app uses) since this is a one-off measurement, not an AR render — same convention already established by `PackagingDimensionsFromModelCalculator` in assembly-form.tsx. */
@@ -175,6 +176,7 @@ export default function SupplierPortalCuttingPage() {
       cutWidthCm: c.cuttingSpec?.defaultCutWidthCm ?? '',
       cutShapePolygon: c.cuttingSpec?.defaultCutShapePolygon ?? null,
       glbUrl: resolveGlbUrl(c.files),
+      photoUrl: c.photoUrl,
     }));
     const fromStock: CuttingPickerItem[] = stockItems.map((s) => ({
       key: `order:${s.itemId}`,
@@ -184,6 +186,7 @@ export default function SupplierPortalCuttingPage() {
       cutWidthCm: s.cuttingSpec?.defaultCutWidthCm ?? '',
       cutShapePolygon: s.cuttingSpec?.defaultCutShapePolygon ?? null,
       glbUrl: resolveGlbUrl(s.files),
+      photoUrl: s.photoUrl,
     }));
     return [...fromCatalog, ...fromStock];
   }, [catalog, stockItems]);
