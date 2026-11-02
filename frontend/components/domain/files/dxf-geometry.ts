@@ -33,12 +33,24 @@ export interface Segment {
 
 /** TEXT/MTEXT content — "тепер не видно розміри і текст" (2026-11-02), a separate array from `Segment` since it's drawn with `fillText`, not stroked. */
 export interface TextLabel {
+  /**
+   * The point `anchorH`/`anchorV` are measured from — TEXT's own "second
+   * alignment point" (group 11) when its justification isn't plain
+   * left/baseline, per dxf-parser's own comment that group 11 is where
+   * non-default-justified TEXT actually anchors ("тепер накладення тексту"
+   * (2026-11-02): without this, every TEXT/MTEXT was drawn as if it were
+   * left/top-anchored regardless of its real justification, so anything
+   * centered or right/bottom-anchored landed shifted onto whatever was
+   * actually next to its true position).
+   */
   position: Pt;
   text: string;
   height: number;
   /** Radians, CCW-positive in DXF's own (unflipped) coordinate system — the viewer negates this when drawing, since its canvas Y axis is flipped relative to DXF's. */
   rotation: number;
   color: string | null;
+  anchorH: 'left' | 'center' | 'right';
+  anchorV: 'top' | 'middle' | 'bottom' | 'baseline';
 }
 
 export interface ExtractedGeometry {
@@ -261,8 +273,16 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
         }
         case 'TEXT': {
           const e = entity as ITextEntity;
+          const halign = e.halign ?? 0;
+          const valign = e.valign ?? 0;
+          // Group 11 ("second alignment point") is only meaningful — and only where dxf-parser
+          // actually populates it — once the entity isn't plain left/baseline justified; using
+          // group 10 unconditionally here was the bug: a centered/right-justified TEXT rendered
+          // as if it were left-justified at its FIRST alignment point, landing shifted onto
+          // whatever real geometry/text sat where the text should have been centered/right-aligned.
+          const anchor = (halign !== 0 || valign !== 0) && e.endPoint ? e.endPoint : e.startPoint;
           labels.push({
-            position: transform(e.startPoint),
+            position: transform(anchor),
             text: decodeUnicodeEscapes(e.text ?? ''),
             height: e.textHeight || DEFAULT_LABEL_HEIGHT,
             // Does not compose with an enclosing INSERT's own rotation (unlike point-based
@@ -273,6 +293,8 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
             // not just a point-mapping function.
             rotation: ((e.rotation || 0) * Math.PI) / 180,
             color,
+            anchorH: textHalignToAnchorH(halign),
+            anchorV: textValignToAnchorV(valign),
           });
           break;
         }
@@ -280,12 +302,15 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
           const e = entity as IMtextEntity;
           const rotation =
             e.rotation != null ? (e.rotation * Math.PI) / 180 : e.directionVector ? Math.atan2(e.directionVector.y, e.directionVector.x) : 0;
+          const [anchorH, anchorV] = mtextAttachmentPointToAnchor(e.attachmentPoint ?? 1);
           labels.push({
             position: transform(e.position),
             text: decodeUnicodeEscapes(cleanMtext(e.text ?? '')),
             height: e.height || DEFAULT_LABEL_HEIGHT,
             rotation,
             color,
+            anchorH,
+            anchorV,
           });
           break;
         }
@@ -310,6 +335,8 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
                 height: DEFAULT_LABEL_HEIGHT,
                 rotation: ((e.angle || 0) * Math.PI) / 180,
                 color,
+                anchorH: 'center',
+                anchorV: 'middle',
               });
             }
           }
@@ -327,6 +354,34 @@ export function extractGeometry(dxf: IDxf): ExtractedGeometry {
 
 /** Fallback text height (drawing units) when an entity doesn't carry one — a dimension's own synthesized fallback label, or a TEXT/MTEXT with `height`/`textHeight` of 0. */
 const DEFAULT_LABEL_HEIGHT = 2.5;
+
+/** DXF group 72 (TEXT horizontal justification) — "Aligned"/"Middle"/"Fit" (3/4/5) all involve scaling or dual-axis centering this viewer doesn't replicate; centering them horizontally is the closest single-point approximation. */
+function textHalignToAnchorH(halign: number): TextLabel['anchorH'] {
+  if (halign === 2) return 'right';
+  if (halign >= 1) return 'center'; // 1 Center, 3 Aligned, 4 Middle, 5 Fit
+  return 'left';
+}
+
+/** DXF group 73 (TEXT vertical justification): 0 Baseline, 1 Bottom, 2 Middle, 3 Top. */
+function textValignToAnchorV(valign: number): TextLabel['anchorV'] {
+  switch (valign) {
+    case 1:
+      return 'bottom';
+    case 2:
+      return 'middle';
+    case 3:
+      return 'top';
+    default:
+      return 'baseline';
+  }
+}
+
+/** DXF group 71 (MTEXT attachment point), 1-9 laid out as a 3x3 grid, Top-Left to Bottom-Right; AutoCAD's own default when the code is absent is 1 (Top Left). */
+function mtextAttachmentPointToAnchor(attachmentPoint: number): [TextLabel['anchorH'], TextLabel['anchorV']] {
+  const anchorH: TextLabel['anchorH'] = [1, 4, 7].includes(attachmentPoint) ? 'left' : [3, 6, 9].includes(attachmentPoint) ? 'right' : 'center';
+  const anchorV: TextLabel['anchorV'] = attachmentPoint <= 3 ? 'top' : attachmentPoint <= 6 ? 'middle' : 'bottom';
+  return [anchorH, anchorV];
+}
 
 /**
  * Strips MTEXT's inline formatting codes down to the plain drawn text —

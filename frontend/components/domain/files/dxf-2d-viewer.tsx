@@ -165,14 +165,37 @@ export function Dxf2DViewer({ url }: Dxf2DViewerProps) {
       const { scale } = viewRef.current;
       const p = toScreen(label.position);
       const fontSize = Math.max(label.height * scale, 1);
+      const lineHeight = fontSize * 1.2;
+      const lines = label.text.split('\n');
+
       ctx!.save();
       ctx!.translate(p.x, p.y);
       ctx!.rotate(-label.rotation);
       ctx!.font = `${fontSize}px sans-serif`;
       ctx!.fillStyle = label.color ?? DEFAULT_STROKE;
-      ctx!.textBaseline = 'alphabetic';
-      const lines = label.text.split('\n');
-      lines.forEach((line, i) => ctx!.fillText(line, 0, i * fontSize * 1.2));
+      ctx!.textAlign = label.anchorH;
+
+      // Multi-line MTEXT grows away from its own anchor, not always downward from the top — a
+      // bottom- or middle-anchored block whose lines were always stacked top-down (the previous
+      // behavior) would visibly drift onto whatever sat below/around its real anchor point, the
+      // actual "накладення тексту" (2026-11-02) complaint for anything that wasn't top-anchored.
+      lines.forEach((line, i) => {
+        let y: number;
+        if (label.anchorV === 'bottom') {
+          ctx!.textBaseline = 'bottom';
+          y = -(lines.length - 1 - i) * lineHeight;
+        } else if (label.anchorV === 'middle') {
+          ctx!.textBaseline = 'middle';
+          y = (i - (lines.length - 1) / 2) * lineHeight;
+        } else if (label.anchorV === 'top') {
+          ctx!.textBaseline = 'top';
+          y = i * lineHeight;
+        } else {
+          ctx!.textBaseline = 'alphabetic';
+          y = i * lineHeight;
+        }
+        ctx!.fillText(line, 0, y);
+      });
       ctx!.restore();
     }
 
