@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
+import { Search } from 'lucide-react';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 
@@ -43,6 +45,7 @@ export default function SupplierPortalStockPage() {
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -99,7 +102,30 @@ export default function SupplierPortalStockPage() {
           <CardTitle className="text-base">{t('navStock')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input placeholder={t('catalogSearchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
+          <EntityCombobox<StockRow>
+            query={search}
+            onQueryChange={setSearch}
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            items={filteredRows}
+            getKey={(row) => row.itemId}
+            onSelect={(row) => {
+              setSearch(`${row.article} — ${row.productName}`);
+              setSearchOpen(false);
+              router.push(`/supplier-portal/orders/${row.orderId}`);
+            }}
+            placeholder={t('catalogSearchPlaceholder')}
+            leading={<Search className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            containerClassName="max-w-sm"
+            renderItem={(row) => (
+              <span className="flex items-center gap-2">
+                <Avatar src={row.photoUrl} size="sm" className="shrink-0" zoomable={false} />
+                <span className="truncate">
+                  {row.article} — {row.productName}
+                </span>
+              </span>
+            )}
+          />
           <Table>
             <TableHeader>
               <TableRow>

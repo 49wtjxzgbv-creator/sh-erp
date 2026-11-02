@@ -6,8 +6,9 @@ import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/domain/data-table/data-table';
+import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
+import { Search } from 'lucide-react';
 import { is3DModelFile, isGlbFile } from '@/components/domain/files/entity-documents-field';
 import { View3DButton } from '@/components/domain/files/view-3d-button';
 import { ArViewButton } from '@/components/domain/files/ar-view-button';
@@ -40,6 +41,7 @@ export default function SupplierPortalCatalogPage() {
   const [catalog, setCatalog] = useState<SupplierCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,7 +99,30 @@ export default function SupplierPortalCatalogPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">{t('yourCatalog')}</h1>
-      <Input placeholder={t('catalogSearchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
+      <EntityCombobox<SupplierCatalogEntry>
+        query={search}
+        onQueryChange={setSearch}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        items={filteredCatalog}
+        getKey={(c) => c.id}
+        onSelect={(c) => {
+          setSearch(`${c.article} — ${c.name}`);
+          setSearchOpen(false);
+          router.push(`/supplier-portal/catalog/${c.id}`);
+        }}
+        placeholder={t('catalogSearchPlaceholder')}
+        leading={<Search className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        containerClassName="max-w-sm"
+        renderItem={(c) => (
+          <span className="flex items-center gap-2">
+            <Avatar src={c.photoUrl} size="sm" className="shrink-0" zoomable={false} />
+            <span className="truncate">
+              {c.article} — {c.name}
+            </span>
+          </span>
+        )}
+      />
       <DataTable
         columns={columns}
         data={filteredCatalog}
