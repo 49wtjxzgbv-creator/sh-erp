@@ -64,6 +64,14 @@ function isTextFile(mimeType: string, name: string): boolean {
 function isImageFile(mimeType: string, name: string): boolean {
   return mimeType.startsWith('image/') && !isDxfFile(name) && !isStepFile(name);
 }
+/** Extension-only sibling of isPdfFile — for callers with no mimeType in hand (e.g. FilePreviewButton, whose minimal {id, originalName, downloadUrl} shape doesn't carry one). */
+export function isPdfFileByName(name: string): boolean {
+  return /\.pdf$/i.test(name);
+}
+/** Extension-only sibling of isImageFile, same "no mimeType available" reason as isPdfFileByName. */
+export function isImageFileByName(name: string): boolean {
+  return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name) && !isDxfFile(name) && !isStepFile(name);
+}
 
 function fileIcon(file: FileAssetWithUrl) {
   if (is3DModelFile(file.originalName)) return Box;

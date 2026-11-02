@@ -14,6 +14,7 @@ describe('SupplierPortalService', () => {
         purchaseOrder: { findFirst: jest.fn() },
         purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
         purchaseRequestItem: { update: jest.fn() },
+        productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
       },
     };
@@ -195,6 +196,131 @@ describe('SupplierPortalService', () => {
       await expect(
         service.quotePurchaseRequest(actor, 'pr1', { items: [{ id: 'item1', quotedPrice: 100 }] }),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('listCatalog', () => {
+    it("scopes to the caller's own supplierId and never exposes staff's price/isDefault", async () => {
+      prisma.tenant.productSupplier.findMany.mockResolvedValue([
+        {
+          id: 'ps1',
+          productId: 'p1',
+          price: 999, // staff's own — must never appear in the response
+          isDefault: true, // staff's own — must never appear in the response
+          supplierCostPrice: null,
+          supplierOfferedPrice: 50,
+          createdAt: new Date('2026-11-01'),
+          product: { article: 'ABC', name: 'Widget', weightPerUnitKg: '1.500', cuttingSpec: null },
+        },
+      ]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] });
+
+      const result = await service.listCatalog(actor);
+
+      expect(prisma.tenant.productSupplier.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { supplierId: 's1' } }),
+      );
+      expect(result.items).toEqual([
+        {
+          id: 'ps1',
+          productId: 'p1',
+          article: 'ABC',
+          name: 'Widget',
+          weightPerUnitKg: '1.500',
+          photoUrl: 'https://example.com/p1.jpg',
+          files: [],
+          cuttingSpec: null,
+          supplierCostPrice: null,
+          supplierOfferedPrice: 50,
+          createdAt: new Date('2026-11-01'),
+        },
+      ]);
+      expect(result.items[0]).not.toHaveProperty('price');
+      expect(result.items[0]).not.toHaveProperty('isDefault');
+    });
+  });
+
+  describe('getCatalogEntry', () => {
+    const rawEntry = {
+      id: 'ps1',
+      productId: 'p1',
+      price: 999,
+      isDefault: true,
+      supplierCostPrice: 10,
+      supplierOfferedPrice: 50,
+      createdAt: new Date('2026-11-01'),
+      product: {
+        article: 'ABC',
+        name: 'Widget',
+        weightPerUnitKg: '1.500',
+        cuttingSpec: { kind: 'SHEET', stockLengthCm: 200, stockWidthCm: 100, defaultCutLengthCm: 50, defaultCutWidthCm: 40, defaultCutShapePolygon: { outerCm: [], holesCm: [] } },
+      },
+    };
+
+    it('404s for an entry belonging to a different supplier (never distinguished from not-found)', async () => {
+      prisma.tenant.productSupplier.findFirst.mockResolvedValue(null);
+      await expect(service.getCatalogEntry(actor, 'ps1')).rejects.toThrow();
+    });
+
+    it('enriches with photo + product documents, includes the cutting spec, and strips price/isDefault', async () => {
+      prisma.tenant.productSupplier.findFirst.mockResolvedValue(rawEntry);
+      filesService.listForEntities.mockImplementation((_actor: any, _type: string, _ids: string[], domains: string[]) =>
+        domains.includes('PRODUCT_PHOTO')
+          ? Promise.resolve({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] })
+          : Promise.resolve({ p1: [{ id: 'f1', originalName: 'model.glb', downloadUrl: 'https://example.com/model.glb' }] }),
+      );
+
+      const result = await service.getCatalogEntry(actor, 'ps1');
+
+      expect(result).toEqual({
+        id: 'ps1',
+        productId: 'p1',
+        article: 'ABC',
+        name: 'Widget',
+        weightPerUnitKg: '1.500',
+        photoUrl: 'https://example.com/p1.jpg',
+        files: [{ id: 'f1', originalName: 'model.glb', downloadUrl: 'https://example.com/model.glb' }],
+        cuttingSpec: { kind: 'SHEET', stockLengthCm: 200, stockWidthCm: 100, defaultCutLengthCm: 50, defaultCutWidthCm: 40, defaultCutShapePolygon: { outerCm: [], holesCm: [] } },
+        supplierCostPrice: 10,
+        supplierOfferedPrice: 50,
+        createdAt: new Date('2026-11-01'),
+      });
+      expect(result).not.toHaveProperty('price');
+      expect(result).not.toHaveProperty('isDefault');
+    });
+  });
+
+  describe('updateCatalogEntry', () => {
+    it('404s for an entry belonging to a different supplier', async () => {
+      prisma.tenant.productSupplier.findFirst.mockResolvedValue(null);
+      await expect(service.updateCatalogEntry(actor, 'ps1', { supplierOfferedPrice: 50 })).rejects.toThrow();
+      expect(prisma.tenant.productSupplier.update).not.toHaveBeenCalled();
+    });
+
+    it("updates only the supplier's own two fields, audit-logs, and returns the re-fetched entry", async () => {
+      prisma.tenant.productSupplier.findFirst.mockResolvedValue({ id: 'ps1', productId: 'p1' });
+      prisma.tenant.productSupplier.update.mockResolvedValue({});
+      // getCatalogEntry's own re-fetch after the update:
+      prisma.tenant.productSupplier.findFirst.mockResolvedValueOnce({ id: 'ps1', productId: 'p1' }).mockResolvedValueOnce({
+        id: 'ps1',
+        productId: 'p1',
+        price: 999,
+        isDefault: false,
+        supplierCostPrice: 10,
+        supplierOfferedPrice: 50,
+        createdAt: new Date('2026-11-01'),
+        product: { article: 'ABC', name: 'Widget', weightPerUnitKg: null, cuttingSpec: null },
+      });
+
+      const result = await service.updateCatalogEntry(actor, 'ps1', { supplierCostPrice: 10, supplierOfferedPrice: 50 });
+
+      expect(prisma.tenant.productSupplier.update).toHaveBeenCalledWith({
+        where: { id: 'ps1' },
+        data: { supplierCostPrice: 10, supplierOfferedPrice: 50 },
+      });
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'product_supplier.catalog_updated' }));
+      expect(result.supplierCostPrice).toBe(10);
+      expect(result.supplierOfferedPrice).toBe(50);
     });
   });
 });

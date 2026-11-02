@@ -20,6 +20,7 @@ describe('PurchaseRequestsService', () => {
   let pdfService: any;
   let filesService: any;
   let emailService: any;
+  let supplierCatalogService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const request = {
@@ -48,7 +49,7 @@ describe('PurchaseRequestsService', () => {
           update: jest.fn(),
           delete: jest.fn(),
         },
-        purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn() },
+        purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         supplier: { findUnique: jest.fn() },
         supplierConnection: { findUnique: jest.fn().mockResolvedValue(null) },
         company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
@@ -62,7 +63,8 @@ describe('PurchaseRequestsService', () => {
     pdfService = { generateAndStore: jest.fn().mockResolvedValue('file-1') };
     filesService = { listForEntities: jest.fn().mockResolvedValue({}), getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.com/logo.png' }) };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
-    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService, filesService, emailService);
+    supplierCatalogService = { ensureCatalogEntries: jest.fn().mockResolvedValue(undefined) };
+    service = new PurchaseRequestsService(prisma, audit, purchaseOrdersService, pdfRenderer, pdfService, filesService, emailService, supplierCatalogService);
   });
 
   describe('create', () => {
@@ -187,6 +189,27 @@ describe('PurchaseRequestsService', () => {
 
       it('still succeeds (send is never blocked) when the notification lookup throws', async () => {
         prisma.tenant.supplierConnection.findUnique.mockRejectedValue(new Error('db hiccup'));
+
+        await expect(service.send(user, 'pr1')).resolves.toBeDefined();
+      });
+    });
+
+    describe('supplier catalog population', () => {
+      beforeEach(() => {
+        prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...request, status: 'SENT', sentAt: new Date() });
+      });
+
+      it("ensures catalog entries for this request's own supplierId/productIds", async () => {
+        prisma.tenant.purchaseRequestItem.findMany.mockResolvedValue([{ productId: 'p1' }, { productId: null }]);
+
+        await service.send(user, 'pr1');
+
+        expect(prisma.tenant.purchaseRequestItem.findMany).toHaveBeenCalledWith({ where: { purchaseRequestId: 'pr1' } });
+        expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null]);
+      });
+
+      it('still succeeds (send is never blocked) when the item lookup throws', async () => {
+        prisma.tenant.purchaseRequestItem.findMany.mockRejectedValue(new Error('db hiccup'));
 
         await expect(service.send(user, 'pr1')).resolves.toBeDefined();
       });

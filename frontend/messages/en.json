@@ -1837,7 +1837,20 @@
     "prStatusSENT": "Sent",
     "prStatusCONVERTED": "Converted to order",
     "prStatusCANCELLED": "Cancelled",
-    "attachFiles": "Files"
+    "attachFiles": "Files",
+    "yourCatalog": "Product catalog",
+    "noCatalogEntries": "No products in the catalog yet",
+    "catalogEntryNotFound": "Product not found",
+    "weightLabel": "Weight, kg",
+    "cuttingSpecLabel": "Cutting",
+    "kindSheet": "Sheet",
+    "kindBar": "Bar",
+    "stockDimensionsLabel": "Stock size",
+    "cutDimensionsLabel": "Piece size",
+    "yourPricesTitle": "Your prices",
+    "supplierCostPriceLabel": "Cost price (your note)",
+    "supplierOfferedPriceLabel": "Price at which you'll sell this to us",
+    "catalogSaveSuccess": "Saved"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

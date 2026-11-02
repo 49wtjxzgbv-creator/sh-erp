@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
 import { EmailService } from '../notifications/email.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
+import { SupplierCatalogService } from './supplier-catalog.service';
 import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
 import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
 import {
@@ -39,6 +40,7 @@ export class PurchaseRequestsService {
     private readonly pdfService: PurchaseRequestPdfService,
     private readonly filesService: FilesService,
     private readonly emailService: EmailService,
+    private readonly supplierCatalogService: SupplierCatalogService,
   ) {}
 
   /**
@@ -198,7 +200,28 @@ export class PurchaseRequestsService {
     });
 
     await this.notifySupplierPortalIfConnected(user, request);
+    await this.populateSupplierCatalog(user, request);
     return request;
+  }
+
+  /**
+   * "якщо ми йому відправляємо товари на прорахунок... автоматично мають
+   * підтягуватись в каталог" (2026-11-02) — same SENT-only moment as the
+   * notification above. `ensureCatalogEntries` is itself best-effort and
+   * never throws, but the `findMany` here isn't, so this whole step is
+   * wrapped too — must never block send() itself.
+   */
+  private async populateSupplierCatalog(user: RequestUser, request: { id: string; supplierId: string | null }): Promise<void> {
+    try {
+      const items = await this.prisma.tenant.purchaseRequestItem.findMany({ where: { purchaseRequestId: request.id } });
+      await this.supplierCatalogService.ensureCatalogEntries(
+        user,
+        request.supplierId,
+        items.map((i) => i.productId),
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to populate supplier catalog (request=${request.id}): ${err}`);
+    }
   }
 
   /**

@@ -6,6 +6,7 @@ describe('PurchaseOrdersService', () => {
   let prisma: any;
   let audit: any;
   let stock: any;
+  let supplierCatalogService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -36,7 +37,8 @@ describe('PurchaseOrdersService', () => {
     const deliverySchedules = {} as any;
     const comments = {} as any;
     const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
-    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules, comments, exchangeRatesService);
+    supplierCatalogService = { ensureCatalogEntries: jest.fn().mockResolvedValue(undefined) };
+    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules, comments, exchangeRatesService, supplierCatalogService);
   });
 
   describe('create', () => {
@@ -58,6 +60,23 @@ describe('PurchaseOrdersService', () => {
           }),
         }),
       );
+    });
+
+    it("ensures supplier-catalog entries for the new order's own supplierId/productIds", async () => {
+      prisma.tenant.purchaseOrder.create.mockResolvedValue({
+        id: 'po1',
+        status: 'ORDERED',
+        supplierId: 's1',
+        items: [{ productId: 'p1' }, { productId: null }],
+      });
+
+      await service.create(user, {
+        supplierId: 's1',
+        supplierNameSnapshot: 'Acme Supplies',
+        items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qtyOrdered: 10 }],
+      } as any);
+
+      expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null]);
     });
   });
 

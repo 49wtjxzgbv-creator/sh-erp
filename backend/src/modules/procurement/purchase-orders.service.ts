@@ -8,6 +8,7 @@ import { StockService } from '../inventory/stock.service';
 import { ExchangeRatesService } from '../finance/exchange-rates.service';
 import { DeliverySchedulesService } from './delivery-schedules.service';
 import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
+import { SupplierCatalogService } from './supplier-catalog.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
@@ -33,6 +34,7 @@ export class PurchaseOrdersService {
     private readonly deliverySchedulesService: DeliverySchedulesService,
     private readonly commentsService: PurchaseOrderCommentsService,
     private readonly exchangeRatesService: ExchangeRatesService,
+    private readonly supplierCatalogService: SupplierCatalogService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
@@ -71,6 +73,8 @@ export class PurchaseOrdersService {
       entityId: order.id,
       after: order,
     });
+
+    await this.supplierCatalogService.ensureCatalogEntries(user, order.supplierId, order.items.map((i) => i.productId));
     return order;
   }
 

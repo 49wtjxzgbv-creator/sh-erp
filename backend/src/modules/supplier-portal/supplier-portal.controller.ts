@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Body, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentSupplierPortalUser, RequestSupplierPortalUser, SupplierPortalGuard } from './supplier-portal-context';
@@ -9,6 +9,7 @@ import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.d
 import { CreatePurchaseOrderCommentDto } from '../procurement/dto/purchase-order-comment.dto';
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
+import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -146,5 +147,27 @@ export class SupplierPortalController {
     @Body() dto: QuotePurchaseRequestDto,
   ) {
     return this.supplierPortalService.quotePurchaseRequest(actor, id, dto);
+  }
+
+  @Get('catalog')
+  @ApiOperation({ summary: "Every product ever sent to this supplier via a purchase order or sent purchase request — accumulates automatically, never any other supplier's." })
+  async listCatalog(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.listCatalog(actor);
+  }
+
+  @Get('catalog/:id')
+  @ApiOperation({ summary: "One catalog entry. 404s (not 403s) for anyone else's." })
+  async getCatalogEntry(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.getCatalogEntry(actor, id);
+  }
+
+  @Patch('catalog/:id')
+  @ApiOperation({ summary: "Supplier edits their own cost note and/or the price they'll sell this to us — never the company's own staff-managed price." })
+  async updateCatalogEntry(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateSupplierCatalogEntryDto,
+  ) {
+    return this.supplierPortalService.updateCatalogEntry(actor, id, dto);
   }
 }

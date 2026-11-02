@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Avatar } from '@/components/ui/avatar';
+import { FilePreviewButton } from '@/components/domain/files/file-preview-button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -150,15 +151,7 @@ export default function SupplierPortalRequestDetailPage() {
                     {item.attachedFiles && item.attachedFiles.length > 0 ? (
                       <div className="flex flex-col gap-1">
                         {item.attachedFiles.map((file) => (
-                          <button
-                            key={file.id}
-                            type="button"
-                            className="truncate text-left text-sm text-primary underline-offset-2 hover:underline"
-                            title={file.originalName}
-                            onClick={() => window.open(file.downloadUrl, '_blank', 'noopener,noreferrer')}
-                          >
-                            {file.originalName}
-                          </button>
+                          <FilePreviewButton key={file.id} file={file} />
                         ))}
                       </div>
                     ) : (

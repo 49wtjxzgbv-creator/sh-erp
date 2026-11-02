@@ -13,6 +13,7 @@ import { DeliverySchedulesService } from './delivery-schedules.service';
 import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
 import { SuppliersController } from './suppliers.controller';
 import { SuppliersService } from './suppliers.service';
+import { SupplierCatalogService } from './supplier-catalog.service';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SuppliersService } from './suppliers.service';
     PurchaseRequestPdfService,
     DeliverySchedulesService,
     PurchaseOrderCommentsService,
+    SupplierCatalogService,
   ],
   // DeliverySchedulesService/PurchaseOrderCommentsService exported so
   // SupplierPortalModule can share the same state machines (Phase 1/2)

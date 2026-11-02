@@ -10,6 +10,7 @@ import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
+import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
 import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
@@ -331,5 +332,114 @@ export class SupplierPortalService {
       if (schedule) return schedule;
     }
     throw new CodedNotFoundException('DELIVERY_SCHEDULE_NOT_FOUND', 'Delivery schedule not found.');
+  }
+
+  /**
+   * "у портала постачальника також має бути свій каталог товарів" (2026-11-02)
+   * — every product ever sent to this supplier via a PurchaseOrder or sent
+   * PurchaseRequest accumulates here (populated by
+   * SupplierCatalogService#ensureCatalogEntries), backed by the same
+   * `ProductSupplier` rows staff's own Suppliers pages use. `toSupplierCatalogEntry`
+   * builds an entirely new response object rather than spreading the raw
+   * row — `price`/`isDefault` (staff's own) are structurally impossible to
+   * leak here, only the two fields the supplier themselves entered go out.
+   */
+  private toSupplierCatalogEntry(
+    entry: {
+      id: string;
+      productId: string;
+      supplierCostPrice: unknown;
+      supplierOfferedPrice: unknown;
+      createdAt: Date;
+      product: {
+        article: string;
+        name: string;
+        weightPerUnitKg: unknown;
+        cuttingSpec: {
+          kind: string;
+          stockLengthCm: unknown;
+          stockWidthCm: unknown;
+          defaultCutLengthCm: unknown;
+          defaultCutWidthCm: unknown;
+          defaultCutShapePolygon: unknown;
+        } | null;
+      };
+    },
+    photoUrl: string | null,
+    files: { id: string; originalName: string; downloadUrl: string }[],
+  ) {
+    return {
+      id: entry.id,
+      productId: entry.productId,
+      article: entry.product.article,
+      name: entry.product.name,
+      weightPerUnitKg: entry.product.weightPerUnitKg,
+      photoUrl,
+      files,
+      cuttingSpec: entry.product.cuttingSpec
+        ? {
+            kind: entry.product.cuttingSpec.kind,
+            stockLengthCm: entry.product.cuttingSpec.stockLengthCm,
+            stockWidthCm: entry.product.cuttingSpec.stockWidthCm,
+            defaultCutLengthCm: entry.product.cuttingSpec.defaultCutLengthCm,
+            defaultCutWidthCm: entry.product.cuttingSpec.defaultCutWidthCm,
+            defaultCutShapePolygon: entry.product.cuttingSpec.defaultCutShapePolygon,
+          }
+        : null,
+      supplierCostPrice: entry.supplierCostPrice,
+      supplierOfferedPrice: entry.supplierOfferedPrice,
+      createdAt: entry.createdAt,
+    };
+  }
+
+  async listCatalog(actor: RequestSupplierPortalUser) {
+    const entries = await this.prisma.tenant.productSupplier.findMany({
+      where: { supplierId: actor.supplierId },
+      orderBy: { createdAt: 'desc' },
+      include: { product: { include: { cuttingSpec: true } } },
+    });
+    const productIds = entries.map((e) => e.productId);
+    const photos = productIds.length > 0 ? await this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']) : {};
+    return { items: entries.map((e) => this.toSupplierCatalogEntry(e as any, (photos as any)[e.productId]?.[0]?.downloadUrl ?? null, [])) };
+  }
+
+  async getCatalogEntry(actor: RequestSupplierPortalUser, id: string) {
+    const entry = await this.prisma.tenant.productSupplier.findFirst({
+      where: { id, supplierId: actor.supplierId },
+      include: { product: { include: { cuttingSpec: true } } },
+    });
+    if (!entry) throw new CodedNotFoundException('SUPPLIER_CATALOG_ENTRY_NOT_FOUND', 'Catalog entry not found.');
+
+    const [photos, documents] = await Promise.all([
+      this.filesService.listForEntities(this.asFilesActor(actor), 'Product', [entry.productId], ['PRODUCT_PHOTO']),
+      this.filesService.listForEntities(this.asFilesActor(actor), 'Product', [entry.productId], ['PRODUCT_DOCUMENT']),
+    ]);
+    const photoUrl = (photos as any)[entry.productId]?.[0]?.downloadUrl ?? null;
+    const files = ((documents as any)[entry.productId] ?? []).map((f: any) => ({ id: f.id, originalName: f.originalName, downloadUrl: f.downloadUrl }));
+
+    return this.toSupplierCatalogEntry(entry as any, photoUrl, files);
+  }
+
+  /** Supplier edits their own two fields — ownership-checked the same way as every other mutation here; never touches `price`/`isDefault`. */
+  async updateCatalogEntry(actor: RequestSupplierPortalUser, id: string, dto: UpdateSupplierCatalogEntryDto) {
+    const entry = await this.prisma.tenant.productSupplier.findFirst({ where: { id, supplierId: actor.supplierId } });
+    if (!entry) throw new CodedNotFoundException('SUPPLIER_CATALOG_ENTRY_NOT_FOUND', 'Catalog entry not found.');
+
+    await this.prisma.tenant.productSupplier.update({
+      where: { id },
+      data: { supplierCostPrice: dto.supplierCostPrice, supplierOfferedPrice: dto.supplierOfferedPrice },
+    });
+
+    await this.auditService.record({
+      companyId: actor.companyId,
+      actorUserId: null, // not a User row — see metadata for who actually did this
+      action: 'product_supplier.catalog_updated',
+      entityType: 'ProductSupplier',
+      entityId: id,
+      after: { supplierCostPrice: dto.supplierCostPrice, supplierOfferedPrice: dto.supplierOfferedPrice },
+      metadata: { supplierPortalUserId: actor.supplierPortalUserId, supplierId: actor.supplierId },
+    });
+
+    return this.getCatalogEntry(actor, id);
   }
 }

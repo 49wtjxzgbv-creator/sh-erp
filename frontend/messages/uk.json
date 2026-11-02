@@ -1976,7 +1976,20 @@
     "prStatusSENT": "Надіслано",
     "prStatusCONVERTED": "Перетворено на замовлення",
     "prStatusCANCELLED": "Скасовано",
-    "attachFiles": "Файли"
+    "attachFiles": "Файли",
+    "yourCatalog": "Каталог товарів",
+    "noCatalogEntries": "У каталозі поки немає товарів",
+    "catalogEntryNotFound": "Товар не знайдено",
+    "weightLabel": "Вага, кг",
+    "cuttingSpecLabel": "Розкрій",
+    "kindSheet": "Лист",
+    "kindBar": "Штанга",
+    "stockDimensionsLabel": "Розмір матеріалу",
+    "cutDimensionsLabel": "Розмір деталі",
+    "yourPricesTitle": "Ваші ціни",
+    "supplierCostPriceLabel": "Собівартість (ваша нотатка)",
+    "supplierOfferedPriceLabel": "Ціна, за якою ви продасте нам",
+    "catalogSaveSuccess": "Збережено"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

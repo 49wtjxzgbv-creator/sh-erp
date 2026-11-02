@@ -1019,6 +1019,18 @@ model ProductSupplier {
   price      Decimal? @db.Decimal(14, 2)
   isDefault  Boolean  @default(false) // display/pre-selection hint only — never bypasses the "ask when >1" rule above
 
+  // Supplier-portal product catalog (2026-11-02) — a row here is also the
+  // backing store for "this product is in this supplier's catalog" (see
+  // SupplierCatalogService#ensureCatalogEntries, which auto-upserts a bare
+  // row the moment a product is sent to a connected supplier via a
+  // PurchaseOrder/sent PurchaseRequest). The two fields below are the
+  // SUPPLIER's own, entered through the portal — never read or written by
+  // our own staff-side logic, and deliberately separate from `price`
+  // above (which stays staff-only, same "never overwrite the staff's own
+  // field" convention as PurchaseOrderItem.supplierConfirmedPrice).
+  supplierCostPrice    Decimal? @db.Decimal(14, 2) // "собівартість" — the supplier's own private note/cost, for their own reference only
+  supplierOfferedPrice Decimal? @db.Decimal(14, 2) // the price at which the supplier says they'll sell this to us
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
