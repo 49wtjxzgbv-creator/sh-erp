@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FilesModule } from '../files/files.module';
 import { ProcurementModule } from '../procurement/procurement.module';
+import { DxfExportService } from '../cutting/dxf-export.service';
+import { SupplierCuttingService } from './supplier-cutting.service';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
 import { SupplierPortalGuard } from './supplier-portal-context';
 import { SupplierPortalScopeInterceptor } from './supplier-portal-scope.interceptor';
@@ -48,6 +50,8 @@ import { SupplierPortalRegistrationController } from './supplier-portal-registra
     SupplierPortalService,
     SupplierPortalConnectionsService,
     SupplierPortalRegistrationService,
+    SupplierCuttingService,
+    DxfExportService,
   ],
 })
 export class SupplierPortalModule {}

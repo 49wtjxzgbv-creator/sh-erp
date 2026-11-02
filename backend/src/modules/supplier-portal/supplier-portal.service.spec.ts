@@ -16,6 +16,7 @@ describe('SupplierPortalService', () => {
         purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         purchaseRequestItem: { update: jest.fn() },
         productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+        productCuttingSpec: { findMany: jest.fn().mockResolvedValue([]) },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
       },
     };
@@ -495,7 +496,32 @@ describe('SupplierPortalService', () => {
       const result = await service.listStock(actor);
 
       expect(result.items).toEqual([
-        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30 }),
+        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30, cuttingSpec: null }),
+      ]);
+    });
+
+    it("carries the picked item's own cutting spec, for the cutting-tool line picker to pre-fill from", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po1',
+          orderDate: new Date('2026-10-01'),
+          items: [
+            { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 0 },
+          ],
+        },
+      ]);
+      prisma.tenant.productCuttingSpec.findMany.mockResolvedValue([
+        { productId: 'p1', kind: 'SHEET', stockLengthCm: 250, stockWidthCm: 120, defaultCutLengthCm: 30, defaultCutWidthCm: 20, defaultCutShapePolygon: null },
+      ]);
+
+      const result = await service.listStock(actor);
+
+      expect(prisma.tenant.productCuttingSpec.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { productId: { in: ['p1'] } } }));
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          itemId: 'item1',
+          cuttingSpec: { kind: 'SHEET', stockLengthCm: 250, stockWidthCm: 120, defaultCutLengthCm: 30, defaultCutWidthCm: 20, defaultCutShapePolygon: null },
+        }),
       ]);
     });
   });

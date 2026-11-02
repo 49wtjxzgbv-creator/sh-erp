@@ -7,7 +7,7 @@ import { ArrowLeft, Download, Scissors } from 'lucide-react';
 import { useCuttingPlan, useExecuteCuttingPlan } from '@/lib/hooks/use-cutting';
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { useApiErrorMessage } from '@/lib/api-error-message';
-import { toNumber } from '@/lib/api-client/decimal';
+import { toNumber, type DecimalString } from '@/lib/api-client/decimal';
 import type { CuttingPlanMaterial, CuttingPlanStock } from '@/lib/api-client/cutting';
 import { polygonToPathD } from './shape-polygon-preview';
 import { useExportStockItemDxf } from '@/lib/hooks/use-cutting';
@@ -34,8 +34,34 @@ import {
 const SEGMENT_BG_COLORS = ['bg-primary/70', 'bg-sky-500/70', 'bg-emerald-500/70', 'bg-amber-500/70', 'bg-fuchsia-500/70', 'bg-rose-500/70'];
 const SEGMENT_FILL_COLORS = ['fill-primary/70', 'fill-sky-500/70', 'fill-emerald-500/70', 'fill-amber-500/70', 'fill-fuchsia-500/70', 'fill-rose-500/70'];
 
+/**
+ * Minimal structural shape the two diagrams below actually read — narrower
+ * than `CuttingPlanStock`/`CuttingPlanCut` on purpose, so they're directly
+ * reusable from the supplier portal's self-service cutting tool
+ * ("розкрій має могти робити постачальник сам собі", 2026-11-02), whose
+ * stateless preview response has no `id`/`cuttingPlanId`/etc. (nothing is
+ * ever persisted for that flow) — just the plain numbers. `CuttingPlanStock`
+ * already structurally satisfies this (pure widening, zero behavior change
+ * here).
+ */
+export interface StockDiagramCut {
+  pieceLengthCm: DecimalString | number;
+  pieceWidthCm: DecimalString | number | null;
+  posXCm: DecimalString | number | null;
+  posYCm: DecimalString | number | null;
+  pieceLabel: string | null;
+  shapePolygonCm: { outerCm: [number, number][]; holesCm: [number, number][][] } | null;
+}
+
+export interface StockDiagramStockItem {
+  lengthCm: DecimalString | number;
+  widthCm: DecimalString | number | null;
+  leftoverLengthCm: DecimalString | number | null;
+  cuts: StockDiagramCut[];
+}
+
 /** One штанга's cut map — proportional flex segments, one per cut plus the leftover. */
-function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
+export function BarStockDiagram({ stockItem }: { stockItem: StockDiagramStockItem }) {
   const totalCm = toNumber(stockItem.lengthCm) ?? 0;
   if (totalCm <= 0) return null;
   const leftoverCm = toNumber(stockItem.leftoverLengthCm) ?? 0;
@@ -46,7 +72,7 @@ function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
         const lengthCm = toNumber(cut.pieceLengthCm) ?? 0;
         return (
           <div
-            key={cut.id}
+            key={i}
             className={`flex items-center justify-center overflow-hidden whitespace-nowrap text-[10px] text-white ${SEGMENT_BG_COLORS[i % SEGMENT_BG_COLORS.length]}`}
             style={{ flex: `${lengthCm} 0 0%` }}
             title={cut.pieceLabel ? `${cut.pieceLabel} — ${lengthCm} см` : `${lengthCm} см`}
@@ -73,7 +99,7 @@ function BarStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
  * cut carries `shapePolygonCm`, draws its real contour (holes punched out
  * via `fill-rule: evenodd`) instead of a bounding-box `<rect>`.
  */
-function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
+export function SheetStockDiagram({ stockItem }: { stockItem: StockDiagramStockItem }) {
   const lengthCm = toNumber(stockItem.lengthCm) ?? 0;
   const widthCm = toNumber(stockItem.widthCm) ?? 0;
   if (lengthCm <= 0 || widthCm <= 0) return null;
@@ -83,7 +109,7 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
       {stockItem.cuts.map((cut, i) =>
         cut.shapePolygonCm ? (
           <path
-            key={cut.id}
+            key={i}
             d={polygonToPathD(cut.shapePolygonCm.outerCm, cut.shapePolygonCm.holesCm)}
             fillRule="evenodd"
             className={SEGMENT_FILL_COLORS[i % SEGMENT_FILL_COLORS.length]}
@@ -94,7 +120,7 @@ function SheetStockDiagram({ stockItem }: { stockItem: CuttingPlanStock }) {
           </path>
         ) : (
           <rect
-            key={cut.id}
+            key={i}
             x={toNumber(cut.posXCm) ?? 0}
             y={toNumber(cut.posYCm) ?? 0}
             width={toNumber(cut.pieceLengthCm) ?? 0}

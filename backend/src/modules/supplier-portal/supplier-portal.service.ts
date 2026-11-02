@@ -581,22 +581,46 @@ export class SupplierPortalService {
   async listStock(actor: RequestSupplierPortalUser) {
     const orders = await this.getOpenOrderItems(actor);
 
-    const items = orders.flatMap((order) =>
+    const openItems = orders.flatMap((order) =>
       order.items
         .filter((item) => Number(item.qtyOrdered) - Number(item.qtyReceived) > 0)
-        .map((item) => ({
-          itemId: item.id,
-          orderId: order.id,
-          productId: item.productId,
-          article: item.articleSnapshot,
-          productName: item.productNameSnapshot,
-          orderDate: order.orderDate,
-          qtyOrdered: item.qtyOrdered,
-          qtyReceived: item.qtyReceived,
-          qtyRemaining: Number(item.qtyOrdered) - Number(item.qtyReceived),
-          supplierReadyQty: item.supplierReadyQty,
-        })),
+        .map((item) => ({ order, item })),
     );
+
+    // "розкрій має могти робити постачальник сам собі" (2026-11-02) — so the "pick
+    // from my open orders" line picker on the cutting tool can pre-fill a piece's cut
+    // dimensions/shape, same as the catalog picker already can. `PurchaseOrderItem.productId`
+    // is a plain cross-tenant-safe scalar column, not a navigable Prisma relation (see its
+    // own schema comment), so this is a separate batched lookup rather than an `include`.
+    const productIds = Array.from(new Set(openItems.map(({ item }) => item.productId).filter((id): id is string => id != null)));
+    const specs = productIds.length > 0 ? await this.prisma.tenant.productCuttingSpec.findMany({ where: { productId: { in: productIds } } }) : [];
+    const specByProduct = new Map(specs.map((s) => [s.productId, s]));
+
+    const items = openItems.map(({ order, item }) => {
+      const spec = item.productId ? specByProduct.get(item.productId) : undefined;
+      return {
+        itemId: item.id,
+        orderId: order.id,
+        productId: item.productId,
+        article: item.articleSnapshot,
+        productName: item.productNameSnapshot,
+        orderDate: order.orderDate,
+        qtyOrdered: item.qtyOrdered,
+        qtyReceived: item.qtyReceived,
+        qtyRemaining: Number(item.qtyOrdered) - Number(item.qtyReceived),
+        supplierReadyQty: item.supplierReadyQty,
+        cuttingSpec: spec
+          ? {
+              kind: spec.kind,
+              stockLengthCm: spec.stockLengthCm,
+              stockWidthCm: spec.stockWidthCm,
+              defaultCutLengthCm: spec.defaultCutLengthCm,
+              defaultCutWidthCm: spec.defaultCutWidthCm,
+              defaultCutShapePolygon: spec.defaultCutShapePolygon,
+            }
+          : null,
+      };
+    });
 
     const photoItems = await this.attachPhotoUrls(actor, items);
     return { items: photoItems };

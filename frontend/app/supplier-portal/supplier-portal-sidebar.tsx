@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { LayoutDashboard, CalendarClock, Package, Warehouse, ShoppingCart, FileText, Menu, X } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, Package, Warehouse, ShoppingCart, FileText, Scissors, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/domain/shell/logo';
 
@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/supplier-portal/deliveries', labelKey: 'navDeliveries', icon: CalendarClock },
   { href: '/supplier-portal/catalog', labelKey: 'navCatalog', icon: Package },
   { href: '/supplier-portal/stock', labelKey: 'navStock', icon: Warehouse },
+  { href: '/supplier-portal/cutting', labelKey: 'navCutting', icon: Scissors },
   { href: '/supplier-portal/orders', labelKey: 'navOrders', icon: ShoppingCart },
   { href: '/supplier-portal/requests', labelKey: 'navRequests', icon: FileText },
 ] as const;

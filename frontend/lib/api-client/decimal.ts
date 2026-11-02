@@ -16,7 +16,7 @@
  */
 export type DecimalString = string;
 
-export function toNumber(value: DecimalString | null | undefined): number | null {
+export function toNumber(value: DecimalString | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isNaN(n) ? null : n;

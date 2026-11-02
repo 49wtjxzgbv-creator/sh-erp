@@ -11,6 +11,8 @@ import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
 import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
+import { PreviewSupplierCuttingDto } from './dto/preview-supplier-cutting.dto';
+import { SupplierCuttingService } from './supplier-cutting.service';
 
 /**
  * Everything a logged-in supplier can reach. `@Public()` here means "skip
@@ -31,7 +33,10 @@ import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
 @UseGuards(SupplierPortalGuard)
 @UseInterceptors(SupplierPortalScopeInterceptor)
 export class SupplierPortalController {
-  constructor(private readonly supplierPortalService: SupplierPortalService) {}
+  constructor(
+    private readonly supplierPortalService: SupplierPortalService,
+    private readonly supplierCuttingService: SupplierCuttingService,
+  ) {}
 
   @Get('purchase-orders')
   @ApiOperation({ summary: "This supplier's own purchase orders — never any other supplier's." })
@@ -198,5 +203,14 @@ export class SupplierPortalController {
     @Body() dto: UpdateSupplierReadyQtyDto,
   ) {
     return this.supplierPortalService.updateSupplierReadyQty(actor, itemId, dto);
+  }
+
+  @Post('cutting/preview')
+  @ApiOperation({
+    summary:
+      '"Розкрій" — supplier-run nesting on the supplier\'s own sheet/bar material. Fully stateless: nothing is read from or written to our own data, only the optimizer + DXF writer run against the request body.',
+  })
+  async previewCutting(@Body() dto: PreviewSupplierCuttingDto) {
+    return this.supplierCuttingService.preview(dto);
   }
 }
