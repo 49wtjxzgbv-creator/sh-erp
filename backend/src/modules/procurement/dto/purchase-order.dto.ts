@@ -49,6 +49,14 @@ export class CreatePurchaseOrderItemDto {
   @IsOptional()
   @IsUUID()
   sourceRequirementId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Set by PurchaseRequestsService#convertToOrder (2026-11-03) when this line is one of several POs fanned out from a single aggregated заявка line — lets the delivery-schedule UI find its siblings across the other orders.',
+  })
+  @IsOptional()
+  @IsUUID()
+  originatingPurchaseRequestItemId?: string;
 }
 
 export class CreatePurchaseOrderDto {

@@ -323,6 +323,38 @@ export function rejectDeliverySchedule(orderId: string, scheduleId: string): Pro
   return apiClient.post<DeliverySchedule>(`purchase-orders/${orderId}/delivery-schedule/${scheduleId}/reject`, {});
 }
 
+/**
+ * "fill once for the group" (2026-11-03) — a PurchaseOrderItem fanned out
+ * from the same aggregated заявка line as others, across one or more
+ * customer orders. Empty array when this item has no siblings.
+ */
+export interface DeliveryScheduleSibling {
+  id: string;
+  purchaseOrderId: string;
+  productId: string | null;
+  articleSnapshot: string;
+  productNameSnapshot: string;
+  qtyOrdered: DecimalString;
+  currentDeliveryScheduleId: string | null;
+  customerOrderId: string | null;
+  customerOrderNumber: string | null;
+  customerOrderDeadline: string | null;
+}
+
+export function getDeliveryScheduleSiblings(itemId: string): Promise<DeliveryScheduleSibling[]> {
+  return apiClient.get<DeliveryScheduleSibling[]>(`purchase-orders/items/${itemId}/delivery-schedule-siblings`);
+}
+
+export interface BulkCreateDeliveryScheduleInput {
+  purchaseOrderItemIds: string[];
+  lines: DeliveryScheduleLineInput[];
+}
+
+/** Splits each line's qty proportionally across the group's items and creates each item's own first version — see PurchaseOrdersService#createGroupedDeliverySchedule. */
+export function createGroupedDeliverySchedule(dto: BulkCreateDeliveryScheduleInput): Promise<DeliverySchedule[]> {
+  return apiClient.post<DeliverySchedule[]>('purchase-orders/delivery-schedules/bulk-create', dto);
+}
+
 /** Phase 2 — the discussion thread for a purchase order, staff and connected supplier alike. */
 export interface PurchaseOrderComment {
   id: string;
@@ -369,6 +401,8 @@ export interface PurchaseRequestItem {
   photoUrl?: string | null;
   /** Only present on supplier-portal responses — attachedFileIds resolved to downloadable files (a stale/deleted id is silently dropped, not errored). */
   attachedFiles?: { id: string; originalName: string; downloadUrl: string }[];
+  /** OrderMaterialRequirement ids this line aggregates (shortage picker, 2026-11-03) — carry forward into requirementIds on a subsequent saveItems() call, or the claim is silently dropped same as any other field not round-tripped through PurchaseRequestItemInput. */
+  fulfilledRequirements?: { id: string }[];
 }
 
 export interface PurchaseRequest {
@@ -401,6 +435,8 @@ export interface PurchaseRequestItemInput {
   qty: number;
   expectedPrice?: number;
   attachedFileIds?: string[];
+  /** OrderMaterialRequirement ids this line aggregates (shortage picker, 2026-11-03) — may span several customer orders needing the same product. */
+  requirementIds?: string[];
 }
 
 export interface CreatePurchaseRequestInput {
@@ -457,8 +493,18 @@ export function generatePurchaseRequestPdf(id: string): Promise<PurchaseRequest>
 export function cancelPurchaseRequest(id: string): Promise<PurchaseRequest> {
   return apiClient.post<PurchaseRequest>(`purchase-requests/${id}/cancel`);
 }
-export function convertPurchaseRequestToOrder(id: string): Promise<{ purchaseOrder: PurchaseOrder; purchaseRequest: PurchaseRequest }> {
-  return apiClient.post<{ purchaseOrder: PurchaseOrder; purchaseRequest: PurchaseRequest }>(`purchase-requests/${id}/convert-to-order`);
+/**
+ * `purchaseOrders` carries the full fan-out (2026-11-03) when the request
+ * had lines aggregated from several customer orders' shortages — one
+ * PurchaseOrder per distinct order. `purchaseOrder` stays the first one,
+ * for the ordinary single-order case.
+ */
+export function convertPurchaseRequestToOrder(
+  id: string,
+): Promise<{ purchaseOrder: PurchaseOrder; purchaseOrders: PurchaseOrder[]; purchaseRequest: PurchaseRequest }> {
+  return apiClient.post<{ purchaseOrder: PurchaseOrder; purchaseOrders: PurchaseOrder[]; purchaseRequest: PurchaseRequest }>(
+    `purchase-requests/${id}/convert-to-order`,
+  );
 }
 /** DRAFT only — use cancelPurchaseRequest for a sent one. */
 export function deletePurchaseRequest(id: string): Promise<{ ok: true }> {

@@ -39,6 +39,12 @@ export interface ShortageBreakdownLine {
   clientName: string;
   /** requiredQty - covered for this order+product, always > 0 (fully-covered orders are omitted). */
   outstandingQty: number;
+  /** The order's full OrderMaterialRequirement.requiredQty, uncapped by coverage — lets a заявка-building UI offer "order the full need" as an alternative to "order just the shortage" (2026-11-03). */
+  requiredQty: number;
+  /** The OrderMaterialRequirement row this line comes from — lets a заявка-building UI claim it via `fulfillingPurchaseRequestItemId` (2026-11-03). */
+  requirementId: string;
+  /** CustomerOrder.deadline, straight through — for sorting/labeling by urgency when building a заявка from several orders at once. */
+  deadline: Date | null;
 }
 
 const ACTIVE_ORDER_STATUSES = ['NEW', 'IN_PRODUCTION'] as const;
@@ -188,6 +194,9 @@ export class StockReservationService {
           orderNumber: orderById.get(req.customerOrderId)?.orderNumber ?? null,
           clientName: orderById.get(req.customerOrderId)?.clientName ?? req.customerOrderId,
           outstandingQty,
+          requiredQty: Number(req.requiredQty),
+          requirementId: req.id,
+          deadline: orderById.get(req.customerOrderId)?.deadline ?? null,
         });
       }
     }

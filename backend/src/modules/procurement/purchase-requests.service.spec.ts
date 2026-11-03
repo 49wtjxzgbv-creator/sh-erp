@@ -49,7 +49,13 @@ describe('PurchaseRequestsService', () => {
           update: jest.fn(),
           delete: jest.fn(),
         },
-        purchaseRequestItem: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+        purchaseRequestItem: {
+          create: jest.fn((args: any) => Promise.resolve({ id: 'new-item', ...args.data })),
+          deleteMany: jest.fn(),
+          update: jest.fn(),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        orderMaterialRequirement: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
         supplier: { findUnique: jest.fn() },
         supplierConnection: { findUnique: jest.fn().mockResolvedValue(null) },
         company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
@@ -90,9 +96,9 @@ describe('PurchaseRequestsService', () => {
       await service.saveItems(user, 'pr1', { items: [{ articleSnapshot: 'NEW', productNameSnapshot: 'New part', qty: 3 }] });
 
       expect(prisma.tenant.purchaseRequestItem.deleteMany).toHaveBeenCalledWith({ where: { purchaseRequestId: 'pr1' } });
-      expect(prisma.tenant.purchaseRequestItem.createMany).toHaveBeenCalledWith(
+      expect(prisma.tenant.purchaseRequestItem.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: [expect.objectContaining({ purchaseRequestId: 'pr1', articleSnapshot: 'NEW', qty: 3 })],
+          data: expect.objectContaining({ purchaseRequestId: 'pr1', articleSnapshot: 'NEW', qty: 3 }),
         }),
       );
     });
@@ -103,6 +109,72 @@ describe('PurchaseRequestsService', () => {
         BadRequestException,
       );
       expect(prisma.tenant.purchaseRequestItem.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('shortage-picker aggregation (requirementIds)', () => {
+    beforeEach(() => {
+      prisma.tenant.purchaseRequest.create.mockResolvedValue({ id: 'pr1', status: 'DRAFT', number: 'ЗП-2026-0001' });
+    });
+
+    it('stamps fulfillingPurchaseRequestItemId on every selected requirement when creating an item', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([
+        { id: 'req1', customerOrderId: 'co1', fulfillingPurchaseRequestItemId: null },
+        { id: 'req2', customerOrderId: 'co2', fulfillingPurchaseRequestItemId: null },
+      ]);
+
+      await service.create(user, {
+        supplierNameSnapshot: 'Acme Supplier',
+        items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, requirementIds: ['req1', 'req2'] }],
+      });
+
+      expect(prisma.tenant.orderMaterialRequirement.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['req1', 'req2'] } },
+        data: { fulfillingPurchaseRequestItemId: 'new-item' },
+      });
+    });
+
+    it('rejects a requirement that could not be found', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([{ id: 'req1', fulfillingPurchaseRequestItemId: null }]);
+      await expect(
+        service.create(user, {
+          supplierNameSnapshot: 'Acme Supplier',
+          items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, requirementIds: ['req1', 'req-missing'] }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.tenant.orderMaterialRequirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects claiming a requirement already part of another LIVE заявка', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([{ id: 'req1', fulfillingPurchaseRequestItemId: 'other-item' }]);
+      prisma.tenant.purchaseRequestItem.findMany = jest.fn().mockResolvedValue([
+        { id: 'other-item', purchaseRequest: { status: 'DRAFT', number: 'ЗП-2026-0002' } },
+      ]);
+
+      await expect(
+        service.create(user, {
+          supplierNameSnapshot: 'Acme Supplier',
+          items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, requirementIds: ['req1'] }],
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.tenant.orderMaterialRequirement.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('allows re-claiming a requirement whose only existing claimant was CANCELLED', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([{ id: 'req1', fulfillingPurchaseRequestItemId: 'other-item' }]);
+      prisma.tenant.purchaseRequestItem.findMany = jest.fn().mockResolvedValue([
+        { id: 'other-item', purchaseRequest: { status: 'CANCELLED', number: 'ЗП-2026-0002' } },
+      ]);
+
+      await service.create(user, {
+        supplierNameSnapshot: 'Acme Supplier',
+        items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qty: 10, requirementIds: ['req1'] }],
+      });
+
+      expect(prisma.tenant.orderMaterialRequirement.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['req1'] } },
+        data: { fulfillingPurchaseRequestItemId: 'new-item' },
+      });
     });
   });
 
@@ -275,6 +347,41 @@ describe('PurchaseRequestsService', () => {
         user,
         expect.objectContaining({ items: [expect.objectContaining({ expectedPrice: 50 })] }),
       );
+    });
+
+    it('fans out an aggregated line into one PurchaseOrder per distinct customer order, split proportionally by requiredQty', async () => {
+      prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([
+        { id: 'req1', customerOrderId: 'co1', requiredQty: 6, fulfillingPurchaseRequestItemId: 'item1', customerOrder: { deadline: new Date('2026-12-01') } },
+        { id: 'req2', customerOrderId: 'co2', requiredQty: 4, fulfillingPurchaseRequestItemId: 'item1', customerOrder: { deadline: new Date('2026-11-15') } },
+      ]);
+      purchaseOrdersService.create = jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'po-co1' })
+        .mockResolvedValueOnce({ id: 'po-co2' });
+
+      const result = await service.convertToOrder(user, 'pr1');
+
+      expect(purchaseOrdersService.create).toHaveBeenCalledTimes(2);
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({
+          sourceCustomerOrderId: 'co1',
+          items: [expect.objectContaining({ qtyOrdered: 6, sourceRequirementId: 'req1', originatingPurchaseRequestItemId: 'item1' })],
+        }),
+      );
+      // co2's deadline (2026-11-15) is earlier/more urgent than co1's (2026-12-01) — co2 absorbs the rounding remainder.
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({
+          sourceCustomerOrderId: 'co2',
+          items: [expect.objectContaining({ qtyOrdered: 4, sourceRequirementId: 'req2', originatingPurchaseRequestItemId: 'item1' })],
+        }),
+      );
+      expect(prisma.tenant.purchaseRequest.update).toHaveBeenCalledWith({
+        where: { id: 'pr1' },
+        data: { status: 'CONVERTED', convertedPurchaseOrderId: 'po-co1' },
+      });
+      expect(result.purchaseOrders).toEqual([{ id: 'po-co1' }, { id: 'po-co2' }]);
     });
 
     it('leaves expectedPrice undefined when neither a quote nor an expected price was ever set', async () => {

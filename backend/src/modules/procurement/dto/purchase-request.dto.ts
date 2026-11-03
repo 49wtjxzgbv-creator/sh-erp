@@ -39,6 +39,16 @@ export class PurchaseRequestItemDto {
   @IsArray()
   @IsUUID('4', { each: true })
   attachedFileIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'OrderMaterialRequirement ids this line aggregates (shortage picker, 2026-11-03) — may span several CustomerOrders needing the same product. `qty` above should be the sum of their outstanding need; convertToOrder later fans this one line back out into one PurchaseOrder per distinct order.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  requirementIds?: string[];
 }
 
 export class CreatePurchaseRequestDto {

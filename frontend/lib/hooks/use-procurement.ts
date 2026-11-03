@@ -22,6 +22,8 @@ import {
   createDeliverySchedule,
   acceptDeliverySchedule,
   rejectDeliverySchedule,
+  getDeliveryScheduleSiblings,
+  createGroupedDeliverySchedule,
   listPurchaseOrderComments,
   addPurchaseOrderComment,
   queryPurchaseRequests,
@@ -42,6 +44,7 @@ import {
   type ReceivePurchaseOrderInput,
   type UpdatePurchaseOrderMilestonesInput,
   type DeliveryScheduleLineInput,
+  type BulkCreateDeliveryScheduleInput,
   type QueryPurchaseRequestsInput,
   type CreatePurchaseRequestInput,
   type UpdatePurchaseRequestInput,
@@ -200,6 +203,31 @@ export function useCreateDeliverySchedule(orderId: string) {
   return useMutation({
     mutationFn: ({ itemId, lines }: { itemId: string; lines: DeliveryScheduleLineInput[] }) => createDeliverySchedule(orderId, itemId, lines),
     onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(orderId) }),
+  });
+}
+
+/** Lazy — only meaningful while deciding whether to show the "fill once for the group" flow, so callers pass `enabled`. */
+export function useDeliveryScheduleSiblings(itemId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['delivery-schedule-siblings', itemId ?? ''],
+    queryFn: () => getDeliveryScheduleSiblings(itemId as string),
+    enabled: Boolean(itemId) && enabled,
+  });
+}
+
+/**
+ * Siblings can span several different PurchaseOrders — `orderIds` (every
+ * distinct order the group touches, known client-side from the siblings
+ * query) is passed alongside the real DTO purely so onSuccess can
+ * invalidate each of those orders' own cached detail pages, not just one.
+ */
+export function useCreateGroupedDeliverySchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dto }: { dto: BulkCreateDeliveryScheduleInput; orderIds: string[] }) => createGroupedDeliverySchedule(dto),
+    onSuccess: (_data, { orderIds }) => {
+      orderIds.forEach((id) => qc.invalidateQueries({ queryKey: purchaseOrderKey(id) }));
+    },
   });
 }
 

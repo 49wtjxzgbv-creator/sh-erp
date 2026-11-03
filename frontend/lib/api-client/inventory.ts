@@ -122,6 +122,11 @@ export interface StockShortageBreakdownLine {
   orderNumber: string | null;
   clientName: string;
   outstandingQty: number;
+  /** The order's full requiredQty, uncapped by coverage — lets the picker offer "order the full need" as an alternative to "order just the shortage". */
+  requiredQty: number;
+  /** The OrderMaterialRequirement row this line comes from — used by the заявка shortage picker (2026-11-03) to claim it via requirementIds. */
+  requirementId: string;
+  deadline: string | null;
 }
 
 export function getStockShortageBreakdown(productId: string, warehouseId: string): Promise<StockShortageBreakdownLine[]> {

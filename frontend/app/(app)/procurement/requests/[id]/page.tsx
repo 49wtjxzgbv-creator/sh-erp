@@ -21,6 +21,7 @@ import type { PurchaseRequestStatus, PurchaseRequestItemInput } from '@/lib/api-
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
 import { ItemFileAttachmentsPicker } from '@/components/domain/procurement/item-file-attachments-picker';
+import { ShortagePickerDialog, type ShortagePickResult } from '@/components/domain/procurement/shortage-picker-dialog';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +59,8 @@ interface EditableItemRow {
   /** Read-only — the supplier's own typed-in quote via the portal, display-only, never sent back on save. */
   supplierQuotedPrice: string;
   attachedFileIds: string[];
+  /** Carried forward from the loaded request (2026-11-03) so a saveItems() call doesn't silently drop a shortage-picker claim. */
+  requirementIds?: string[];
 }
 
 let rowKeySeq = 0;
@@ -111,6 +114,7 @@ export default function PurchaseRequestDetailPage() {
         expectedPrice: item.expectedPrice != null ? String(item.expectedPrice) : '',
         supplierQuotedPrice: item.supplierQuotedPrice != null ? String(item.supplierQuotedPrice) : '',
         attachedFileIds: item.attachedFileIds ?? [],
+        requirementIds: item.fulfilledRequirements?.map((r) => r.id),
       })),
     );
     setItemsDirty(false);
@@ -135,11 +139,30 @@ export default function PurchaseRequestDetailPage() {
     setRows((r) => r.map((row) => (row.key === key ? { ...row, ...patch } : row)));
     setItemsDirty(true);
   }
+  function addRowFromShortage(result: ShortagePickResult) {
+    setRows((r) => [
+      ...r,
+      {
+        key: newRowKey(),
+        productId: result.productId,
+        articleSnapshot: result.articleSnapshot,
+        productNameSnapshot: result.productNameSnapshot,
+        qty: String(result.qty),
+        expectedPrice: '',
+        supplierQuotedPrice: '',
+        attachedFileIds: [],
+        requirementIds: result.requirementIds,
+      },
+    ]);
+    setItemsDirty(true);
+  }
   function handlePickProduct(key: string, productId: string | undefined, label: string | undefined) {
     const row = rows.find((r) => r.key === key);
     // Attachments are sourced from the LINKED product's own documents — a
-    // different product means a different, unrelated document set.
-    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [] };
+    // different product means a different, unrelated document set. Same
+    // reasoning for requirementIds — meaningless once the row points at a
+    // different product.
+    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [], requirementIds: undefined };
     if (label) {
       const [article, name] = label.split(' — ');
       if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
@@ -188,6 +211,7 @@ export default function PurchaseRequestDetailPage() {
         qty,
         expectedPrice: row.expectedPrice ? Number(row.expectedPrice) : undefined,
         attachedFileIds: row.attachedFileIds.length > 0 ? row.attachedFileIds : undefined,
+        requirementIds: row.requirementIds,
       });
     }
     try {
@@ -234,6 +258,9 @@ export default function PurchaseRequestDetailPage() {
     setError(null);
     try {
       const result = await convertToOrder.mutateAsync();
+      // Aggregated lines fan out into one PurchaseOrder per customer order
+      // (2026-11-03) — land on the first; each order's own delivery-schedule
+      // block surfaces its siblings from the same заявка line.
       router.push(`/procurement/${result.purchaseOrder.id}`);
     } catch (err) {
       setError(apiErrorMessage(err, tc('error')));
@@ -498,6 +525,7 @@ export default function PurchaseRequestDetailPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 {t('addLine')}
               </Button>
+              <ShortagePickerDialog onPick={addRowFromShortage} />
               {itemsDirty && (
                 <Button size="sm" loading={saveItems.isPending} onClick={handleSaveItems}>
                   {tc('save')}

@@ -6,7 +6,7 @@ import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-o
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
-import { DeliveryScheduleLinesDto } from './dto/delivery-schedule.dto';
+import { DeliveryScheduleLinesDto, BulkCreateDeliveryScheduleDto } from './dto/delivery-schedule.dto';
 import { CreatePurchaseOrderCommentDto } from './dto/purchase-order-comment.dto';
 
 @ApiTags('procurement')
@@ -82,6 +82,20 @@ export class PurchaseOrdersController {
     @Body() dto: DeliveryScheduleLinesDto,
   ) {
     return this.purchaseOrdersService.createDeliverySchedule(user, orderId, itemId, dto);
+  }
+
+  @Get('items/:itemId/delivery-schedule-siblings')
+  @RequirePermissions('purchase-orders:read')
+  @ApiOperation({ summary: 'Sibling PurchaseOrderItems fanned out from the same aggregated заявка line (across whichever customer orders they landed on) — empty array if this item has no siblings.' })
+  async getDeliveryScheduleSiblings(@CurrentUser() user: RequestUser, @Param('itemId') itemId: string) {
+    return this.purchaseOrdersService.getDeliveryScheduleSiblings(user, itemId);
+  }
+
+  @Post('delivery-schedules/bulk-create')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: "Fill a delivery schedule once for a group of sibling items — splits each line's qty proportionally across them and creates each item's own first version." })
+  async createGroupedDeliverySchedule(@CurrentUser() user: RequestUser, @Body() dto: BulkCreateDeliveryScheduleDto) {
+    return this.purchaseOrdersService.createGroupedDeliverySchedule(user, dto);
   }
 
   @Post(':orderId/delivery-schedule/:scheduleId/accept')

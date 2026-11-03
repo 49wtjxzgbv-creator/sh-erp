@@ -12,7 +12,7 @@ import { SupplierCatalogService } from './supplier-catalog.service';
 import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-order.dto';
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
-import { DeliveryScheduleLinesDto } from './dto/delivery-schedule.dto';
+import { DeliveryScheduleLinesDto, BulkCreateDeliveryScheduleDto } from './dto/delivery-schedule.dto';
 
 /**
  * Multi-line purchase orders with a receiving workflow (PurchaseOrders.gs,
@@ -59,6 +59,7 @@ export class PurchaseOrdersService {
             qtyOrdered: item.qtyOrdered,
             expectedPrice: item.expectedPrice,
             sourceRequirementId: item.sourceRequirementId,
+            originatingPurchaseRequestItemId: item.originatingPurchaseRequestItemId,
           })),
         },
       } as any,
@@ -293,6 +294,95 @@ export class PurchaseOrdersService {
       throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', `Purchase order item ${itemId} does not belong to this order.`);
     }
     return this.deliverySchedulesService.createFirstVersion(user.companyId, user.userId, itemId, dto.lines);
+  }
+
+  /**
+   * "fill once for the group" (2026-11-03) — every PurchaseOrderItem that
+   * convertToOrder fanned out from the SAME aggregated заявка line, across
+   * however many customer orders it spans. RLS already scopes the lookup
+   * to this company; no per-order ownership check is needed beyond that,
+   * since any item with a matching originatingPurchaseRequestItemId is by
+   * construction a sibling, regardless of which order it landed on.
+   */
+  async getDeliveryScheduleSiblings(user: RequestUser, itemId: string) {
+    const item = await this.prisma.tenant.purchaseOrderItem.findUnique({ where: { id: itemId } });
+    if (!item) {
+      throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', 'Purchase order item not found.');
+    }
+    if (!item.originatingPurchaseRequestItemId) return [];
+
+    const siblings = await this.prisma.tenant.purchaseOrderItem.findMany({
+      where: { originatingPurchaseRequestItemId: item.originatingPurchaseRequestItemId },
+      include: { purchaseOrder: { include: { sourceCustomerOrder: true } } },
+    });
+
+    return siblings.map((s) => {
+      const order = (s as any).purchaseOrder;
+      return {
+        id: s.id,
+        purchaseOrderId: s.purchaseOrderId,
+        productId: s.productId,
+        articleSnapshot: s.articleSnapshot,
+        productNameSnapshot: s.productNameSnapshot,
+        qtyOrdered: s.qtyOrdered,
+        currentDeliveryScheduleId: s.currentDeliveryScheduleId,
+        customerOrderId: order.sourceCustomerOrderId,
+        customerOrderNumber: order.sourceCustomerOrder?.orderNumber ?? null,
+        customerOrderDeadline: order.sourceCustomerOrder?.deadline ?? null,
+      };
+    });
+  }
+
+  /**
+   * Splits each submitted line's qty proportionally across the group's
+   * items by their own qtyOrdered share (remainder to the item whose
+   * customer order has the earliest deadline — same rounding convention
+   * convertToOrder's fan-out already uses), then calls the existing,
+   * unmodified `createFirstVersion` once per item with its derived lines.
+   * An item that ends up with zero lines (e.g. its share rounds to 0 on a
+   * tiny total) is simply skipped rather than given an empty schedule.
+   */
+  async createGroupedDeliverySchedule(user: RequestUser, dto: BulkCreateDeliveryScheduleDto) {
+    const items = await this.prisma.tenant.purchaseOrderItem.findMany({ where: { id: { in: dto.purchaseOrderItemIds } } });
+    if (items.length !== dto.purchaseOrderItemIds.length) {
+      throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', 'One or more purchase order items could not be found.');
+    }
+
+    const orders = await this.prisma.tenant.purchaseOrder.findMany({
+      where: { id: { in: items.map((i) => i.purchaseOrderId) } },
+      include: { sourceCustomerOrder: true },
+    });
+    // Descending by deadline (latest/none first) so the item whose order is
+    // MOST urgent (earliest deadline) ends up last and absorbs the
+    // rounding remainder — same convention convertToOrder's fan-out uses.
+    const deadlineByOrderId = new Map(orders.map((o) => [o.id, (o as any).sourceCustomerOrder?.deadline ?? null]));
+    const sortedItems = [...items].sort((a, b) => {
+      const deadlineA = deadlineByOrderId.get(a.purchaseOrderId)?.getTime() ?? -Infinity;
+      const deadlineB = deadlineByOrderId.get(b.purchaseOrderId)?.getTime() ?? -Infinity;
+      return deadlineB - deadlineA;
+    });
+    const totalWeight = sortedItems.reduce((sum, i) => sum + Number(i.qtyOrdered), 0);
+
+    const linesByItemId = new Map<string, { date: Date; qty: number }[]>(sortedItems.map((i) => [i.id, []]));
+    for (const line of dto.lines) {
+      let allocated = 0;
+      sortedItems.forEach((item, index) => {
+        const isLast = index === sortedItems.length - 1;
+        const weight = Number(item.qtyOrdered);
+        const qty = isLast ? line.qty - allocated : Math.round((weight / totalWeight) * line.qty * 1000) / 1000;
+        allocated += qty;
+        if (qty <= 0) return;
+        linesByItemId.get(item.id)!.push({ date: line.date, qty });
+      });
+    }
+
+    const schedules = [];
+    for (const item of sortedItems) {
+      const itemLines = linesByItemId.get(item.id)!;
+      if (itemLines.length === 0) continue;
+      schedules.push(await this.deliverySchedulesService.createFirstVersion(user.companyId, user.userId, item.id, itemLines));
+    }
+    return schedules;
   }
 
   /** Accepts a supplier's PROPOSED delivery schedule — becomes the item's CONFIRMED current version. */

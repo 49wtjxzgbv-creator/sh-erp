@@ -7,6 +7,7 @@ describe('PurchaseOrdersService', () => {
   let audit: any;
   let stock: any;
   let supplierCatalogService: any;
+  let deliverySchedulesService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
@@ -21,8 +22,8 @@ describe('PurchaseOrdersService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        purchaseOrderItem: { update: jest.fn(), findMany: jest.fn() },
+        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
+        purchaseOrderItem: { update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
         purchaseOrderDocument: { count: jest.fn().mockResolvedValue(0) },
         purchaseOrderExpense: { count: jest.fn().mockResolvedValue(0) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
@@ -34,11 +35,11 @@ describe('PurchaseOrdersService', () => {
     };
     audit = { record: jest.fn() };
     stock = { applyMovement: jest.fn().mockResolvedValue({ id: 'mv1' }) };
-    const deliverySchedules = {} as any;
+    deliverySchedulesService = {} as any;
     const comments = {} as any;
     const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
     supplierCatalogService = { ensureCatalogEntries: jest.fn().mockResolvedValue(undefined) };
-    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedules, comments, exchangeRatesService, supplierCatalogService);
+    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedulesService, comments, exchangeRatesService, supplierCatalogService);
   });
 
   describe('create', () => {
@@ -77,6 +78,103 @@ describe('PurchaseOrdersService', () => {
       } as any);
 
       expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null]);
+    });
+  });
+
+  describe('getDeliveryScheduleSiblings', () => {
+    it('returns an empty array for an item with no originating заявка line', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue({ id: 'item1', originatingPurchaseRequestItemId: null });
+      const result = await service.getDeliveryScheduleSiblings(user, 'item1');
+      expect(result).toEqual([]);
+      expect(prisma.tenant.purchaseOrderItem.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown item id', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue(null);
+      await expect(service.getDeliveryScheduleSiblings(user, 'nope')).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns every sibling sharing the same originatingPurchaseRequestItemId, with its customer order number/deadline', async () => {
+      prisma.tenant.purchaseOrderItem.findUnique.mockResolvedValue({ id: 'item1', originatingPurchaseRequestItemId: 'pri1' });
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
+        {
+          id: 'item1',
+          purchaseOrderId: 'po1',
+          productId: 'p1',
+          articleSnapshot: 'ABC',
+          productNameSnapshot: 'Widget',
+          qtyOrdered: 6,
+          currentDeliveryScheduleId: null,
+          purchaseOrder: { sourceCustomerOrderId: 'co1', sourceCustomerOrder: { orderNumber: '1001', deadline: new Date('2026-12-01') } },
+        },
+        {
+          id: 'item2',
+          purchaseOrderId: 'po2',
+          productId: 'p1',
+          articleSnapshot: 'ABC',
+          productNameSnapshot: 'Widget',
+          qtyOrdered: 4,
+          currentDeliveryScheduleId: null,
+          purchaseOrder: { sourceCustomerOrderId: 'co2', sourceCustomerOrder: { orderNumber: '1002', deadline: new Date('2026-11-15') } },
+        },
+      ]);
+
+      const result = await service.getDeliveryScheduleSiblings(user, 'item1');
+
+      expect(prisma.tenant.purchaseOrderItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { originatingPurchaseRequestItemId: 'pri1' } }),
+      );
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'item1', customerOrderId: 'co1', customerOrderNumber: '1001' }),
+        expect.objectContaining({ id: 'item2', customerOrderId: 'co2', customerOrderNumber: '1002' }),
+      ]);
+    });
+  });
+
+  describe('createGroupedDeliverySchedule', () => {
+    const groupItems = [
+      { id: 'item1', purchaseOrderId: 'po1', qtyOrdered: 6 },
+      { id: 'item2', purchaseOrderId: 'po2', qtyOrdered: 4 },
+    ];
+
+    beforeEach(() => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue(groupItems);
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        { id: 'po1', sourceCustomerOrder: { deadline: new Date('2026-12-01') } },
+        { id: 'po2', sourceCustomerOrder: { deadline: new Date('2026-11-15') } },
+      ]);
+      deliverySchedulesService.createFirstVersion = jest.fn().mockResolvedValue({ id: 'sched1' });
+    });
+
+    it('rejects when one of the submitted item ids does not exist', async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([groupItems[0]]);
+      await expect(
+        service.createGroupedDeliverySchedule(user, { purchaseOrderItemIds: ['item1', 'item2'], lines: [{ date: new Date(), qty: 10 }] }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("splits each line's qty proportionally to each item's own qtyOrdered share, earliest-deadline item absorbing the remainder", async () => {
+      await service.createGroupedDeliverySchedule(user, {
+        purchaseOrderItemIds: ['item1', 'item2'],
+        lines: [{ date: new Date('2026-11-20'), qty: 10 }],
+      });
+
+      expect(deliverySchedulesService.createFirstVersion).toHaveBeenCalledWith('c1', 'u1', 'item1', [{ date: new Date('2026-11-20'), qty: 6 }]);
+      // po2's order deadline (2026-11-15) is earlier/more urgent than po1's (2026-12-01) — item2 absorbs the rounding remainder.
+      expect(deliverySchedulesService.createFirstVersion).toHaveBeenCalledWith('c1', 'u1', 'item2', [{ date: new Date('2026-11-20'), qty: 4 }]);
+    });
+
+    it('skips an item whose proportional share rounds to zero rather than creating an empty schedule', async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
+        { id: 'item1', purchaseOrderId: 'po1', qtyOrdered: 1000 },
+        { id: 'item2', purchaseOrderId: 'po2', qtyOrdered: 0.0001 },
+      ]);
+      await service.createGroupedDeliverySchedule(user, {
+        purchaseOrderItemIds: ['item1', 'item2'],
+        lines: [{ date: new Date('2026-11-20'), qty: 1 }],
+      });
+      expect(deliverySchedulesService.createFirstVersion).toHaveBeenCalledTimes(1);
+      expect(deliverySchedulesService.createFirstVersion).toHaveBeenCalledWith('c1', 'u1', 'item1', expect.anything());
     });
   });
 

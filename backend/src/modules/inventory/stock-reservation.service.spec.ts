@@ -309,21 +309,31 @@ describe('StockReservationService', () => {
   describe('getShortageBreakdown — click-through drill-down for one product', () => {
     it('lists only the orders still short, with how much each one is missing', async () => {
       prisma.tenant.orderMaterialRequirement.findMany.mockResolvedValue([
-        { customerOrderId: 'co-1001', productId: 'p1', requiredQty: 20 },
-        { customerOrderId: 'co-1002', productId: 'p1', requiredQty: 10 },
+        { id: 'req-1001', customerOrderId: 'co-1001', productId: 'p1', requiredQty: 20 },
+        { id: 'req-1002', customerOrderId: 'co-1002', productId: 'p1', requiredQty: 10 },
       ]);
       prisma.tenant.stockReservation.findMany.mockResolvedValue([
         { customerOrderId: 'co-1001', productId: 'p1', qty: 8, consumedQty: 0 },
         { customerOrderId: 'co-1002', productId: 'p1', qty: 10, consumedQty: 0 }, // fully covered -> omitted
       ]);
       prisma.tenant.customerOrder.findMany.mockResolvedValue([
-        { id: 'co-1001', orderNumber: '1001', clientName: 'Client A' },
-        { id: 'co-1002', orderNumber: '1002', clientName: 'Client B' },
+        { id: 'co-1001', orderNumber: '1001', clientName: 'Client A', deadline: new Date('2026-12-01') },
+        { id: 'co-1002', orderNumber: '1002', clientName: 'Client B', deadline: null },
       ]);
 
       const breakdown = await service.getShortageBreakdown(user, 'p1', 'w1');
 
-      expect(breakdown).toEqual([{ customerOrderId: 'co-1001', orderNumber: '1001', clientName: 'Client A', outstandingQty: 12 }]);
+      expect(breakdown).toEqual([
+        {
+          customerOrderId: 'co-1001',
+          orderNumber: '1001',
+          clientName: 'Client A',
+          outstandingQty: 12,
+          requiredQty: 20,
+          requirementId: 'req-1001',
+          deadline: new Date('2026-12-01'),
+        },
+      ]);
     });
 
     it('returns an empty list, without querying reservations/orders, when this product has no active requirements', async () => {

@@ -75,19 +75,11 @@ export class PurchaseRequestsService {
         fromName: dto.fromName,
         status: 'DRAFT',
         createdById: user.userId,
-        items: {
-          create: dto.items.map((item) => ({
-            productId: item.productId,
-            articleSnapshot: item.articleSnapshot,
-            productNameSnapshot: item.productNameSnapshot,
-            qty: item.qty,
-            expectedPrice: item.expectedPrice,
-            attachedFileIds: item.attachedFileIds ?? [],
-          })),
-        },
       } as any,
-      include: { items: true },
     });
+
+    const items = await this.createItems(user, request.id, dto.items);
+    const full = { ...request, items };
 
     await this.auditService.record({
       companyId: user.companyId,
@@ -95,13 +87,94 @@ export class PurchaseRequestsService {
       action: 'purchase_request.created',
       entityType: 'PurchaseRequest',
       entityId: request.id,
-      after: request,
+      after: full,
     });
-    return request;
+    return full;
+  }
+
+  /**
+   * One-by-one rather than a nested/bulk create (2026-11-03) — each line
+   * needs its own freshly-minted id *before* `claimRequirements` can stamp
+   * it onto the requirements it aggregates, and `PurchaseRequestItem` has
+   * no sortable column (no `createdAt`) to safely re-match a bulk result
+   * back to `dto.items` by position afterward. Item volume per request is
+   * small (a handful of lines), so N round trips is not a real cost here.
+   */
+  private async createItems(user: RequestUser, purchaseRequestId: string, items: CreatePurchaseRequestDto['items']) {
+    const created = [];
+    for (const item of items) {
+      const row = await this.prisma.tenant.purchaseRequestItem.create({
+        data: {
+          companyId: user.companyId,
+          purchaseRequestId,
+          productId: item.productId,
+          articleSnapshot: item.articleSnapshot,
+          productNameSnapshot: item.productNameSnapshot,
+          qty: item.qty,
+          expectedPrice: item.expectedPrice,
+          attachedFileIds: item.attachedFileIds ?? [],
+        } as any,
+      });
+      await this.claimRequirements(user, row.id, item.requirementIds);
+      created.push(row);
+    }
+    return created;
+  }
+
+  /**
+   * Stamps `fulfillingPurchaseRequestItemId` on each selected
+   * OrderMaterialRequirement so the aggregation this ЗП line represents is
+   * structurally traceable (2026-11-03 — "це має підтягуватись з продажі і
+   * заявки постачальникам") instead of the free-text comment staff used to
+   * type by hand. `qty` itself stays whatever the caller submitted — the
+   * shortage picker suggests the sum, but staff can still edit it
+   * afterward, same as any other line.
+   */
+  private async claimRequirements(user: RequestUser, purchaseRequestItemId: string, requirementIds: string[] | undefined): Promise<void> {
+    if (!requirementIds || requirementIds.length === 0) return;
+
+    const requirements = await this.prisma.tenant.orderMaterialRequirement.findMany({ where: { id: { in: requirementIds } } });
+    if (requirements.length !== requirementIds.length) {
+      throw new CodedBadRequestException('PURCHASE_REQUEST_REQUIREMENT_NOT_FOUND', 'One or more selected requirements could not be found.');
+    }
+
+    const claimedElsewhereIds = requirements
+      .filter((r) => r.fulfillingPurchaseRequestItemId && r.fulfillingPurchaseRequestItemId !== purchaseRequestItemId)
+      .map((r) => r.fulfillingPurchaseRequestItemId!);
+    if (claimedElsewhereIds.length > 0) {
+      const claimants = await this.prisma.tenant.purchaseRequestItem.findMany({
+        where: { id: { in: claimedElsewhereIds } },
+        include: { purchaseRequest: true },
+      });
+      // A CANCELLED claimant's requirement stays stamped (cancel() doesn't
+      // touch item rows) — only a hard delete of the item frees it via the
+      // SetNull cascade — so a live request must re-check status here
+      // rather than trust an unclaimed-looking id blindly.
+      const liveClaimant = claimants.find((c) => c.purchaseRequest.status !== 'CANCELLED');
+      if (liveClaimant) {
+        throw new CodedConflictException(
+          'PURCHASE_REQUEST_REQUIREMENT_ALREADY_CLAIMED',
+          `This requirement is already part of purchase request ${liveClaimant.purchaseRequest.number}.`,
+        );
+      }
+    }
+
+    await this.prisma.tenant.orderMaterialRequirement.updateMany({
+      where: { id: { in: requirementIds } },
+      data: { fulfillingPurchaseRequestItemId: purchaseRequestItemId },
+    });
   }
 
   async findOne(user: RequestUser, id: string) {
-    const request = await this.prisma.tenant.purchaseRequest.findUnique({ where: { id }, include: { items: true } });
+    const request = await this.prisma.tenant.purchaseRequest.findUnique({
+      where: { id },
+      // `fulfilledRequirements` select-only-id (2026-11-03) — lets the
+      // detail page's item editor carry a line's requirementIds forward
+      // across a saveItems() bulk-replace, instead of silently losing the
+      // aggregation claim the way an unlisted field like
+      // supplierQuotedPrice already does today.
+      include: { items: { include: { fulfilledRequirements: { select: { id: true } } } } },
+    });
     if (!request) throw new CodedNotFoundException('PURCHASE_REQUEST_NOT_FOUND', 'Purchase request not found.');
     return request;
   }
@@ -152,24 +225,20 @@ export class PurchaseRequestsService {
     return request;
   }
 
-  /** Full bulk replace — same convention as QuotationsService#saveItems: simplest correct approach for a brand-new entity with no existing-immutability constraint to work around. */
+  /**
+   * Full bulk replace — same convention as QuotationsService#saveItems:
+   * simplest correct approach for a brand-new entity with no
+   * existing-immutability constraint to work around. Deleting the old
+   * items first frees any requirements they had claimed back up
+   * automatically, via `fulfillingPurchaseRequestItemId`'s `onDelete:
+   * SetNull` — no separate unclaim step needed.
+   */
   async saveItems(user: RequestUser, id: string, dto: SavePurchaseRequestItemsDto) {
     const before = await this.findOne(user, id);
     this.assertEditable(before);
 
     await this.prisma.tenant.purchaseRequestItem.deleteMany({ where: { purchaseRequestId: id } });
-    await this.prisma.tenant.purchaseRequestItem.createMany({
-      data: dto.items.map((item) => ({
-        companyId: user.companyId,
-        purchaseRequestId: id,
-        productId: item.productId,
-        articleSnapshot: item.articleSnapshot,
-        productNameSnapshot: item.productNameSnapshot,
-        qty: item.qty,
-        expectedPrice: item.expectedPrice,
-        attachedFileIds: item.attachedFileIds ?? [],
-      })) as any,
-    });
+    await this.createItems(user, id, dto.items);
 
     const after = await this.findOne(user, id);
     await this.auditService.record({
@@ -277,13 +346,29 @@ export class PurchaseRequestsService {
   }
 
   /**
-   * Creates a real PurchaseOrder from the request's current items (whatever
-   * expectedPrice staff has filled in by now) via PurchaseOrdersService —
-   * the exact same create() path a staff member creating a PO directly
-   * would hit, so the new order gets the normal ORDERED status and is
-   * indistinguishable from any other PurchaseOrder. Presence of
-   * convertedPurchaseOrderId alone blocks re-conversion (mirrors
-   * Quotation.convertedCustomerOrderId's own convention).
+   * Creates one or more real PurchaseOrders from the request's current
+   * items via PurchaseOrdersService — the exact same create() path a staff
+   * member creating a PO directly would hit, so each new order gets the
+   * normal ORDERED status and is indistinguishable from any other
+   * PurchaseOrder. Presence of convertedPurchaseOrderId alone blocks
+   * re-conversion (mirrors Quotation.convertedCustomerOrderId's own
+   * convention).
+   *
+   * Fans out (2026-11-03 — "це має підтягуватись з продажі і заявки
+   * постачальникам"): a line built from the shortage picker aggregates
+   * requirements from several CustomerOrders, but PurchaseOrder/
+   * PurchaseOrderItem must stay exactly one order per item — receive-time
+   * stock allocation (StockReservationService#topUp), Finance's cost
+   * rollup, and the planner board all key off that single-order shape
+   * (`PurchaseOrder.sourceCustomerOrderId`/`PurchaseOrderItem.
+   * sourceRequirementId`). So each aggregated line gets split back into
+   * one PurchaseOrder per distinct customer order it draws from — same
+   * shape CustomerOrderShortageService#createPurchaseOrdersFromGroups
+   * already produces for the single-order case — with every resulting
+   * item stamped `originatingPurchaseRequestItemId` so the delivery-
+   * schedule "fill once for the group" flow can find its siblings. Lines
+   * with no linked requirements (the ordinary, pre-existing case) still
+   * go through exactly one plain PurchaseOrder, unchanged.
    */
   async convertToOrder(user: RequestUser, id: string) {
     const request = await this.findOne(user, id);
@@ -291,31 +376,111 @@ export class PurchaseRequestsService {
       throw new CodedConflictException('PURCHASE_REQUEST_ALREADY_CONVERTED', `Cannot convert a ${request.status} purchase request.`);
     }
 
-    const order = await this.purchaseOrdersService.create(user, {
-      supplierId: request.supplierId ?? undefined,
-      supplierNameSnapshot: request.supplierNameSnapshot,
-      comment: request.comment ?? undefined,
-      items: (request.items as any[]).map((item) => ({
-        productId: item.productId ?? undefined,
-        articleSnapshot: item.articleSnapshot,
-        productNameSnapshot: item.productNameSnapshot,
-        qtyOrdered: Number(item.qty),
-        // Prefer the supplier's own quoted price (2026-11-02) — otherwise a
-        // submitted quote would sit inert and staff would have to manually
-        // retype it here before converting. Falls back to staff's own
-        // expectedPrice when the supplier hasn't quoted this line.
-        expectedPrice:
-          item.supplierQuotedPrice != null
-            ? Number(item.supplierQuotedPrice)
-            : item.expectedPrice != null
-              ? Number(item.expectedPrice)
-              : undefined,
-      })),
+    const items = request.items as any[];
+    const requirements = await this.prisma.tenant.orderMaterialRequirement.findMany({
+      where: { fulfillingPurchaseRequestItemId: { in: items.map((i) => i.id) } },
+      include: { customerOrder: true },
     });
+    const requirementsByItemId = new Map<string, typeof requirements>();
+    for (const req of requirements) {
+      const list = requirementsByItemId.get(req.fulfillingPurchaseRequestItemId!) ?? [];
+      list.push(req);
+      requirementsByItemId.set(req.fulfillingPurchaseRequestItemId!, list);
+    }
+
+    // Supplier quote wins over staff's own typed-in price (2026-11-02) —
+    // otherwise a submitted quote would sit inert and staff would have to
+    // manually retype it here before converting.
+    const resolvePrice = (item: any): number | undefined =>
+      item.supplierQuotedPrice != null ? Number(item.supplierQuotedPrice) : item.expectedPrice != null ? Number(item.expectedPrice) : undefined;
+
+    const unlinkedItems: any[] = [];
+    const itemsByCustomerOrderId = new Map<string, any[]>();
+
+    for (const item of items) {
+      const itemRequirements = requirementsByItemId.get(item.id);
+      if (!itemRequirements || itemRequirements.length === 0) {
+        unlinkedItems.push({
+          productId: item.productId ?? undefined,
+          articleSnapshot: item.articleSnapshot,
+          productNameSnapshot: item.productNameSnapshot,
+          qtyOrdered: Number(item.qty),
+          expectedPrice: resolvePrice(item),
+        });
+        continue;
+      }
+
+      const requirementsByOrderId = new Map<string, typeof itemRequirements>();
+      for (const req of itemRequirements) {
+        const list = requirementsByOrderId.get(req.customerOrderId) ?? [];
+        list.push(req);
+        requirementsByOrderId.set(req.customerOrderId, list);
+      }
+
+      // Proportional split of this line's (possibly staff-edited) qty by
+      // each order's share of requiredQty — the exact unit-for-unit amount
+      // isn't safety-critical here, since StockReservationService#topUp
+      // caps real allocation to each order's live outstanding need again
+      // at receive time regardless of how qtyOrdered was split up front.
+      // Remainder goes to the order with the earliest deadline, same
+      // rounding convention the delivery-schedule bulk-split uses.
+      const orderEntries = Array.from(requirementsByOrderId.entries()).sort((a, b) => {
+        const deadlineA = a[1][0].customerOrder.deadline ? new Date(a[1][0].customerOrder.deadline).getTime() : -Infinity;
+        const deadlineB = b[1][0].customerOrder.deadline ? new Date(b[1][0].customerOrder.deadline).getTime() : -Infinity;
+        return deadlineB - deadlineA;
+      });
+      const totalWeight = itemRequirements.reduce((sum, r) => sum + Number(r.requiredQty), 0);
+      const totalQty = Number(item.qty);
+      const price = resolvePrice(item);
+
+      let allocatedQty = 0;
+      orderEntries.forEach(([customerOrderId, orderRequirements], index) => {
+        const isLast = index === orderEntries.length - 1;
+        const weight = orderRequirements.reduce((sum, r) => sum + Number(r.requiredQty), 0);
+        const qtyOrdered = isLast ? totalQty - allocatedQty : Math.round((weight / totalWeight) * totalQty * 1000) / 1000;
+        allocatedQty += qtyOrdered;
+        if (qtyOrdered <= 0) return;
+
+        const list = itemsByCustomerOrderId.get(customerOrderId) ?? [];
+        list.push({
+          productId: item.productId ?? undefined,
+          articleSnapshot: item.articleSnapshot,
+          productNameSnapshot: item.productNameSnapshot,
+          qtyOrdered,
+          expectedPrice: price,
+          sourceRequirementId: orderRequirements[0].id,
+          originatingPurchaseRequestItemId: item.id,
+        });
+        itemsByCustomerOrderId.set(customerOrderId, list);
+      });
+    }
+
+    const orders = [];
+    if (unlinkedItems.length > 0) {
+      orders.push(
+        await this.purchaseOrdersService.create(user, {
+          supplierId: request.supplierId ?? undefined,
+          supplierNameSnapshot: request.supplierNameSnapshot,
+          comment: request.comment ?? undefined,
+          items: unlinkedItems,
+        }),
+      );
+    }
+    for (const [customerOrderId, orderItems] of itemsByCustomerOrderId) {
+      orders.push(
+        await this.purchaseOrdersService.create(user, {
+          supplierId: request.supplierId ?? undefined,
+          supplierNameSnapshot: request.supplierNameSnapshot,
+          comment: request.comment ?? undefined,
+          sourceCustomerOrderId: customerOrderId,
+          items: orderItems,
+        }),
+      );
+    }
 
     const updated = await this.prisma.tenant.purchaseRequest.update({
       where: { id },
-      data: { status: 'CONVERTED', convertedPurchaseOrderId: order.id },
+      data: { status: 'CONVERTED', convertedPurchaseOrderId: orders[0].id },
     });
 
     await this.auditService.record({
@@ -328,7 +493,10 @@ export class PurchaseRequestsService {
       after: updated,
     });
 
-    return { purchaseOrder: order, purchaseRequest: updated };
+    // `purchaseOrder` kept for existing callers that navigate to a single
+    // created order; `purchaseOrders` carries the full fan-out for the
+    // (normal) multi-order case.
+    return { purchaseOrder: orders[0], purchaseOrders: orders, purchaseRequest: updated };
   }
 
   /**

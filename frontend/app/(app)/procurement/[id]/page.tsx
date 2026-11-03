@@ -12,6 +12,8 @@ import {
   useCreateDeliverySchedule,
   useAcceptDeliverySchedule,
   useRejectDeliverySchedule,
+  useDeliveryScheduleSiblings,
+  useCreateGroupedDeliverySchedule,
   usePurchaseOrderComments,
   useAddPurchaseOrderComment,
 } from '@/lib/hooks/use-procurement';
@@ -70,6 +72,7 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
   const tc = useTranslations('common');
   const apiErrorMessage = useApiErrorMessage();
   const createSchedule = useCreateDeliverySchedule(orderId);
+  const createGroupedSchedule = useCreateGroupedDeliverySchedule();
   const acceptSchedule = useAcceptDeliverySchedule(orderId);
   const rejectSchedule = useRejectDeliverySchedule(orderId);
 
@@ -82,6 +85,16 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
   const proposed = schedules.find((s) => s.status === 'PROPOSED');
   const history = schedules.filter((s) => s.id !== current?.id && s.id !== proposed?.id);
 
+  // "fill once for the group" (2026-11-03) — siblings fanned out from the
+  // same aggregated заявка line, possibly across several customer orders.
+  // Only matters while there's no schedule yet; a sibling that already got
+  // one (e.g. staff filled it separately before this group UI existed) is
+  // excluded from the group this item would create.
+  const { data: siblings } = useDeliveryScheduleSiblings(item.id, !current);
+  const openSiblings = (siblings ?? []).filter((s) => !s.currentDeliveryScheduleId);
+  const isGrouped = openSiblings.length > 1;
+  const groupTotalQty = openSiblings.reduce((sum, s) => sum + Number(s.qtyOrdered), 0);
+
   async function handleCreate() {
     setError(null);
     const parsed = lines
@@ -92,7 +105,14 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
       return;
     }
     try {
-      await createSchedule.mutateAsync({ itemId: item.id, lines: parsed });
+      if (isGrouped) {
+        await createGroupedSchedule.mutateAsync({
+          dto: { purchaseOrderItemIds: openSiblings.map((s) => s.id), lines: parsed },
+          orderIds: [...new Set(openSiblings.map((s) => s.purchaseOrderId))],
+        });
+      } else {
+        await createSchedule.mutateAsync({ itemId: item.id, lines: parsed });
+      }
       setCreating(false);
       setLines([{ date: '', qty: '' }]);
     } catch (err) {
@@ -190,6 +210,23 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
             </Button>
           ) : (
             <div className="space-y-2">
+              {isGrouped && (
+                <div className="space-y-1 rounded-md border border-primary/30 bg-primary/5 p-2 text-sm">
+                  <p className="font-medium">{t('scheduleGroupedTitle', { count: openSiblings.length })}</p>
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {openSiblings.map((s) => (
+                      <li key={s.id} className="flex justify-between gap-2">
+                        <span>{s.customerOrderNumber ? `№${s.customerOrderNumber}` : t('scheduleGroupedOtherOrder')}</span>
+                        <span className="tabular-nums">
+                          {s.qtyOrdered}
+                          {s.customerOrderDeadline && ` · ${new Date(s.customerOrderDeadline).toLocaleDateString()}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs font-medium">{t('scheduleGroupedTotal', { qty: groupTotalQty })}</p>
+                </div>
+              )}
               {lines.map((line, idx) => (
                 <div key={idx} className="flex gap-2">
                   <Input
@@ -201,7 +238,7 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
                     type="number"
                     step="any"
                     min={0}
-                    placeholder={t('scheduleQty')}
+                    placeholder={isGrouped ? t('scheduleGroupedQty') : t('scheduleQty')}
                     value={line.qty}
                     onChange={(e) => setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, qty: e.target.value } : l)))}
                   />
@@ -211,7 +248,7 @@ function DeliveryScheduleBlock({ orderId, item, canManage }: { orderId: string; 
                 <Button size="sm" variant="outline" onClick={() => setLines((prev) => [...prev, { date: '', qty: '' }])}>
                   {t('addLine')}
                 </Button>
-                <Button size="sm" loading={createSchedule.isPending} onClick={handleCreate}>
+                <Button size="sm" loading={isGrouped ? createGroupedSchedule.isPending : createSchedule.isPending} onClick={handleCreate}>
                   {tc('save')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>

@@ -10,6 +10,7 @@ import type { PurchaseRequestItemInput } from '@/lib/api-client/procurement';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
 import { ItemFileAttachmentsPicker } from '@/components/domain/procurement/item-file-attachments-picker';
+import { ShortagePickerDialog, type ShortagePickResult } from '@/components/domain/procurement/shortage-picker-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +27,8 @@ interface EditableItemRow {
   qty: string;
   expectedPrice: string;
   attachedFileIds: string[];
+  /** Set when this row came from the shortage picker (2026-11-03) — OrderMaterialRequirement ids it aggregates, across one or more customer orders. */
+  requirementIds?: string[];
 }
 
 let rowKeySeq = 0;
@@ -51,6 +54,21 @@ export default function NewPurchaseRequestPage() {
   function addRow() {
     setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qty: '', expectedPrice: '', attachedFileIds: [] }]);
   }
+  function addRowFromShortage(result: ShortagePickResult) {
+    setRows((r) => [
+      ...r,
+      {
+        key: newRowKey(),
+        productId: result.productId,
+        articleSnapshot: result.articleSnapshot,
+        productNameSnapshot: result.productNameSnapshot,
+        qty: String(result.qty),
+        expectedPrice: '',
+        attachedFileIds: [],
+        requirementIds: result.requirementIds,
+      },
+    ]);
+  }
   function removeRow(key: string) {
     setRows((r) => r.filter((row) => row.key !== key));
   }
@@ -62,8 +80,11 @@ export default function NewPurchaseRequestPage() {
     const row = rows.find((r) => r.key === key);
     // Attachments are sourced from the LINKED product's own documents — a
     // different product means a different, unrelated document set, so a
-    // previous selection would silently point at the wrong product's files.
-    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [] };
+    // previous selection would silently point at the wrong product's
+    // files. Same reasoning for requirementIds — they're claims against
+    // this specific product's shortage, meaningless once the row points
+    // at a different one.
+    const patch: Partial<EditableItemRow> = { productId, attachedFileIds: [], requirementIds: undefined };
     if (label) {
       const [article, name] = label.split(' — ');
       if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
@@ -96,6 +117,7 @@ export default function NewPurchaseRequestPage() {
         qty,
         expectedPrice: row.expectedPrice ? Number(row.expectedPrice) : undefined,
         attachedFileIds: row.attachedFileIds.length > 0 ? row.attachedFileIds : undefined,
+        requirementIds: row.requirementIds,
       });
     }
 
@@ -215,10 +237,13 @@ export default function NewPurchaseRequestPage() {
               )}
             </TableBody>
           </Table>
-          <Button type="button" variant="outline" size="sm" onClick={addRow}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('addLine')}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={addRow}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('addLine')}
+            </Button>
+            <ShortagePickerDialog onPick={addRowFromShortage} />
+          </div>
         </CardContent>
       </Card>
 

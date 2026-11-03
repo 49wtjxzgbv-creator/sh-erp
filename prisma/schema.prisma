@@ -1453,13 +1453,31 @@ model OrderMaterialRequirement {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  customerOrder      CustomerOrder       @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — a requirement record has no meaning without its order, same reasoning as StockReservation above
-  product            Product             @relation(fields: [companyId, productId], references: [companyId, id]) // composite
-  purchaseOrderItems PurchaseOrderItem[]
+  // Заявка постачальнику aggregation (2026-11-03 — "це має підтягуватись з
+  // продажі і заявки постачальникам"): set once this requirement has been
+  // pulled into a заявка (PurchaseRequest) line via the shortage picker —
+  // many requirements (across different CustomerOrders) can point at the
+  // SAME PurchaseRequestItem, which is exactly the structured replacement
+  // for the free-text "Скло-350. Вікно-650." comment staff used to type by
+  // hand. Deliberately added here rather than changing
+  // PurchaseOrderItem.sourceRequirementId's cardinality — that field stays
+  // strictly one-to-one (PurchaseOrdersService#receive's single
+  // preferredOrderId slot, FinanceService's per-order cost rollup, and
+  // planner-board.service.ts all key off one order per purchase line) —
+  // PurchaseRequestsService#convertToOrder fans an aggregated line back out
+  // into one PurchaseOrder per distinct customerOrderId, so nothing
+  // downstream of the real PurchaseOrder ever sees a multi-order line.
+  fulfillingPurchaseRequestItemId String? @db.Uuid
+
+  company                       Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerOrder                 CustomerOrder        @relation(fields: [companyId, customerOrderId], references: [companyId, id], onDelete: Cascade) // composite — a requirement record has no meaning without its order, same reasoning as StockReservation above
+  product                       Product              @relation(fields: [companyId, productId], references: [companyId, id]) // composite
+  purchaseOrderItems            PurchaseOrderItem[]
+  fulfillingPurchaseRequestItem PurchaseRequestItem? @relation(fields: [fulfillingPurchaseRequestItemId], references: [id], onDelete: SetNull)
 
   @@unique([customerOrderId, productId])
   @@index([companyId, customerOrderId])
+  @@index([fulfillingPurchaseRequestItemId])
   @@map("order_material_requirements")
 }
 
@@ -1873,18 +1891,18 @@ enum CuttingPlanStockSourceKind {
 // One bar/sheet used within a CuttingPlan — either freshly purchased stock
 // (FRESH) or an existing StockRemnant consumed from (REMNANT).
 model CuttingPlanStock {
-  id            String                     @id @default(uuid()) @db.Uuid
-  companyId     String                     @db.Uuid
+  id                  String                     @id @default(uuid()) @db.Uuid
+  companyId           String                     @db.Uuid
   // Ad-hoc multi-material worksheet (2026-11-01): nullable — a custom
   // (catalog-free) material line has no product to point at. Exactly one
   // of productId/customMaterialLabel is set.
-  cuttingPlanId String                     @db.Uuid
-  productId     String?                    @db.Uuid
-  customMaterialLabel String?              @db.Text
-  sourceKind    CuttingPlanStockSourceKind
-  remnantId     String?                    @db.Uuid // single-column FK, set when sourceKind=REMNANT — not cascaded, a remnant outlives any one plan
-  lengthCm      Decimal                    @db.Decimal(8, 2)
-  widthCm       Decimal?                   @db.Decimal(8, 2)
+  cuttingPlanId       String                     @db.Uuid
+  productId           String?                    @db.Uuid
+  customMaterialLabel String?                    @db.Text
+  sourceKind          CuttingPlanStockSourceKind
+  remnantId           String?                    @db.Uuid // single-column FK, set when sourceKind=REMNANT — not cascaded, a remnant outlives any one plan
+  lengthCm            Decimal                    @db.Decimal(8, 2)
+  widthCm             Decimal?                   @db.Decimal(8, 2)
 
   // computed by the optimizer; becomes a new StockRemnant on execute() if
   // >= the product's min-remnant threshold
@@ -2920,16 +2938,28 @@ model PurchaseOrderItem {
   // conflict between the two opposite-direction constraints.
   currentDeliveryScheduleId String? @db.Uuid
 
-  company                 Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  purchaseOrder           PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
-  product                 Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sourceRequirement       OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
-  currentDeliverySchedule DeliverySchedule?         @relation("CurrentSchedule", fields: [currentDeliveryScheduleId], references: [id], onDelete: SetNull)
-  deliverySchedules       DeliverySchedule[] // every version ever created for this line, oldest first by versionNumber
+  // Sibling tag (2026-11-03, same заявка-aggregation feature as
+  // OrderMaterialRequirement.fulfillingPurchaseRequestItemId): when
+  // convertToOrder fans an aggregated заявка line out into several
+  // PurchaseOrders (one per customer order), every resulting item is
+  // stamped with the SAME originating line id here — that's how the
+  // delivery-schedule "fill once for the group" flow finds its siblings
+  // (GET procurement/delivery-schedules/siblings/:id) without needing a new
+  // join table. NULL for every ordinary, non-aggregated purchase line.
+  originatingPurchaseRequestItemId String? @db.Uuid
+
+  company                        Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrder                  PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
+  product                        Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sourceRequirement              OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
+  currentDeliverySchedule        DeliverySchedule?         @relation("CurrentSchedule", fields: [currentDeliveryScheduleId], references: [id], onDelete: SetNull)
+  deliverySchedules              DeliverySchedule[] // every version ever created for this line, oldest first by versionNumber
+  originatingPurchaseRequestItem PurchaseRequestItem?      @relation(fields: [originatingPurchaseRequestItemId], references: [id], onDelete: SetNull)
 
   @@index([purchaseOrderId])
   @@index([companyId])
   @@index([sourceRequirementId])
+  @@index([originatingPurchaseRequestItemId])
   @@map("purchase_order_items")
 }
 
@@ -3032,6 +3062,13 @@ model PurchaseRequestItem {
   company         Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   purchaseRequest PurchaseRequest @relation(fields: [companyId, purchaseRequestId], references: [companyId, id], onDelete: Cascade) // composite — a line has no meaning without its request
   product         Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  // Reverse side of the two aggregation FKs above/below — every
+  // OrderMaterialRequirement this line was built from (shortage picker), and
+  // every PurchaseOrderItem convertToOrder fanned this line out into (one
+  // per distinct customer order).
+  fulfilledRequirements        OrderMaterialRequirement[]
+  originatedPurchaseOrderItems PurchaseOrderItem[]
 
   @@index([purchaseRequestId])
   @@index([companyId])
