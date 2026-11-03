@@ -1903,7 +1903,8 @@
     "deliveriesSubtitle": "When and how much to ship — across all your open orders",
     "deliveriesPrintButton": "Print",
     "deliveriesPrintDateColumn": "Delivery date",
-    "deliveriesPrintStatusColumn": "Urgency"
+    "deliveriesPrintStatusColumn": "Urgency",
+    "startTraining": "Start training"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

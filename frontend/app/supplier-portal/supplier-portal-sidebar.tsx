@@ -18,17 +18,21 @@ import { Logo } from '@/components/domain/shell/logo';
  * no collapse-to-icons toggle (six items, not twenty — the extra state
  * isn't earning its keep here).
  */
+// `tour` matches a `data-tour="…"` the supplier-portal training course
+// (app/supplier-portal/training-course.ts) spotlights, same convention as
+// the main app's own `data-tour` usages (e.g. bom/[id]/layout.tsx's `tabs`
+// array) — a plain extra field on the nav entry, not a separate registry.
 const NAV_ITEMS = [
-  { href: '/supplier-portal', labelKey: 'navDashboard', icon: LayoutDashboard },
-  { href: '/supplier-portal/deliveries', labelKey: 'navDeliveries', icon: CalendarClock },
-  { href: '/supplier-portal/catalog', labelKey: 'navCatalog', icon: Package },
-  { href: '/supplier-portal/stock', labelKey: 'navStock', icon: Warehouse },
-  { href: '/supplier-portal/cutting', labelKey: 'navCutting', icon: Scissors },
-  { href: '/supplier-portal/orders', labelKey: 'navOrders', icon: ShoppingCart },
-  { href: '/supplier-portal/requests', labelKey: 'navRequests', icon: FileText },
+  { href: '/supplier-portal', labelKey: 'navDashboard', icon: LayoutDashboard, tour: 'supplier-nav-dashboard' },
+  { href: '/supplier-portal/deliveries', labelKey: 'navDeliveries', icon: CalendarClock, tour: 'supplier-nav-deliveries' },
+  { href: '/supplier-portal/catalog', labelKey: 'navCatalog', icon: Package, tour: 'supplier-nav-catalog' },
+  { href: '/supplier-portal/stock', labelKey: 'navStock', icon: Warehouse, tour: 'supplier-nav-stock' },
+  { href: '/supplier-portal/cutting', labelKey: 'navCutting', icon: Scissors, tour: 'supplier-nav-cutting' },
+  { href: '/supplier-portal/orders', labelKey: 'navOrders', icon: ShoppingCart, tour: 'supplier-nav-orders' },
+  { href: '/supplier-portal/requests', labelKey: 'navRequests', icon: FileText, tour: 'supplier-nav-requests' },
 ] as const;
 
-function NavLink({ href, labelKey, icon: Icon, onNavigate }: (typeof NAV_ITEMS)[number] & { onNavigate?: () => void }) {
+function NavLink({ href, labelKey, icon: Icon, tour, onNavigate }: (typeof NAV_ITEMS)[number] & { onNavigate?: () => void }) {
   const t = useTranslations('supplierPortal');
   const pathname = usePathname();
   const active = href === '/supplier-portal' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -37,6 +41,7 @@ function NavLink({ href, labelKey, icon: Icon, onNavigate }: (typeof NAV_ITEMS)[
     <Link
       href={href}
       onClick={onNavigate}
+      data-tour={tour}
       className={cn(
         'flex items-center gap-3 rounded-md border-l-2 py-2 pl-[10px] pr-3 text-sm transition-colors',
         active

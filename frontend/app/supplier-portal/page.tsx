@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ShoppingCart, FileText, Package, CalendarClock } from 'lucide-react';
+import { ShoppingCart, FileText, Package, CalendarClock, GraduationCap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { cn } from '@/lib/utils';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
+import { useTraining } from '@/components/domain/training/training-provider';
 
 interface DashboardSummary {
   activeOrdersCount: number;
@@ -29,6 +31,7 @@ interface DashboardSummary {
  */
 export default function SupplierPortalDashboardPage() {
   const t = useTranslations('supplierPortal');
+  const { startCourse } = useTraining();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -70,8 +73,12 @@ export default function SupplierPortalDashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('navDashboard')}</h1>
+        <Button type="button" variant="outline" size="sm" onClick={() => startCourse('supplier-full-cycle', 0)}>
+          <GraduationCap className="mr-2 h-4 w-4" />
+          {t('startTraining')}
+        </Button>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map(({ href, icon: Icon, label, value, warn, extra }) => (

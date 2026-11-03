@@ -10,7 +10,10 @@ import { SupplierPortalSessionBoundary } from '@/components/domain/shell/supplie
 import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { LanguageSwitcher } from '@/components/domain/shell/language-switcher';
+import { TrainingProvider } from '@/components/domain/training/training-provider';
+import { TrainingOverlay } from '@/components/domain/training/training-overlay';
 import { SupplierPortalSidebar } from './supplier-portal-sidebar';
+import { SUPPLIER_TRAINING_COURSES } from './training-course';
 
 /**
  * Root of the Supplier Portal — a genuinely separate route tree from
@@ -65,32 +68,35 @@ function AuthedSupplierPortalShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <SupplierPortalSidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
-            <span className="text-sm font-semibold tracking-tight sm:text-base">{t('panelTitle')}</span>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground sm:gap-3">
-              <LanguageSwitcher />
-              <span className="hidden sm:inline">{email}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  await logout();
-                  router.replace('/supplier-portal/login');
-                }}
-              >
-                {t('signOut')}
-              </Button>
+    <TrainingProvider courses={SUPPLIER_TRAINING_COURSES}>
+      <div className="flex min-h-screen bg-background text-foreground">
+        <SupplierPortalSidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="border-b border-border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+              <span className="text-sm font-semibold tracking-tight sm:text-base">{t('panelTitle')}</span>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground sm:gap-3">
+                <LanguageSwitcher />
+                <span className="hidden sm:inline">{email}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await logout();
+                    router.replace('/supplier-portal/login');
+                  }}
+                >
+                  {t('signOut')}
+                </Button>
+              </div>
             </div>
-          </div>
-          <CompanyConnectionsBar companyName={companyName} activeConnectionId={activeConnectionId} />
-        </header>
-        <main className="max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+            <CompanyConnectionsBar companyName={companyName} activeConnectionId={activeConnectionId} />
+          </header>
+          <main className="max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        </div>
       </div>
-    </div>
+      <TrainingOverlay />
+    </TrainingProvider>
   );
 }
 

@@ -2042,7 +2042,8 @@
     "deliveriesSubtitle": "Коли і скільки потрібно відвантажити — по всіх ваших відкритих замовленнях",
     "deliveriesPrintButton": "Друкувати",
     "deliveriesPrintDateColumn": "Дата поставки",
-    "deliveriesPrintStatusColumn": "Терміновість"
+    "deliveriesPrintStatusColumn": "Терміновість",
+    "startTraining": "Почати навчання"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",
