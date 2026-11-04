@@ -171,6 +171,14 @@ export class PurchaseOrdersService {
           : item.assemblyId
             ? ((assemblyPhotos as any)[item.assemblyId]?.[0]?.downloadUrl ?? null)
             : null,
+        // "а дати поставки" (2026-11-04) — this line's own Delivery
+        // Schedule split, if staff have filled one in: find the CURRENT
+        // operative version (currentDeliveryScheduleId — never a PROPOSED
+        // one awaiting a decision) among the full version history findOne()
+        // already fetched, and pull its lines straight through.
+        deliveryDates: (item.deliverySchedules as any[])
+          .find((s) => s.id === item.currentDeliveryScheduleId)
+          ?.lines.map((l: any) => ({ date: l.date, qty: Number(l.qty) })) ?? [],
       })),
     });
 

@@ -9,6 +9,8 @@ export interface PurchaseOrderRenderItem {
   unitPrice: number | null;
   /** Live-resolved from the linked Product's/Assembly's own PHOTO at render time — same "cosmetic, not financial" tier as PurchaseRequest's item photo. */
   photoUrl: string | null;
+  /** "а дати поставки" (2026-11-04) — this line's own Delivery Schedule split (currentDeliveryScheduleId's lines), if staff have filled one in. Empty when none exists yet — the item then falls back to data.expectedDeliveryDate in the table (same single date every line shows until it gets its own schedule). */
+  deliveryDates: { date: Date; qty: number }[];
 }
 
 export interface PurchaseOrderRenderData {
@@ -52,6 +54,17 @@ export class PurchaseOrderRendererService {
       .map((item, i) => {
         const subtotal = item.unitPrice != null ? item.unitPrice * item.qty : null;
         if (subtotal != null) total += subtotal;
+
+        // Per-line schedule split if one exists ("10.11: 175, 18.11: 175");
+        // otherwise fall back to the single order-level expected date every
+        // undated line shares until staff splits it into its own schedule.
+        const deliveryCell =
+          item.deliveryDates.length > 0
+            ? item.deliveryDates.map((d) => `${fmtDate(d.date)}: ${fmtQty(d.qty)}`).join('<br/>')
+            : data.expectedDeliveryDate
+              ? fmtDate(data.expectedDeliveryDate)
+              : '—';
+
         return `
         <tr>
           <td class="col-idx">${i + 1}</td>
@@ -59,6 +72,7 @@ export class PurchaseOrderRendererService {
           <td class="col-article">${escapeHtml(item.articleSnapshot)}</td>
           <td>${escapeHtml(item.productNameSnapshot)}</td>
           <td class="col-num">${fmtQty(item.qty)}</td>
+          <td class="col-date">${deliveryCell}</td>
           <td class="col-num">${item.unitPrice != null ? formatMoney(item.unitPrice, data.currency) : '—'}</td>
           <td class="col-num">${subtotal != null ? formatMoney(subtotal, data.currency) : '—'}</td>
         </tr>`;
@@ -95,7 +109,7 @@ export class PurchaseOrderRendererService {
   .party-from-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .party-from-head img { max-height: 28px; max-width: 110px; object-fit: contain; }
   .table-wrap { overflow-x: auto; margin-bottom: 4px; }
-  table { width: 100%; min-width: 560px; border-collapse: collapse; table-layout: fixed; }
+  table { width: 100%; min-width: 680px; border-collapse: collapse; table-layout: fixed; }
   thead { display: table-header-group; }
   tr { page-break-inside: avoid; }
   th, td { border: 1px solid #999999; padding: 8px 10px; font-size: 13px; vertical-align: middle; }
@@ -105,6 +119,7 @@ export class PurchaseOrderRendererService {
   .item-photo { width: 46px; height: 46px; object-fit: cover; border-radius: 4px; border: 1px solid #dddddd; }
   .col-article { width: 100px; color: #666666; }
   .col-num { width: 84px; text-align: right; white-space: nowrap; }
+  .col-date { width: 110px; font-size: 11.5px; color: #444444; }
   tfoot td { border: none; padding: 8px 10px; }
   .total-row td { border-top: 2px solid #6423d0; font-weight: 700; font-size: 13.5px; }
   .comment { margin-top: 18px; }
@@ -152,6 +167,7 @@ export class PurchaseOrderRendererService {
           <th>Артикул</th>
           <th>Назва товару</th>
           <th class="col-num">Кількість</th>
+          <th class="col-date">Дата поставки</th>
           <th class="col-num">Ціна</th>
           <th class="col-num">Сума</th>
         </tr>
@@ -159,7 +175,7 @@ export class PurchaseOrderRendererService {
       <tbody>${itemRows}</tbody>
       <tfoot>
         <tr class="total-row">
-          <td colspan="5"></td>
+          <td colspan="6"></td>
           <td>Разом:</td>
           <td class="col-num">${formatMoney(total, data.currency)}</td>
         </tr>

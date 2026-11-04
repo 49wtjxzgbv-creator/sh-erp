@@ -24,8 +24,8 @@ describe('PurchaseOrdersService', () => {
     comment: null,
     supplierNameSnapshot: 'Acme Supplies',
     items: [
-      { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 10, qtyReceived: 0 },
-      { id: 'item2', productId: null, articleSnapshot: 'XYZ (no product yet)', qtyOrdered: 5, qtyReceived: 0 },
+      { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 10, qtyReceived: 0, currentDeliveryScheduleId: null, deliverySchedules: [] },
+      { id: 'item2', productId: null, articleSnapshot: 'XYZ (no product yet)', qtyOrdered: 5, qtyReceived: 0, currentDeliveryScheduleId: null, deliverySchedules: [] },
     ],
   };
 
@@ -204,7 +204,7 @@ describe('PurchaseOrdersService', () => {
         ...order,
         items: [
           { ...order.items[0], productId: 'p1', assemblyId: null },
-          { id: 'item3', productId: null, assemblyId: 'a1', articleSnapshot: 'ASM-1', qtyOrdered: 2, expectedPrice: null, supplierConfirmedPrice: null },
+          { id: 'item3', productId: null, assemblyId: 'a1', articleSnapshot: 'ASM-1', qtyOrdered: 2, expectedPrice: null, supplierConfirmedPrice: null, currentDeliveryScheduleId: null, deliverySchedules: [] },
         ],
       });
       filesService.listForEntities.mockImplementation((_user: any, entityType: string) =>
@@ -232,6 +232,44 @@ describe('PurchaseOrdersService', () => {
       await service.generatePdf(user, 'po1');
       expect(filesService.getDownloadUrl).toHaveBeenCalledWith(user, 'logo-1');
       expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ fromLogoUrl: 'https://example.com/logo.png' }));
+    });
+
+    it("resolves a line's own CURRENT delivery-schedule split (never a PROPOSED version) and passes the lines through", async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [
+          {
+            ...order.items[0],
+            currentDeliveryScheduleId: 'sched-current',
+            deliverySchedules: [
+              { id: 'sched-current', status: 'PENDING', lines: [{ date: new Date('2026-11-10'), qty: 4 }, { date: new Date('2026-11-18'), qty: 6 }] },
+              { id: 'sched-proposed', status: 'PROPOSED', lines: [{ date: new Date('2026-12-01'), qty: 10 }] },
+            ],
+          },
+        ],
+      });
+
+      await service.generatePdf(user, 'po1');
+
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              deliveryDates: [
+                { date: new Date('2026-11-10'), qty: 4 },
+                { date: new Date('2026-11-18'), qty: 6 },
+              ],
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('leaves deliveryDates empty for a line with no schedule yet', async () => {
+      await service.generatePdf(user, 'po1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({ items: expect.arrayContaining([expect.objectContaining({ deliveryDates: [] })]) }),
+      );
     });
   });
 
