@@ -14,6 +14,9 @@ import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
 import { DeliveryScheduleLinesDto, BulkCreateDeliveryScheduleDto } from './dto/delivery-schedule.dto';
 import { FinishedGoodsService } from '../production/finished-goods.service';
+import { FilesService } from '../files/files.service';
+import { PurchaseOrderPdfService } from './purchase-order-pdf.service';
+import { PurchaseOrderRendererService } from './purchase-order-renderer.service';
 
 /**
  * Multi-line purchase orders with a receiving workflow (PurchaseOrders.gs,
@@ -37,14 +40,42 @@ export class PurchaseOrdersService {
     private readonly exchangeRatesService: ExchangeRatesService,
     private readonly supplierCatalogService: SupplierCatalogService,
     private readonly finishedGoodsService: FinishedGoodsService,
+    private readonly filesService: FilesService,
+    private readonly pdfService: PurchaseOrderPdfService,
+    private readonly pdfRenderer: PurchaseOrderRendererService,
   ) {}
+
+  /**
+   * Same atomic per-company counter mechanism as PurchaseRequest.number
+   * (DocumentNumberingService's "INSERT ... ON CONFLICT" pattern) —
+   * inlined here for the same reason PurchaseRequestsService#nextNumber
+   * inlines its own copy rather than importing DocumentNumberingService
+   * (would create a cycle: ProcurementModule -> QuotationsModule ->
+   * SalesModule -> ProcurementModule, since SalesModule already imports
+   * ProcurementModule).
+   */
+  private async nextNumber(user: RequestUser): Promise<string> {
+    const year = new Date().getFullYear();
+    const rows = await this.prisma.tenant.$queryRaw<Array<{ lastValue: number }>>(
+      Prisma.sql`
+        INSERT INTO company_document_counters ("companyId", "counterKey", "lastValue", "updatedAt")
+        VALUES (${user.companyId}::uuid, ${`PURCHASE_ORDER_${year}`}, 1, now())
+        ON CONFLICT ("companyId", "counterKey")
+        DO UPDATE SET "lastValue" = company_document_counters."lastValue" + 1, "updatedAt" = now()
+        RETURNING "lastValue"
+      `,
+    );
+    return `ЗАМ-${year}-${String(Number(rows[0].lastValue)).padStart(4, '0')}`;
+  }
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
     // Multi-currency module phase 4 (2026-10-29) — defaults to this
     // company's own base currency, not a hardcoded EUR.
     const currency = dto.currency ?? (await this.exchangeRatesService.getBaseCurrency(user.companyId));
+    const number = await this.nextNumber(user);
     const order = await this.prisma.tenant.purchaseOrder.create({
       data: {
+        number,
         supplierId: dto.supplierId,
         supplierNameSnapshot: dto.supplierNameSnapshot,
         expectedDeliveryDate: dto.expectedDeliveryDate,
@@ -85,6 +116,82 @@ export class PurchaseOrdersService {
       order.items.map((i) => i.assemblyId),
     );
     return order;
+  }
+
+  /**
+   * "сформувати пдф файл щоб скидати постачальнику" (2026-11-04) — renders
+   * the order's current state (whatever expectedPrice/supplierConfirmedPrice
+   * are filled in by now) to a real PDF and stores it, overwriting any
+   * previous pdfFileId — same "regenerate as many times as needed, no
+   * status gate" convention as PurchaseRequestsService#generatePdf. Unlike
+   * that заявка template, this one shows price/subtotal/total (the order
+   * is already committed, nothing left to hide) and resolves photos for
+   * BOTH productId and assemblyId lines (2026-11-04 виріб support).
+   */
+  async generatePdf(user: RequestUser, id: string) {
+    const order = await this.findOne(user, id);
+    const items = order.items as any[];
+
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
+    const assemblyIds = [...new Set(items.map((i) => i.assemblyId).filter((v): v is string => Boolean(v)))];
+
+    const [branding, company, productPhotos, assemblyPhotos] = await Promise.all([
+      this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
+      this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
+      productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_PHOTO']) : {},
+      assemblyIds.length > 0 ? this.filesService.listForEntities(user, 'Assembly', assemblyIds, ['ASSEMBLY_PHOTO']) : {},
+    ]);
+
+    // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId) — same fallback-to-nothing shape as PurchaseRequestsService#generatePdf's own logo resolution.
+    const fromLogoUrl = branding?.printLogoFileId
+      ? ((await this.filesService.getDownloadUrl(user, branding.printLogoFileId).catch(() => null))?.downloadUrl ?? null)
+      : null;
+
+    const html = this.pdfRenderer.renderHtml({
+      number: order.number,
+      orderDate: order.orderDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      fromName: company?.name ?? '',
+      fromLogoUrl,
+      supplier: { name: order.supplierNameSnapshot },
+      comment: order.comment,
+      currency: order.currency,
+      items: items.map((item) => ({
+        articleSnapshot: item.articleSnapshot,
+        productNameSnapshot: item.productNameSnapshot,
+        qty: Number(item.qtyOrdered),
+        unitPrice:
+          item.supplierConfirmedPrice != null
+            ? Number(item.supplierConfirmedPrice)
+            : item.expectedPrice != null
+              ? Number(item.expectedPrice)
+              : null,
+        photoUrl: item.productId
+          ? ((productPhotos as any)[item.productId]?.[0]?.downloadUrl ?? null)
+          : item.assemblyId
+            ? ((assemblyPhotos as any)[item.assemblyId]?.[0]?.downloadUrl ?? null)
+            : null,
+      })),
+    });
+
+    const pdfFileId = await this.pdfService.generateAndStore(user, {
+      purchaseOrderId: id,
+      purchaseOrderNumber: order.number,
+      html,
+    });
+
+    const updated = await this.prisma.tenant.purchaseOrder.update({ where: { id }, data: { pdfFileId }, include: { items: true } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'purchase_order.pdf_generated',
+      entityType: 'PurchaseOrder',
+      entityId: id,
+      after: { pdfFileId },
+    });
+
+    return updated;
   }
 
   async findOne(user: RequestUser, id: string) {

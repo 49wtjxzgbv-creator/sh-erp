@@ -9,11 +9,19 @@ describe('PurchaseOrdersService', () => {
   let supplierCatalogService: any;
   let deliverySchedulesService: any;
   let finishedGoodsService: any;
+  let filesService: any;
+  let pdfService: any;
+  let pdfRenderer: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
     id: 'po1',
+    number: 'ЗАМ-2026-0001',
     status: 'ORDERED',
+    orderDate: new Date('2026-11-04T00:00:00Z'),
+    expectedDeliveryDate: null,
+    currency: 'EUR',
+    comment: null,
     supplierNameSnapshot: 'Acme Supplies',
     items: [
       { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 10, qtyReceived: 0 },
@@ -33,6 +41,9 @@ describe('PurchaseOrdersService', () => {
         // receive() writes actualPrice back onto Product.sellPriceEur when
         // given (ProductsService#setSuppliers's default-supplier price).
         product: { update: jest.fn() },
+        companyBranding: { findUnique: jest.fn().mockResolvedValue(null) },
+        company: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', name: 'My Company' }) },
+        $queryRaw: jest.fn().mockResolvedValue([{ lastValue: 1 }]),
       },
     };
     audit = { record: jest.fn() };
@@ -42,6 +53,12 @@ describe('PurchaseOrdersService', () => {
     const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
     supplierCatalogService = { ensureCatalogEntries: jest.fn().mockResolvedValue(undefined) };
     finishedGoodsService = { receivePurchased: jest.fn().mockResolvedValue([{ id: 'fg1' }]) };
+    filesService = {
+      listForEntities: jest.fn().mockResolvedValue({}),
+      getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.com/logo.png' }),
+    };
+    pdfService = { generateAndStore: jest.fn().mockResolvedValue('file-1') };
+    pdfRenderer = { renderHtml: jest.fn().mockReturnValue('<html></html>') };
     service = new PurchaseOrdersService(
       prisma,
       audit,
@@ -51,6 +68,9 @@ describe('PurchaseOrdersService', () => {
       exchangeRatesService,
       supplierCatalogService,
       finishedGoodsService,
+      filesService,
+      pdfService,
+      pdfRenderer,
     );
   });
 
@@ -95,6 +115,21 @@ describe('PurchaseOrdersService', () => {
       expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null], [null, 'a1']);
     });
 
+    it('generates an atomic per-company document number ("ЗАМ-YYYY-NNNN"), same mechanism as PurchaseRequest.number', async () => {
+      prisma.tenant.purchaseOrder.create.mockResolvedValue({ id: 'po1', status: 'ORDERED', items: [] });
+      const year = new Date().getFullYear();
+
+      await service.create(user, {
+        supplierNameSnapshot: 'Acme Supplies',
+        items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qtyOrdered: 10 }],
+      });
+
+      expect(prisma.tenant.$queryRaw).toHaveBeenCalled();
+      expect(prisma.tenant.purchaseOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ number: `ЗАМ-${year}-0001` }) }),
+      );
+    });
+
     it('passes assemblyId through for a виріб line', async () => {
       prisma.tenant.purchaseOrder.create.mockResolvedValue({ id: 'po1', status: 'ORDERED', items: [] });
 
@@ -110,6 +145,93 @@ describe('PurchaseOrdersService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('generatePdf', () => {
+    it('renders HTML from the current order state, stores it, and persists pdfFileId', async () => {
+      prisma.tenant.purchaseOrder.update.mockResolvedValue({ ...order, pdfFileId: 'file-1' });
+
+      const result = await service.generatePdf(user, 'po1');
+
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          number: 'ЗАМ-2026-0001',
+          fromName: 'My Company',
+          fromLogoUrl: null,
+          supplier: { name: 'Acme Supplies' },
+          currency: 'EUR',
+          items: [
+            expect.objectContaining({ articleSnapshot: 'ABC', qty: 10 }),
+            expect.objectContaining({ articleSnapshot: 'XYZ (no product yet)', qty: 5 }),
+          ],
+        }),
+      );
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(user, expect.objectContaining({ purchaseOrderId: 'po1', purchaseOrderNumber: 'ЗАМ-2026-0001' }));
+      expect(prisma.tenant.purchaseOrder.update).toHaveBeenCalledWith({ where: { id: 'po1' }, data: { pdfFileId: 'file-1' }, include: { items: true } });
+      expect(result.pdfFileId).toBe('file-1');
+    });
+
+    it("prefers the item's supplierConfirmedPrice over expectedPrice as unitPrice", async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [{ ...order.items[0], expectedPrice: 50, supplierConfirmedPrice: 42 }],
+      });
+      await service.generatePdf(user, 'po1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ items: [expect.objectContaining({ unitPrice: 42 })] }));
+    });
+
+    it('falls back to expectedPrice when the supplier has not confirmed a price', async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [{ ...order.items[0], expectedPrice: 50, supplierConfirmedPrice: null }],
+      });
+      await service.generatePdf(user, 'po1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ items: [expect.objectContaining({ unitPrice: 50 })] }));
+    });
+
+    it('leaves unitPrice null when neither price was ever set', async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [{ ...order.items[0], expectedPrice: null, supplierConfirmedPrice: null }],
+      });
+      await service.generatePdf(user, 'po1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ items: [expect.objectContaining({ unitPrice: null })] }));
+    });
+
+    it('resolves photos for both productId and assemblyId lines', async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [
+          { ...order.items[0], productId: 'p1', assemblyId: null },
+          { id: 'item3', productId: null, assemblyId: 'a1', articleSnapshot: 'ASM-1', qtyOrdered: 2, expectedPrice: null, supplierConfirmedPrice: null },
+        ],
+      });
+      filesService.listForEntities.mockImplementation((_user: any, entityType: string) =>
+        entityType === 'Product'
+          ? Promise.resolve({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] })
+          : Promise.resolve({ a1: [{ downloadUrl: 'https://example.com/a1.jpg' }] }),
+      );
+
+      await service.generatePdf(user, 'po1');
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(user, 'Product', ['p1'], ['PRODUCT_PHOTO']);
+      expect(filesService.listForEntities).toHaveBeenCalledWith(user, 'Assembly', ['a1'], ['ASSEMBLY_PHOTO']);
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({ photoUrl: 'https://example.com/p1.jpg' }),
+            expect.objectContaining({ photoUrl: 'https://example.com/a1.jpg' }),
+          ],
+        }),
+      );
+    });
+
+    it('resolves the branding print logo to a presigned URL for fromLogoUrl', async () => {
+      prisma.tenant.companyBranding.findUnique.mockResolvedValue({ companyId: 'c1', printLogoFileId: 'logo-1' });
+      await service.generatePdf(user, 'po1');
+      expect(filesService.getDownloadUrl).toHaveBeenCalledWith(user, 'logo-1');
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(expect.objectContaining({ fromLogoUrl: 'https://example.com/logo.png' }));
     });
   });
 

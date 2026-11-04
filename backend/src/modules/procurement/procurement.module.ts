@@ -10,6 +10,8 @@ import { PurchaseRequestsController } from './purchase-requests.controller';
 import { PurchaseRequestsService } from './purchase-requests.service';
 import { PurchaseRequestRendererService } from './purchase-request-renderer.service';
 import { PurchaseRequestPdfService } from './purchase-request-pdf.service';
+import { PurchaseOrderRendererService } from './purchase-order-renderer.service';
+import { PurchaseOrderPdfService } from './purchase-order-pdf.service';
 import { DeliverySchedulesService } from './delivery-schedules.service';
 import { PurchaseOrderCommentsService } from './purchase-order-comments.service';
 import { SuppliersController } from './suppliers.controller';
@@ -31,6 +33,8 @@ import { SupplierCatalogService } from './supplier-catalog.service';
     PurchaseRequestsService,
     PurchaseRequestRendererService,
     PurchaseRequestPdfService,
+    PurchaseOrderRendererService,
+    PurchaseOrderPdfService,
     DeliverySchedulesService,
     PurchaseOrderCommentsService,
     SupplierCatalogService,

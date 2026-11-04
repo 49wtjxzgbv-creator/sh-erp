@@ -32,6 +32,7 @@ export default function PurchaseOrdersPage() {
 
   const columns = useMemo<ColumnDef<PurchaseOrder>[]>(
     () => [
+      { accessorKey: 'number', header: t('poNumber') },
       { accessorKey: 'supplierNameSnapshot', header: t('supplier') },
       {
         accessorKey: 'status',

@@ -793,6 +793,14 @@ enum FileDomain {
   // human-uploaded financial paperwork on an already-committed
   // PurchaseOrder, not a system-rendered pre-order document).
   PURCHASE_REQUEST_DOCUMENT
+  // Замовлення постачальнику (2026-11-04) — entityType "PurchaseOrder",
+  // entityId = PurchaseOrder.id. System-generated (Playwright-rendered),
+  // same mechanism as PURCHASE_REQUEST_DOCUMENT above — see
+  // PurchaseOrderPdfService. Deliberately its own value, not PURCHASE_
+  // REQUEST_DOCUMENT (wrong document family — that one is the pre-order,
+  // non-committal заявка) or FINANCE_DOCUMENT/PURCHASE_INVOICE (those are
+  // human-uploaded financial paperwork, not the order document itself).
+  PURCHASE_ORDER_DOCUMENT
 }
 
 enum FileConversionStatus {
@@ -2846,6 +2854,17 @@ model LoadPlanBoxPosition {
 model PurchaseOrder {
   id                   String              @id @default(uuid()) @db.Uuid
   companyId            String              @db.Uuid
+  // "сформувати пдф файл щоб скидати постачальнику" (2026-11-04) — same
+  // atomic per-company counter mechanism as PurchaseRequest.number/
+  // Quotation.number (DocumentNumberingService's "INSERT ... ON CONFLICT"
+  // pattern), counterKey "PURCHASE_ORDER_{year}", prefix "ЗАМ" (замовлення)
+  // — inlined in PurchaseOrdersService rather than importing
+  // DocumentNumberingService, same cycle PurchaseRequestsService's own
+  // inlined copy avoids (ProcurementModule -> QuotationsModule ->
+  // SalesModule -> ProcurementModule). Existing rows backfilled
+  // sequentially per (companyId, year of createdAt) ordered by createdAt —
+  // see this field's migration for the exact backfill + counter-seeding SQL.
+  number               String
   supplierId           String?             @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed a free-text supplier with no FK match (Phase 1 §10.6); migration backfills where confident, flags the rest
   supplierNameSnapshot String // preserves the free-text name even if supplierId is set, for historical accuracy
   status               PurchaseOrderStatus @default(ORDERED)
@@ -2882,6 +2901,12 @@ model PurchaseOrder {
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
+  // "сформувати пдф файл щоб скидати постачальнику" (2026-11-04) — same
+  // generate/overwrite-on-regenerate convention as PurchaseRequest.pdfFileId
+  // (PurchaseOrdersService#generatePdf), system-rendered via
+  // PurchaseOrderPdfService — see FileDomain.PURCHASE_ORDER_DOCUMENT.
+  pdfFileId String? @db.Uuid
+
   company             Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
   supplier            Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   sourceCustomerOrder CustomerOrder?          @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
@@ -2891,6 +2916,7 @@ model PurchaseOrder {
   financeExpenses     PurchaseOrderExpense[] // Finance module (2026-08-24)
 
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderItem.purchaseOrder
+  @@unique([companyId, number])
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
   @@index([companyId, status])
   @@map("purchase_orders")

@@ -14,6 +14,7 @@ import {
   useRejectDeliverySchedule,
   useDeliveryScheduleSiblings,
   useCreateGroupedDeliverySchedule,
+  useGeneratePurchaseOrderPdf,
   usePurchaseOrderComments,
   useAddPurchaseOrderComment,
 } from '@/lib/hooks/use-procurement';
@@ -442,6 +443,7 @@ export default function PurchaseOrderDetailPage() {
   const { data: warehouses } = useWarehouses();
   const receive = useReceivePurchaseOrder(params.id);
   const deleteOrder = useDeletePurchaseOrder();
+  const generatePdf = useGeneratePurchaseOrderPdf(params.id);
   const canManage = useHasPermission('purchase-orders:manage');
   const canDelete = useHasPermission('purchase-orders:delete');
   const canReadSuppliers = useHasPermission('suppliers:read');
@@ -508,6 +510,20 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  /** "сформувати пдф файл щоб скидати постачальнику" (2026-11-04) — renders the order's current state, stores it (overwriting any previous one), then immediately opens it so staff can download/forward it, same pattern as the ЗП detail page's own handleGeneratePdf. */
+  async function handleGeneratePdf() {
+    setError(null);
+    try {
+      const updated = await generatePdf.mutateAsync();
+      if (updated.pdfFileId) {
+        const { downloadUrl } = await getFileDownloadUrl(updated.pdfFileId);
+        window.open(downloadUrl, '_blank');
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
   async function handleDelete() {
     setError(null);
     try {
@@ -524,10 +540,17 @@ export default function PurchaseOrderDetailPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">{order.supplierNameSnapshot}</h2>
+          <h2 className="text-lg font-semibold">{order.number}</h2>
+          <span className="text-sm text-muted-foreground">{order.supplierNameSnapshot}</span>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
         </div>
-        {canDelete && (
+        <div className="flex flex-wrap items-center gap-2">
+          {canManage && (
+            <Button variant="outline" size="sm" loading={generatePdf.isPending} onClick={handleGeneratePdf}>
+              {t('generatePdf')}
+            </Button>
+          )}
+          {canDelete && (
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="destructive" size="sm">
@@ -549,7 +572,8 @@ export default function PurchaseOrderDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        )}
+          )}
+        </div>
       </div>
 
       <Card>

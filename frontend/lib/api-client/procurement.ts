@@ -196,6 +196,8 @@ export interface DeliverySchedule {
 export interface PurchaseOrder {
   id: string;
   companyId: string;
+  /** "ЗАМ-2026-0001" — atomic per-company counter (2026-11-04), same mechanism as PurchaseRequest.number. */
+  number: string;
   supplierId: string | null;
   supplierNameSnapshot: string;
   status: PurchaseOrderStatus;
@@ -216,6 +218,8 @@ export interface PurchaseOrder {
   currency: Currency;
   createdById: string;
   createdAt: string;
+  /** System-rendered via PurchaseOrderPdfService#generatePdf (2026-11-04) — the document staff hand/email to the supplier. Null until generated at least once. */
+  pdfFileId: string | null;
   /** Present on create/findOne/receive responses; not on query() list rows. */
   items?: PurchaseOrderItem[];
 }
@@ -264,6 +268,10 @@ export function getPurchaseOrder(id: string): Promise<PurchaseOrder> {
 }
 export function createPurchaseOrder(dto: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
   return apiClient.post<PurchaseOrder>('purchase-orders', dto);
+}
+/** Renders and stores a PDF of the order's CURRENT state (overwrites any previous pdfFileId) — the document staff hand/email to the supplier. */
+export function generatePurchaseOrderPdf(id: string): Promise<PurchaseOrder> {
+  return apiClient.post<PurchaseOrder>(`purchase-orders/${id}/pdf`);
 }
 /** Permanent hard delete — admin-only (`purchase-orders:delete`), cannot be undone. Stock movements already posted against it (receiving) keep their own independent record. */
 export function deletePurchaseOrder(id: string): Promise<{ ok: true }> {

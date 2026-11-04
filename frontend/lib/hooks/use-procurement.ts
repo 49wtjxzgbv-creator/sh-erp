@@ -16,6 +16,7 @@ import {
   queryPurchaseOrders,
   getPurchaseOrder,
   createPurchaseOrder,
+  generatePurchaseOrderPdf,
   deletePurchaseOrder,
   receivePurchaseOrder,
   updatePurchaseOrderMilestones,
@@ -160,6 +161,14 @@ export function useCreatePurchaseOrder() {
   return useMutation({
     mutationFn: (dto: CreatePurchaseOrderInput) => createPurchaseOrder(dto),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-orders'] }),
+  });
+}
+
+export function useGeneratePurchaseOrderPdf(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generatePurchaseOrderPdf(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(id) }),
   });
 }
 

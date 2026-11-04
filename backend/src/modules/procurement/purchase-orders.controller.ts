@@ -21,6 +21,13 @@ export class PurchaseOrdersController {
     return this.purchaseOrdersService.create(user, dto);
   }
 
+  @Post(':id/pdf')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: 'Render and store a PDF of this order\'s current state (overwrites any previous one) — the document staff hand/email to the supplier.' })
+  async generatePdf(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.purchaseOrdersService.generatePdf(user, id);
+  }
+
   @Get()
   @RequirePermissions('purchase-orders:read')
   @ApiOperation({ summary: 'Search/list purchase orders, paginated.' })
