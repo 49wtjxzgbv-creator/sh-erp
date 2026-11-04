@@ -801,6 +801,8 @@
     "supplier": "Supplier",
     "linkSupplier": "Link supplier (optional)",
     "linkProduct": "Link product (optional)",
+    "itemKindProduct": "Product",
+    "itemKindAssembly": "Assembly",
     "expectedDeliveryDate": "Expected delivery date",
     "currencyDefault": "Defaults to the company's base currency",
     "comment": "Comment",

@@ -8,11 +8,13 @@ describe('PurchaseOrdersService', () => {
   let stock: any;
   let supplierCatalogService: any;
   let deliverySchedulesService: any;
+  let finishedGoodsService: any;
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.com', roleId: 'r1' };
 
   const order = {
     id: 'po1',
     status: 'ORDERED',
+    supplierNameSnapshot: 'Acme Supplies',
     items: [
       { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', qtyOrdered: 10, qtyReceived: 0 },
       { id: 'item2', productId: null, articleSnapshot: 'XYZ (no product yet)', qtyOrdered: 5, qtyReceived: 0 },
@@ -39,7 +41,17 @@ describe('PurchaseOrdersService', () => {
     const comments = {} as any;
     const exchangeRatesService: any = { convert: jest.fn((amount: number) => Promise.resolve(amount)), getBaseCurrency: jest.fn().mockResolvedValue('EUR') };
     supplierCatalogService = { ensureCatalogEntries: jest.fn().mockResolvedValue(undefined) };
-    service = new PurchaseOrdersService(prisma, audit, stock, deliverySchedulesService, comments, exchangeRatesService, supplierCatalogService);
+    finishedGoodsService = { receivePurchased: jest.fn().mockResolvedValue([{ id: 'fg1' }]) };
+    service = new PurchaseOrdersService(
+      prisma,
+      audit,
+      stock,
+      deliverySchedulesService,
+      comments,
+      exchangeRatesService,
+      supplierCatalogService,
+      finishedGoodsService,
+    );
   });
 
   describe('create', () => {
@@ -63,12 +75,15 @@ describe('PurchaseOrdersService', () => {
       );
     });
 
-    it("ensures supplier-catalog entries for the new order's own supplierId/productIds", async () => {
+    it("ensures supplier-catalog entries for the new order's own supplierId/productIds/assemblyIds", async () => {
       prisma.tenant.purchaseOrder.create.mockResolvedValue({
         id: 'po1',
         status: 'ORDERED',
         supplierId: 's1',
-        items: [{ productId: 'p1' }, { productId: null }],
+        items: [
+          { productId: 'p1', assemblyId: null },
+          { productId: null, assemblyId: 'a1' },
+        ],
       });
 
       await service.create(user, {
@@ -77,7 +92,24 @@ describe('PurchaseOrdersService', () => {
         items: [{ articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qtyOrdered: 10 }],
       } as any);
 
-      expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null]);
+      expect(supplierCatalogService.ensureCatalogEntries).toHaveBeenCalledWith(user, 's1', ['p1', null], [null, 'a1']);
+    });
+
+    it('passes assemblyId through for a виріб line', async () => {
+      prisma.tenant.purchaseOrder.create.mockResolvedValue({ id: 'po1', status: 'ORDERED', items: [] });
+
+      await service.create(user, {
+        supplierNameSnapshot: 'Acme Supplies',
+        items: [{ assemblyId: 'a1', articleSnapshot: 'ASM-1', productNameSnapshot: 'Sub-assembly', qtyOrdered: 3 }],
+      } as any);
+
+      expect(prisma.tenant.purchaseOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: { create: [expect.objectContaining({ assemblyId: 'a1', articleSnapshot: 'ASM-1', qtyOrdered: 3 })] },
+          }),
+        }),
+      );
     });
   });
 
@@ -305,6 +337,45 @@ describe('PurchaseOrdersService', () => {
       await expect(
         service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 1 }] }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    describe('виріб (assembly) lines', () => {
+      beforeEach(() => {
+        prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+          ...order,
+          items: [{ id: 'item1', productId: null, assemblyId: 'a1', articleSnapshot: 'ASM-1', expectedPrice: 7, qtyOrdered: 3, qtyReceived: 0 }],
+        });
+        prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
+          { id: 'item1', productId: null, assemblyId: 'a1', qtyOrdered: 3, qtyReceived: 3 },
+        ]);
+        prisma.tenant.purchaseOrder.update.mockResolvedValue({ id: 'po1', status: 'DELIVERED', items: [] });
+      });
+
+      it('calls FinishedGoodsService#receivePurchased instead of StockService#applyMovement', async () => {
+        await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 3, actualPrice: 15 }] });
+
+        expect(stock.applyMovement).not.toHaveBeenCalled();
+        expect(finishedGoodsService.receivePurchased).toHaveBeenCalledWith(user, {
+          assemblyId: 'a1',
+          qty: 3,
+          unitCostEur: 15,
+          comment: expect.stringContaining('Acme Supplies'),
+          sourcePurchaseOrderItemId: 'item1',
+        });
+      });
+
+      it('falls back to the line item\'s expectedPrice when no actualPrice is given', async () => {
+        await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 3 }] });
+
+        expect(finishedGoodsService.receivePurchased).toHaveBeenCalledWith(user, expect.objectContaining({ unitCostEur: 7 }));
+      });
+
+      it('rejects a fractional qty — one FinishedGood row per unit has no meaning otherwise', async () => {
+        await expect(
+          service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 2.5 }] }),
+        ).rejects.toThrow(BadRequestException);
+        expect(finishedGoodsService.receivePurchased).not.toHaveBeenCalled();
+      });
     });
   });
 

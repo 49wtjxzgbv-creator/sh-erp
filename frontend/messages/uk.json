@@ -806,6 +806,8 @@
     "supplier": "Постачальник",
     "linkSupplier": "Прив'язати постачальника (необов'язково)",
     "linkProduct": "Прив'язати товар (необов'язково)",
+    "itemKindProduct": "Товар",
+    "itemKindAssembly": "Виріб",
     "expectedDeliveryDate": "Очікувана дата постачання",
     "currencyDefault": "За замовчуванням — базова валюта компанії",
     "comment": "Коментар",

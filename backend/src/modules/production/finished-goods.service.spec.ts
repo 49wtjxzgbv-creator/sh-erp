@@ -68,6 +68,30 @@ describe('FinishedGoodsService', () => {
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finished_good.received_purchased' }));
       expect(result).toEqual([{ id: 'fg1' }, { id: 'fg2' }]);
     });
+
+    it('stamps sourcePurchaseOrderItemId onto every created row when given (PurchaseOrdersService#receive\'s виріб branch, 2026-11-04)', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1' });
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([{ id: 'fg1' }]);
+
+      await service.receivePurchased(user, { assemblyId: 'a1', qty: 1, unitCostEur: 10, sourcePurchaseOrderItemId: 'poi1' });
+
+      expect(prisma.tenant.finishedGood.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ sourcePurchaseOrderItemId: 'poi1' })],
+      });
+    });
+
+    it('leaves sourcePurchaseOrderItemId undefined for the standalone manual-dialog path (no PurchaseOrder behind it)', async () => {
+      prisma.tenant.assembly.findUnique.mockResolvedValue({ id: 'a1' });
+      prisma.tenant.finishedGood.count.mockResolvedValue(0);
+      prisma.tenant.finishedGood.findMany.mockResolvedValue([{ id: 'fg1' }]);
+
+      await service.receivePurchased(user, { assemblyId: 'a1', qty: 1, unitCostEur: 10 });
+
+      expect(prisma.tenant.finishedGood.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ sourcePurchaseOrderItemId: undefined })],
+      });
+    });
   });
 
   describe('query — scope filter (2026-08-30)', () => {

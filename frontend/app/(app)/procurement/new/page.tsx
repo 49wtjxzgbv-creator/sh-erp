@@ -10,6 +10,7 @@ import type { CreatePurchaseOrderItemInput } from '@/lib/api-client/procurement'
 import type { Currency } from '@/lib/api-client/settings';
 import { SupplierPicker } from '@/components/domain/procurement/supplier-picker';
 import { ProductPicker } from '@/components/domain/catalog/product-picker';
+import { AssemblyPicker } from '@/components/domain/bom/assembly-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +22,14 @@ import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 interface EditableItemRow {
   key: string;
+  // "додай можливість... додавати не тільки товари а і вироби" (2026-11-04)
+  // — at most one of productId/assemblyId, mirroring the backend's own
+  // nullable-only pattern (no kind enum needed, same reasoning as
+  // CuttingPlan). `kind` here is purely a UI toggle deciding which picker
+  // shows; it's never itself sent to the backend.
+  kind: 'product' | 'assembly';
   productId?: string;
+  assemblyId?: string;
   articleSnapshot: string;
   productNameSnapshot: string;
   qtyOrdered: string;
@@ -56,13 +64,19 @@ export default function NewPurchaseOrderPage() {
   );
 
   function addRow() {
-    setRows((r) => [...r, { key: newRowKey(), articleSnapshot: '', productNameSnapshot: '', qtyOrdered: '', expectedPrice: '' }]);
+    setRows((r) => [...r, { key: newRowKey(), kind: 'product', articleSnapshot: '', productNameSnapshot: '', qtyOrdered: '', expectedPrice: '' }]);
   }
   function removeRow(key: string) {
     setRows((r) => r.filter((row) => row.key !== key));
   }
   function updateRow(key: string, patch: Partial<EditableItemRow>) {
     setRows((r) => r.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+  function setRowKind(key: string, kind: 'product' | 'assembly') {
+    // Switching kind clears whichever id belonged to the OTHER kind — a
+    // стaле productId/assemblyId left over from before the switch would
+    // violate the backend's "at most one set" invariant.
+    updateRow(key, { kind, productId: undefined, assemblyId: undefined });
   }
 
   function handlePickProduct(key: string, productId: string | undefined, label: string | undefined) {
@@ -87,6 +101,21 @@ export default function NewPurchaseOrderPage() {
     updateRow(key, patch);
   }
 
+  function handlePickAssembly(key: string, assemblyId: string | undefined, label: string | undefined) {
+    // AssemblyPicker uses the identical "article — name" label convention
+    // as ProductPicker (components/domain/bom/assembly-picker.tsx) — same
+    // snapshot pre-fill logic, just no supplier-catalog price lookup
+    // (AssemblySupplier.price isn't surfaced to this page today).
+    const row = rows.find((r) => r.key === key);
+    const patch: Partial<EditableItemRow> = { assemblyId };
+    if (label) {
+      const [article, name] = label.split(' — ');
+      if (row && !row.articleSnapshot && article) patch.articleSnapshot = article;
+      if (row && !row.productNameSnapshot && name) patch.productNameSnapshot = name;
+    }
+    updateRow(key, patch);
+  }
+
   async function handleSubmit() {
     setError(null);
     if (!supplierNameSnapshot.trim()) {
@@ -106,6 +135,7 @@ export default function NewPurchaseOrderPage() {
       }
       items.push({
         productId: row.productId,
+        assemblyId: row.assemblyId,
         articleSnapshot: row.articleSnapshot.trim(),
         productNameSnapshot: row.productNameSnapshot.trim(),
         qtyOrdered: qty,
@@ -212,7 +242,29 @@ export default function NewPurchaseOrderPage() {
                 rows.map((row) => (
                   <TableRow key={row.key}>
                     <TableCell>
-                      <ProductPicker value={row.productId} onChange={(id, label) => handlePickProduct(row.key, id, label)} />
+                      <div className="space-y-1.5">
+                        <div className="flex gap-1 rounded-md border border-border p-0.5 text-xs">
+                          <button
+                            type="button"
+                            className={`flex-1 rounded px-1.5 py-0.5 ${row.kind === 'product' ? 'bg-secondary font-medium' : 'text-muted-foreground'}`}
+                            onClick={() => setRowKind(row.key, 'product')}
+                          >
+                            {t('itemKindProduct')}
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 rounded px-1.5 py-0.5 ${row.kind === 'assembly' ? 'bg-secondary font-medium' : 'text-muted-foreground'}`}
+                            onClick={() => setRowKind(row.key, 'assembly')}
+                          >
+                            {t('itemKindAssembly')}
+                          </button>
+                        </div>
+                        {row.kind === 'assembly' ? (
+                          <AssemblyPicker value={row.assemblyId} onChange={(id, label) => handlePickAssembly(row.key, id, label)} />
+                        ) : (
+                          <ProductPicker value={row.productId} onChange={(id, label) => handlePickProduct(row.key, id, label)} />
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Input value={row.articleSnapshot} onChange={(e) => updateRow(row.key, { articleSnapshot: e.target.value })} />

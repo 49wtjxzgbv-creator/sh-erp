@@ -68,4 +68,12 @@ export class ReceivePurchasedFinishedGoodsDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Set by PurchaseOrdersService#receive (2026-11-04) when this call is receiving against a PurchaseOrder line whose kind is виріб — tags every created FinishedGood row for traceability back to the PO. Omitted (and left null) by the standalone "Оприбуткувати куплене" dialog, which has no PurchaseOrder behind it.',
+  })
+  @IsOptional()
+  @IsUUID()
+  sourcePurchaseOrderItemId?: string;
 }

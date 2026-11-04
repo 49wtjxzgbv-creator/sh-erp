@@ -22,6 +22,11 @@ export class CreatePurchaseOrderItemDto {
   @IsUUID()
   productId?: string;
 
+  @ApiPropertyOptional({ description: 'Order a виріб (Assembly) directly from the supplier instead of a товар — at most one of productId/assemblyId may be set.' })
+  @IsOptional()
+  @IsUUID()
+  assemblyId?: string;
+
   @ApiProperty({ description: 'Article snapshot at order time — kept even if productId is set, and required when it is not.' })
   @IsString()
   @MinLength(1)

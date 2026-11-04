@@ -27,10 +27,21 @@ export class SupplierCatalogService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async ensureCatalogEntries(user: RequestUser, supplierId: string | null | undefined, productIds: (string | null | undefined)[]): Promise<void> {
+  async ensureCatalogEntries(
+    user: RequestUser,
+    supplierId: string | null | undefined,
+    productIds: (string | null | undefined)[],
+    // "замовлення постачальнику... вироби" (2026-11-04) — same ensure-exists
+    // treatment as productIds below, just upserting AssemblySupplier
+    // instead ("Same as ProductSupplier, for Assembly" — schema.prisma's
+    // own comment on that model). Optional/defaulted so the existing
+    // PurchaseRequestsService call site (ЗП stays Product-only) needs no change.
+    assemblyIds: (string | null | undefined)[] = [],
+  ): Promise<void> {
     if (!supplierId) return;
     const distinctProductIds = [...new Set(productIds.filter((id): id is string => id != null))];
-    if (distinctProductIds.length === 0) return;
+    const distinctAssemblyIds = [...new Set(assemblyIds.filter((id): id is string => id != null))];
+    if (distinctProductIds.length === 0 && distinctAssemblyIds.length === 0) return;
 
     try {
       const connection = await this.prisma.tenant.supplierConnection.findUnique({
@@ -39,17 +50,26 @@ export class SupplierCatalogService {
       });
       if (connection?.status !== 'ACTIVE' || !connection.supplierOrganization.portalUser?.active) return;
 
-      await Promise.all(
-        distinctProductIds.map((productId) =>
+      await Promise.all([
+        ...distinctProductIds.map((productId) =>
           this.prisma.tenant.productSupplier.upsert({
             where: { productId_supplierId: { productId, supplierId } },
             create: { companyId: user.companyId, productId, supplierId },
             update: {}, // ensure-exists only — never touch an existing row's price/isDefault/supplier-entered fields
           }),
         ),
-      );
+        ...distinctAssemblyIds.map((assemblyId) =>
+          this.prisma.tenant.assemblySupplier.upsert({
+            where: { assemblyId_supplierId: { assemblyId, supplierId } },
+            create: { companyId: user.companyId, assemblyId, supplierId },
+            update: {},
+          }),
+        ),
+      ]);
     } catch (err) {
-      this.logger.warn(`Failed to ensure supplier-catalog entries (supplier=${supplierId}, products=${distinctProductIds.join(',')}): ${err}`);
+      this.logger.warn(
+        `Failed to ensure supplier-catalog entries (supplier=${supplierId}, products=${distinctProductIds.join(',')}, assemblies=${distinctAssemblyIds.join(',')}): ${err}`,
+      );
     }
   }
 }

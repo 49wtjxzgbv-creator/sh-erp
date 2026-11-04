@@ -15,6 +15,7 @@ describe('SupplierCatalogService', () => {
       tenant: {
         supplierConnection: { findUnique: jest.fn() },
         productSupplier: { upsert: jest.fn() },
+        assemblySupplier: { upsert: jest.fn() },
       },
     };
     service = new SupplierCatalogService(prisma);
@@ -25,9 +26,10 @@ describe('SupplierCatalogService', () => {
     expect(prisma.tenant.supplierConnection.findUnique).not.toHaveBeenCalled();
   });
 
-  it('does nothing when productIds is empty or all null', async () => {
+  it('does nothing when productIds and assemblyIds are both empty or all null', async () => {
     await service.ensureCatalogEntries(user, 's1', []);
     await service.ensureCatalogEntries(user, 's1', [null, undefined]);
+    await service.ensureCatalogEntries(user, 's1', [], [null, undefined]);
     expect(prisma.tenant.supplierConnection.findUnique).not.toHaveBeenCalled();
   });
 
@@ -68,6 +70,33 @@ describe('SupplierCatalogService', () => {
       create: { companyId: 'c1', productId: 'p2', supplierId: 's1' },
       update: {},
     });
+  });
+
+  it('upserts one AssemblySupplier row per distinct assemblyId when ACTIVE, ensure-exists only', async () => {
+    prisma.tenant.supplierConnection.findUnique.mockResolvedValue(activeConnection);
+
+    await service.ensureCatalogEntries(user, 's1', [], ['a1', 'a2', 'a1', null]);
+
+    expect(prisma.tenant.assemblySupplier.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.tenant.assemblySupplier.upsert).toHaveBeenCalledWith({
+      where: { assemblyId_supplierId: { assemblyId: 'a1', supplierId: 's1' } },
+      create: { companyId: 'c1', assemblyId: 'a1', supplierId: 's1' },
+      update: {},
+    });
+    expect(prisma.tenant.assemblySupplier.upsert).toHaveBeenCalledWith({
+      where: { assemblyId_supplierId: { assemblyId: 'a2', supplierId: 's1' } },
+      create: { companyId: 'c1', assemblyId: 'a2', supplierId: 's1' },
+      update: {},
+    });
+  });
+
+  it('handles productIds and assemblyIds together in one call', async () => {
+    prisma.tenant.supplierConnection.findUnique.mockResolvedValue(activeConnection);
+
+    await service.ensureCatalogEntries(user, 's1', ['p1'], ['a1']);
+
+    expect(prisma.tenant.productSupplier.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.tenant.assemblySupplier.upsert).toHaveBeenCalledTimes(1);
   });
 
   it('never throws — swallows an upsert failure and just logs', async () => {

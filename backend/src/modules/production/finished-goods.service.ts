@@ -181,6 +181,7 @@ export class FinishedGoodsService {
         unitCostLocalEur: dto.unitCostEur,
         unitCostGermanEur: dto.unitCostEur,
         comment: dto.comment,
+        sourcePurchaseOrderItemId: dto.sourcePurchaseOrderItemId,
       })) as any,
     });
 

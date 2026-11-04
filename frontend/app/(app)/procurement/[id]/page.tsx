@@ -457,6 +457,13 @@ export default function PurchaseOrderDetailPage() {
     [order?.items],
   );
   const { data: photosByProduct } = useFilesForEntities('Product', productIds, 'PRODUCT_PHOTO');
+  // "замовлення постачальнику... вироби" (2026-11-04) — same lookup shape
+  // as photosByProduct above, just for whichever lines are вироби instead.
+  const assemblyIds = useMemo(
+    () => Array.from(new Set((order?.items ?? []).filter((i) => i.assemblyId).map((i) => i.assemblyId as string))),
+    [order?.items],
+  );
+  const { data: photosByAssembly } = useFilesForEntities('Assembly', assemblyIds, 'ASSEMBLY_PHOTO');
   const { data: supplierProducts } = useSupplierLinkedProducts(canReadSuppliers ? order?.supplierId ?? undefined : undefined);
   const supplierPriceByProduct = useMemo(
     () => new Map((supplierProducts ?? []).map((sp) => [sp.productId, sp.price])),
@@ -596,7 +603,16 @@ export default function PurchaseOrderDetailPage() {
               {(order.items ?? []).map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
-                    <Avatar src={item.productId ? photosByProduct?.[item.productId]?.[0]?.downloadUrl : undefined} size="sm" />
+                    <Avatar
+                      src={
+                        item.productId
+                          ? photosByProduct?.[item.productId]?.[0]?.downloadUrl
+                          : item.assemblyId
+                            ? photosByAssembly?.[item.assemblyId]?.[0]?.downloadUrl
+                            : undefined
+                      }
+                      size="sm"
+                    />
                   </TableCell>
                   <TableCell>{item.articleSnapshot}</TableCell>
                   <TableCell className="max-w-[220px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>

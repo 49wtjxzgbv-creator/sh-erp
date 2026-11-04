@@ -3,6 +3,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FilesModule } from '../files/files.module';
 import { FinanceModule } from '../finance/finance.module';
+import { ProductionModule } from '../production/production.module';
 import { PurchaseOrdersController } from './purchase-orders.controller';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestsController } from './purchase-requests.controller';
@@ -21,6 +22,7 @@ import { SupplierCatalogService } from './supplier-catalog.service';
     NotificationsModule, // for EmailService — SuppliersService#invitePortal emails the supplier's temp password; also Phase 2 lifecycle notifications
     FilesModule, // for FilesService — PurchaseRequestPdfService#generateAndStore stores the rendered PDF as a FileAsset (no circular-import risk: FilesModule has no imports of its own)
     FinanceModule, // for ExchangeRatesService#getBaseCurrency — PurchaseOrdersService.create() defaults currency to the company's own base currency (2026-10-29 multi-currency)
+    ProductionModule, // for FinishedGoodsService#receivePurchased — PurchaseOrdersService.receive()'s виріб branch (2026-11-04). Safe direction: ProductionModule only imports InventoryModule/HrModule, no cycle back through ProcurementModule.
   ],
   controllers: [SuppliersController, PurchaseOrdersController, PurchaseRequestsController],
   providers: [

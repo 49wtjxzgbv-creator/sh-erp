@@ -13,6 +13,7 @@ import { CreatePurchaseOrderDto, QueryPurchaseOrdersDto } from './dto/purchase-o
 import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 import { UpdatePurchaseOrderMilestonesDto } from './dto/update-purchase-order-milestones.dto';
 import { DeliveryScheduleLinesDto, BulkCreateDeliveryScheduleDto } from './dto/delivery-schedule.dto';
+import { FinishedGoodsService } from '../production/finished-goods.service';
 
 /**
  * Multi-line purchase orders with a receiving workflow (PurchaseOrders.gs,
@@ -35,6 +36,7 @@ export class PurchaseOrdersService {
     private readonly commentsService: PurchaseOrderCommentsService,
     private readonly exchangeRatesService: ExchangeRatesService,
     private readonly supplierCatalogService: SupplierCatalogService,
+    private readonly finishedGoodsService: FinishedGoodsService,
   ) {}
 
   async create(user: RequestUser, dto: CreatePurchaseOrderDto) {
@@ -54,6 +56,7 @@ export class PurchaseOrdersService {
         items: {
           create: dto.items.map((item) => ({
             productId: item.productId,
+            assemblyId: item.assemblyId,
             articleSnapshot: item.articleSnapshot,
             productNameSnapshot: item.productNameSnapshot,
             qtyOrdered: item.qtyOrdered,
@@ -75,7 +78,12 @@ export class PurchaseOrdersService {
       after: order,
     });
 
-    await this.supplierCatalogService.ensureCatalogEntries(user, order.supplierId, order.items.map((i) => i.productId));
+    await this.supplierCatalogService.ensureCatalogEntries(
+      user,
+      order.supplierId,
+      order.items.map((i) => i.productId),
+      order.items.map((i) => i.assemblyId),
+    );
     return order;
   }
 
@@ -220,6 +228,28 @@ export class PurchaseOrdersService {
             data: { sellPriceEur: line.actualPrice },
           });
         }
+      } else if (item.assemblyId) {
+        // "замовлення постачальнику... вироби" (2026-11-04) — a виріб
+        // bought whole from a supplier never touches WarehouseStock/
+        // StockMovement (Product-only, structurally), it lands in
+        // FinishedGood via the same receivePurchased() path the standalone
+        // "Оприбуткувати куплене" dialog already uses — see that method's
+        // own header comment. One FinishedGood row per unit, so a
+        // fractional qty here (PurchaseOrderItem.qtyOrdered is a Decimal)
+        // isn't meaningful — reject rather than silently floor/round it.
+        if (!Number.isInteger(line.qtyReceived)) {
+          throw new CodedBadRequestException(
+            'PURCHASE_ORDER_ASSEMBLY_RECEIVE_NOT_INTEGER',
+            `Виріб units must be received as a whole number — got ${line.qtyReceived}.`,
+          );
+        }
+        await this.finishedGoodsService.receivePurchased(user, {
+          assemblyId: item.assemblyId,
+          qty: line.qtyReceived,
+          unitCostEur: line.actualPrice ?? Number(item.expectedPrice ?? 0),
+          comment: `Отримано за замовленням постачальнику — ${order.supplierNameSnapshot}`,
+          sourcePurchaseOrderItemId: item.id,
+        });
       }
     }
 

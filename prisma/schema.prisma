@@ -1668,6 +1668,7 @@ model Assembly {
   subAssemblyReservations SubAssemblyReservation[]
   loadPlanItems           LoadPlanItem[]
   cuttingPlans            CuttingPlan[]
+  PurchaseOrderItem       PurchaseOrderItem[]
 
   @@unique([companyId, id]) // composite-FK target for AssemblyComponent/AssemblyVersion/ProductionOrder/FinishedGood/CustomerOrderItem/CuttingPlan
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2234,16 +2235,26 @@ model FinishedGood {
   // alone.
   confirmedByExecutionId      String?            @db.Uuid
 
+  // "замовлення постачальнику... вироби" (2026-11-04) — set when this unit
+  // was received via FinishedGoodsService#receivePurchased AS A RESULT OF
+  // a PurchaseOrder line (PurchaseOrdersService#receive's assembly branch),
+  // so a received виріб can be traced back to the PO it came from the same
+  // way a Product receive traces through StockMovement.sourceId. Stays
+  // null for the pre-existing standalone "Оприбуткувати куплене" dialog
+  // path, which has no PurchaseOrder behind it.
+  sourcePurchaseOrderItemId String? @db.Uuid
+
   legacyId String?
 
   manufactureDate DateTime @default(now()) @db.Timestamptz(3)
 
-  company         Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assembly        Assembly         @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
-  productionOrder ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull) // single-column FK (optional relation, see header §cross-tenant) — a purchased-and-received unit has none
-  customerOrder   CustomerOrder?   @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
-  qcChecks        QcCheck[]
-  shipmentItems   ShipmentItem[]
+  company                 Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assembly                Assembly           @relation(fields: [companyId, assemblyId], references: [companyId, id]) // composite — kept Restrict (default)
+  productionOrder         ProductionOrder?   @relation(fields: [productionOrderId], references: [id], onDelete: SetNull) // single-column FK (optional relation, see header §cross-tenant) — a purchased-and-received unit has none
+  customerOrder           CustomerOrder?     @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  sourcePurchaseOrderItem PurchaseOrderItem? @relation(fields: [sourcePurchaseOrderItemId], references: [id], onDelete: SetNull)
+  qcChecks                QcCheck[]
+  shipmentItems           ShipmentItem[]
 
   @@unique([companyId, id]) // composite-FK target for QcCheck.finishedGood/ShipmentItem.finishedGood
   @@unique([companyId, legacyId]) // idempotent migration load (Phase 4 §6)
@@ -2253,6 +2264,7 @@ model FinishedGood {
   @@index([customerOrderId])
   @@index([consumedInProductionOrderId])
   @@index([confirmedByExecutionId])
+  @@index([sourcePurchaseOrderItemId])
   @@map("finished_goods")
 }
 
@@ -2895,6 +2907,19 @@ model PurchaseOrderItem {
   companyId              String   @db.Uuid
   purchaseOrderId        String   @db.Uuid
   productId              String?  @db.Uuid // single-column FK — see header §cross-tenant (optional relation); old system allowed ordering an article not yet in Products (Phase 1 §10.7)
+  // "додай можливість... додавати не тільки товари а і вироби" (2026-11-04)
+  // — at most one of productId/assemblyId set, enforced by the
+  // `purchase_order_item_source_consistency` CHECK constraint (same
+  // nullability-only pattern as CuttingPlan's own
+  // `cutting_plan_source_consistency`, not QuotationVersionItem's `kind`
+  // enum — this model already has a third valid state, both null, for an
+  // article not yet in Products). Receiving against an assembly line calls
+  // FinishedGoodsService#receivePurchased instead of StockService#applyMovement
+  // (PurchaseOrdersService#receive) — WarehouseStock/StockMovement can't
+  // reference an Assembly at all, a бought-whole виріб lands in
+  // FinishedGood instead, same pipeline the standalone "Оприбуткувати
+  // куплене" dialog already uses.
+  assemblyId             String?  @db.Uuid
   articleSnapshot        String
   productNameSnapshot    String
   qtyOrdered             Decimal  @db.Decimal(14, 3)
@@ -2951,15 +2976,18 @@ model PurchaseOrderItem {
   company                        Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   purchaseOrder                  PurchaseOrder             @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a PO line has no meaning without its order
   product                        Product?                  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  assembly                       Assembly?                 @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
   sourceRequirement              OrderMaterialRequirement? @relation(fields: [sourceRequirementId], references: [id], onDelete: SetNull)
   currentDeliverySchedule        DeliverySchedule?         @relation("CurrentSchedule", fields: [currentDeliveryScheduleId], references: [id], onDelete: SetNull)
   deliverySchedules              DeliverySchedule[] // every version ever created for this line, oldest first by versionNumber
   originatingPurchaseRequestItem PurchaseRequestItem?      @relation(fields: [originatingPurchaseRequestItemId], references: [id], onDelete: SetNull)
+  receivedFinishedGoods          FinishedGood[] // units created by FinishedGoodsService#receivePurchased when this line was an assembly, tagged via sourcePurchaseOrderItemId
 
   @@index([purchaseOrderId])
   @@index([companyId])
   @@index([sourceRequirementId])
   @@index([originatingPurchaseRequestItemId])
+  @@index([assemblyId])
   @@map("purchase_order_items")
 }
 

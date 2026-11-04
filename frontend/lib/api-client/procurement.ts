@@ -151,6 +151,8 @@ export interface PurchaseOrderItem {
   companyId: string;
   purchaseOrderId: string;
   productId: string | null;
+  /** виріб ordered directly from the supplier instead of a товар — at most one of productId/assemblyId is set. */
+  assemblyId: string | null;
   articleSnapshot: string;
   productNameSnapshot: string;
   qtyOrdered: DecimalString;
@@ -220,6 +222,8 @@ export interface PurchaseOrder {
 
 export interface CreatePurchaseOrderItemInput {
   productId?: string;
+  /** Order a виріб directly from the supplier instead of a товар — at most one of productId/assemblyId may be set. */
+  assemblyId?: string;
   articleSnapshot: string;
   productNameSnapshot: string;
   qtyOrdered: number;
