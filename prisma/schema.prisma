@@ -3369,10 +3369,21 @@ enum PurchaseOrderExpenseCategory {
 // for every other file attachment in the app. A document is created first
 // (metadata only), then the file is attached via the normal 2-step presigned
 // upload against that id — avoids inventing a second file-linking mechanism.
+//
+// `purchaseOrderId` nullable (2026-11-06 — "рахунок не обов'язково може
+// бути прив'язаний до замовлення"): a supplier-portal-uploaded invoice does
+// not always correspond to one specific PurchaseOrder (a combined invoice,
+// a service fee, something invoiced before any PO exists). The composite
+// FK below only enforces referential integrity when `purchaseOrderId` IS
+// set (Postgres MATCH SIMPLE — a NULL in any FK column exempts the row
+// from the constraint entirely), so `onDelete: Cascade` is unchanged and
+// still correct for the linked case. A document with no order is still
+// reachable via its `counterpartyId` (see FinanceService#listDocumentsForSupplier) —
+// it is never orphaned from a staff point of view, just not PO-scoped.
 model PurchaseOrderDocument {
   id              String                    @id @default(uuid()) @db.Uuid
   companyId       String                    @db.Uuid
-  purchaseOrderId String                    @db.Uuid
+  purchaseOrderId String?                   @db.Uuid
   documentType    PurchaseOrderDocumentType
   documentNumber  String?
   documentDate    DateTime?                 @db.Date
@@ -3385,7 +3396,7 @@ model PurchaseOrderDocument {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  purchaseOrder PurchaseOrder          @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite — a document has no meaning without its order
+  purchaseOrder PurchaseOrder?         @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite, optional — see model comment above
   counterparty  Supplier               @relation("DocumentCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
   payments      PurchaseOrderPayment[]
   expenseLinks  PurchaseOrderExpense[] // Expenses that cite this document as their confirming paperwork (optional, see PurchaseOrderExpense.documentId)

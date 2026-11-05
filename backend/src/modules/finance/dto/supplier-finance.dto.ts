@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsDate, IsNumber, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { IsDate, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 
 const toOptionalDate = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : value);
 
@@ -11,8 +11,18 @@ const toOptionalDate = ({ value }: { value: unknown }) => (value === '' || value
  * an external supplier actor: no `documentType` (always forced to
  * INVOICE server-side) and no `counterpartyId` (always the uploading
  * supplier's own id) — see FinanceService#createDocumentAsSupplier.
+ *
+ * `purchaseOrderId` is OPTIONAL (2026-11-06 — "рахунок не обов'язково може
+ * бути прив'язаний до замовлення"): a supplier's invoice does not always
+ * correspond to one specific order. When present, ownership against the
+ * caller's own supplierId is still verified server-side.
  */
 export class CreateSupplierInvoiceDocumentDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  purchaseOrderId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

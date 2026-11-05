@@ -599,10 +599,10 @@ describe('SupplierPortalService', () => {
       expect(financeService.getDocumentForSupplier).toHaveBeenCalledWith('s1', 'doc1');
     });
 
-    it('createFinanceDocument delegates with companyId/supplierId/supplierPortalUserId from the actor', async () => {
+    it('createFinanceDocument delegates with companyId/supplierId/supplierPortalUserId from the actor (purchaseOrderId stays optional, inside the dto)', async () => {
       financeService.createDocumentAsSupplier.mockResolvedValue({ id: 'doc1' });
-      await service.createFinanceDocument(actor, 'po1', { amount: 500 } as any);
-      expect(financeService.createDocumentAsSupplier).toHaveBeenCalledWith('c1', 's1', 'spu1', 'po1', { amount: 500 });
+      await service.createFinanceDocument(actor, { purchaseOrderId: 'po1', amount: 500 } as any);
+      expect(financeService.createDocumentAsSupplier).toHaveBeenCalledWith('c1', 's1', 'spu1', { purchaseOrderId: 'po1', amount: 500 });
     });
 
     it('addFinancePayment delegates with companyId/supplierId/supplierPortalUserId from the actor', async () => {

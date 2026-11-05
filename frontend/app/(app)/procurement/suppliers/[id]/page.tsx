@@ -16,10 +16,14 @@ import {
   useSupplierLinkedAssemblies,
 } from '@/lib/hooks/use-procurement';
 import { useFilesForEntities } from '@/lib/hooks/use-files';
+import { useSupplierFinanceDocuments } from '@/lib/hooks/use-finance';
+import type { DocumentPaymentStatus } from '@/lib/api-client/finance';
+import { DocumentDrawer } from '@/components/domain/finance/document-drawer';
 import { SupplierForm } from '@/components/domain/procurement/supplier-form';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { toNumber } from '@/lib/api-client/decimal';
 import { formatEur } from '@/lib/utils';
+import { formatMoney } from '@/lib/finance-format';
 import type { CreateSupplierInput } from '@/lib/api-client/procurement';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -271,6 +275,94 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
   );
 }
 
+const INVOICE_STATUS_VARIANT: Record<DocumentPaymentStatus, 'secondary' | 'warning' | 'success' | 'outline'> = {
+  NO_AMOUNT: 'outline',
+  UNPAID: 'secondary',
+  PARTIAL: 'warning',
+  PAID: 'success',
+};
+
+/**
+ * "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06)
+ * — every invoice where this supplier is the counterparty, whether
+ * uploaded via the supplier portal's own "Фінанси" section or entered by
+ * staff, linked to one of their orders or not. Row click reuses the
+ * existing DocumentDrawer (view/edit/payments/files) exactly as the
+ * PO-Finance page does — `ownerId` is only used there for cache-key
+ * invalidation (never for fetching), so passing `doc.purchaseOrderId ?? doc.id`
+ * for an unlinked invoice is a harmless no-op, not a real PO reference.
+ */
+function SupplierInvoicesCard({ supplierId }: { supplierId: string }) {
+  const t = useTranslations('procurement');
+  const tf = useTranslations('finance');
+  const tc = useTranslations('common');
+  const canManage = useHasPermission('finance:manage');
+  const { data: invoices } = useSupplierFinanceDocuments(supplierId);
+  const [openDocument, setOpenDocument] = useState<{ id: string; ownerId: string } | null>(null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('supplierInvoicesTitle')}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {invoices && invoices.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('orderDate')}</TableHead>
+                <TableHead>{t('orderHeader')}</TableHead>
+                <TableHead>{tf('amount')}</TableHead>
+                <TableHead>{t('status')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.map((inv) => (
+                <TableRow
+                  key={inv.id}
+                  className="cursor-pointer"
+                  onClick={() => setOpenDocument({ id: inv.id, ownerId: inv.purchaseOrderId ?? inv.id })}
+                >
+                  <TableCell>{inv.documentDate ? new Date(inv.documentDate).toLocaleDateString() : '—'}</TableCell>
+                  <TableCell>
+                    {inv.purchaseOrder ? (
+                      <Link
+                        href={`/finance/purchase-orders/${inv.purchaseOrder.id}`}
+                        className="text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {new Date(inv.purchaseOrder.orderDate).toLocaleDateString()}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                  <TableCell>{inv.amount ? formatMoney(Number(inv.amount), inv.currency) : '—'}</TableCell>
+                  <TableCell>
+                    <Badge variant={INVOICE_STATUS_VARIANT[inv.paymentStatus]}>
+                      {inv.paymentStatus === 'NO_AMOUNT' ? tf('documentPaymentStatusNO_AMOUNT') : tf(`paymentStatus${inv.paymentStatus}`)}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('noSupplierInvoices')}</p>
+        )}
+      </CardContent>
+      <DocumentDrawer
+        kind="purchase-order"
+        ownerId={openDocument?.ownerId ?? ''}
+        documentId={openDocument?.id}
+        open={Boolean(openDocument)}
+        onOpenChange={(o) => !o && setOpenDocument(null)}
+        canManage={canManage}
+      />
+    </Card>
+  );
+}
+
 export default function SupplierDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -333,6 +425,7 @@ export default function SupplierDetailPage() {
       </div>
       <SupplierForm supplier={supplier} onSubmit={handleSubmit} submitting={updateSupplier.isPending} submitError={error} readOnly={!canWrite} />
       <SupplierLinkedEntitiesCard supplierId={params.id} />
+      <SupplierInvoicesCard supplierId={params.id} />
       {canWrite && <SupplierPortalCard supplierId={params.id} />}
     </div>
   );

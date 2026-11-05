@@ -715,6 +715,15 @@ describe('FinanceService', () => {
       );
       expect(result[0].paymentStatus).toBe('PAID');
     });
+
+    it('includes an invoice with no linked order (purchaseOrder: null) without crashing', async () => {
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([
+        { id: 'doc1', amount: 100, currency: 'EUR', payments: [], purchaseOrder: null },
+      ]);
+      const result = await service.listDocumentsForSupplier('s1');
+      expect(result[0].purchaseOrder).toBeNull();
+      expect(result[0].paymentStatus).toBe('UNPAID');
+    });
   });
 
   describe('getDocumentForSupplier', () => {
@@ -740,7 +749,7 @@ describe('FinanceService', () => {
       prisma.tenant.purchaseOrder.findFirst.mockResolvedValue({ id: 'po1', supplierId: 's1' });
       prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 500 });
 
-      await service.createDocumentAsSupplier('c1', 's1', 'spu1', 'po1', { amount: 500 } as any);
+      await service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderId: 'po1', amount: 500 } as any);
 
       expect(prisma.tenant.purchaseOrder.findFirst).toHaveBeenCalledWith({ where: { id: 'po1', supplierId: 's1' } });
       expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
@@ -757,10 +766,21 @@ describe('FinanceService', () => {
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finance_document.created_by_supplier', actorUserId: null }));
     });
 
-    it("404s when the order does not belong to this supplier (never confirms it exists elsewhere)", async () => {
+    it("404s when the given order does not belong to this supplier (never confirms it exists elsewhere)", async () => {
       prisma.tenant.purchaseOrder.findFirst.mockResolvedValue(null);
-      await expect(service.createDocumentAsSupplier('c1', 's1', 'spu1', 'po-other', { amount: 500 } as any)).rejects.toThrow(NotFoundException);
+      await expect(service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderId: 'po-other', amount: 500 } as any)).rejects.toThrow(NotFoundException);
       expect(prisma.tenant.purchaseOrderDocument.create).not.toHaveBeenCalled();
+    });
+
+    it("рахунок не обов'язково може бути прив'язаний до замовлення — creates with purchaseOrderId: null when omitted, no ownership lookup performed", async () => {
+      prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 500 });
+
+      await service.createDocumentAsSupplier('c1', 's1', 'spu1', { amount: 500 } as any);
+
+      expect(prisma.tenant.purchaseOrder.findFirst).not.toHaveBeenCalled();
+      expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ companyId: 'c1', purchaseOrderId: null, counterpartyId: 's1', amount: 500 }),
+      });
     });
   });
 

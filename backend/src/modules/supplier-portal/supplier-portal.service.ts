@@ -341,8 +341,8 @@ export class SupplierPortalService {
     return this.financeService.getDocumentForSupplier(actor.supplierId, id);
   }
 
-  async createFinanceDocument(actor: RequestSupplierPortalUser, orderId: string, dto: CreateSupplierInvoiceDocumentDto) {
-    return this.financeService.createDocumentAsSupplier(actor.companyId, actor.supplierId, actor.supplierPortalUserId, orderId, dto);
+  async createFinanceDocument(actor: RequestSupplierPortalUser, dto: CreateSupplierInvoiceDocumentDto) {
+    return this.financeService.createDocumentAsSupplier(actor.companyId, actor.supplierId, actor.supplierPortalUserId, dto);
   }
 
   async addFinancePayment(actor: RequestSupplierPortalUser, documentId: string, dto: CreateSupplierInvoicePaymentDto) {

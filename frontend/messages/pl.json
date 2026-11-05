@@ -935,7 +935,9 @@
     "linkedProducts": "Products",
     "photo": "Photo",
     "linkedAssemblies": "Assemblies",
-    "assemblyName": "Assembly name"
+    "assemblyName": "Assembly name",
+    "supplierInvoicesTitle": "Supplier invoices",
+    "noSupplierInvoices": "No invoices yet"
   },
   "sales": {
     "title": "Sales",
@@ -1927,7 +1929,6 @@
     "financeUploadTitle": "Upload invoice",
     "financeOrderLabel": "Order",
     "financeSelectOrderPlaceholder": "Select an order",
-    "financeSelectOrderRequired": "Select an order",
     "financeUploadButton": "Upload invoice",
     "financeInvoicesTitle": "Your invoices",
     "financeNoInvoices": "No invoices yet",
@@ -1947,7 +1948,8 @@
     "invoiceDateLabel": "Invoice date",
     "invoiceAmountLabel": "Amount",
     "invoiceCurrencyLabel": "Currency",
-    "invoiceNoteLabel": "Note"
+    "invoiceNoteLabel": "Note",
+    "financeNoOrderOption": "Not linked to an order"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

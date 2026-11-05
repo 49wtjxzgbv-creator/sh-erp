@@ -46,6 +46,17 @@ export class FinanceController {
     return this.financeService.createDocument(user, purchaseOrderId, dto);
   }
 
+  @Get('suppliers/:supplierId/documents')
+  @RequirePermissions('finance:read')
+  @ApiOperation({
+    summary:
+      "Every invoice where this supplier is the counterparty — including supplier-portal uploads not linked to any " +
+      "specific order (\"рахунок не обов'язково може бути прив'язаний до замовлення\") — for the Supplier detail page.",
+  })
+  async listSupplierDocuments(@CurrentUser() user: RequestUser, @Param('supplierId') supplierId: string) {
+    return this.financeService.listDocumentsForSupplier(supplierId);
+  }
+
   @Get('documents/:id')
   @RequirePermissions('finance:read')
   @ApiOperation({ summary: 'One document with its counterparty, payments, and derived payment status.' })

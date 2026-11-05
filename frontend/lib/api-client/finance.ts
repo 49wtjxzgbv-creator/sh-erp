@@ -105,7 +105,8 @@ export interface PurchaseOrderPayment {
 
 export interface PurchaseOrderDocument {
   id: string;
-  purchaseOrderId: string;
+  /** Null — "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06, supplier-portal uploads). */
+  purchaseOrderId: string | null;
   documentType: PurchaseOrderDocumentType;
   documentNumber: string | null;
   documentDate: string | null;
@@ -142,6 +143,16 @@ export function createPurchaseOrderDocument(purchaseOrderId: string, dto: Create
 
 export function getFinanceDocument(id: string): Promise<PurchaseOrderDocument> {
   return apiClient.get<PurchaseOrderDocument>(`finance/documents/${id}`);
+}
+
+/** One PurchaseOrderDocument row as returned by listSupplierDocuments — same shape, plus the resolved order it's linked to (null for a supplier-portal invoice uploaded with no order — see that field's own schema.prisma comment). */
+export interface SupplierFinanceDocument extends PurchaseOrderDocument {
+  purchaseOrder: { id: string; orderDate: string; status: string } | null;
+}
+
+/** Every invoice where this supplier is the counterparty, linked to an order or not — "Рахунки від постачальника" on the Supplier detail page. */
+export function listSupplierFinanceDocuments(supplierId: string): Promise<SupplierFinanceDocument[]> {
+  return apiClient.get<SupplierFinanceDocument[]>(`finance/suppliers/${supplierId}/documents`);
 }
 
 export function updateFinanceDocument(id: string, dto: UpdatePurchaseOrderDocumentInput): Promise<PurchaseOrderDocument> {

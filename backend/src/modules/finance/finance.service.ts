@@ -417,6 +417,15 @@ export class FinanceService {
   // is not a `User` row.
   // ---------------------------------------------------------------------
 
+  /**
+   * Every invoice where this supplier is the counterparty — regardless of
+   * whether it is linked to one of their orders (`purchaseOrderId` may be
+   * null, see the schema's own comment on that column). Shared by two
+   * callers: the supplier-portal "Фінанси" section (scoped to the caller's
+   * own supplierId) AND the staff-facing `GET finance/suppliers/:id/documents`
+   * route below (Supplier detail page) — same rows, same derived
+   * paymentStatus, just a different permission gate at the controller.
+   */
   async listDocumentsForSupplier(supplierId: string) {
     const documents = await this.prisma.tenant.purchaseOrderDocument.findMany({
       where: { counterpartyId: supplierId, documentType: 'INVOICE' },
@@ -438,20 +447,30 @@ export class FinanceService {
     return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
   }
 
+  /**
+   * `dto.purchaseOrderId` is optional — "рахунок не обов'язково може бути
+   * прив'язаний до замовлення" (2026-11-06): when present, ownership
+   * against this supplier is still verified (same 404-not-403 convention
+   * as everywhere else); when absent, the invoice is created with no order
+   * link at all, still reachable via counterpartyId (see
+   * listDocumentsForSupplier) — never silently attached to some other
+   * order of this supplier's as a guess.
+   */
   async createDocumentAsSupplier(
     companyId: string,
     supplierId: string,
     supplierPortalUserId: string,
-    purchaseOrderId: string,
     dto: CreateSupplierInvoiceDocumentDto,
   ) {
-    const order = await this.prisma.tenant.purchaseOrder.findFirst({ where: { id: purchaseOrderId, supplierId } });
-    if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
+    if (dto.purchaseOrderId) {
+      const order = await this.prisma.tenant.purchaseOrder.findFirst({ where: { id: dto.purchaseOrderId, supplierId } });
+      if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
+    }
 
     const document = await this.prisma.tenant.purchaseOrderDocument.create({
       data: {
         companyId,
-        purchaseOrderId,
+        purchaseOrderId: dto.purchaseOrderId ?? null,
         documentType: 'INVOICE',
         documentNumber: dto.documentNumber,
         documentDate: dto.documentDate,
@@ -470,7 +489,7 @@ export class FinanceService {
       entityType: 'PurchaseOrderDocument',
       entityId: document.id,
       after: document,
-      metadata: { purchaseOrderId, supplierPortalUserId },
+      metadata: { purchaseOrderId: dto.purchaseOrderId ?? null, supplierPortalUserId },
     });
     return document;
   }

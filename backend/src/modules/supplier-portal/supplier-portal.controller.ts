@@ -146,14 +146,16 @@ export class SupplierPortalController {
     return this.supplierPortalService.getFinanceDocument(actor, id);
   }
 
-  @Post('purchase-orders/:id/finance-documents')
-  @ApiOperation({ summary: 'Supplier uploads an invoice (metadata only) against one of their own orders — documentType is always INVOICE, counterparty is always this supplier. Attach the actual file afterwards via the finance-documents/:id/files endpoints below.' })
-  async createFinanceDocument(
-    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
-    @Param('id') id: string,
-    @Body() dto: CreateSupplierInvoiceDocumentDto,
-  ) {
-    return this.supplierPortalService.createFinanceDocument(actor, id, dto);
+  @Post('finance-documents')
+  @ApiOperation({
+    summary:
+      "Supplier uploads an invoice (metadata only) — documentType is always INVOICE, counterparty is always this " +
+      "supplier. `purchaseOrderId` is optional (\"рахунок не обов'язково може бути прив'язаний до замовлення\"): " +
+      "when given, it must be one of this supplier's own orders. Attach the actual file afterwards via the " +
+      "finance-documents/:id/files endpoints below.",
+  })
+  async createFinanceDocument(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Body() dto: CreateSupplierInvoiceDocumentDto) {
+    return this.supplierPortalService.createFinanceDocument(actor, dto);
   }
 
   @Post('finance-documents/:id/payments')

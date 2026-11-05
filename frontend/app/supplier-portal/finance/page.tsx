@@ -24,8 +24,12 @@ interface PortalInvoiceRow {
   amount: string | null;
   currency: string;
   paymentStatus: InvoicePaymentStatus;
-  purchaseOrder: { id: string; orderDate: string; status: PurchaseOrderStatus };
+  /** Null — "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06). */
+  purchaseOrder: { id: string; orderDate: string; status: PurchaseOrderStatus } | null;
 }
+
+/** Radix Select forbids an empty-string item value, so "no order" needs a real sentinel instead of undefined/''. */
+const NO_ORDER = '__none__';
 
 interface PortalOrderOption {
   id: string;
@@ -59,7 +63,7 @@ export default function SupplierPortalFinancePage() {
   const [orders, setOrders] = useState<PortalOrderOption[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [orderId, setOrderId] = useState<string | undefined>(undefined);
+  const [orderId, setOrderId] = useState<string>(NO_ORDER);
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentDate, setDocumentDate] = useState('');
   const [amount, setAmount] = useState('');
@@ -91,10 +95,6 @@ export default function SupplierPortalFinancePage() {
 
   async function handleSubmit() {
     setError(null);
-    if (!orderId) {
-      setError(t('financeSelectOrderRequired'));
-      return;
-    }
     const value = Number(amount);
     if (!value || value <= 0) {
       setError(t('invoiceAmountLabel'));
@@ -102,14 +102,15 @@ export default function SupplierPortalFinancePage() {
     }
     setSubmitting(true);
     try {
-      await supplierPortalApi.post(`supplier-portal/purchase-orders/${orderId}/finance-documents`, {
+      await supplierPortalApi.post('supplier-portal/finance-documents', {
+        purchaseOrderId: orderId === NO_ORDER ? undefined : orderId,
         documentNumber: documentNumber || undefined,
         documentDate: documentDate || undefined,
         amount: value,
         currency,
         note: note || undefined,
       });
-      setOrderId(undefined);
+      setOrderId(NO_ORDER);
       setDocumentNumber('');
       setDocumentDate('');
       setAmount('');
@@ -143,6 +144,7 @@ export default function SupplierPortalFinancePage() {
                   <SelectValue placeholder={t('financeSelectOrderPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NO_ORDER}>{t('financeNoOrderOption')}</SelectItem>
                   {orders.map((o) => (
                     <SelectItem key={o.id} value={o.id}>
                       {new Date(o.orderDate).toLocaleDateString()} · {t(`status${o.status}`)}
@@ -206,7 +208,7 @@ export default function SupplierPortalFinancePage() {
                   <TableRow key={inv.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/finance/${inv.id}`)}>
                     <TableCell>{inv.documentDate ? new Date(inv.documentDate).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>{inv.documentNumber || '—'}</TableCell>
-                    <TableCell>{new Date(inv.purchaseOrder.orderDate).toLocaleDateString()}</TableCell>
+                    <TableCell>{inv.purchaseOrder ? new Date(inv.purchaseOrder.orderDate).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>{inv.amount ? `${inv.amount} ${inv.currency}` : '—'}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[inv.paymentStatus]}>

@@ -942,7 +942,9 @@
     "linkedProducts": "Товари",
     "photo": "Фото",
     "linkedAssemblies": "Вироби",
-    "assemblyName": "Назва виробу"
+    "assemblyName": "Назва виробу",
+    "supplierInvoicesTitle": "Рахунки від постачальника",
+    "noSupplierInvoices": "Рахунків ще немає"
   },
   "finance": {
     "title": "Фінанси",
@@ -2066,7 +2068,6 @@
     "financeUploadTitle": "Завантажити рахунок",
     "financeOrderLabel": "Замовлення",
     "financeSelectOrderPlaceholder": "Оберіть замовлення",
-    "financeSelectOrderRequired": "Оберіть замовлення",
     "financeUploadButton": "Завантажити рахунок",
     "financeInvoicesTitle": "Ваші рахунки",
     "financeNoInvoices": "Рахунків ще немає",
@@ -2086,7 +2087,8 @@
     "invoiceDateLabel": "Дата рахунку",
     "invoiceAmountLabel": "Сума",
     "invoiceCurrencyLabel": "Валюта",
-    "invoiceNoteLabel": "Примітка"
+    "invoiceNoteLabel": "Примітка",
+    "financeNoOrderOption": "Без прив'язки до замовлення"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",

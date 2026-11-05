@@ -7,6 +7,7 @@ import {
   listPurchaseOrderDocuments,
   createPurchaseOrderDocument,
   getFinanceDocument,
+  listSupplierFinanceDocuments,
   updateFinanceDocument,
   deleteFinanceDocument,
   addFinancePayment,
@@ -80,6 +81,15 @@ export function useFinanceDocuments(purchaseOrderId: string | undefined) {
     queryKey: financeDocumentsKey(purchaseOrderId ?? ''),
     queryFn: () => listPurchaseOrderDocuments(purchaseOrderId as string),
     enabled: Boolean(purchaseOrderId),
+  });
+}
+
+/** "Рахунки від постачальника" — Supplier detail page, every invoice where this supplier is the counterparty, linked to an order or not. */
+export function useSupplierFinanceDocuments(supplierId: string | undefined) {
+  return useQuery({
+    queryKey: ['finance', 'supplier-documents', supplierId ?? ''] as const,
+    queryFn: () => listSupplierFinanceDocuments(supplierId as string),
+    enabled: Boolean(supplierId),
   });
 }
 

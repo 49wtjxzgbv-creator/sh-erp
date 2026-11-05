@@ -34,7 +34,8 @@ interface PortalInvoiceDetail {
   note: string | null;
   paymentStatus: InvoicePaymentStatus;
   payments: PortalInvoicePayment[];
-  purchaseOrder: { id: string; orderDate: string };
+  /** Null — "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06). */
+  purchaseOrder: { id: string; orderDate: string } | null;
 }
 
 const STATUS_VARIANT: Record<InvoicePaymentStatus, 'secondary' | 'warning' | 'success' | 'outline'> = {
@@ -202,7 +203,7 @@ export default function SupplierPortalFinanceDocumentPage() {
         <CardContent className="space-y-1 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t('orderDate')}</span>
-            <span>{new Date(invoice.purchaseOrder.orderDate).toLocaleDateString()}</span>
+            <span>{invoice.purchaseOrder ? new Date(invoice.purchaseOrder.orderDate).toLocaleDateString() : t('financeNoOrderOption')}</span>
           </div>
           {invoice.documentDate && (
             <div className="flex items-center justify-between">
