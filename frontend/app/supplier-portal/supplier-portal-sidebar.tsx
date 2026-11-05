@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { LayoutDashboard, CalendarClock, Package, Warehouse, ShoppingCart, FileText, Scissors, Menu, X } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, Package, Warehouse, ShoppingCart, FileText, Scissors, Receipt, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/domain/shell/logo';
 
@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/supplier-portal/cutting', labelKey: 'navCutting', icon: Scissors, tour: 'supplier-nav-cutting' },
   { href: '/supplier-portal/orders', labelKey: 'navOrders', icon: ShoppingCart, tour: 'supplier-nav-orders' },
   { href: '/supplier-portal/requests', labelKey: 'navRequests', icon: FileText, tour: 'supplier-nav-requests' },
+  { href: '/supplier-portal/finance', labelKey: 'navFinance', icon: Receipt, tour: 'supplier-nav-finance' },
 ] as const;
 
 function NavLink({ href, labelKey, icon: Icon, tour, onNavigate }: (typeof NAV_ITEMS)[number] & { onNavigate?: () => void }) {

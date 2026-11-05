@@ -5,6 +5,7 @@ import { DeliverySchedulesService } from '../procurement/delivery-schedules.serv
 import { PurchaseOrderCommentsService } from '../procurement/purchase-order-comments.service';
 import { FilesActor, FilesService } from '../files/files.service';
 import { EmailService } from '../notifications/email.service';
+import { FinanceService } from '../finance/finance.service';
 import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
@@ -12,6 +13,7 @@ import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
 import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
+import { CreateSupplierInvoiceDocumentDto, CreateSupplierInvoicePaymentDto } from '../finance/dto/supplier-finance.dto';
 import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
 /**
@@ -33,6 +35,7 @@ export class SupplierPortalService {
     private readonly commentsService: PurchaseOrderCommentsService,
     private readonly filesService: FilesService,
     private readonly emailService: EmailService,
+    private readonly financeService: FinanceService,
   ) {}
 
   /**
@@ -317,6 +320,70 @@ export class SupplierPortalService {
   async addComment(actor: RequestSupplierPortalUser, orderId: string, body: string) {
     await this.getPurchaseOrder(actor, orderId);
     return this.commentsService.createBySupplier(actor.companyId, orderId, actor.supplierPortalUserId, body);
+  }
+
+  // ---------------------------------------------------------------------
+  // "Фінанси" (2026-11-05) — supplier-uploaded invoices. Thin delegates to
+  // FinanceService's own supplier-scoped methods (ownership is enforced
+  // there, not here — see that service's own header comment above
+  // listDocumentsForSupplier); this class only adds the file-attachment
+  // endpoints, same 3-step presigned-upload shape as listFiles/
+  // createFileUpload/confirmFileUpload/getFileDownloadUrl above, just
+  // pointed at domain FINANCE_DOCUMENT / entityType "PurchaseOrderDocument"
+  // instead of PURCHASE_INVOICE / "PurchaseOrder".
+  // ---------------------------------------------------------------------
+
+  async listFinanceDocuments(actor: RequestSupplierPortalUser) {
+    return { items: await this.financeService.listDocumentsForSupplier(actor.supplierId) };
+  }
+
+  async getFinanceDocument(actor: RequestSupplierPortalUser, id: string) {
+    return this.financeService.getDocumentForSupplier(actor.supplierId, id);
+  }
+
+  async createFinanceDocument(actor: RequestSupplierPortalUser, orderId: string, dto: CreateSupplierInvoiceDocumentDto) {
+    return this.financeService.createDocumentAsSupplier(actor.companyId, actor.supplierId, actor.supplierPortalUserId, orderId, dto);
+  }
+
+  async addFinancePayment(actor: RequestSupplierPortalUser, documentId: string, dto: CreateSupplierInvoicePaymentDto) {
+    return this.financeService.addPaymentAsSupplier(actor.companyId, actor.supplierId, actor.supplierPortalUserId, documentId, dto);
+  }
+
+  async listFinanceDocumentFiles(actor: RequestSupplierPortalUser, documentId: string) {
+    await this.getFinanceDocument(actor, documentId); // ownership + INVOICE-type check
+    return this.filesService.listForEntity(this.asFilesActor(actor), 'PurchaseOrderDocument', documentId, ['FINANCE_DOCUMENT']);
+  }
+
+  async createFinanceDocumentFileUpload(actor: RequestSupplierPortalUser, documentId: string, dto: SupplierPortalUploadDto) {
+    await this.getFinanceDocument(actor, documentId);
+    return this.filesService.createPresignedUpload(this.asFilesActor(actor), {
+      domain: 'FINANCE_DOCUMENT',
+      entityType: 'PurchaseOrderDocument',
+      entityId: documentId,
+      originalName: dto.originalName,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+    });
+  }
+
+  async confirmFinanceDocumentFileUpload(actor: RequestSupplierPortalUser, documentId: string, fileAssetId: string) {
+    await this.getFinanceDocument(actor, documentId);
+    await this.assertFileBelongsToFinanceDocument(fileAssetId, documentId);
+    return this.filesService.confirmUpload(this.asFilesActor(actor), fileAssetId);
+  }
+
+  async getFinanceDocumentFileDownloadUrl(actor: RequestSupplierPortalUser, documentId: string, fileAssetId: string) {
+    await this.getFinanceDocument(actor, documentId);
+    await this.assertFileBelongsToFinanceDocument(fileAssetId, documentId);
+    return this.filesService.getDownloadUrl(this.asFilesActor(actor), fileAssetId);
+  }
+
+  /** Same "never confirm it exists elsewhere" convention as assertFileBelongsToOrder, just for the FINANCE_DOCUMENT/PurchaseOrderDocument pointer instead. */
+  private async assertFileBelongsToFinanceDocument(fileAssetId: string, documentId: string): Promise<void> {
+    const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
+    if (!fileAsset || fileAsset.entityType !== 'PurchaseOrderDocument' || fileAsset.entityId !== documentId) {
+      throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
+    }
   }
 
   /**

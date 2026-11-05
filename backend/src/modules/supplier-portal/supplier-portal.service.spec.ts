@@ -6,6 +6,7 @@ describe('SupplierPortalService', () => {
   let auditService: any;
   let emailService: any;
   let filesService: any;
+  let financeService: any;
   const actor = { supplierPortalUserId: 'spu1', supplierOrganizationId: 'org1', activeConnectionId: 'conn1', companyId: 'c1', supplierId: 's1' } as any;
 
   beforeEach(() => {
@@ -18,11 +19,25 @@ describe('SupplierPortalService', () => {
         productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         productCuttingSpec: { findMany: jest.fn().mockResolvedValue([]) },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
+        fileAsset: { findUnique: jest.fn() },
       },
     };
     auditService = { record: jest.fn() };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
-    filesService = { listForEntities: jest.fn().mockResolvedValue({}), listByIds: jest.fn().mockResolvedValue([]) };
+    filesService = {
+      listForEntities: jest.fn().mockResolvedValue({}),
+      listByIds: jest.fn().mockResolvedValue([]),
+      listForEntity: jest.fn(),
+      createPresignedUpload: jest.fn(),
+      confirmUpload: jest.fn(),
+      getDownloadUrl: jest.fn(),
+    };
+    financeService = {
+      listDocumentsForSupplier: jest.fn(),
+      getDocumentForSupplier: jest.fn(),
+      createDocumentAsSupplier: jest.fn(),
+      addPaymentAsSupplier: jest.fn(),
+    };
     service = new SupplierPortalService(
       prisma,
       auditService,
@@ -30,6 +45,7 @@ describe('SupplierPortalService', () => {
       {} as any, // commentsService — unused by these tests
       filesService,
       emailService,
+      financeService,
     );
   });
 
@@ -566,6 +582,73 @@ describe('SupplierPortalService', () => {
       expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { supplierReadyQty: 50 } });
       expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order_item.supplier_ready_qty_updated' }));
       expect(result.supplierReadyQty).toBe(50);
+    });
+  });
+
+  describe('finance (Фінанси)', () => {
+    it('listFinanceDocuments delegates to FinanceService#listDocumentsForSupplier scoped to the caller\'s own supplierId', async () => {
+      financeService.listDocumentsForSupplier.mockResolvedValue([{ id: 'doc1' }]);
+      const result = await service.listFinanceDocuments(actor);
+      expect(financeService.listDocumentsForSupplier).toHaveBeenCalledWith('s1');
+      expect(result.items).toEqual([{ id: 'doc1' }]);
+    });
+
+    it('getFinanceDocument delegates with the caller\'s own supplierId', async () => {
+      financeService.getDocumentForSupplier.mockResolvedValue({ id: 'doc1' });
+      await service.getFinanceDocument(actor, 'doc1');
+      expect(financeService.getDocumentForSupplier).toHaveBeenCalledWith('s1', 'doc1');
+    });
+
+    it('createFinanceDocument delegates with companyId/supplierId/supplierPortalUserId from the actor', async () => {
+      financeService.createDocumentAsSupplier.mockResolvedValue({ id: 'doc1' });
+      await service.createFinanceDocument(actor, 'po1', { amount: 500 } as any);
+      expect(financeService.createDocumentAsSupplier).toHaveBeenCalledWith('c1', 's1', 'spu1', 'po1', { amount: 500 });
+    });
+
+    it('addFinancePayment delegates with companyId/supplierId/supplierPortalUserId from the actor', async () => {
+      financeService.addPaymentAsSupplier.mockResolvedValue({ id: 'pay1' });
+      await service.addFinancePayment(actor, 'doc1', { amount: 100 } as any);
+      expect(financeService.addPaymentAsSupplier).toHaveBeenCalledWith('c1', 's1', 'spu1', 'doc1', { amount: 100 });
+    });
+
+    it('listFinanceDocumentFiles re-checks ownership (via getDocumentForSupplier) before listing FINANCE_DOCUMENT files', async () => {
+      financeService.getDocumentForSupplier.mockResolvedValue({ id: 'doc1' });
+      filesService.listForEntity.mockResolvedValue([{ id: 'f1' }]);
+      const result = await service.listFinanceDocumentFiles(actor, 'doc1');
+      expect(financeService.getDocumentForSupplier).toHaveBeenCalledWith('s1', 'doc1');
+      expect(filesService.listForEntity).toHaveBeenCalledWith(expect.anything(), 'PurchaseOrderDocument', 'doc1', ['FINANCE_DOCUMENT']);
+      expect(result).toEqual([{ id: 'f1' }]);
+    });
+
+    it('listFinanceDocumentFiles propagates the 404 when the document is not this supplier\'s own', async () => {
+      financeService.getDocumentForSupplier.mockRejectedValue(new Error('not found'));
+      await expect(service.listFinanceDocumentFiles(actor, 'doc-other')).rejects.toThrow();
+      expect(filesService.listForEntity).not.toHaveBeenCalled();
+    });
+
+    it('createFinanceDocumentFileUpload pins domain/entityType/entityId server-side (never client-supplied)', async () => {
+      financeService.getDocumentForSupplier.mockResolvedValue({ id: 'doc1' });
+      filesService.createPresignedUpload.mockResolvedValue({ fileAssetId: 'f1', uploadUrl: 'https://example.test' });
+      await service.createFinanceDocumentFileUpload(actor, 'doc1', { originalName: 'invoice.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+      expect(filesService.createPresignedUpload).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ domain: 'FINANCE_DOCUMENT', entityType: 'PurchaseOrderDocument', entityId: 'doc1' }),
+      );
+    });
+
+    it('confirmFinanceDocumentFileUpload 404s when the file does not belong to this document', async () => {
+      financeService.getDocumentForSupplier.mockResolvedValue({ id: 'doc1' });
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({ id: 'f1', entityType: 'PurchaseOrderDocument', entityId: 'doc-OTHER' });
+      await expect(service.confirmFinanceDocumentFileUpload(actor, 'doc1', 'f1')).rejects.toThrow();
+      expect(filesService.confirmUpload).not.toHaveBeenCalled();
+    });
+
+    it('confirmFinanceDocumentFileUpload confirms when the file does belong to this document', async () => {
+      financeService.getDocumentForSupplier.mockResolvedValue({ id: 'doc1' });
+      prisma.tenant.fileAsset.findUnique.mockResolvedValue({ id: 'f1', entityType: 'PurchaseOrderDocument', entityId: 'doc1' });
+      filesService.confirmUpload.mockResolvedValue({ id: 'f1', uploadedAt: new Date() });
+      await service.confirmFinanceDocumentFileUpload(actor, 'doc1', 'f1');
+      expect(filesService.confirmUpload).toHaveBeenCalledWith(expect.anything(), 'f1');
     });
   });
 });

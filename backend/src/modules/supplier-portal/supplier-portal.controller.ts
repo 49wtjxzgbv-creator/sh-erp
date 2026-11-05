@@ -8,6 +8,7 @@ import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
 import { CreatePurchaseOrderCommentDto } from '../procurement/dto/purchase-order-comment.dto';
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
+import { CreateSupplierInvoiceDocumentDto, CreateSupplierInvoicePaymentDto } from '../finance/dto/supplier-finance.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
 import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
@@ -131,6 +132,74 @@ export class SupplierPortalController {
     @Param('fileId') fileId: string,
   ) {
     return this.supplierPortalService.getFileDownloadUrl(actor, id, fileId);
+  }
+
+  @Get('finance-documents')
+  @ApiOperation({ summary: '"Фінанси" — every invoice this supplier has uploaded, across all of their own orders.' })
+  async listFinanceDocuments(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser) {
+    return this.supplierPortalService.listFinanceDocuments(actor);
+  }
+
+  @Get('finance-documents/:id')
+  @ApiOperation({ summary: 'One invoice with its payments and derived payment status. 404s (not 403s) for anyone else\'s.' })
+  async getFinanceDocument(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.getFinanceDocument(actor, id);
+  }
+
+  @Post('purchase-orders/:id/finance-documents')
+  @ApiOperation({ summary: 'Supplier uploads an invoice (metadata only) against one of their own orders — documentType is always INVOICE, counterparty is always this supplier. Attach the actual file afterwards via the finance-documents/:id/files endpoints below.' })
+  async createFinanceDocument(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: CreateSupplierInvoiceDocumentDto,
+  ) {
+    return this.supplierPortalService.createFinanceDocument(actor, id, dto);
+  }
+
+  @Post('finance-documents/:id/payments')
+  @ApiOperation({ summary: 'Supplier self-reports a payment received against their own invoice — rejected if it would exceed the invoice\'s remaining balance.' })
+  async addFinancePayment(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: CreateSupplierInvoicePaymentDto,
+  ) {
+    return this.supplierPortalService.addFinancePayment(actor, id, dto);
+  }
+
+  @Get('finance-documents/:id/files')
+  @ApiOperation({ summary: 'Files attached to this invoice (e.g. the scanned/PDF invoice itself).' })
+  async listFinanceDocumentFiles(@CurrentSupplierPortalUser() actor: RequestSupplierPortalUser, @Param('id') id: string) {
+    return this.supplierPortalService.listFinanceDocumentFiles(actor, id);
+  }
+
+  @Post('finance-documents/:id/files/presigned-upload')
+  @ApiOperation({ summary: 'Step 1 of 2: get a presigned PUT URL to attach a file to this invoice.' })
+  async createFinanceDocumentFileUpload(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Body() dto: SupplierPortalUploadDto,
+  ) {
+    return this.supplierPortalService.createFinanceDocumentFileUpload(actor, id, dto);
+  }
+
+  @Post('finance-documents/:id/files/:fileId/confirm')
+  @ApiOperation({ summary: 'Step 2 of 2: confirm the direct-to-R2 upload succeeded.' })
+  async confirmFinanceDocumentFileUpload(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.supplierPortalService.confirmFinanceDocumentFileUpload(actor, id, fileId);
+  }
+
+  @Get('finance-documents/:id/files/:fileId/download-url')
+  @ApiOperation({ summary: 'Short-lived presigned GET URL for a file attached to this invoice.' })
+  async getFinanceDocumentFileDownloadUrl(
+    @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    return this.supplierPortalService.getFinanceDocumentFileDownloadUrl(actor, id, fileId);
   }
 
   @Get('purchase-requests')

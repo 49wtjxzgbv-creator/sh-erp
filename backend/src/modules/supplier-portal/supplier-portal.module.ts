@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FilesModule } from '../files/files.module';
 import { ProcurementModule } from '../procurement/procurement.module';
+import { FinanceModule } from '../finance/finance.module';
 import { DxfExportService } from '../cutting/dxf-export.service';
 import { SupplierCuttingService } from './supplier-cutting.service';
 import { SupplierPortalAuthPrismaService } from './supplier-portal-auth-prisma.service';
@@ -34,7 +35,7 @@ import { SupplierPortalRegistrationController } from './supplier-portal-registra
  * identical setup.
  */
 @Module({
-  imports: [JwtModule.register({}), NotificationsModule, ProcurementModule, FilesModule], // ProcurementModule exports DeliverySchedulesService/PurchaseOrderCommentsService (Phase 1/2 shared state machines); FilesModule exports FilesService for Phase 2 PO document attachments
+  imports: [JwtModule.register({}), NotificationsModule, ProcurementModule, FilesModule, FinanceModule], // ProcurementModule exports DeliverySchedulesService/PurchaseOrderCommentsService (Phase 1/2 shared state machines); FilesModule exports FilesService for Phase 2 PO document attachments; FinanceModule exports FinanceService for the "Фінанси" section (supplier-uploaded invoices, 2026-11-05)
   controllers: [
     SupplierPortalAuthController,
     SupplierPortalController,

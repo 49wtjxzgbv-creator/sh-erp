@@ -38,7 +38,7 @@ describe('FinanceService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        purchaseOrder: { findUnique: jest.fn(), findMany: jest.fn() },
+        purchaseOrder: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
         purchaseOrderDocument: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         purchaseOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         purchaseOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
@@ -695,6 +695,103 @@ describe('FinanceService', () => {
         service.createCustomerOrderExpense(user, 'co1', { category: 'OTHER', amount: 10, documentId: 'doc-other' } as any),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.tenant.customerOrderExpense.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Supplier-portal invoices (2026-11-05) — "Фінанси" section
+  // ---------------------------------------------------------------------
+
+  describe('listDocumentsForSupplier', () => {
+    it('scopes to counterpartyId + documentType INVOICE, and attaches derived paymentStatus', async () => {
+      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([
+        { id: 'doc1', amount: 100, currency: 'EUR', payments: [{ amount: 100, currency: 'EUR' }] },
+      ]);
+
+      const result = await service.listDocumentsForSupplier('s1');
+
+      expect(prisma.tenant.purchaseOrderDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { counterpartyId: 's1', documentType: 'INVOICE' } }),
+      );
+      expect(result[0].paymentStatus).toBe('PAID');
+    });
+  });
+
+  describe('getDocumentForSupplier', () => {
+    it("404s for another supplier's invoice (never confirms it exists elsewhere)", async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 'OTHER_SUPPLIER', documentType: 'INVOICE', payments: [] });
+      await expect(service.getDocumentForSupplier('s1', 'doc1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s for a non-INVOICE document even when counterparty matches (e.g. a staff-entered Packing List)', async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 's1', documentType: 'PACKING_LIST', payments: [] });
+      await expect(service.getDocumentForSupplier('s1', 'doc1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns the document with its derived paymentStatus for the owning supplier', async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 's1', documentType: 'INVOICE', amount: 100, currency: 'EUR', payments: [] });
+      const result = await service.getDocumentForSupplier('s1', 'doc1');
+      expect(result.paymentStatus).toBe('UNPAID');
+    });
+  });
+
+  describe('createDocumentAsSupplier', () => {
+    it('forces documentType INVOICE and counterpartyId to the supplier\'s own id, stamping createdById with the supplier-portal user id', async () => {
+      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue({ id: 'po1', supplierId: 's1' });
+      prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 500 });
+
+      await service.createDocumentAsSupplier('c1', 's1', 'spu1', 'po1', { amount: 500 } as any);
+
+      expect(prisma.tenant.purchaseOrder.findFirst).toHaveBeenCalledWith({ where: { id: 'po1', supplierId: 's1' } });
+      expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          companyId: 'c1',
+          purchaseOrderId: 'po1',
+          documentType: 'INVOICE',
+          counterpartyId: 's1',
+          amount: 500,
+          currency: 'EUR',
+          createdById: 'spu1',
+        }),
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finance_document.created_by_supplier', actorUserId: null }));
+    });
+
+    it("404s when the order does not belong to this supplier (never confirms it exists elsewhere)", async () => {
+      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue(null);
+      await expect(service.createDocumentAsSupplier('c1', 's1', 'spu1', 'po-other', { amount: 500 } as any)).rejects.toThrow(NotFoundException);
+      expect(prisma.tenant.purchaseOrderDocument.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('addPaymentAsSupplier', () => {
+    it('records a payment with createdById set to the supplier-portal user id', async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 's1', documentType: 'INVOICE', amount: 100, currency: 'EUR', payments: [] });
+      prisma.tenant.purchaseOrderPayment.create.mockResolvedValue({ id: 'pay1', amount: 100, currency: 'EUR' });
+
+      await service.addPaymentAsSupplier('c1', 's1', 'spu1', 'doc1', { amount: 100, paidAt: new Date() } as any);
+
+      expect(prisma.tenant.purchaseOrderPayment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ companyId: 'c1', documentId: 'doc1', amount: 100, createdById: 'spu1' }),
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finance_payment.created_by_supplier', actorUserId: null }));
+    });
+
+    it("404s for another supplier's invoice", async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 'OTHER_SUPPLIER', documentType: 'INVOICE', amount: 100, currency: 'EUR', payments: [] });
+      await expect(service.addPaymentAsSupplier('c1', 's1', 'spu1', 'doc1', { amount: 10, paidAt: new Date() } as any)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a payment on a document with no amount', async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc1', counterpartyId: 's1', documentType: 'INVOICE', amount: null, currency: 'EUR', payments: [] });
+      await expect(service.addPaymentAsSupplier('c1', 's1', 'spu1', 'doc1', { amount: 10, paidAt: new Date() } as any)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a payment exceeding the remaining balance', async () => {
+      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({
+        id: 'doc1', counterpartyId: 's1', documentType: 'INVOICE', amount: 100, currency: 'EUR', payments: [{ amount: 60, currency: 'EUR' }],
+      });
+      await expect(service.addPaymentAsSupplier('c1', 's1', 'spu1', 'doc1', { amount: 50, paidAt: new Date() } as any)).rejects.toThrow(BadRequestException);
     });
   });
 });

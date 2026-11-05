@@ -10,6 +10,7 @@ import { CreatePurchaseOrderPaymentDto, UpdatePurchaseOrderPaymentDto } from './
 import { CreatePurchaseOrderExpenseDto, UpdatePurchaseOrderExpenseDto } from './dto/finance-expense.dto';
 import { CreateCustomerOrderDocumentDto, QueryFinanceCustomerOrdersDto, UpdateCustomerOrderDocumentDto } from './dto/finance-customer-order-document.dto';
 import { CreateCustomerOrderExpenseDto, UpdateCustomerOrderExpenseDto } from './dto/finance-customer-order-expense.dto';
+import { CreateSupplierInvoiceDocumentDto, CreateSupplierInvoicePaymentDto } from './dto/supplier-finance.dto';
 
 export type FinancePaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 export type DocumentPaymentStatus = 'NO_AMOUNT' | FinancePaymentStatus;
@@ -397,6 +398,137 @@ export class FinanceService {
   async getDocument(user: RequestUser, documentId: string) {
     const document = await this.getDocumentWithPaymentsOrThrow(documentId);
     return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
+  }
+
+  // ---------------------------------------------------------------------
+  // Supplier-portal invoices (2026-11-05) — "Фінанси" section. A supplier
+  // uploads their own invoice against one of their own purchase orders and
+  // self-reports payments received against it. Deliberately reuses the
+  // exact same PurchaseOrderDocument/PurchaseOrderPayment rows and derived
+  // paymentStatus logic as the staff-facing methods above — a supplier-
+  // created invoice is immediately visible on the manufacturer's own
+  // /finance/purchase-orders/:id page with zero extra staff-side code.
+  // `documentType` is always INVOICE and `counterpartyId` is always the
+  // uploading supplier's own id — neither is client-settable here (see
+  // CreateSupplierInvoiceDocumentDto), unlike the staff-facing createDocument
+  // above. `actorUserId: null` + `metadata.supplierPortalUserId` on the
+  // audit record, same convention as
+  // PurchaseOrderCommentsService#createBySupplier — a supplier-portal user
+  // is not a `User` row.
+  // ---------------------------------------------------------------------
+
+  async listDocumentsForSupplier(supplierId: string) {
+    const documents = await this.prisma.tenant.purchaseOrderDocument.findMany({
+      where: { counterpartyId: supplierId, documentType: 'INVOICE' },
+      include: {
+        payments: true,
+        purchaseOrder: { select: { id: true, orderDate: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return documents.map((d) => ({ ...d, paymentStatus: this.documentPaymentStatus(d, d.payments) }));
+  }
+
+  /** 404s (not 403s) for anyone else's invoice, or a non-INVOICE document — never confirms an id belongs to another supplier. */
+  async getDocumentForSupplier(supplierId: string, documentId: string) {
+    const document = await this.getDocumentWithPaymentsOrThrow(documentId);
+    if (document.counterpartyId !== supplierId || document.documentType !== 'INVOICE') {
+      throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found.');
+    }
+    return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
+  }
+
+  async createDocumentAsSupplier(
+    companyId: string,
+    supplierId: string,
+    supplierPortalUserId: string,
+    purchaseOrderId: string,
+    dto: CreateSupplierInvoiceDocumentDto,
+  ) {
+    const order = await this.prisma.tenant.purchaseOrder.findFirst({ where: { id: purchaseOrderId, supplierId } });
+    if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
+
+    const document = await this.prisma.tenant.purchaseOrderDocument.create({
+      data: {
+        companyId,
+        purchaseOrderId,
+        documentType: 'INVOICE',
+        documentNumber: dto.documentNumber,
+        documentDate: dto.documentDate,
+        counterpartyId: supplierId,
+        amount: dto.amount,
+        currency: dto.currency ?? 'EUR',
+        note: dto.note,
+        createdById: supplierPortalUserId,
+      },
+    });
+
+    await this.auditService.record({
+      companyId,
+      actorUserId: null,
+      action: 'finance_document.created_by_supplier',
+      entityType: 'PurchaseOrderDocument',
+      entityId: document.id,
+      after: document,
+      metadata: { purchaseOrderId, supplierPortalUserId },
+    });
+    return document;
+  }
+
+  /** Same remaining-balance rule as the staff-facing addPayment — a supplier can never record more than the invoice's own declared amount. */
+  async addPaymentAsSupplier(
+    companyId: string,
+    supplierId: string,
+    supplierPortalUserId: string,
+    documentId: string,
+    dto: CreateSupplierInvoicePaymentDto,
+  ) {
+    const document = await this.getDocumentWithPaymentsOrThrow(documentId);
+    if (document.counterpartyId !== supplierId || document.documentType !== 'INVOICE') {
+      throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found.');
+    }
+    if (document.amount === null) {
+      throw new CodedBadRequestException('FINANCE_DOCUMENT_NO_AMOUNT', 'This document has no amount and cannot receive payments.');
+    }
+
+    const currency = dto.currency ?? document.currency;
+    if (currency === document.currency) {
+      const alreadyPaid = document.payments
+        .filter((p) => p.currency === document.currency)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+      const remaining = Number(document.amount) - alreadyPaid;
+      if (dto.amount > remaining + 0.005) {
+        throw new CodedBadRequestException(
+          'FINANCE_PAYMENT_EXCEEDS_REMAINING',
+          `Payment of ${dto.amount} ${currency} exceeds the remaining balance of ${round2(Math.max(remaining, 0))} ${currency}.`,
+        );
+      }
+    }
+
+    const payment = await this.prisma.tenant.purchaseOrderPayment.create({
+      data: {
+        companyId,
+        documentId,
+        amount: dto.amount,
+        currency,
+        paidAt: dto.paidAt,
+        method: dto.method,
+        note: dto.note,
+        createdById: supplierPortalUserId,
+      },
+    });
+
+    await this.auditService.record({
+      companyId,
+      actorUserId: null,
+      action: 'finance_payment.created_by_supplier',
+      entityType: 'PurchaseOrderPayment',
+      entityId: payment.id,
+      after: payment,
+      metadata: { documentId, supplierPortalUserId },
+    });
+
+    return { ...payment, currencyMismatch: currency !== document.currency };
   }
 
   async updateDocument(user: RequestUser, documentId: string, dto: UpdatePurchaseOrderDocumentDto) {
