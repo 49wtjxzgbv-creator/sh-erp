@@ -76,6 +76,13 @@ export interface Product {
    * has zero rows in the new join table. See ProductsService#query.
    */
   resolvedSuppliers?: ResolvedProductSupplier[];
+  /**
+   * Only present on query() list rows — distinct count of specifications
+   * (Assembly BOMs) this product appears in at least once, same scope as
+   * ProductsService#getUsedInAssemblies below (2026-11-05 — "щоб такі речі
+   * самому дивитися").
+   */
+  usedInAssembliesCount?: number;
 }
 
 export interface ResolvedProductSupplier {
@@ -145,6 +152,18 @@ export function queryProducts(query: QueryProductsInput = {}): Promise<Paginated
 
 export function getProduct(id: string): Promise<Product> {
   return apiClient.get<Product>(`products/${id}`);
+}
+
+/** One row per specification (Assembly BOM) referencing this product — see ProductsService#getUsedInAssemblies. */
+export interface ProductAssemblyUsage {
+  assemblyId: string;
+  article: string | null;
+  name: string;
+  qtyPerUnit: DecimalString;
+}
+
+export function getProductUsedInAssemblies(productId: string): Promise<ProductAssemblyUsage[]> {
+  return apiClient.get<ProductAssemblyUsage[]>(`products/${productId}/used-in-assemblies`);
 }
 
 /**

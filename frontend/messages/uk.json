@@ -263,7 +263,11 @@
     "germanPriceImportUnmatched": "Немає в каталозі ({count})",
     "germanPriceImportAmbiguous": "Неоднозначна ціна ({count})",
     "germanPriceImportApply": "Оновити ({count})",
-    "germanPriceImportApplied": "Оновлено цін: {count}."
+    "germanPriceImportApplied": "Оновлено цін: {count}.",
+    "usedInAssembliesTitle": "Використання у специфікаціях",
+    "usedInAssembliesDescription": "Специфікації (BOM), до яких входить цей товар",
+    "usedInAssembliesEmpty": "Цей товар не входить у жодну специфікацію",
+    "usedInAssembliesCountColumn": "У специфікаціях"
   },
   "settings": {
     "title": "Налаштування компанії",

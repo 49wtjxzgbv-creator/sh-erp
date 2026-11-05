@@ -262,7 +262,11 @@
     "germanPriceImportUnmatched": "Not in catalog ({count})",
     "germanPriceImportAmbiguous": "Ambiguous price ({count})",
     "germanPriceImportApply": "Update ({count})",
-    "germanPriceImportApplied": "Updated prices: {count}."
+    "germanPriceImportApplied": "Updated prices: {count}.",
+    "usedInAssembliesTitle": "Used in specifications",
+    "usedInAssembliesDescription": "Specifications (BOMs) that include this product",
+    "usedInAssembliesEmpty": "This product is not used in any specification",
+    "usedInAssembliesCountColumn": "In specs"
   },
   "settings": {
     "title": "Ustawienia firmy",

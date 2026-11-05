@@ -137,6 +137,13 @@ export class ProductsController {
     return this.productsService.findOne(user, id);
   }
 
+  @Get(':id/used-in-assemblies')
+  @RequirePermissions('products:read')
+  @ApiOperation({ summary: 'Every BOM line across all specifications that references this product, so staff can see "where is this used" without a database query.' })
+  async getUsedInAssemblies(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.productsService.getUsedInAssemblies(user, id);
+  }
+
   @Patch(':id')
   @RequirePermissions('products:write')
   @ApiOperation({ summary: 'Update a product.' })

@@ -64,6 +64,30 @@ export class ProductsService {
   }
 
   /**
+   * "зроби так що в кталозі товарів показувато до яких специфікацій
+   * підвязаний товар" (2026-11-05) — legacy's dropped `usedInAssemblies`
+   * column (see product-grid-columns.ts's own header comment for why it
+   * was dropped when this backend was built: "no equivalent endpoint...
+   * flagged here as a possible future addition"). Every AssemblyComponent
+   * row that references this product, one per BOM line (not deduped by
+   * assembly — the same product can appear twice in one BOM with different
+   * cut dimensions, and each line is its own real usage to show).
+   */
+  async getUsedInAssemblies(user: RequestUser, productId: string) {
+    const rows = await this.prisma.tenant.assemblyComponent.findMany({
+      where: { productId },
+      include: { assembly: true },
+      orderBy: { assembly: { name: 'asc' } },
+    });
+    return rows.map((r) => ({
+      assemblyId: r.assemblyId,
+      article: r.assembly.article,
+      name: r.assembly.name,
+      qtyPerUnit: r.qtyPerUnit,
+    }));
+  }
+
+  /**
    * Many products in one call by id — avoids an N-request fan-out from a
    * list view that only has `productId`s to resolve into names (e.g. Stock
    * Levels, which shows raw `WarehouseStock.productId` today; see that
@@ -136,6 +160,25 @@ export class ProductsService {
       list.push(row);
       rowsByProduct.set(row.productId, list);
     }
+    // "зроби так що в кталозі товарів показувато до яких специфікацій
+    // підвязаний товар" (2026-11-05) — distinct assembly count per product,
+    // same batch-fetch-then-group shape as supplierRows just above (one
+    // query for the whole page, never N+1). Distinct by assemblyId (not a
+    // raw row count) — a product can have more than one BOM line within
+    // the SAME assembly (different cut dimensions), which should still
+    // read as "used in 1 specification", not 2.
+    const usageRows = await this.prisma.tenant.assemblyComponent.findMany({
+      where: { productId: { in: items.map((p) => p.id) } },
+      select: { productId: true, assemblyId: true },
+    });
+    const assemblyIdsByProduct = new Map<string, Set<string>>();
+    for (const row of usageRows) {
+      if (!row.productId) continue;
+      const set = assemblyIdsByProduct.get(row.productId) ?? new Set<string>();
+      set.add(row.assemblyId);
+      assemblyIdsByProduct.set(row.productId, set);
+    }
+
     const itemsWithSuppliers = items.map((p) => {
       const rows = rowsByProduct.get(p.id) ?? [];
       const resolvedSuppliers =
@@ -144,7 +187,7 @@ export class ProductsService {
           : p.defaultSupplierId
             ? [{ supplierId: p.defaultSupplierId, price: null, isDefault: true }]
             : [];
-      return { ...p, resolvedSuppliers };
+      return { ...p, resolvedSuppliers, usedInAssembliesCount: assemblyIdsByProduct.get(p.id)?.size ?? 0 };
     });
 
     return { items: itemsWithSuppliers, total, limit: take, offset: skip };

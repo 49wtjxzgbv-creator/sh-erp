@@ -8,6 +8,7 @@ import { useProduct, useUpdateProduct, useDeleteProduct } from '@/lib/hooks/use-
 import { useHasPermission } from '@/lib/hooks/use-roles';
 import { ProductForm } from '@/components/domain/catalog/product-form';
 import { ProductCuttingSpecCard } from '@/components/domain/cutting/product-cutting-spec-card';
+import { ProductUsedInAssembliesCard } from '@/components/domain/catalog/product-used-in-assemblies-card';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import type { CreateProductInput } from '@/lib/api-client/catalog';
 import { Button } from '@/components/ui/button';
@@ -93,6 +94,7 @@ export default function EditProductPage() {
         readOnly={!canWrite}
       />
       <ProductCuttingSpecCard productId={params.id} readOnly={!canWrite} />
+      <ProductUsedInAssembliesCard productId={params.id} />
     </div>
   );
 }

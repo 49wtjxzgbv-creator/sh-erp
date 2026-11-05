@@ -36,6 +36,7 @@ describe('ProductsService', () => {
         // price rows (Phase 3 multi-supplier pricing) — empty by default,
         // no test in this file asserts on supplier pricing specifically.
         productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
+        assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -98,6 +99,51 @@ describe('ProductsService', () => {
     expect(where.AND).toEqual([
       { OR: [{ article: { contains: 'widg', mode: 'insensitive' } }, { name: { contains: 'widg', mode: 'insensitive' } }] },
     ]);
+  });
+
+  it('query() attaches usedInAssembliesCount, deduped by distinct assemblyId per product (not a raw BOM-line count)', async () => {
+    prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+    prisma.tenant.assemblyComponent.findMany.mockResolvedValue([
+      { productId: 'p1', assemblyId: 'a1' },
+      { productId: 'p1', assemblyId: 'a1' }, // same product, same assembly, different BOM line (e.g. two cut lengths) — still 1 specification
+      { productId: 'p1', assemblyId: 'a2' },
+      { productId: 'p2', assemblyId: null }, // defensive — productId filter already excludes this in practice
+    ]);
+
+    const result = await service.query(user, {});
+
+    expect(result.items.find((p: any) => p.id === 'p1')!.usedInAssembliesCount).toBe(2);
+    expect(result.items.find((p: any) => p.id === 'p2')!.usedInAssembliesCount).toBe(1);
+  });
+
+  it('query() reports usedInAssembliesCount: 0 for a product with no BOM usage', async () => {
+    prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1' }]);
+    const result = await service.query(user, {});
+    expect(result.items[0].usedInAssembliesCount).toBe(0);
+  });
+
+  describe('getUsedInAssemblies', () => {
+    it('returns one line per BOM reference, with the assembly article/name/qtyPerUnit', async () => {
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([
+        { assemblyId: 'a1', qtyPerUnit: 2, assembly: { article: '455714', name: 'Standard reduziert' } },
+        { assemblyId: 'a2', qtyPerUnit: 1, assembly: { article: '999999', name: 'Other assembly' } },
+      ]);
+
+      const result = await service.getUsedInAssemblies(user, 'p1');
+
+      expect(prisma.tenant.assemblyComponent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productId: 'p1' }, include: { assembly: true } }),
+      );
+      expect(result).toEqual([
+        { assemblyId: 'a1', article: '455714', name: 'Standard reduziert', qtyPerUnit: 2 },
+        { assemblyId: 'a2', article: '999999', name: 'Other assembly', qtyPerUnit: 1 },
+      ]);
+    });
+
+    it('returns an empty array for a product used nowhere', async () => {
+      const result = await service.getUsedInAssemblies(user, 'p1');
+      expect(result).toEqual([]);
+    });
   });
 
   it('remove() soft-deletes (sets deletedAt) rather than hard-deleting', async () => {

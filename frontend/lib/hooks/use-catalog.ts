@@ -18,6 +18,7 @@ import {
   applyGermanPriceImport,
   getProductSuppliers,
   setProductSuppliers,
+  getProductUsedInAssemblies,
   type QueryProductsInput,
   type CreateProductInput,
   type UpdateProductInput,
@@ -164,6 +165,16 @@ export function useDeleteCompanyUnit() {
   return useMutation({
     mutationFn: (id: string) => deleteCompanyUnit(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: unitsKey }),
+  });
+}
+
+const productUsedInAssembliesKey = (productId: string) => ['products', productId, 'used-in-assemblies'] as const;
+
+export function useProductUsedInAssemblies(productId: string | undefined) {
+  return useQuery({
+    queryKey: productUsedInAssembliesKey(productId ?? ''),
+    queryFn: () => getProductUsedInAssemblies(productId as string),
+    enabled: Boolean(productId),
   });
 }
 

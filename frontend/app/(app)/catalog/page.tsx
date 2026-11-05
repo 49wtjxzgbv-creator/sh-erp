@@ -69,6 +69,7 @@ const DEFAULT_HIDDEN_COLUMNS = [
   'priceListRef',
   'note',
   'suppliers',
+  'usedInAssembliesCount',
   'createdAt',
 ];
 
@@ -177,6 +178,7 @@ export default function CatalogPage() {
       { id: 'priceListRef', label: t('priceListRef') },
       { id: 'note', label: t('note') },
       { id: 'suppliers', label: t('suppliersColumn') },
+      { id: 'usedInAssembliesCount', label: t('usedInAssembliesCountColumn') },
       { id: 'createdAt', label: t('createdAt') },
     ],
     [t],
@@ -308,6 +310,14 @@ export default function CatalogPage() {
             supplierById={supplierById}
           />
         ),
+      },
+      {
+        accessorKey: 'usedInAssembliesCount',
+        header: t('usedInAssembliesCountColumn'),
+        cell: ({ getValue }) => {
+          const count = (getValue() as number | undefined) ?? 0;
+          return count > 0 ? <Badge variant="outline">{count}</Badge> : '—';
+        },
       },
       {
         accessorKey: 'createdAt',
