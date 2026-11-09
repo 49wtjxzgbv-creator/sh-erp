@@ -306,14 +306,11 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     if (text === '📄 Файл з усіма товарами' || text === '/export') {
-      // Admin-only (2026-11-09 user request — "можливо зробити щоб цей
-      // файл пдф... ніхто не міг скачати") — the export contains every
-      // real price in the catalog, not just the user's own sourcing
-      // categories, so it's gated the same way "➕ Додати постачальника" is.
-      if (!identity.isAdmin) {
-        await this.telegram.sendMessage(chatId, '⛔ Цей файл може згенерувати тільки адміністратор закупівель.');
-        return;
-      }
+      // Open to everyone (2026-11-09 — user corrected the earlier
+      // admin-only gate: "він має бути доступний всім але без можливості
+      // скачати тільки перегляд") — access control moved to Telegram's
+      // own protect_content flag on the sendDocument call itself
+      // (SourcingBotApiClient#sendDocument), not a role check here.
       await this.sendCatalogExport(chatId, identity);
       return;
     }

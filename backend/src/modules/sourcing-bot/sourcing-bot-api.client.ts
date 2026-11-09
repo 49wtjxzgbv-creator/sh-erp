@@ -102,6 +102,14 @@ export class SourcingBotApiClient {
       const form = new FormData();
       form.append('chat_id', chatId);
       if (caption) form.append('caption', caption);
+      // "доступний всім але без можливості скачати тільки перегляд"
+      // (2026-11-09) — Telegram's own "protect content" flag: the
+      // recipient can open/view the file in-app but the client hides its
+      // save/forward controls. Not a cryptographic guarantee (a
+      // sufficiently motivated person can still screenshot), but it's
+      // exactly the "view, don't download" distinction Telegram itself
+      // exposes, via the Bot API, no extra infrastructure needed.
+      form.append('protect_content', 'true');
       form.append('document', new Blob([new Uint8Array(buffer)]), filename);
       const res = await fetch(`${this.baseUrl}/sendDocument`, { method: 'POST', body: form });
       if (!res.ok) {
