@@ -5,6 +5,7 @@ import { FilesModule } from '../files/files.module';
 import { AuditModule } from '../audit/audit.module';
 import { SourcingBotApiClient } from './sourcing-bot-api.client';
 import { SourcingBotService } from './sourcing-bot.service';
+import { SourcingIdentityService } from './sourcing-identity.service';
 
 /**
  * Procurement sourcing bot (2026-11-09) — deliberately NOT part of
@@ -19,8 +20,11 @@ import { SourcingBotService } from './sourcing-bot.service';
  *
  * `SourcingBotPrismaService` is deliberately NOT exported — same usage
  * boundary as `TelegramBotPrismaService` (see that class's own header
- * comment): only `SourcingBotService`'s identity-resolution helpers may
- * use it.
+ * comment): only `SourcingIdentityService` may use it directly.
+ * `SourcingIdentityService` itself IS exported (2026-11-10, "веб версію як
+ * застосунок") — `SourcingAppModule`'s `TelegramWebAppAuthGuard` imports
+ * this module just to reuse it, so chat and Mini App identity resolution
+ * can never drift apart.
  *
  * `FilesModule` — reuses `FilesService#getDownloadUrl` to send a product's
  * existing PRODUCT_PHOTO straight to Telegram via `sendPhoto` with a
@@ -35,6 +39,7 @@ import { SourcingBotService } from './sourcing-bot.service';
  */
 @Module({
   imports: [PrismaModule, FilesModule, AuditModule],
-  providers: [SourcingBotService, SourcingBotApiClient, SourcingBotPrismaService],
+  providers: [SourcingBotService, SourcingBotApiClient, SourcingBotPrismaService, SourcingIdentityService],
+  exports: [SourcingIdentityService],
 })
 export class SourcingBotModule {}

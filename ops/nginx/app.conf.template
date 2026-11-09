@@ -33,6 +33,24 @@ server {
     # TLS server block + an HTTP->HTTPS redirect here — this bare HTTP block
     # is the starting point `certbot --nginx -d APP_DOMAIN` expects to find.
 
+    # Mini App API (2026-11-10 — "веб версію як застосунок"). Proxies to
+    # the sourcing-bot process's own small HTTP listener (SOURCING_APP_PORT
+    # in /etc/sh-erp/sourcing-bot.env, default 3003 — see
+    # backend/src/modules/sourcing-bot/main.ts's header comment for why
+    # this lives on that already-isolated process instead of the main
+    # backend). The trailing slash on both the location and proxy_pass
+    # strips the `/sourcing-app-api` prefix before forwarding — the
+    # sourcing-bot process's own `/api/v1/sourcing-app/...` routes take
+    # over from there. MUST come before the catch-all `location /` below.
+    location /sourcing-app-api/ {
+        proxy_pass http://127.0.0.1:3003/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;

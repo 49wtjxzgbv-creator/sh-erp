@@ -7,6 +7,8 @@ import { FilesService } from '../files/files.service';
 import { createR2Client, R2_BUCKET } from '../files/r2-client';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 import { SourcingBotApiClient, TelegramInlineKeyboard, TelegramReplyKeyboard, TelegramUpdate } from './sourcing-bot-api.client';
+import { ResolvedSourcingIdentity, SourcingIdentityService } from './sourcing-identity.service';
+import { PRICE_FIELDS, PriceField, STATUS_LABELS, formatPrice } from './sourcing-shared';
 
 const PAGE_SIZE = 10;
 
@@ -31,49 +33,10 @@ const HELP_TEXT =
   'У картці постачальника (потенційного): ✅ Написав / 📩 Відповіли / ❌ Відмовили / 🏆 Домовились / 💬 Нотатка / 💰 Внести ціну.\n' +
   '/cancel — скасувати поточну дію в будь-який момент.';
 
-/** Reused rather than inventing a new permission — "who can manage purchase orders" is a reasonable proxy for "procurement staff trusted to add a new candidate supplier" in this company's role setup. */
-const ADMIN_PERMISSION_KEY = 'purchase-orders:manage';
-
-/**
- * This bot's sourcing data lives entirely in ONE company (2026-11-09 user
- * correction: "ми все це робимо тільки для компанії 131313" — this
- * company's own ERP spans several legally-separate businesses sharing one
- * installation, and a staff member can easily hold membership in more than
- * one of them). Rather than guessing a companyId from "how many
- * memberships does this user have" (fragile — breaks the moment a sourcing
- * team member also happens to have access to an unrelated company), this
- * bot checks for a membership specifically in THIS configured company,
- * ignoring any others the user may also belong to.
- */
-function getTargetCompanyId(): string {
-  const id = process.env.SOURCING_BOT_COMPANY_ID;
-  if (!id) throw new Error('SOURCING_BOT_COMPANY_ID is not set.');
-  return id;
-}
-
-const PRICE_FIELDS = [
-  { field: 'germanPriceExclVat' as const, icon: '🇩🇪', label: 'DE без ПДВ' },
-  { field: 'germanPriceInclVat' as const, icon: '🇩🇪', label: 'DE з ПДВ' },
-  { field: 'localPriceExclVat' as const, icon: '🇺🇦', label: 'UA без ПДВ' },
-  { field: 'localPriceInclVat' as const, icon: '🇺🇦', label: 'UA з ПДВ' },
-  { field: 'sellPriceEur' as const, icon: '💰', label: 'Наша ціна продажу' },
-];
-type PriceField = (typeof PRICE_FIELDS)[number]['field'];
-
 /** Telegram inline button text has a practical length limit — long product names would otherwise get silently cut off or make the button wrap oddly. */
 function truncateLabel(name: string, max = 40): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name;
 }
-
-const STATUS_LABELS: Record<SourcingOutreachStatus, string> = {
-  NOT_CONTACTED: '⬜ Не написали',
-  CONTACTED: '✉️ Написали',
-  AWAITING_RESPONSE: '⏳ Чекаємо відповідь',
-  RESPONDED: '💬 Відповіли',
-  QUOTE_RECEIVED: '💰 Є ціна',
-  REJECTED: '❌ Відмовили',
-  WON: '🏆 Домовились',
-};
 
 /** Short multi-step flows (entering a quoted price + note, fixing a price field, adding a new candidate) — kept in-memory, not persisted. See SourcingBotModule's own header comment for why losing this on a rare restart is an acceptable simplification here (unlike the production-notifications bot's FSM, nothing here represents already-committed business data mid-flight). */
 type PendingAction =
@@ -83,13 +46,6 @@ type PendingAction =
   | { kind: 'fix_price'; productId: string; field: PriceField }
   | { kind: 'add_candidate'; categoryId: string }
   | { kind: 'search' };
-
-interface ResolvedIdentity {
-  userId: string;
-  companyId: string;
-  fullName: string;
-  isAdmin: boolean;
-}
 
 /**
  * Core logic for the procurement sourcing bot (2026-11-09 — "потрібен
@@ -144,7 +100,6 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
 
   private readonly r2 = createR2Client();
 
-  private readonly identityCache = new Map<string, ResolvedIdentity>();
   private readonly pending = new Map<string, PendingAction>();
 
   constructor(
@@ -152,6 +107,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
     private readonly telegram: SourcingBotApiClient,
+    private readonly identityService: SourcingIdentityService,
   ) {}
 
   onModuleInit(): void {
@@ -195,28 +151,9 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   // Pairing / identity
   // ============================================================
 
-  private async resolveIdentity(chatId: string): Promise<ResolvedIdentity | null> {
-    const cached = this.identityCache.get(chatId);
-    if (cached) return cached;
-
-    const user = await this.pairingPrisma.user.findFirst({ where: { sourcingBotChatId: chatId } });
-    if (!user) return null;
-
-    const companyId = getTargetCompanyId();
-    const membership = await this.pairingPrisma.companyMembership.findFirst({ where: { userId: user.id, companyId } });
-    if (!membership) {
-      this.logger.warn(`User ${user.id} has no membership in the configured sourcing-bot company ${companyId}.`);
-      return null;
-    }
-    const role = await this.pairingPrisma.role.findUnique({
-      where: { id: membership.roleId },
-      include: { permissions: { include: { permission: true } } },
-    });
-    const isAdmin = role?.permissions.some((rp) => rp.permission.key === ADMIN_PERMISSION_KEY) ?? false;
-
-    const identity: ResolvedIdentity = { userId: user.id, companyId, fullName: user.fullName, isAdmin };
-    this.identityCache.set(chatId, identity);
-    return identity;
+  /** Delegates to the shared SourcingIdentityService (2026-11-10 — extracted so the Mini App's HTTP guard resolves identity identically to this chat FSM). */
+  private async resolveIdentity(chatId: string): Promise<ResolvedSourcingIdentity | null> {
+    return this.identityService.resolveByChatId(chatId);
   }
 
   private async completePairing(chatId: string, rawCode: string): Promise<void> {
@@ -240,7 +177,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       where: { id: user.id },
       data: { sourcingBotChatId: chatId, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
     });
-    this.identityCache.delete(chatId);
+    this.identityService.invalidate(chatId);
     await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}! Ось список категорій для пошуку постачальників:`, MAIN_MENU);
     await this.sendMainMenu(chatId);
   }
@@ -414,7 +351,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.telegram.sendMessage(chatId, '📂 Оберіть категорію:', this.mainMenuKeyboard(categories));
   }
 
-  private async sendCategory(chatId: string, identity: ResolvedIdentity, categoryId: string): Promise<void> {
+  private async sendCategory(chatId: string, identity: ResolvedSourcingIdentity, categoryId: string): Promise<void> {
     const category = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.sourcingCategory.findUnique({
         where: { id: categoryId },
@@ -440,7 +377,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.telegram.sendMessage(chatId, `<b>${category.name}</b>`, keyboard);
   }
 
-  private async sendRfqText(chatId: string, identity: ResolvedIdentity, categoryId: string): Promise<void> {
+  private async sendRfqText(chatId: string, identity: ResolvedSourcingIdentity, categoryId: string): Promise<void> {
     const category = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.sourcingCategory.findUnique({ where: { id: categoryId }, select: { rfqTemplate: true } }),
     );
@@ -448,14 +385,8 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.telegram.sendMessage(chatId, category.rfqTemplate);
   }
 
-  private formatPrice(value: unknown): string | null {
-    if (value === null || value === undefined) return null;
-    const n = typeof value === 'object' && 'toNumber' in (value as any) ? (value as any).toNumber() : Number(value);
-    return `€${n.toFixed(2)}`;
-  }
-
   /** Paginated article/name picker — a category can hold 100+ products, so dumping one message per product (the original design) would flood the chat; this shows PAGE_SIZE buttons at a time, tapping one opens the full sendProductDetail card. */
-  private async sendProductPicker(chatId: string, identity: ResolvedIdentity, categoryId: string, page: number): Promise<void> {
+  private async sendProductPicker(chatId: string, identity: ResolvedSourcingIdentity, categoryId: string, page: number): Promise<void> {
     const products = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.product.findMany({
         where: { sourcingCategoryId: categoryId, deletedAt: null },
@@ -490,7 +421,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Full card for one product: photo (if any), our own 5 price fields, AND every already-linked real supplier's price (ProductSupplier.price/supplierOfferedPrice) — not a shadow copy, read live. */
-  private async sendProductDetail(chatId: string, identity: ResolvedIdentity, productId: string): Promise<void> {
+  private async sendProductDetail(chatId: string, identity: ResolvedSourcingIdentity, productId: string): Promise<void> {
     const result = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, async (tx) => {
       const product = await tx.product.findUnique({
         where: { id: productId },
@@ -544,14 +475,14 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     const { product, supplierLinks, photoUrl, candidates } = result;
 
     const ourLines = PRICE_FIELDS.map(({ field, icon, label }) => {
-      const formatted = this.formatPrice(product[field]);
+      const formatted = formatPrice(product[field]);
       return formatted ? `${icon} ${label}: ${formatted}` : null;
     }).filter((x): x is string => x !== null);
 
     const supplierLines = supplierLinks.map((link) => {
       const bits = [
-        link.price !== null ? `наша ціна: ${this.formatPrice(link.price)}` : null,
-        link.supplierOfferedPrice !== null ? `постачальник пропонує: ${this.formatPrice(link.supplierOfferedPrice)}` : null,
+        link.price !== null ? `наша ціна: ${formatPrice(link.price)}` : null,
+        link.supplierOfferedPrice !== null ? `постачальник пропонує: ${formatPrice(link.supplierOfferedPrice)}` : null,
       ]
         .filter((x): x is string => x !== null)
         .join(', ');
@@ -592,7 +523,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Every existing (real, already-onboarded) Supplier that supplies at least one product in a sourcing category — "мав на увазі... щоб відображались ціни існуючих постачальників" + "меню... по постачальниках". */
-  private async sendSupplierList(chatId: string, identity: ResolvedIdentity): Promise<void> {
+  private async sendSupplierList(chatId: string, identity: ResolvedSourcingIdentity): Promise<void> {
     const links = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.productSupplier.findMany({
         where: { product: { sourcingCategoryId: { not: null }, deletedAt: null } },
@@ -611,7 +542,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.telegram.sendMessage(chatId, '🏭 Наявні постачальники:', keyboard);
   }
 
-  private async sendSupplierProducts(chatId: string, identity: ResolvedIdentity, supplierId: string, page: number): Promise<void> {
+  private async sendSupplierProducts(chatId: string, identity: ResolvedSourcingIdentity, supplierId: string, page: number): Promise<void> {
     const result = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.productSupplier.findMany({
         where: { supplierId, product: { sourcingCategoryId: { not: null }, deletedAt: null } },
@@ -659,7 +590,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
    * format the bytes actually are, so there's no extension-matching
    * failure mode at all.
    */
-  private async sendCatalogExport(chatId: string, identity: ResolvedIdentity): Promise<void> {
+  private async sendCatalogExport(chatId: string, identity: ResolvedSourcingIdentity): Promise<void> {
     await this.telegram.sendMessage(chatId, '⏳ Генерую PDF з усіма товарами каталогу — це може зайняти кілька хвилин...');
 
     const products = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
@@ -758,7 +689,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     const rowsHtml = products
       .map((p) => {
         const ourLines = PRICE_FIELDS.map(({ field, icon, label }) => {
-          const formatted = this.formatPrice(p[field]);
+          const formatted = formatPrice(p[field]);
           return formatted ? `${icon} ${label}: ${formatted}` : null;
         })
           .filter((x): x is string => x !== null)
@@ -766,8 +697,8 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
         const supplierLines = p.suppliers
           .map((s) => {
             const bits = [
-              s.price !== null ? `наша: ${this.formatPrice(s.price)}` : null,
-              s.supplierOfferedPrice !== null ? `постач.: ${this.formatPrice(s.supplierOfferedPrice)}` : null,
+              s.price !== null ? `наша: ${formatPrice(s.price)}` : null,
+              s.supplierOfferedPrice !== null ? `постач.: ${formatPrice(s.supplierOfferedPrice)}` : null,
             ]
               .filter((x): x is string => x !== null)
               .join(', ');
@@ -832,7 +763,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  private async sendCandidate(chatId: string, identity: ResolvedIdentity, candidateId: string): Promise<void> {
+  private async sendCandidate(chatId: string, identity: ResolvedSourcingIdentity, candidateId: string): Promise<void> {
     const candidate = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.sourcingCandidateSupplier.findUnique({ where: { id: candidateId }, include: { outreach: true } }),
     );
@@ -874,7 +805,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.telegram.sendMessage(chatId, lines.join('\n'), keyboard);
   }
 
-  private async setOutreachStatus(chatId: string, identity: ResolvedIdentity, candidateId: string, status: SourcingOutreachStatus): Promise<void> {
+  private async setOutreachStatus(chatId: string, identity: ResolvedSourcingIdentity, candidateId: string, status: SourcingOutreachStatus): Promise<void> {
     await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.sourcingOutreach.update({
         where: { companyId_candidateSupplierId: { companyId: identity.companyId, candidateSupplierId: candidateId } },
@@ -885,7 +816,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     await this.sendCandidate(chatId, identity, candidateId);
   }
 
-  private async sendStatusOverview(chatId: string, identity: ResolvedIdentity): Promise<void> {
+  private async sendStatusOverview(chatId: string, identity: ResolvedSourcingIdentity): Promise<void> {
     const candidates = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.sourcingCandidateSupplier.findMany({
         where: { deletedAt: null },
@@ -914,7 +845,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   // Pending free-text input (note / quote price+note / fix price / add candidate)
   // ============================================================
 
-  private async handlePendingInput(chatId: string, identity: ResolvedIdentity, action: PendingAction, text: string): Promise<void> {
+  private async handlePendingInput(chatId: string, identity: ResolvedSourcingIdentity, action: PendingAction, text: string): Promise<void> {
     switch (action.kind) {
       case 'note': {
         this.pending.delete(chatId);

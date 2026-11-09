@@ -1,4 +1,5 @@
 import { SourcingBotService } from './sourcing-bot.service';
+import { SourcingIdentityService } from './sourcing-identity.service';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 
 jest.mock('../../common/pdf/html-to-pdf');
@@ -60,7 +61,8 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       editMessageText: jest.fn(),
     };
     mockRenderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from('%PDF-fake'));
-    service = new SourcingBotService(pairingPrisma, prisma, filesService, telegram);
+    const identityService = new SourcingIdentityService(pairingPrisma);
+    service = new SourcingBotService(pairingPrisma, prisma, filesService, telegram, identityService);
   });
 
   describe('/start pairing', () => {

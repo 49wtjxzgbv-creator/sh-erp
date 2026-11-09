@@ -165,12 +165,30 @@ systemctl is-active --quiet sh-erp-backend || { echo "ERROR: sh-erp-backend is n
 systemctl is-active --quiet sh-erp-frontend || { echo "ERROR: sh-erp-frontend is not active." >&2; exit 1; }
 
 if [ -f "$SOURCING_BOT_ENV" ]; then
-  echo "--- Confirming sh-erp-sourcing-bot is active (no HTTP health endpoint — long-polling process, not a server) ---"
+  echo "--- Confirming sh-erp-sourcing-bot is active ---"
   if ! systemctl is-active --quiet sh-erp-sourcing-bot; then
     echo "ERROR: sh-erp-sourcing-bot is not active. Recent logs:" >&2
     journalctl -u sh-erp-sourcing-bot --no-pager -n 50 >&2
     exit 1
   fi
+  # Mini App HTTP API (2026-11-10) — this process now also serves a real
+  # /health endpoint (SourcingHealthController), same wait-loop shape as
+  # the main backend's own check above. SOURCING_APP_PORT defaults to 3003
+  # if the env file doesn't set it (matches main.ts's own fallback).
+  SOURCING_APP_PORT_VALUE=$(grep -oP '^SOURCING_APP_PORT="?\K[0-9]+' "$SOURCING_BOT_ENV" || echo 3003)
+  echo "--- Waiting for sourcing-bot Mini App API /health on :$SOURCING_APP_PORT_VALUE ---"
+  for i in $(seq 1 30); do
+    if curl -fsS "http://127.0.0.1:$SOURCING_APP_PORT_VALUE/health" >/dev/null 2>&1; then
+      echo "Sourcing-bot Mini App API healthy."
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      echo "ERROR: sourcing-bot Mini App API did not become healthy within 60s. Recent logs:" >&2
+      journalctl -u sh-erp-sourcing-bot --no-pager -n 50 >&2
+      exit 1
+    fi
+    sleep 2
+  done
 fi
 
 echo "=== Deploy complete. No manual steps remain. ==="

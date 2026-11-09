@@ -1,0 +1,345 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
+import { FilesService } from '../files/files.service';
+import { CodedNotFoundException } from '../../common/api-exceptions';
+import { ResolvedSourcingIdentity } from './sourcing-identity.service';
+import { PRICE_FIELDS, STATUS_LABELS, priceNumber } from './sourcing-shared';
+import { UpdateOutreachDto } from './dto/update-outreach.dto';
+
+const APP_PAGE_SIZE = 30;
+
+function tenantCtx(identity: ResolvedSourcingIdentity) {
+  return { companyId: identity.companyId, userId: identity.userId };
+}
+
+/** Shared by category-product-list and search rows — a lean projection, not the full detail card. */
+interface ProductRow {
+  id: string;
+  article: string;
+  name: string;
+  photoUrl: string | null;
+  prices: Array<{ field: string; icon: string; label: string; value: number }>;
+  supplierCount: number;
+}
+
+/**
+ * Backend for the Mini App (2026-11-10 — "веб версію як застосунок") —
+ * read-mostly endpoints mirroring exactly what `SourcingBotService`'s chat
+ * flow already shows (same `PRICE_FIELDS`/`STATUS_LABELS`, same
+ * most-recent-photo rule, same category-scoped candidate suppliers), just
+ * returned as JSON for a UI to render instead of formatted chat messages.
+ */
+@Injectable()
+export class SourcingAppService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly filesService: FilesService,
+  ) {}
+
+  async getCategories(identity: ResolvedSourcingIdentity) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.sourcingCategory.findMany({
+        where: { deletedAt: null },
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          _count: { select: { products: { where: { deletedAt: null } } } },
+        },
+      }),
+    ).then((categories) =>
+      categories.map((c) => ({ id: c.id, code: c.code, name: c.name, productCount: c._count.products })),
+    );
+  }
+
+  /** Most-recent `PRODUCT_PHOTO` per product id, as presigned URLs — one batched lookup per page instead of N+1. */
+  private async photoUrlsByProductId(tx: TenantPrismaClient, identity: ResolvedSourcingIdentity, productIds: string[]): Promise<Map<string, string>> {
+    if (productIds.length === 0) return new Map();
+    const photos = await tx.fileAsset.findMany({
+      where: { entityType: 'Product', entityId: { in: productIds }, domain: 'PRODUCT_PHOTO', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, entityId: true },
+    });
+    const photoIdByProductId = new Map<string, string>();
+    for (const p of photos) if (!photoIdByProductId.has(p.entityId)) photoIdByProductId.set(p.entityId, p.id);
+
+    const urlByProductId = new Map<string, string>();
+    await Promise.all(
+      [...photoIdByProductId.entries()].map(async ([productId, photoId]) => {
+        const { downloadUrl } = await this.filesService.getDownloadUrl({ userId: identity.userId, companyId: identity.companyId }, photoId);
+        urlByProductId.set(productId, downloadUrl);
+      }),
+    );
+    return urlByProductId;
+  }
+
+  private toPriceList(product: Record<string, unknown>): ProductRow['prices'] {
+    return PRICE_FIELDS.map(({ field, icon, label }) => {
+      const value = priceNumber(product[field]);
+      return value === null ? null : { field, icon, label, value };
+    }).filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
+  async getCategoryProducts(identity: ResolvedSourcingIdentity, categoryId: string, search: string | undefined, page: number) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const where = {
+        sourcingCategoryId: categoryId,
+        deletedAt: null,
+        ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
+      };
+      const [total, products] = await Promise.all([
+        tx.product.count({ where }),
+        tx.product.findMany({
+          where,
+          orderBy: { article: 'asc' },
+          skip: page * APP_PAGE_SIZE,
+          take: APP_PAGE_SIZE,
+          select: {
+            id: true,
+            article: true,
+            name: true,
+            germanPriceExclVat: true,
+            germanPriceInclVat: true,
+            localPriceExclVat: true,
+            localPriceInclVat: true,
+            sellPriceEur: true,
+            _count: { select: { suppliers: true } },
+          },
+        }),
+      ]);
+      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
+      const items: ProductRow[] = products.map((p) => ({
+        id: p.id,
+        article: p.article,
+        name: p.name,
+        photoUrl: photoUrlByProductId.get(p.id) ?? null,
+        prices: this.toPriceList(p),
+        supplierCount: p._count.suppliers,
+      }));
+      return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
+    });
+  }
+
+  async search(identity: ResolvedSourcingIdentity, query: string) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const products = await tx.product.findMany({
+        where: {
+          sourcingCategoryId: { not: null },
+          deletedAt: null,
+          OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
+        },
+        orderBy: { article: 'asc' },
+        take: APP_PAGE_SIZE,
+        select: {
+          id: true,
+          article: true,
+          name: true,
+          germanPriceExclVat: true,
+          germanPriceInclVat: true,
+          localPriceExclVat: true,
+          localPriceInclVat: true,
+          sellPriceEur: true,
+          _count: { select: { suppliers: true } },
+        },
+      });
+      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
+      const items: ProductRow[] = products.map((p) => ({
+        id: p.id,
+        article: p.article,
+        name: p.name,
+        photoUrl: photoUrlByProductId.get(p.id) ?? null,
+        prices: this.toPriceList(p),
+        supplierCount: p._count.suppliers,
+      }));
+      return { items };
+    });
+  }
+
+  /** Full detail card — same data `SourcingBotService#sendProductDetail` sends as a chat message, as JSON. */
+  async getProductDetail(identity: ResolvedSourcingIdentity, productId: string) {
+    const result = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: {
+          id: true,
+          article: true,
+          name: true,
+          sourcingCategoryId: true,
+          germanPriceExclVat: true,
+          germanPriceInclVat: true,
+          localPriceExclVat: true,
+          localPriceInclVat: true,
+          sellPriceEur: true,
+        },
+      });
+      if (!product) return null;
+
+      const supplierLinks = await tx.productSupplier.findMany({
+        where: { productId },
+        select: { price: true, supplierOfferedPrice: true, supplier: { select: { id: true, name: true } } },
+      });
+
+      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, [product.id]);
+
+      const candidates = product.sourcingCategoryId
+        ? await tx.sourcingCandidateSupplier.findMany({
+            where: { categoryId: product.sourcingCategoryId, deletedAt: null },
+            include: { outreach: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : [];
+
+      const category = product.sourcingCategoryId
+        ? await tx.sourcingCategory.findUnique({ where: { id: product.sourcingCategoryId }, select: { id: true, name: true, rfqTemplate: true } })
+        : null;
+
+      return { product, supplierLinks, photoUrl: photoUrlByProductId.get(product.id) ?? null, candidates, category };
+    });
+
+    if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
+    const { product, supplierLinks, photoUrl, candidates, category } = result;
+
+    return {
+      id: product.id,
+      article: product.article,
+      name: product.name,
+      photoUrl,
+      prices: this.toPriceList(product),
+      category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
+      realSuppliers: supplierLinks.map((link) => ({
+        id: link.supplier.id,
+        name: link.supplier.name,
+        ourPrice: priceNumber(link.price),
+        supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
+      })),
+      candidateSuppliers: candidates.map((c) => ({
+        id: c.id,
+        name: c.name,
+        region: c.region,
+        location: c.location,
+        phone: c.phone,
+        email: c.email,
+        website: c.website,
+        whatTheyDo: c.whatTheyDo,
+        status: c.outreach?.status ?? 'NOT_CONTACTED',
+        statusLabel: STATUS_LABELS[c.outreach?.status ?? 'NOT_CONTACTED'],
+      })),
+    };
+  }
+
+  /** Every real, already-onboarded Supplier linked to at least one tracked product, with their linked products. */
+  async getSuppliers(identity: ResolvedSourcingIdentity) {
+    const links = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.productSupplier.findMany({
+        where: { product: { sourcingCategoryId: { not: null }, deletedAt: null } },
+        select: {
+          price: true,
+          supplierOfferedPrice: true,
+          supplier: { select: { id: true, name: true, phone: true, email: true } },
+          product: { select: { id: true, article: true, name: true } },
+        },
+      }),
+    );
+
+    const bySupplierId = new Map<string, { id: string; name: string; phone: string | null; email: string | null; products: Array<{ id: string; article: string; name: string; ourPrice: number | null; supplierOfferedPrice: number | null }> }>();
+    for (const link of links) {
+      const existing = bySupplierId.get(link.supplier.id);
+      const productEntry = {
+        id: link.product.id,
+        article: link.product.article,
+        name: link.product.name,
+        ourPrice: priceNumber(link.price),
+        supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
+      };
+      if (existing) {
+        existing.products.push(productEntry);
+      } else {
+        bySupplierId.set(link.supplier.id, { ...link.supplier, products: [productEntry] });
+      }
+    }
+    return [...bySupplierId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getCandidates(identity: ResolvedSourcingIdentity, categoryId?: string, region?: string) {
+    const candidates = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.sourcingCandidateSupplier.findMany({
+        where: {
+          deletedAt: null,
+          ...(categoryId ? { categoryId } : {}),
+          ...(region ? { region } : {}),
+        },
+        include: { outreach: true, category: { select: { id: true, name: true } } },
+        orderBy: [{ category: { sortOrder: 'asc' } }, { name: 'asc' }],
+      }),
+    );
+    return candidates.map((c) => ({
+      id: c.id,
+      name: c.name,
+      region: c.region,
+      location: c.location,
+      phone: c.phone,
+      email: c.email,
+      website: c.website,
+      whatTheyDo: c.whatTheyDo,
+      category: c.category,
+      status: c.outreach?.status ?? 'NOT_CONTACTED',
+      statusLabel: STATUS_LABELS[c.outreach?.status ?? 'NOT_CONTACTED'],
+      lastNote: c.outreach?.lastNote ?? null,
+      quotedPriceEur: priceNumber(c.outreach?.quotedPriceEur),
+      quotedPriceNote: c.outreach?.quotedPriceNote ?? null,
+    }));
+  }
+
+  /** Same writes as the bot's setstatus/note/quote_price+quote_note flows — see SourcingBotService's own comments for why a plain note edit does NOT stamp contactedByUserId/contactedAt but a status change or a quote does. */
+  async updateOutreach(identity: ResolvedSourcingIdentity, candidateId: string, dto: UpdateOutreachDto) {
+    const data: Record<string, unknown> = {};
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+      data.contactedByUserId = identity.userId;
+      data.contactedAt = new Date();
+    }
+    if (dto.note !== undefined) data.lastNote = dto.note;
+    if (dto.quotedPriceEur !== undefined) {
+      data.quotedPriceEur = dto.quotedPriceEur;
+      data.status = data.status ?? 'QUOTE_RECEIVED';
+      data.contactedByUserId = identity.userId;
+      data.contactedAt = new Date();
+    }
+    if (dto.quotedPriceNote !== undefined) data.quotedPriceNote = dto.quotedPriceNote;
+
+    await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.sourcingOutreach.update({
+        where: { companyId_candidateSupplierId: { companyId: identity.companyId, candidateSupplierId: candidateId } },
+        data,
+      }),
+    );
+    return { updated: true };
+  }
+
+  async getStatusOverview(identity: ResolvedSourcingIdentity) {
+    const candidates = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.sourcingCandidateSupplier.findMany({
+        where: { deletedAt: null },
+        include: { outreach: true, category: { select: { name: true } } },
+        orderBy: [{ category: { sortOrder: 'asc' } }, { name: 'asc' }],
+      }),
+    );
+    const counts: Record<string, number> = {};
+    for (const status of Object.keys(STATUS_LABELS)) counts[status] = 0;
+    for (const c of candidates) {
+      const status = c.outreach?.status ?? 'NOT_CONTACTED';
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    return {
+      counts,
+      items: candidates.map((c) => ({
+        id: c.id,
+        name: c.name,
+        categoryName: c.category.name,
+        status: c.outreach?.status ?? 'NOT_CONTACTED',
+        statusLabel: STATUS_LABELS[c.outreach?.status ?? 'NOT_CONTACTED'],
+      })),
+    };
+  }
+}
