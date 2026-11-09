@@ -25,11 +25,11 @@ function getTargetCompanyId(): string {
 }
 
 const PRICE_FIELDS = [
-  { field: 'germanPriceExclVat' as const, label: 'DE без ПДВ' },
-  { field: 'germanPriceInclVat' as const, label: 'DE з ПДВ' },
-  { field: 'localPriceExclVat' as const, label: 'UA без ПДВ' },
-  { field: 'localPriceInclVat' as const, label: 'UA з ПДВ' },
-  { field: 'sellPriceEur' as const, label: 'Наша ціна продажу' },
+  { field: 'germanPriceExclVat' as const, icon: '🇩🇪', label: 'DE без ПДВ' },
+  { field: 'germanPriceInclVat' as const, icon: '🇩🇪', label: 'DE з ПДВ' },
+  { field: 'localPriceExclVat' as const, icon: '🇺🇦', label: 'UA без ПДВ' },
+  { field: 'localPriceInclVat' as const, icon: '🇺🇦', label: 'UA з ПДВ' },
+  { field: 'sellPriceEur' as const, icon: '💰', label: 'Наша ціна продажу' },
 ];
 type PriceField = (typeof PRICE_FIELDS)[number]['field'];
 
@@ -387,15 +387,16 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     }
 
     for (const p of products) {
-      const parts = PRICE_FIELDS.map(({ field, label }) => {
+      const lines = PRICE_FIELDS.map(({ field, icon, label }) => {
         const formatted = this.formatPrice(p[field]);
-        return formatted ? `${label}: ${formatted}` : null;
+        return formatted ? `${icon} ${label}: ${formatted}` : null;
       }).filter((x): x is string => x !== null);
 
-      const text = `<b>${p.article}</b> ${p.name}\n${parts.length > 0 ? parts.join(' · ') : '<i>жодна ціна не вказана</i>'}`;
+      const text = `📦 <b>${p.article}</b> — ${p.name}\n${lines.length > 0 ? lines.join('\n') : '<i>жодна ціна не вказана</i>'}`;
       const keyboard: TelegramInlineKeyboard = {
         inline_keyboard: [
-          PRICE_FIELDS.map(({ field, label }) => ({ text: `✏️ ${label}`, callback_data: `fixprice:${p.id}:${field}` })),
+          PRICE_FIELDS.slice(0, 3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${p.id}:${field}` })),
+          PRICE_FIELDS.slice(3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${p.id}:${field}` })),
         ],
       };
       await this.telegram.sendMessage(chatId, text, keyboard);
