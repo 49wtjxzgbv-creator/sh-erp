@@ -172,6 +172,8 @@ export interface PurchaseOrderItem {
   deliverySchedules?: DeliverySchedule[];
   /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseOrder) — the linked product's own PRODUCT_PHOTO, if any. */
   photoUrl?: string | null;
+  /** Only present on supplier-portal responses — this supplier's own existing catalog price (ProductSupplier.supplierOfferedPrice), if any. Lets the "Ваша ціна" confirm-price input pre-fill a brand new order instead of leaving it blank ("в наступних заявках автоматично підтягуватися", 2026-11-09). Real JSON number, not a Prisma Decimal field. */
+  catalogPrice?: number | null;
   /** "Склад" — the supplier's own declared qty already finished and sitting at their premises, not yet shipped. Supplier-entered only. */
   supplierReadyQty: DecimalString | null;
 }

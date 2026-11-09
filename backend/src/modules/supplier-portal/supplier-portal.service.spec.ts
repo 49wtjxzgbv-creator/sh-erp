@@ -184,8 +184,28 @@ describe('SupplierPortalService', () => {
 
       const result = await service.getPurchaseOrder(actor, 'po1');
 
-      expect(result.items).toEqual([{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC', photoUrl: 'https://example.com/p1.jpg' }]);
+      expect(result.items).toEqual([{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC', photoUrl: 'https://example.com/p1.jpg', catalogPrice: null }]);
     });
+
+    it(
+      "в ваші замовлення на закупівлю в нього в колонці ваша ціна порожньо (2026-11-09) — attaches this supplier's " +
+        "own catalog price per line, so a brand new order's \"Ваша ціна\" input can pre-fill from it",
+      async () => {
+        prisma.tenant.purchaseOrder.findFirst.mockResolvedValue({
+          id: 'po1',
+          items: [{ id: 'item1', productId: 'p1', articleSnapshot: 'ABC' }],
+        });
+        prisma.tenant.productSupplier.findMany.mockResolvedValue([{ productId: 'p1', supplierOfferedPrice: 5.4 }]);
+
+        const result = await service.getPurchaseOrder(actor, 'po1');
+
+        expect(prisma.tenant.productSupplier.findMany).toHaveBeenCalledWith({
+          where: { supplierId: 's1', productId: { in: ['p1'] } },
+          select: { productId: true, supplierOfferedPrice: true },
+        });
+        expect(result.items[0].catalogPrice).toBe(5.4);
+      },
+    );
   });
 
   describe('quotePurchaseRequest', () => {

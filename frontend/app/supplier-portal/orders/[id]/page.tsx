@@ -320,6 +320,8 @@ export default function SupplierPortalOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  /** "в наступних заявках автоматично підтягуватися якщо в них є вже товари які він оцінив раніше" (2026-11-09) — items pre-filled from catalogPrice rather than an explicit confirmation on THIS order, so the UI can hint it's a suggestion, not yet confirmed. */
+  const [prefilledFromCatalog, setPrefilledFromCatalog] = useState<Record<string, boolean>>({});
   const [deliveryDate, setDeliveryDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,10 +335,19 @@ export default function SupplierPortalOrderDetailPage() {
       setOrder(res);
       setDeliveryDate(res.supplierConfirmedDeliveryDate ? res.supplierConfirmedDeliveryDate.slice(0, 10) : '');
       const seeded: Record<string, string> = {};
+      const fromCatalog: Record<string, boolean> = {};
       for (const item of res.items ?? []) {
-        seeded[item.id] = item.supplierConfirmedPrice != null ? String(item.supplierConfirmedPrice) : '';
+        if (item.supplierConfirmedPrice != null) {
+          seeded[item.id] = String(item.supplierConfirmedPrice);
+        } else if (item.catalogPrice != null) {
+          seeded[item.id] = String(item.catalogPrice);
+          fromCatalog[item.id] = true;
+        } else {
+          seeded[item.id] = '';
+        }
       }
       setPrices(seeded);
+      setPrefilledFromCatalog(fromCatalog);
     } catch (err) {
       setLoadError(err);
     } finally {
@@ -435,8 +446,12 @@ export default function SupplierPortalOrderDetailPage() {
                       step="any"
                       min={0}
                       value={prices[item.id] ?? ''}
-                      onChange={(e) => setPrices((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                      onChange={(e) => {
+                        setPrices((prev) => ({ ...prev, [item.id]: e.target.value }));
+                        setPrefilledFromCatalog((prev) => ({ ...prev, [item.id]: false }));
+                      }}
                     />
+                    {prefilledFromCatalog[item.id] && <p className="mt-1 text-xs text-muted-foreground">{t('yourPriceFromCatalogHint')}</p>}
                   </TableCell>
                 </TableRow>
               ))}

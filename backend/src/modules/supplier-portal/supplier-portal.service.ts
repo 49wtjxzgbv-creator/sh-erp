@@ -149,7 +149,16 @@ export class SupplierPortalService {
     // Same id but a different supplier's order (or a nonexistent id) both
     // 404 identically — never distinguish "not yours" from "doesn't exist".
     if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
-    return { ...order, items: await this.attachPhotoUrls(actor, order.items) };
+    const withPhotos = await this.attachPhotoUrls(actor, order.items);
+    // "в ваші замовлення на закупівлю в нього в колонці ваша ціна
+    // порожньо" (2026-11-09) — same gap as getPurchaseRequest's own
+    // catalogPrice fix: `supplierConfirmedPrice` only ever gets set once
+    // the supplier explicitly confirms THIS order's own price, so a brand
+    // new order is always blank there even for a product this supplier
+    // has already priced via quotePurchaseRequest (ProductSupplier.
+    // supplierOfferedPrice). Attach it so the portal can pre-fill the
+    // "Ваша ціна" input instead of leaving it empty.
+    return { ...order, items: await this.attachCatalogPrices(actor, withPhotos) };
   }
 
   async confirmPurchaseOrder(actor: RequestSupplierPortalUser, id: string, dto: ConfirmPurchaseOrderDto) {
