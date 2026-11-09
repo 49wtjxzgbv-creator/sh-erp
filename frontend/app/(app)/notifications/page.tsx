@@ -211,6 +211,18 @@ function TelegramSupervisorCard() {
 }
 
 /**
+ * Public Telegram bot username (@BotFather-assigned, not a secret — safe
+ * to hardcode here rather than threading it through NEXT_PUBLIC_* env,
+ * which would need a full frontend rebuild to change — see
+ * frontend/.env.example's NEXT_PUBLIC_API_BASE_URL comment for why that
+ * matters). Powers the `https://t.me/<username>?start=<code>` deep link:
+ * Telegram auto-sends "/start <code>" to the bot when a user opens it,
+ * which SourcingBotService already parses (see its `/start` handler) —
+ * so this is a pure frontend addition, no backend change needed.
+ */
+const SOURCING_BOT_USERNAME = 'sherp_vpbot';
+
+/**
  * Procurement sourcing bot (2026-11-09) — a SEPARATE Telegram bot/token
  * from the production-notifications one above (TelegramSupervisorCard).
  * Pair here, then browse sourcing categories/candidate suppliers/RFQ
@@ -284,12 +296,22 @@ function SourcingBotCard() {
         ) : (
           <>
             {generatedCode && (
-              <div className="rounded-md border bg-secondary/30 p-3">
-                <p className="text-xs text-muted-foreground">{t('sourcingBotCodeLabel')}</p>
-                <p className="font-mono text-2xl font-semibold tracking-widest">{generatedCode.code}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t('sourcingBotCodeExpiresAt', { time: new Date(generatedCode.expiresAt).toLocaleTimeString() })}
-                </p>
+              <div className="rounded-md border bg-secondary/30 p-3 space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">{t('sourcingBotCodeLabel')}</p>
+                  <p className="font-mono text-2xl font-semibold tracking-widest">{generatedCode.code}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('sourcingBotCodeExpiresAt', { time: new Date(generatedCode.expiresAt).toLocaleTimeString() })}
+                  </p>
+                </div>
+                <div>
+                  <Button asChild size="sm">
+                    <a href={`https://t.me/${SOURCING_BOT_USERNAME}?start=${generatedCode.code}`} target="_blank" rel="noopener noreferrer">
+                      {t('sourcingBotOpenLink')}
+                    </a>
+                  </Button>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('sourcingBotOpenLinkHint')}</p>
+                </div>
               </div>
             )}
             <Button size="sm" loading={generateCode.isPending} onClick={handleGenerate}>

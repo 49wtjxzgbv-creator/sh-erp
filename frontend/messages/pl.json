@@ -1383,6 +1383,8 @@
     "sourcingBotGenerateCode": "Generate code",
     "sourcingBotCodeLabel": "Pairing code",
     "sourcingBotCodeExpiresAt": "Valid until {time}",
+    "sourcingBotOpenLink": "Open the bot via link",
+    "sourcingBotOpenLinkHint": "Tap it — the bot opens and pairing happens automatically.",
     "sourcingBotUnlink": "Unlink",
     "sourcingBotUnlinkConfirmTitle": "Unlink the supplier-sourcing bot?",
     "sourcingBotUnlinkConfirmDescription": "This Telegram account will no longer have access to the supplier-sourcing bot until you link it again."

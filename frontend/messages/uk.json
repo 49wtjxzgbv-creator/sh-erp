@@ -1492,6 +1492,8 @@
     "sourcingBotGenerateCode": "Згенерувати код",
     "sourcingBotCodeLabel": "Код прив'язки",
     "sourcingBotCodeExpiresAt": "Дійсний до {time}",
+    "sourcingBotOpenLink": "Відкрити бота за посиланням",
+    "sourcingBotOpenLinkHint": "Клікніть — бот відкриється і прив'язка відбудеться автоматично.",
     "sourcingBotUnlink": "Відв'язати",
     "sourcingBotUnlinkConfirmTitle": "Відв'язати бота пошуку постачальників?",
     "sourcingBotUnlinkConfirmDescription": "Цей Telegram-акаунт більше не матиме доступу до бота пошуку постачальників, доки не прив'яжете його знову."
