@@ -662,6 +662,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
           id: true,
           article: true,
           name: true,
+          sourcingCategoryId: true,
           germanPriceExclVat: true,
           germanPriceInclVat: true,
           localPriceExclVat: true,
@@ -675,6 +676,25 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     if (products.length === 0) {
       await this.telegram.sendMessage(chatId, 'Поки немає жодного товару в каталозі.');
       return;
+    }
+
+    // Candidate suppliers (2026-11-09 — "до товарів потрібна колонка
+    // можливі постачальники") are category-scoped, not product-scoped
+    // (SourcingCandidateSupplier has no productId) — one query across
+    // every category that actually has a tracked product, not N+1.
+    const categoryIds = [...new Set(products.map((p) => p.sourcingCategoryId).filter((id): id is string => id !== null))];
+    const candidateRows = categoryIds.length
+      ? await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+          tx.sourcingCandidateSupplier.findMany({
+            where: { categoryId: { in: categoryIds }, deletedAt: null },
+            select: { categoryId: true, name: true },
+            orderBy: { createdAt: 'asc' },
+          }),
+        )
+      : [];
+    const candidateNamesByCategoryId = new Map<string, string[]>();
+    for (const c of candidateRows) {
+      candidateNamesByCategoryId.set(c.categoryId, [...(candidateNamesByCategoryId.get(c.categoryId) ?? []), c.name]);
     }
 
     // storageKey/mimeType selected directly here (not via
@@ -745,6 +765,9 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
           .join('<br>');
         const photoUri = photoDataUriByProductId.get(p.id);
         const photoCell = photoUri ? `<img src="${photoUri}" class="photo">` : '<div class="photo photo-empty">—</div>';
+        const candidateLines = (p.sourcingCategoryId ? candidateNamesByCategoryId.get(p.sourcingCategoryId) ?? [] : [])
+          .map((name) => `🆕 ${escapeHtml(name)}`)
+          .join('<br>');
 
         return `<tr>
           <td>${photoCell}</td>
@@ -753,6 +776,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
           <td>${escapeHtml(p.name)}</td>
           <td>${ourLines || '—'}</td>
           <td>${supplierLines || '—'}</td>
+          <td>${candidateLines || '—'}</td>
         </tr>`;
       })
       .join('\n');
@@ -771,7 +795,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
 <body>
   <h1>Каталог товарів — ${products.length} позицій (станом на ${new Date().toISOString().slice(0, 10)})</h1>
   <table>
-    <thead><tr><th>Фото</th><th>Категорія</th><th>Артикул</th><th>Назва</th><th>Наші ціни</th><th>Постачальники</th></tr></thead>
+    <thead><tr><th>Фото</th><th>Категорія</th><th>Артикул</th><th>Назва</th><th>Наші ціни</th><th>Постачальники</th><th>Можливі постачальники</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
 </body></html>`;

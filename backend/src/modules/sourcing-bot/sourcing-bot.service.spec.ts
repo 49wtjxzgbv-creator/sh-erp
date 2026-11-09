@@ -385,6 +385,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
           id: 'prod1',
           article: 'K00285',
           name: 'Linsen-Flanschkopf-Schraube',
+          sourcingCategoryId: 'cat1',
           germanPriceExclVat: 0.08,
           germanPriceInclVat: null,
           localPriceExclVat: null,
@@ -397,6 +398,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
           id: 'prod2',
           article: 'X999',
           name: 'No photo item',
+          sourcingCategoryId: null,
           germanPriceExclVat: null,
           germanPriceInclVat: null,
           localPriceExclVat: null,
@@ -406,6 +408,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
           suppliers: [],
         },
       ]);
+      tx.sourcingCandidateSupplier.findMany.mockResolvedValue([{ categoryId: 'cat1', name: 'UKR-METIZ' }]);
       tx.fileAsset.findMany.mockResolvedValue([{ entityId: 'prod1', storageKey: 'tenants/c1/product_photo/prod1/x.jpg', mimeType: 'image/jpeg' }]);
       // Raw R2 bytes, fetched directly by storageKey (NOT through
       // FilesService — that would need tenant context that's no longer
@@ -423,6 +426,10 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       const [renderedHtml] = mockRenderHtmlToPdf.mock.calls[0];
       expect(renderedHtml).toContain('K00285');
       expect(renderedHtml).toContain('data:image/jpeg;base64,');
+      // New "Можливі постачальники" column (2026-11-09) — category-scoped candidates, not product-scoped.
+      expect(tx.sourcingCandidateSupplier.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { categoryId: { in: ['cat1'] }, deletedAt: null } }));
+      expect(renderedHtml).toContain('Можливі постачальники');
+      expect(renderedHtml).toContain('UKR-METIZ');
 
       expect(telegram.sendDocument).toHaveBeenCalledWith(
         chatId,
