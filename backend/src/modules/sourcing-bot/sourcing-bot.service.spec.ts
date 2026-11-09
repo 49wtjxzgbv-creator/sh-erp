@@ -1,4 +1,8 @@
 import { SourcingBotService } from './sourcing-bot.service';
+import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
+
+jest.mock('../../common/pdf/html-to-pdf');
+const mockRenderHtmlToPdf = renderHtmlToPdf as jest.MockedFunction<typeof renderHtmlToPdf>;
 
 describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
   let service: SourcingBotService;
@@ -55,6 +59,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       answerCallbackQuery: jest.fn(),
       editMessageText: jest.fn(),
     };
+    mockRenderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from('%PDF-fake'));
     service = new SourcingBotService(pairingPrisma, prisma, filesService, telegram);
   });
 
@@ -290,6 +295,40 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       expect(telegram.sendPhoto).not.toHaveBeenCalled();
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('K00285'), expect.anything());
     });
+
+    it('lists the product\'s own category candidate suppliers too (2026-11-09 — "додай ще до кожної картки товару можливі постачальники")', async () => {
+      tx.product.findUnique.mockResolvedValue({
+        id: 'prod1',
+        article: 'K00285',
+        name: 'Linsen-Flanschkopf-Schraube',
+        sourcingCategoryId: 'cat1',
+        germanPriceExclVat: null,
+        germanPriceInclVat: null,
+        localPriceExclVat: null,
+        localPriceInclVat: null,
+        sellPriceEur: null,
+      });
+      tx.sourcingCandidateSupplier.findMany.mockResolvedValue([
+        { id: 'cand1', name: 'UKR-METIZ', outreach: { status: 'CONTACTED' } },
+        { id: 'cand2', name: 'Діабаз Груп', outreach: null },
+      ]);
+
+      await service.handleUpdate(cb('product:prod1'));
+
+      expect(tx.sourcingCandidateSupplier.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { categoryId: 'cat1', deletedAt: null } }),
+      );
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        chatId,
+        expect.stringMatching(/Можливі постачальники.*UKR-METIZ.*Діабаз Груп/s),
+        expect.objectContaining({
+          inline_keyboard: expect.arrayContaining([
+            [{ text: '🆕 UKR-METIZ', callback_data: 'cand:cand1' }],
+            [{ text: '🆕 Діабаз Груп', callback_data: 'cand:cand2' }],
+          ]),
+        }),
+      );
+    });
   });
 
   describe('supplier browsing (2026-11-09)', () => {
@@ -340,7 +379,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
   describe('catalog export (2026-11-09 — "щоб генерувало файл з усіма товарами там фото артикул назву всіх постачальників і ціни")', () => {
     beforeEach(pairAndClear);
 
-    it('builds an .xlsx with one row per tracked product, embeds the photo when present, and sends it as a document', async () => {
+    it('renders a PDF covering the WHOLE catalog (not just tracked products), embeds photos as data URIs, and sends it as a document', async () => {
       tx.product.findMany.mockResolvedValue([
         {
           id: 'prod1',
@@ -363,7 +402,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
           localPriceExclVat: null,
           localPriceInclVat: null,
           sellPriceEur: null,
-          sourcingCategory: { name: 'А. Метизи' },
+          sourcingCategory: null,
           suppliers: [],
         },
       ]);
@@ -371,12 +410,19 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
 
       await service.handleUpdate(msg('📄 Файл з усіма товарами'));
 
+      // Scoped to ALL products (no sourcingCategoryId filter) — "чому тільки 156 коли в каталозі 327".
+      expect(tx.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null } }));
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Генерую'));
       expect(filesService.getFileAssetBytes).toHaveBeenCalledWith({ userId: 'u1', companyId: 'c1' }, 'file1');
+
+      const [renderedHtml] = mockRenderHtmlToPdf.mock.calls[0];
+      expect(renderedHtml).toContain('K00285');
+      expect(renderedHtml).toContain('data:image/jpeg;base64,');
+
       expect(telegram.sendDocument).toHaveBeenCalledWith(
         chatId,
         expect.anything(),
-        expect.stringMatching(/^catalog-export-\d{4}-\d{2}-\d{2}\.xlsx$/),
+        expect.stringMatching(/^catalog-export-\d{4}-\d{2}-\d{2}\.pdf$/),
         expect.stringContaining('2 товарів, 1 з фото'),
       );
       const buffer = telegram.sendDocument.mock.calls[0][1];
@@ -384,12 +430,25 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       expect(buffer.length).toBeGreaterThan(0);
     });
 
-    it('reports empty state when there are no tracked products, without generating a file', async () => {
+    it('reports empty state when the catalog is empty, without rendering a PDF', async () => {
       tx.product.findMany.mockResolvedValue([]);
 
       await service.handleUpdate(msg('📄 Файл з усіма товарами'));
 
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('немає жодного'));
+      expect(mockRenderHtmlToPdf).not.toHaveBeenCalled();
+      expect(telegram.sendDocument).not.toHaveBeenCalled();
+    });
+
+    it('tells the user and does not send anything if PDF rendering itself fails', async () => {
+      tx.product.findMany.mockResolvedValue([
+        { id: 'prod1', article: 'K1', name: 'X', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, sourcingCategory: null, suppliers: [] },
+      ]);
+      mockRenderHtmlToPdf.mockRejectedValue(new Error('chromium crashed'));
+
+      await service.handleUpdate(msg('📄 Файл з усіма товарами'));
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Не вдалося згенерувати'));
       expect(telegram.sendDocument).not.toHaveBeenCalled();
     });
   });
