@@ -406,14 +406,19 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
           suppliers: [],
         },
       ]);
-      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1', entityId: 'prod1' }]);
+      tx.fileAsset.findMany.mockResolvedValue([{ entityId: 'prod1', storageKey: 'tenants/c1/product_photo/prod1/x.jpg', mimeType: 'image/jpeg' }]);
+      // Raw R2 bytes, fetched directly by storageKey (NOT through
+      // FilesService — that would need tenant context that's no longer
+      // active once this transaction has closed, see the method's own
+      // comment) — same async-iterable Body shape AWS SDK v3 returns.
+      (service as any).r2.send = jest.fn().mockResolvedValue({ Body: (async function* () { yield Buffer.from('fake-image-bytes'); })() });
 
       await service.handleUpdate(msg('📄 Файл з усіма товарами'));
 
       // Scoped to ALL products (no sourcingCategoryId filter) — "чому тільки 156 коли в каталозі 327".
       expect(tx.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { deletedAt: null } }));
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Генерую'));
-      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith({ userId: 'u1', companyId: 'c1' }, 'file1');
+      expect((service as any).r2.send).toHaveBeenCalled();
 
       const [renderedHtml] = mockRenderHtmlToPdf.mock.calls[0];
       expect(renderedHtml).toContain('K00285');

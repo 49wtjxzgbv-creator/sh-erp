@@ -1,8 +1,10 @@
 import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { SourcingOutreachStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SourcingBotPrismaService } from '../../prisma/sourcing-bot-prisma.service';
 import { FilesService } from '../files/files.service';
+import { createR2Client, R2_BUCKET } from '../files/r2-client';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 import { SourcingBotApiClient, TelegramInlineKeyboard, TelegramReplyKeyboard, TelegramUpdate } from './sourcing-bot-api.client';
 
@@ -139,6 +141,8 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(SourcingBotService.name);
   private running = false;
   private updateOffset = 0;
+
+  private readonly r2 = createR2Client();
 
   private readonly identityCache = new Map<string, ResolvedIdentity>();
   private readonly pending = new Map<string, PendingAction>();
@@ -673,30 +677,43 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       return;
     }
 
+    // storageKey/mimeType selected directly here (not via
+    // FilesService#getFileAssetBytes, which re-queries FileAsset under
+    // `prisma.tenant` itself) — found live: that re-query ran AFTER this
+    // transaction had already closed, throwing "No tenant context
+    // available" for every single photo. Fetching raw R2 bytes by the
+    // already-known storageKey needs no tenant context at all, so it can
+    // safely run outside the transaction (holding a DB transaction open
+    // for ~300 R2 round-trips would be its own problem).
     const photoAssets = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.fileAsset.findMany({
         where: { entityType: 'Product', entityId: { in: products.map((p) => p.id) }, domain: 'PRODUCT_PHOTO', deletedAt: null },
         orderBy: { createdAt: 'asc' },
-        select: { id: true, entityId: true },
+        select: { entityId: true, storageKey: true, mimeType: true },
       }),
     );
-    const photoAssetIdByProductId = new Map<string, string>();
+    const photoAssetByProductId = new Map<string, { storageKey: string; mimeType: string }>();
     for (const fa of photoAssets) {
-      if (!photoAssetIdByProductId.has(fa.entityId)) photoAssetIdByProductId.set(fa.entityId, fa.id);
+      if (!photoAssetByProductId.has(fa.entityId)) photoAssetByProductId.set(fa.entityId, fa);
     }
 
     // Modest concurrency, not 327 sequential R2 round-trips — a plain
     // chunked Promise.all, no new dependency for a one-off batch job.
     const PHOTO_FETCH_CONCURRENCY = 10;
     const photoDataUriByProductId = new Map<string, string>();
-    const productIdsWithPhoto = products.map((p) => p.id).filter((id) => photoAssetIdByProductId.has(id));
+    const productIdsWithPhoto = products.map((p) => p.id).filter((id) => photoAssetByProductId.has(id));
     for (let i = 0; i < productIdsWithPhoto.length; i += PHOTO_FETCH_CONCURRENCY) {
       const chunk = productIdsWithPhoto.slice(i, i + PHOTO_FETCH_CONCURRENCY);
       await Promise.all(
         chunk.map(async (productId) => {
-          const fileAssetId = photoAssetIdByProductId.get(productId)!;
+          const { storageKey, mimeType } = photoAssetByProductId.get(productId)!;
           try {
-            const { bytes, mimeType } = await this.filesService.getFileAssetBytes({ userId: identity.userId, companyId: identity.companyId }, fileAssetId);
+            const object = await this.r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }));
+            const chunks: Buffer[] = [];
+            for await (const part of object.Body as any) {
+              chunks.push(Buffer.isBuffer(part) ? part : Buffer.from(part));
+            }
+            const bytes = Buffer.concat(chunks);
             photoDataUriByProductId.set(productId, `data:${mimeType};base64,${bytes.toString('base64')}`);
           } catch (err) {
             this.logger.warn(`Catalog export: failed to fetch photo for product ${productId}: ${String(err)}`);
