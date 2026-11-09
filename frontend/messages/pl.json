@@ -937,7 +937,13 @@
     "linkedAssemblies": "Assemblies",
     "assemblyName": "Assembly name",
     "supplierInvoicesTitle": "Supplier invoices",
-    "noSupplierInvoices": "No invoices yet"
+    "noSupplierInvoices": "No invoices yet",
+    "batchTitle": "Combined supplier order",
+    "sourceCustomerOrderLabel": "Customer order",
+    "generateCombinedPdfButton": "Generate combined PDF",
+    "downloadCombinedPdf": "Download combined PDF",
+    "setOrderDeliveryDateButton": "Set delivery date for the whole order",
+    "setOrderDeliveryDateHint": "Delivery date for {count} items with no schedule yet"
   },
   "sales": {
     "title": "Sales",

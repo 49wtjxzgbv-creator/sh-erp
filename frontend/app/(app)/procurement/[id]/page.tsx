@@ -15,6 +15,8 @@ import {
   useDeliveryScheduleSiblings,
   useCreateGroupedDeliverySchedule,
   useGeneratePurchaseOrderPdf,
+  usePurchaseOrderBatch,
+  useGenerateCombinedPurchaseOrderPdf,
   usePurchaseOrderComments,
   useAddPurchaseOrderComment,
 } from '@/lib/hooks/use-procurement';
@@ -25,7 +27,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 import { useFinanceSummary } from '@/lib/hooks/use-finance';
 import { formatMoney } from '@/lib/finance-format';
 import { formatEur } from '@/lib/utils';
-import type { PurchaseOrderStatus, ReceivePurchaseOrderLineInput, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
+import type { PurchaseOrder, PurchaseOrderStatus, ReceivePurchaseOrderLineInput, PurchaseOrderItem, DeliveryScheduleStatus } from '@/lib/api-client/procurement';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -432,6 +434,160 @@ function PurchaseOrderCommentsPanel({ orderId }: { orderId: string }) {
   );
 }
 
+/**
+ * "чомусь воно зробило кожну заявку окремим замовленням постачальнику а не
+ * одним файлом" (2026-11-09) — PurchaseRequestsService#convertToOrder still
+ * fans a multi-customer-order заявка out into one PurchaseOrder PER
+ * customer order (Finance's cost rollup keys off that single FK — see
+ * schema.prisma's own comment on PurchaseOrder.combinedPdfFileId for why
+ * that stays unchanged). This card is the compromise: surfaces the sibling
+ * orders from the same conversion so staff can tell this order apart from
+ * "an unrelated order to the same supplier", and offers ONE combined PDF
+ * across all of them — hidden entirely for an ordinary order with no
+ * fan-out history (batch of exactly 1).
+ */
+function PurchaseOrderBatchCard({ order }: { order: PurchaseOrder }) {
+  const t = useTranslations('procurement');
+  const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
+  const canManage = useHasPermission('purchase-orders:manage');
+  const { data: batch } = usePurchaseOrderBatch(order.id);
+  const siblingOrderIds = (batch?.purchaseOrders ?? []).filter((o) => o.id !== order.id).map((o) => o.id);
+  const generateCombinedPdf = useGenerateCombinedPurchaseOrderPdf(order.id, siblingOrderIds);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!batch || batch.purchaseOrders.length <= 1) return null;
+
+  async function handleGenerateCombinedPdf() {
+    setError(null);
+    try {
+      const updated = await generateCombinedPdf.mutateAsync();
+      if (updated.combinedPdfFileId) {
+        const { downloadUrl } = await getFileDownloadUrl(updated.combinedPdfFileId);
+        window.open(downloadUrl, '_blank');
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleDownloadCombinedPdf() {
+    if (!order.combinedPdfFileId) return;
+    const { downloadUrl } = await getFileDownloadUrl(order.combinedPdfFileId);
+    window.open(downloadUrl, '_blank');
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('batchTitle')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ul className="space-y-1 text-sm">
+          {batch.purchaseOrders.map((o) => (
+            <li key={o.id} className="flex items-center gap-2">
+              {o.id === order.id ? (
+                <span className="font-medium">{o.number}</span>
+              ) : (
+                <Link href={`/procurement/${o.id}`} className="text-primary hover:underline">
+                  {o.number}
+                </Link>
+              )}
+              {o.sourceCustomerOrder && (
+                <span className="text-muted-foreground">
+                  —{' '}
+                  <Link href={`/sales/${o.sourceCustomerOrder.id}`} className="hover:underline">
+                    {t('sourceCustomerOrderLabel')} №{o.sourceCustomerOrder.orderNumber ?? o.sourceCustomerOrder.id}
+                  </Link>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" loading={generateCombinedPdf.isPending} onClick={handleGenerateCombinedPdf}>
+              {t('generateCombinedPdfButton')}
+            </Button>
+            {order.combinedPdfFileId && (
+              <Button variant="ghost" size="sm" onClick={handleDownloadCombinedPdf}>
+                {t('downloadCombinedPdf')}
+              </Button>
+            )}
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * "можливість ставити дату поставки на все замовлення а не тільки на
+ * кожен товар окремо" (2026-11-09) — one date, applied to every item in
+ * THIS order that doesn't have a delivery schedule yet. Reuses the exact
+ * same bulk endpoint the per-product "fill once for the group" flow uses
+ * (createGroupedDeliverySchedule): passing every item's own full qty as
+ * one combined line makes the proportional split resolve to exactly each
+ * item's own qtyOrdered, so no new backend logic was needed. Renders
+ * nothing once every item already has a schedule.
+ */
+function OrderDeliveryDateBulkSetter({ order }: { order: PurchaseOrder }) {
+  const t = useTranslations('procurement');
+  const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
+  const createGroupedSchedule = useCreateGroupedDeliverySchedule();
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const unscheduledItems = (order.items ?? []).filter((i) => !i.currentDeliveryScheduleId);
+  if (unscheduledItems.length === 0) return null;
+
+  async function handleSubmit() {
+    setError(null);
+    if (!date) {
+      setError(t('invalidRow'));
+      return;
+    }
+    const totalQty = unscheduledItems.reduce((sum, i) => sum + Number(i.qtyOrdered), 0);
+    try {
+      await createGroupedSchedule.mutateAsync({
+        dto: { purchaseOrderItemIds: unscheduledItems.map((i) => i.id), lines: [{ date, qty: totalQty }] },
+        orderIds: [order.id],
+      });
+      setOpen(false);
+      setDate('');
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        {t('setOrderDeliveryDateButton')}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div className="space-y-1.5">
+        <Label htmlFor="order-delivery-date">{t('setOrderDeliveryDateHint', { count: unscheduledItems.length })}</Label>
+        <Input id="order-delivery-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
+      <Button size="sm" loading={createGroupedSchedule.isPending} onClick={handleSubmit}>
+        {tc('save')}
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+        {tc('cancel')}
+      </Button>
+      {error && <p className="w-full text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 export default function PurchaseOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -543,6 +699,11 @@ export default function PurchaseOrderDetailPage() {
           <h2 className="text-lg font-semibold">{order.number}</h2>
           <span className="text-sm text-muted-foreground">{order.supplierNameSnapshot}</span>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`poStatus${order.status}`)}</Badge>
+          {order.sourceCustomerOrder && (
+            <Link href={`/sales/${order.sourceCustomerOrder.id}`} className="text-sm text-muted-foreground hover:underline">
+              {t('sourceCustomerOrderLabel')} №{order.sourceCustomerOrder.orderNumber ?? order.sourceCustomerOrder.id}
+            </Link>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canManage && (
@@ -600,6 +761,8 @@ export default function PurchaseOrderDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <PurchaseOrderBatchCard order={order} />
 
       <Card>
         <CardHeader>
@@ -682,8 +845,9 @@ export default function PurchaseOrderDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">{t('deliverySchedule')}</CardTitle>
+          {canManage && <OrderDeliveryDateBulkSetter order={order} />}
         </CardHeader>
         <CardContent className="space-y-4">
           {(order.items ?? []).map((item) => (

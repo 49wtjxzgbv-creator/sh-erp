@@ -2907,6 +2907,22 @@ model PurchaseOrder {
   // PurchaseOrderPdfService — see FileDomain.PURCHASE_ORDER_DOCUMENT.
   pdfFileId String? @db.Uuid
 
+  // "чомусь воно зробило кожну заявку окремим замовленням постачальнику а
+  // не одним файлом" (2026-11-09): PurchaseRequestsService#convertToOrder
+  // still fans a multi-customer-order заявка out into one PurchaseOrder
+  // PER customer order (sourceCustomerOrderId stays a single FK — Finance's
+  // cost rollup and the planner board both key off it, see that method's
+  // own header comment for why that's deliberate and NOT being undone).
+  // This field is the compromise: the one combined PDF the supplier
+  // actually receives, shared across every sibling PurchaseOrder from the
+  // same conversion (same fileId stamped onto all of them) — see
+  // PurchaseOrdersService#generateCombinedPdf / #resolveBatchOrderIds for
+  // how siblings are found (derived from shared
+  // PurchaseOrderItem.originatingPurchaseRequestItemId lineage, no extra
+  // "batch id" column needed). Null for an ordinary, non-fanned-out order,
+  // which only ever has `pdfFileId` (its own, individual PDF).
+  combinedPdfFileId String? @db.Uuid
+
   company             Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
   supplier            Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   sourceCustomerOrder CustomerOrder?          @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)

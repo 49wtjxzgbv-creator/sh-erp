@@ -28,6 +28,20 @@ export class PurchaseOrdersController {
     return this.purchaseOrdersService.generatePdf(user, id);
   }
 
+  @Get(':id/batch')
+  @RequirePermissions('purchase-orders:read')
+  @ApiOperation({ summary: "Every sibling order fanned out from the same заявка conversion as this one (including itself), each with its own source customer order — \"приписка щоб розуміти з якого замовлення береться ця заявка\"." })
+  async getBatch(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.purchaseOrdersService.getBatch(user, id);
+  }
+
+  @Post(':id/combined-pdf')
+  @RequirePermissions('purchase-orders:manage')
+  @ApiOperation({ summary: 'Render and store ONE combined PDF across every sibling order in this batch (overwrites any previous one) — "одним файлом" for the supplier, even though each customer order still keeps its own PurchaseOrder for Finance.' })
+  async generateCombinedPdf(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.purchaseOrdersService.generateCombinedPdf(user, id);
+  }
+
   @Get()
   @RequirePermissions('purchase-orders:read')
   @ApiOperation({ summary: 'Search/list purchase orders, paginated.' })

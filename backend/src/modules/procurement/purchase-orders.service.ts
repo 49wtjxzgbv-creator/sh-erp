@@ -132,14 +132,10 @@ export class PurchaseOrdersService {
     const order = await this.findOne(user, id);
     const items = order.items as any[];
 
-    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
-    const assemblyIds = [...new Set(items.map((i) => i.assemblyId).filter((v): v is string => Boolean(v)))];
-
-    const [branding, company, productPhotos, assemblyPhotos] = await Promise.all([
+    const [branding, company, renderItems] = await Promise.all([
       this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
       this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
-      productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_PHOTO']) : {},
-      assemblyIds.length > 0 ? this.filesService.listForEntities(user, 'Assembly', assemblyIds, ['ASSEMBLY_PHOTO']) : {},
+      this.buildPdfRenderItems(user, items),
     ]);
 
     // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId) — same fallback-to-nothing shape as PurchaseRequestsService#generatePdf's own logo resolution.
@@ -156,30 +152,7 @@ export class PurchaseOrdersService {
       supplier: { name: order.supplierNameSnapshot },
       comment: order.comment,
       currency: order.currency,
-      items: items.map((item) => ({
-        articleSnapshot: item.articleSnapshot,
-        productNameSnapshot: item.productNameSnapshot,
-        qty: Number(item.qtyOrdered),
-        unitPrice:
-          item.supplierConfirmedPrice != null
-            ? Number(item.supplierConfirmedPrice)
-            : item.expectedPrice != null
-              ? Number(item.expectedPrice)
-              : null,
-        photoUrl: item.productId
-          ? ((productPhotos as any)[item.productId]?.[0]?.downloadUrl ?? null)
-          : item.assemblyId
-            ? ((assemblyPhotos as any)[item.assemblyId]?.[0]?.downloadUrl ?? null)
-            : null,
-        // "а дати поставки" (2026-11-04) — this line's own Delivery
-        // Schedule split, if staff have filled one in: find the CURRENT
-        // operative version (currentDeliveryScheduleId — never a PROPOSED
-        // one awaiting a decision) among the full version history findOne()
-        // already fetched, and pull its lines straight through.
-        deliveryDates: (item.deliverySchedules as any[])
-          .find((s) => s.id === item.currentDeliveryScheduleId)
-          ?.lines.map((l: any) => ({ date: l.date, qty: Number(l.qty) })) ?? [],
-      })),
+      items: renderItems,
     });
 
     const pdfFileId = await this.pdfService.generateAndStore(user, {
@@ -202,6 +175,110 @@ export class PurchaseOrdersService {
     return updated;
   }
 
+  /** Shared per-item render-row mapping (photo resolution + price/delivery-schedule fallbacks) — used by both generatePdf (one order) and generateCombinedPdf (every item across a whole batch) so the two documents stay pixel-identical per line. */
+  private async buildPdfRenderItems(user: RequestUser, items: any[]) {
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
+    const assemblyIds = [...new Set(items.map((i) => i.assemblyId).filter((v): v is string => Boolean(v)))];
+    const [productPhotos, assemblyPhotos] = await Promise.all([
+      productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_PHOTO']) : {},
+      assemblyIds.length > 0 ? this.filesService.listForEntities(user, 'Assembly', assemblyIds, ['ASSEMBLY_PHOTO']) : {},
+    ]);
+
+    return items.map((item) => ({
+      articleSnapshot: item.articleSnapshot,
+      productNameSnapshot: item.productNameSnapshot,
+      qty: Number(item.qtyOrdered),
+      unitPrice:
+        item.supplierConfirmedPrice != null
+          ? Number(item.supplierConfirmedPrice)
+          : item.expectedPrice != null
+            ? Number(item.expectedPrice)
+            : null,
+      photoUrl: item.productId
+        ? ((productPhotos as any)[item.productId]?.[0]?.downloadUrl ?? null)
+        : item.assemblyId
+          ? ((assemblyPhotos as any)[item.assemblyId]?.[0]?.downloadUrl ?? null)
+          : null,
+      // "а дати поставки" (2026-11-04) — this line's own Delivery
+      // Schedule split, if staff have filled one in: find the CURRENT
+      // operative version (currentDeliveryScheduleId — never a PROPOSED
+      // one awaiting a decision) among the full version history findOne()
+      // already fetched, and pull its lines straight through.
+      deliveryDates: (item.deliverySchedules as any[])
+        .find((s) => s.id === item.currentDeliveryScheduleId)
+        ?.lines.map((l: any) => ({ date: l.date, qty: Number(l.qty) })) ?? [],
+    }));
+  }
+
+  /**
+   * "чомусь воно зробило кожну заявку окремим замовленням постачальнику а
+   * не одним файлом" (2026-11-09) — ONE PDF covering every sibling order
+   * fanned out from the same заявка conversion (resolveBatchOrderIds),
+   * each one still its own real PurchaseOrder row (Finance's per-customer-
+   * order cost rollup keys off that — see PurchaseOrder.combinedPdfFileId's
+   * own schema.prisma comment for why that stays unchanged). Stamps the
+   * same fileId onto every sibling's `combinedPdfFileId`, so any of them
+   * links to the one shared document. For an ordinary, non-fanned-out
+   * order this is just that order's own PDF (resolveBatchOrderIds returns
+   * only itself).
+   */
+  async generateCombinedPdf(user: RequestUser, id: string) {
+    const orderIds = await this.resolveBatchOrderIds(id);
+    const orders = await Promise.all(orderIds.map((orderId) => this.findOne(user, orderId)));
+    orders.sort((a, b) => a.orderDate.getTime() - b.orderDate.getTime());
+    const primary = orders[0];
+
+    const allItems = orders.flatMap((o) => o.items as any[]);
+    const [branding, company, renderItems] = await Promise.all([
+      this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
+      this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
+      this.buildPdfRenderItems(user, allItems),
+    ]);
+    const fromLogoUrl = branding?.printLogoFileId
+      ? ((await this.filesService.getDownloadUrl(user, branding.printLogoFileId).catch(() => null))?.downloadUrl ?? null)
+      : null;
+
+    const combinedNumber = orders.map((o) => o.number).join(' / ');
+    const earliestExpectedDeliveryDate =
+      orders
+        .map((o) => o.expectedDeliveryDate)
+        .filter((d): d is Date => d != null)
+        .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+    const combinedComment = [...new Set(orders.map((o) => o.comment).filter((c): c is string => Boolean(c)))].join(' / ') || null;
+
+    const html = this.pdfRenderer.renderHtml({
+      number: combinedNumber,
+      orderDate: primary.orderDate,
+      expectedDeliveryDate: earliestExpectedDeliveryDate,
+      fromName: company?.name ?? '',
+      fromLogoUrl,
+      supplier: { name: primary.supplierNameSnapshot },
+      comment: combinedComment,
+      currency: primary.currency,
+      items: renderItems,
+    });
+
+    const combinedPdfFileId = await this.pdfService.generateAndStore(user, {
+      purchaseOrderId: id,
+      purchaseOrderNumber: combinedNumber,
+      html,
+    });
+
+    await this.prisma.tenant.purchaseOrder.updateMany({ where: { id: { in: orderIds } }, data: { combinedPdfFileId } });
+
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'purchase_order.combined_pdf_generated',
+      entityType: 'PurchaseOrder',
+      entityId: id,
+      after: { combinedPdfFileId },
+      metadata: { purchaseOrderIds: orderIds },
+    });
+
+    return this.findOne(user, id);
+  }
+
   async findOne(user: RequestUser, id: string) {
     const order = await this.prisma.tenant.purchaseOrder.findUnique({
       where: { id },
@@ -215,10 +292,63 @@ export class PurchaseOrdersService {
             deliverySchedules: { include: { lines: true }, orderBy: { versionNumber: 'asc' } },
           },
         },
+        // "потрібна приписка щоб розуміти з якого замовлення береться ця
+        // заявка" (2026-11-09) — surfaced on the PO detail page whenever
+        // this order was fanned out from a заявка that spanned several
+        // customer orders (sourceCustomerOrderId set by convertToOrder).
+        sourceCustomerOrder: { select: { id: true, orderNumber: true } },
       },
     });
     if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
     return order;
+  }
+
+  /**
+   * Every PurchaseOrder fanned out from the SAME заявка conversion as
+   * `purchaseOrderId` (including itself) — derived from shared
+   * `PurchaseOrderItem.originatingPurchaseRequestItemId` lineage back to
+   * one `PurchaseRequest`, no separate "batch id" column needed. An
+   * ordinary order with no fan-out history (the common case) returns just
+   * `[purchaseOrderId]`.
+   */
+  private async resolveBatchOrderIds(purchaseOrderId: string): Promise<string[]> {
+    const items = await this.prisma.tenant.purchaseOrderItem.findMany({
+      where: { purchaseOrderId, originatingPurchaseRequestItemId: { not: null } },
+      select: { originatingPurchaseRequestItemId: true },
+    });
+    const requestItemIds = [...new Set(items.map((i) => i.originatingPurchaseRequestItemId!).filter(Boolean))];
+    if (requestItemIds.length === 0) return [purchaseOrderId];
+
+    const requestItems = await this.prisma.tenant.purchaseRequestItem.findMany({
+      where: { id: { in: requestItemIds } },
+      select: { purchaseRequestId: true },
+    });
+    const purchaseRequestIds = [...new Set(requestItems.map((i) => i.purchaseRequestId))];
+
+    const siblingItems = await this.prisma.tenant.purchaseOrderItem.findMany({
+      where: { originatingPurchaseRequestItem: { purchaseRequestId: { in: purchaseRequestIds } } },
+      select: { purchaseOrderId: true },
+    });
+    return [...new Set([purchaseOrderId, ...siblingItems.map((i) => i.purchaseOrderId)])];
+  }
+
+  /**
+   * "приписка щоб розуміти з якого замовлення береться ця заявка" +
+   * basis for the combined-PDF action: every sibling order from the same
+   * fan-out, each with its own source customer order, plus every item
+   * across the whole batch (for a future "set one date across the whole
+   * batch" extension — today's bulk date-setter stays scoped to one
+   * order's own items, see setBatchDeliveryDate below).
+   */
+  async getBatch(user: RequestUser, purchaseOrderId: string) {
+    await this.findOne(user, purchaseOrderId); // 404s for a nonexistent/cross-tenant id before anything else
+    const orderIds = await this.resolveBatchOrderIds(purchaseOrderId);
+    const orders = await this.prisma.tenant.purchaseOrder.findMany({
+      where: { id: { in: orderIds } },
+      select: { id: true, number: true, sourceCustomerOrderId: true, sourceCustomerOrder: { select: { id: true, orderNumber: true } } },
+      orderBy: { orderDate: 'asc' },
+    });
+    return { purchaseOrders: orders };
   }
 
   /**

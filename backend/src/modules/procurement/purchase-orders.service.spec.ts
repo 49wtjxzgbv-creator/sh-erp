@@ -32,8 +32,9 @@ describe('PurchaseOrdersService', () => {
   beforeEach(() => {
     prisma = {
       tenant: {
-        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn().mockResolvedValue([]), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
-        purchaseOrderItem: { update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+        purchaseOrder: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue({ ...order }), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn(), count: jest.fn(), update: jest.fn(), delete: jest.fn() },
+        purchaseOrderItem: { update: jest.fn(), findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+        purchaseRequestItem: { findMany: jest.fn().mockResolvedValue([]) },
         purchaseOrderDocument: { count: jest.fn().mockResolvedValue(0) },
         purchaseOrderExpense: { count: jest.fn().mockResolvedValue(0) },
         warehouse: { findFirst: jest.fn().mockResolvedValue({ id: 'wDefault', isDefault: true }) },
@@ -270,6 +271,62 @@ describe('PurchaseOrdersService', () => {
       expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
         expect.objectContaining({ items: expect.arrayContaining([expect.objectContaining({ deliveryDates: [] })]) }),
       );
+    });
+  });
+
+  describe('getBatch / generateCombinedPdf', () => {
+    it("getBatch returns just itself when this order was never fanned out from a заявка (no originatingPurchaseRequestItemId on any item)", async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([]); // no items with originatingPurchaseRequestItemId
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([{ id: 'po1', number: 'ЗАМ-2026-0001', sourceCustomerOrderId: null, sourceCustomerOrder: null }]);
+
+      const result = await service.getBatch(user, 'po1');
+
+      expect(result.purchaseOrders).toEqual([{ id: 'po1', number: 'ЗАМ-2026-0001', sourceCustomerOrderId: null, sourceCustomerOrder: null }]);
+    });
+
+    it('getBatch resolves every sibling order fanned out from the same заявка (via shared originatingPurchaseRequestItemId -> purchaseRequestId lineage)', async () => {
+      prisma.tenant.purchaseOrderItem.findMany.mockImplementation((args: any) => {
+        if (args.where.originatingPurchaseRequestItem) {
+          // sibling lookup across the whole заявка
+          return Promise.resolve([{ purchaseOrderId: 'po1' }, { purchaseOrderId: 'po2' }]);
+        }
+        // this order's own items
+        return Promise.resolve([{ originatingPurchaseRequestItemId: 'reqItem1' }]);
+      });
+      prisma.tenant.purchaseRequestItem.findMany.mockResolvedValue([{ purchaseRequestId: 'req1' }]);
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        { id: 'po1', number: 'ЗАМ-2026-0001', sourceCustomerOrderId: 'co1', sourceCustomerOrder: { id: 'co1', orderNumber: '1001' } },
+        { id: 'po2', number: 'ЗАМ-2026-0002', sourceCustomerOrderId: 'co2', sourceCustomerOrder: { id: 'co2', orderNumber: '1002' } },
+      ]);
+
+      const result = await service.getBatch(user, 'po1');
+
+      expect(prisma.tenant.purchaseRequestItem.findMany).toHaveBeenCalledWith({ where: { id: { in: ['reqItem1'] } }, select: { purchaseRequestId: true } });
+      expect(result.purchaseOrders).toHaveLength(2);
+      expect(result.purchaseOrders.map((o: any) => o.id)).toEqual(['po1', 'po2']);
+    });
+
+    it('generateCombinedPdf merges items from every sibling order into one renderHtml call and stamps combinedPdfFileId onto all of them', async () => {
+      const orderA = { ...order, id: 'po1', number: 'ЗАМ-2026-0001', orderDate: new Date('2026-11-01'), items: [order.items[0]] };
+      const orderB = { ...order, id: 'po2', number: 'ЗАМ-2026-0002', orderDate: new Date('2026-11-02'), items: [order.items[1]] };
+      prisma.tenant.purchaseRequestItem.findMany.mockResolvedValue([{ purchaseRequestId: 'req1' }]);
+      prisma.tenant.purchaseOrderItem.findMany
+        .mockResolvedValueOnce([{ originatingPurchaseRequestItemId: 'reqItem1' }]) // resolveBatchOrderIds: po1's own items
+        .mockResolvedValueOnce([{ purchaseOrderId: 'po1' }, { purchaseOrderId: 'po2' }]); // resolveBatchOrderIds: siblings across the заявка
+      prisma.tenant.purchaseOrder.findUnique.mockImplementation(({ where: { id } }: any) =>
+        Promise.resolve(id === 'po1' ? { ...orderA } : { ...orderB }),
+      );
+
+      await service.generateCombinedPdf(user, 'po1');
+
+      expect(pdfRenderer.renderHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          number: 'ЗАМ-2026-0001 / ЗАМ-2026-0002',
+          items: [expect.objectContaining({ articleSnapshot: 'ABC' }), expect.objectContaining({ articleSnapshot: 'XYZ (no product yet)' })],
+        }),
+      );
+      expect(prisma.tenant.purchaseOrder.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['po1', 'po2'] } }, data: { combinedPdfFileId: 'file-1' } });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order.combined_pdf_generated' }));
     });
   });
 

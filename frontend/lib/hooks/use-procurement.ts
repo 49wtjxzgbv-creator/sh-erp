@@ -17,6 +17,8 @@ import {
   getPurchaseOrder,
   createPurchaseOrder,
   generatePurchaseOrderPdf,
+  getPurchaseOrderBatch,
+  generateCombinedPurchaseOrderPdf,
   deletePurchaseOrder,
   receivePurchaseOrder,
   updatePurchaseOrderMilestones,
@@ -169,6 +171,27 @@ export function useGeneratePurchaseOrderPdf(id: string) {
   return useMutation({
     mutationFn: () => generatePurchaseOrderPdf(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: purchaseOrderKey(id) }),
+  });
+}
+
+/** "приписка щоб розуміти з якого замовлення береться ця заявка" — every sibling order fanned out from the same заявка conversion. */
+export function usePurchaseOrderBatch(id: string | undefined) {
+  return useQuery({
+    queryKey: ['purchase-orders', 'batch', id ?? ''] as const,
+    queryFn: () => getPurchaseOrderBatch(id as string),
+    enabled: Boolean(id),
+  });
+}
+
+/** Invalidates every sibling order in the batch, not just the one clicked — all of them get the same combinedPdfFileId stamped server-side. */
+export function useGenerateCombinedPurchaseOrderPdf(id: string, siblingOrderIds: string[]) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateCombinedPurchaseOrderPdf(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: purchaseOrderKey(id) });
+      siblingOrderIds.forEach((siblingId) => qc.invalidateQueries({ queryKey: purchaseOrderKey(siblingId) }));
+    },
   });
 }
 

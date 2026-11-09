@@ -214,14 +214,28 @@ export interface PurchaseOrder {
   supplierConfirmedDeliveryDate: string | null;
   comment: string | null;
   sourceCustomerOrderId: string | null;
+  /** Present on findOne() responses — "приписка щоб розуміти з якого замовлення береться ця заявка" (2026-11-09), resolved from sourceCustomerOrderId. */
+  sourceCustomerOrder?: { id: string; orderNumber: string | null } | null;
   /** Multi-currency module (2026-10-29) — on the PO header, not per item: covers every item's expectedPrice/actualPrice/supplierConfirmedPrice under this order. */
   currency: Currency;
   createdById: string;
   createdAt: string;
   /** System-rendered via PurchaseOrderPdfService#generatePdf (2026-11-04) — the document staff hand/email to the supplier. Null until generated at least once. */
   pdfFileId: string | null;
+  /** "чомусь воно зробило кожну заявку окремим замовленням постачальнику а не одним файлом" (2026-11-09) — the one combined PDF shared across every sibling order fanned out from the same заявка conversion, see generateCombinedPurchaseOrderPdf. Null until generated, and for an ordinary (never fanned-out) order. */
+  combinedPdfFileId: string | null;
   /** Present on create/findOne/receive responses; not on query() list rows. */
   items?: PurchaseOrderItem[];
+}
+
+/** Every sibling order fanned out from the same заявка conversion as the one requested (including itself) — see PurchaseOrdersService#getBatch. */
+export interface PurchaseOrderBatch {
+  purchaseOrders: {
+    id: string;
+    number: string;
+    sourceCustomerOrderId: string | null;
+    sourceCustomerOrder: { id: string; orderNumber: string | null } | null;
+  }[];
 }
 
 export interface CreatePurchaseOrderItemInput {
@@ -272,6 +286,14 @@ export function createPurchaseOrder(dto: CreatePurchaseOrderInput): Promise<Purc
 /** Renders and stores a PDF of the order's CURRENT state (overwrites any previous pdfFileId) — the document staff hand/email to the supplier. */
 export function generatePurchaseOrderPdf(id: string): Promise<PurchaseOrder> {
   return apiClient.post<PurchaseOrder>(`purchase-orders/${id}/pdf`);
+}
+/** Every sibling order fanned out from the same заявка conversion as this one, each with its own source customer order — "приписка щоб розуміти з якого замовлення береться ця заявка". */
+export function getPurchaseOrderBatch(id: string): Promise<PurchaseOrderBatch> {
+  return apiClient.get<PurchaseOrderBatch>(`purchase-orders/${id}/batch`);
+}
+/** Renders and stores ONE combined PDF across every sibling order in this batch (overwrites any previous one) — "одним файлом" for the supplier, even though each customer order still keeps its own PurchaseOrder for Finance. */
+export function generateCombinedPurchaseOrderPdf(id: string): Promise<PurchaseOrder> {
+  return apiClient.post<PurchaseOrder>(`purchase-orders/${id}/combined-pdf`);
 }
 /** Permanent hard delete — admin-only (`purchase-orders:delete`), cannot be undone. Stock movements already posted against it (receiving) keep their own independent record. */
 export function deletePurchaseOrder(id: string): Promise<{ ok: true }> {

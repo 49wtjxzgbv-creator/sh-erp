@@ -944,7 +944,13 @@
     "linkedAssemblies": "Вироби",
     "assemblyName": "Назва виробу",
     "supplierInvoicesTitle": "Рахунки від постачальника",
-    "noSupplierInvoices": "Рахунків ще немає"
+    "noSupplierInvoices": "Рахунків ще немає",
+    "batchTitle": "Об'єднана заявка постачальнику",
+    "sourceCustomerOrderLabel": "Замовлення клієнта",
+    "generateCombinedPdfButton": "Сформувати об'єднаний PDF",
+    "downloadCombinedPdf": "Завантажити об'єднаний PDF",
+    "setOrderDeliveryDateButton": "Встановити дату для всього замовлення",
+    "setOrderDeliveryDateHint": "Дата поставки для {count} товарів без графіка"
   },
   "finance": {
     "title": "Фінанси",
