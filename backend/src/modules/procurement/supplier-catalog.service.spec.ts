@@ -105,4 +105,34 @@ describe('SupplierCatalogService', () => {
 
     await expect(service.ensureCatalogEntries(user, 's1', ['p1'])).resolves.toBeUndefined();
   });
+
+  describe('recordSupplierQuotedPrices', () => {
+    it('upserts ProductSupplier.supplierOfferedPrice per entry, stamping companyId/supplierId on create', async () => {
+      await service.recordSupplierQuotedPrices('c1', 's1', [
+        { productId: 'p1', price: 150 },
+        { productId: 'p2', price: 75.5 },
+      ]);
+
+      expect(prisma.tenant.productSupplier.upsert).toHaveBeenCalledWith({
+        where: { productId_supplierId: { productId: 'p1', supplierId: 's1' } },
+        create: { companyId: 'c1', productId: 'p1', supplierId: 's1', supplierOfferedPrice: 150 },
+        update: { supplierOfferedPrice: 150 },
+      });
+      expect(prisma.tenant.productSupplier.upsert).toHaveBeenCalledWith({
+        where: { productId_supplierId: { productId: 'p2', supplierId: 's1' } },
+        create: { companyId: 'c1', productId: 'p2', supplierId: 's1', supplierOfferedPrice: 75.5 },
+        update: { supplierOfferedPrice: 75.5 },
+      });
+    });
+
+    it('does nothing when entries is empty', async () => {
+      await service.recordSupplierQuotedPrices('c1', 's1', []);
+      expect(prisma.tenant.productSupplier.upsert).not.toHaveBeenCalled();
+    });
+
+    it('never throws — swallows an upsert failure and just logs (never fails the supplier\'s own quote submission)', async () => {
+      prisma.tenant.productSupplier.upsert.mockRejectedValue(new Error('db hiccup'));
+      await expect(service.recordSupplierQuotedPrices('c1', 's1', [{ productId: 'p1', price: 100 }])).resolves.toBeUndefined();
+    });
+  });
 });

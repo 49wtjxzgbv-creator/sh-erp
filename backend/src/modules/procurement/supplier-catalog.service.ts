@@ -72,4 +72,33 @@ export class SupplierCatalogService {
       );
     }
   }
+
+  /**
+   * "ціни його мають підтягуватись в його ж каталог і бути його цінами за
+   * які він нам продає" (2026-11-09) — the moment a supplier quotes a
+   * price on a заявка (SupplierPortalService#quotePurchaseRequest), that
+   * same number becomes `ProductSupplier.supplierOfferedPrice` for this
+   * (product, supplier) pair, not just a one-off note on that one
+   * PurchaseRequestItem. Upsert (not update()) since the row is USUALLY
+   * already there from `ensureCatalogEntries` at send-time, but that call
+   * is itself best-effort and could have been skipped. Best-effort here
+   * too, same reasoning as `ensureCatalogEntries` above — a catalog-sync
+   * failure must never fail the supplier's actual quote submission.
+   */
+  async recordSupplierQuotedPrices(companyId: string, supplierId: string, entries: { productId: string; price: number }[]): Promise<void> {
+    if (entries.length === 0) return;
+    try {
+      await Promise.all(
+        entries.map(({ productId, price }) =>
+          this.prisma.tenant.productSupplier.upsert({
+            where: { productId_supplierId: { productId, supplierId } },
+            create: { companyId, productId, supplierId, supplierOfferedPrice: price },
+            update: { supplierOfferedPrice: price },
+          }),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to record supplier-quoted prices into catalog (supplier=${supplierId}, products=${entries.map((e) => e.productId).join(',')}): ${err}`);
+    }
+  }
 }

@@ -1955,7 +1955,8 @@
     "invoiceAmountLabel": "Amount",
     "invoiceCurrencyLabel": "Currency",
     "invoiceNoteLabel": "Note",
-    "financeNoOrderOption": "Not linked to an order"
+    "financeNoOrderOption": "Not linked to an order",
+    "yourPriceFromCatalogHint": "Pulled from your catalog — double-check before submitting"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Assembly not found.",

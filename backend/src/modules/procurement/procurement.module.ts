@@ -46,6 +46,8 @@ import { SupplierCatalogService } from './supplier-catalog.service';
   // ProcurementModule -> QuotationsModule -> SalesModule ->
   // ProcurementModule, since SalesModule already imports ProcurementModule)
   // — it inlines the same atomic-counter query itself instead.
-  exports: [SuppliersService, PurchaseOrdersService, PurchaseRequestsService, DeliverySchedulesService, PurchaseOrderCommentsService],
+  // SupplierCatalogService exported (2026-11-09) so SupplierPortalModule can
+  // call #recordSupplierQuotedPrices when a supplier quotes a заявка price.
+  exports: [SuppliersService, PurchaseOrdersService, PurchaseRequestsService, DeliverySchedulesService, PurchaseOrderCommentsService, SupplierCatalogService],
 })
 export class ProcurementModule {}

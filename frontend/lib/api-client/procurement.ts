@@ -433,6 +433,8 @@ export interface PurchaseRequestItem {
   attachedFileIds: string[];
   /** Only present on supplier-portal responses (SupplierPortalService#getPurchaseRequest) — the linked product's own PRODUCT_PHOTO, if any. */
   photoUrl?: string | null;
+  /** Only present on supplier-portal responses — this supplier's own existing catalog price (ProductSupplier.supplierOfferedPrice) for this line's product, if any. Lets the quote form pre-fill a not-yet-quoted line instead of leaving it blank ("в наступних заявках автоматично підтягуватися", 2026-11-09). Real JSON number, not a Prisma Decimal field. */
+  catalogPrice?: number | null;
   /** Only present on supplier-portal responses — attachedFileIds resolved to downloadable files (a stale/deleted id is silently dropped, not errored). */
   attachedFiles?: { id: string; originalName: string; downloadUrl: string }[];
   /** OrderMaterialRequirement ids this line aggregates (shortage picker, 2026-11-03) — carry forward into requirementIds on a subsequent saveItems() call, or the claim is silently dropped same as any other field not round-tripped through PurchaseRequestItemInput. */

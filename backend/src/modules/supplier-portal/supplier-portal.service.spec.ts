@@ -7,6 +7,7 @@ describe('SupplierPortalService', () => {
   let emailService: any;
   let filesService: any;
   let financeService: any;
+  let supplierCatalogService: any;
   const actor = { supplierPortalUserId: 'spu1', supplierOrganizationId: 'org1', activeConnectionId: 'conn1', companyId: 'c1', supplierId: 's1' } as any;
 
   beforeEach(() => {
@@ -16,7 +17,7 @@ describe('SupplierPortalService', () => {
         purchaseOrderItem: { findFirst: jest.fn(), update: jest.fn() },
         purchaseRequest: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         purchaseRequestItem: { update: jest.fn() },
-        productSupplier: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+        productSupplier: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), update: jest.fn(), count: jest.fn().mockResolvedValue(0) },
         productCuttingSpec: { findMany: jest.fn().mockResolvedValue([]) },
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'staff1', email: 'staff@example.com' }) },
         fileAsset: { findUnique: jest.fn() },
@@ -38,6 +39,7 @@ describe('SupplierPortalService', () => {
       createDocumentAsSupplier: jest.fn(),
       addPaymentAsSupplier: jest.fn(),
     };
+    supplierCatalogService = { recordSupplierQuotedPrices: jest.fn().mockResolvedValue(undefined) };
     service = new SupplierPortalService(
       prisma,
       auditService,
@@ -46,6 +48,7 @@ describe('SupplierPortalService', () => {
       filesService,
       emailService,
       financeService,
+      supplierCatalogService,
     );
   });
 
@@ -97,8 +100,8 @@ describe('SupplierPortalService', () => {
 
       expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Product', ['p1'], ['PRODUCT_PHOTO']);
       expect(result.items).toEqual([
-        { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', attachedFileIds: [], photoUrl: 'https://example.com/p1.jpg', attachedFiles: [] },
-        { id: 'item2', productId: null, articleSnapshot: 'XYZ', attachedFileIds: [], photoUrl: null, attachedFiles: [] },
+        { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', attachedFileIds: [], photoUrl: 'https://example.com/p1.jpg', attachedFiles: [], catalogPrice: null },
+        { id: 'item2', productId: null, articleSnapshot: 'XYZ', attachedFileIds: [], photoUrl: null, attachedFiles: [], catalogPrice: null },
       ]);
     });
 
@@ -139,6 +142,31 @@ describe('SupplierPortalService', () => {
 
       expect(filesService.listByIds).not.toHaveBeenCalled();
     });
+
+    it(
+      "в наступних заявках автоматично підтягуватися — attaches this supplier's own existing catalog price " +
+        '(ProductSupplier.supplierOfferedPrice) per line, so an unquoted line on a NEW заявка can pre-fill from it',
+      async () => {
+        prisma.tenant.purchaseRequest.findFirst.mockResolvedValue({
+          id: 'pr2',
+          status: 'SENT',
+          items: [
+            { id: 'item1', productId: 'p1', articleSnapshot: 'ABC', attachedFileIds: [] },
+            { id: 'item2', productId: 'p2', articleSnapshot: 'DEF', attachedFileIds: [] }, // never quoted before — no catalog row yet
+          ],
+        });
+        prisma.tenant.productSupplier.findMany.mockResolvedValue([{ productId: 'p1', supplierOfferedPrice: 123.45 }]);
+
+        const result = await service.getPurchaseRequest(actor, 'pr2');
+
+        expect(prisma.tenant.productSupplier.findMany).toHaveBeenCalledWith({
+          where: { supplierId: 's1', productId: { in: ['p1', 'p2'] } },
+          select: { productId: true, supplierOfferedPrice: true },
+        });
+        expect(result.items.find((i: any) => i.id === 'item1')!.catalogPrice).toBe(123.45);
+        expect(result.items.find((i: any) => i.id === 'item2')!.catalogPrice).toBeNull();
+      },
+    );
   });
 
   describe('getPurchaseOrder', () => {
@@ -215,6 +243,31 @@ describe('SupplierPortalService', () => {
         service.quotePurchaseRequest(actor, 'pr1', { items: [{ id: 'item1', quotedPrice: 100 }] }),
       ).resolves.toBeDefined();
     });
+
+    it(
+      "ціни його мають підтягуватись в його ж каталог — syncs each quoted line's price into SupplierCatalogService, " +
+        'keyed by the actor\'s own companyId/supplierId, skipping lines with no productId',
+      async () => {
+        const requestWithProducts = {
+          ...sentRequest,
+          items: [
+            { id: 'item1', productId: 'p1', attachedFileIds: [] },
+            { id: 'item2', productId: null, attachedFileIds: [] }, // article not yet in Products — no catalog entry possible
+          ],
+        };
+        prisma.tenant.purchaseRequest.findFirst.mockResolvedValue(requestWithProducts);
+        prisma.tenant.purchaseRequest.update.mockResolvedValue({ ...requestWithProducts, supplierRespondedAt: new Date() });
+
+        await service.quotePurchaseRequest(actor, 'pr1', {
+          items: [
+            { id: 'item1', quotedPrice: 150 },
+            { id: 'item2', quotedPrice: 50 },
+          ],
+        });
+
+        expect(supplierCatalogService.recordSupplierQuotedPrices).toHaveBeenCalledWith('c1', 's1', [{ productId: 'p1', price: 150 }]);
+      },
+    );
   });
 
   describe('listCatalog', () => {

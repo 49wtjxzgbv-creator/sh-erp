@@ -6,6 +6,7 @@ import { PurchaseOrderCommentsService } from '../procurement/purchase-order-comm
 import { FilesActor, FilesService } from '../files/files.service';
 import { EmailService } from '../notifications/email.service';
 import { FinanceService } from '../finance/finance.service';
+import { SupplierCatalogService } from '../procurement/supplier-catalog.service';
 import { RequestSupplierPortalUser } from './supplier-portal-context';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.dto';
@@ -36,6 +37,7 @@ export class SupplierPortalService {
     private readonly filesService: FilesService,
     private readonly emailService: EmailService,
     private readonly financeService: FinanceService,
+    private readonly supplierCatalogService: SupplierCatalogService,
   ) {}
 
   /**
@@ -82,6 +84,35 @@ export class SupplierPortalService {
    * same "don't fabricate, just omit" convention as the PDF renderer's own
    * best-effort attachment merge.
    */
+  /**
+   * "в наступних заявках автоматично підтягуватися якщо в них є вже товари
+   * які він оцінив раніше" (2026-11-09) — this supplier's own catalog
+   * price (ProductSupplier.supplierOfferedPrice, kept in sync by
+   * SupplierCatalogService#recordSupplierQuotedPrices every time they
+   * quote) for each line's product, so the quote form can pre-fill a
+   * not-yet-quoted line instead of showing it blank. Null when the
+   * product has no catalog entry for this supplier yet, or the line has no
+   * productId at all (article not yet in Products).
+   */
+  private async attachCatalogPrices<T extends { productId: string | null }>(
+    actor: RequestSupplierPortalUser,
+    items: T[],
+  ): Promise<(T & { catalogPrice: number | null })[]> {
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => v != null))];
+    const entries =
+      productIds.length > 0
+        ? await this.prisma.tenant.productSupplier.findMany({
+            where: { supplierId: actor.supplierId, productId: { in: productIds } },
+            select: { productId: true, supplierOfferedPrice: true },
+          })
+        : [];
+    const priceByProductId = new Map(entries.map((e) => [e.productId, e.supplierOfferedPrice != null ? Number(e.supplierOfferedPrice) : null]));
+    return items.map((item) => ({
+      ...item,
+      catalogPrice: item.productId ? (priceByProductId.get(item.productId) ?? null) : null,
+    }));
+  }
+
   private async attachAttachedFiles<T extends { attachedFileIds: string[] }>(
     actor: RequestSupplierPortalUser,
     items: T[],
@@ -203,7 +234,8 @@ export class SupplierPortalService {
     });
     if (!request) throw new CodedNotFoundException('PURCHASE_REQUEST_NOT_FOUND', 'Purchase request not found.');
     const withPhotos = await this.attachPhotoUrls(actor, request.items);
-    return { ...request, items: await this.attachAttachedFiles(actor, withPhotos) };
+    const withFiles = await this.attachAttachedFiles(actor, withPhotos);
+    return { ...request, items: await this.attachCatalogPrices(actor, withFiles) };
   }
 
   /** Supplier submits (or re-submits) a per-line quote. Only while SENT — once converted/cancelled the negotiation is over. */
@@ -229,6 +261,16 @@ export class SupplierPortalService {
         }),
       ),
     );
+
+    // "ціни його мають підтягуватись в його ж каталог і бути його цінами
+    // за які він нам продає" (2026-11-09) — every quoted price becomes
+    // this supplier's own catalog price for that product, not just a
+    // one-off note on this one заявка's line.
+    const productIdByItemId = new Map((request.items as any[]).map((i) => [i.id, i.productId as string | null]));
+    const catalogEntries = dto.items
+      .map((line) => ({ productId: productIdByItemId.get(line.id), price: line.quotedPrice }))
+      .filter((e): e is { productId: string; price: number } => e.productId != null);
+    await this.supplierCatalogService.recordSupplierQuotedPrices(actor.companyId, actor.supplierId, catalogEntries);
 
     const updated = await this.prisma.tenant.purchaseRequest.update({
       where: { id },

@@ -2094,7 +2094,8 @@
     "invoiceAmountLabel": "Сума",
     "invoiceCurrencyLabel": "Валюта",
     "invoiceNoteLabel": "Примітка",
-    "financeNoOrderOption": "Без прив'язки до замовлення"
+    "financeNoOrderOption": "Без прив'язки до замовлення",
+    "yourPriceFromCatalogHint": "Підтягнуто з вашого каталогу — перевірте перед надсиланням"
   },
   "apiErrors": {
     "PRODUCTION_ASSEMBLY_NOT_FOUND": "Виріб не знайдено.",
