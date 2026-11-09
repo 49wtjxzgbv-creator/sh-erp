@@ -87,6 +87,35 @@ export class SourcingBotApiClient {
     await this.call('answerCallbackQuery', { callback_query_id: callbackQueryId, text });
   }
 
+  /**
+   * Full-catalog export (2026-11-09 user request — "щоб генерувало файл з
+   * усіма товарами там фото артикул назву всіх постачальників які є і
+   * ціни які є"). A real file upload (multipart), unlike every other
+   * method here (plain JSON) — Telegram's Bot API requires
+   * `multipart/form-data` for `sendDocument`'s file part, not a URL this
+   * time since the file is generated on the fly, not something already
+   * sitting in R2. Node 20's global `fetch`/`FormData`/`Blob` handle this
+   * natively, no extra dependency.
+   */
+  async sendDocument(chatId: string, buffer: Buffer, filename: string, caption?: string): Promise<boolean> {
+    try {
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      if (caption) form.append('caption', caption);
+      form.append('document', new Blob([new Uint8Array(buffer)]), filename);
+      const res = await fetch(`${this.baseUrl}/sendDocument`, { method: 'POST', body: form });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.logger.warn(`Telegram API sendDocument failed: ${res.status} ${text}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn(`Telegram API sendDocument threw: ${String(err)}`);
+      return false;
+    }
+  }
+
   async editMessageText(chatId: string, messageId: number, text: string, replyMarkup?: TelegramInlineKeyboard): Promise<void> {
     await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: replyMarkup, parse_mode: 'HTML' });
   }

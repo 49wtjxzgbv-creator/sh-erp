@@ -33,7 +33,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn() },
       productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
-      fileAsset: { findFirst: jest.fn().mockResolvedValue(null) },
+      fileAsset: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
       sourcingCandidateSupplier: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
     };
@@ -43,11 +43,15 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       role: { findUnique: jest.fn().mockResolvedValue({ id: 'role1', permissions: [] }) },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
-    filesService = { getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }) };
+    filesService = {
+      getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
+      getFileAssetBytes: jest.fn().mockResolvedValue({ bytes: Buffer.from('fake'), mimeType: 'image/jpeg', originalName: 'photo.jpg' }),
+    };
     telegram = {
       getUpdates: jest.fn().mockResolvedValue([]),
       sendMessage: jest.fn(),
       sendPhoto: jest.fn().mockResolvedValue(false),
+      sendDocument: jest.fn().mockResolvedValue(true),
       answerCallbackQuery: jest.fn(),
       editMessageText: jest.fn(),
     };
@@ -330,6 +334,63 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
         expect.stringContaining('Знайдено'),
         { inline_keyboard: [[{ text: '📦 K00285 — Linsen-Flanschkopf-Schraube', callback_data: 'product:prod1' }]] },
       );
+    });
+  });
+
+  describe('catalog export (2026-11-09 — "щоб генерувало файл з усіма товарами там фото артикул назву всіх постачальників і ціни")', () => {
+    beforeEach(pairAndClear);
+
+    it('builds an .xlsx with one row per tracked product, embeds the photo when present, and sends it as a document', async () => {
+      tx.product.findMany.mockResolvedValue([
+        {
+          id: 'prod1',
+          article: 'K00285',
+          name: 'Linsen-Flanschkopf-Schraube',
+          germanPriceExclVat: 0.08,
+          germanPriceInclVat: null,
+          localPriceExclVat: null,
+          localPriceInclVat: null,
+          sellPriceEur: 0.15,
+          sourcingCategory: { name: 'А. Метизи' },
+          suppliers: [{ price: 0.1, supplierOfferedPrice: 0.09, supplier: { name: 'ARGIP' } }],
+        },
+        {
+          id: 'prod2',
+          article: 'X999',
+          name: 'No photo item',
+          germanPriceExclVat: null,
+          germanPriceInclVat: null,
+          localPriceExclVat: null,
+          localPriceInclVat: null,
+          sellPriceEur: null,
+          sourcingCategory: { name: 'А. Метизи' },
+          suppliers: [],
+        },
+      ]);
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1', entityId: 'prod1' }]);
+
+      await service.handleUpdate(msg('📄 Файл з усіма товарами'));
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Генерую'));
+      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith({ userId: 'u1', companyId: 'c1' }, 'file1');
+      expect(telegram.sendDocument).toHaveBeenCalledWith(
+        chatId,
+        expect.anything(),
+        expect.stringMatching(/^catalog-export-\d{4}-\d{2}-\d{2}\.xlsx$/),
+        expect.stringContaining('2 товарів, 1 з фото'),
+      );
+      const buffer = telegram.sendDocument.mock.calls[0][1];
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer.length).toBeGreaterThan(0);
+    });
+
+    it('reports empty state when there are no tracked products, without generating a file', async () => {
+      tx.product.findMany.mockResolvedValue([]);
+
+      await service.handleUpdate(msg('📄 Файл з усіма товарами'));
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('немає жодного'));
+      expect(telegram.sendDocument).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import * as ExcelJS from 'exceljs';
 import { SourcingOutreachStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SourcingBotPrismaService } from '../../prisma/sourcing-bot-prisma.service';
@@ -12,7 +13,7 @@ const MAIN_MENU: TelegramReplyKeyboard = {
   keyboard: [
     [{ text: '📂 Категорії' }, { text: '🏭 Постачальники' }],
     [{ text: '🔎 Пошук за артикулом' }, { text: '📊 Статус' }],
-    [{ text: '❓ Допомога' }],
+    [{ text: '📄 Файл з усіма товарами' }, { text: '❓ Допомога' }],
   ],
   resize_keyboard: true,
 };
@@ -23,6 +24,7 @@ const HELP_TEXT =
   '🏭 <b>Постачальники</b> — усі наявні постачальники (ARGIP, Sturtz тощо), по кожному — які товари й за якою ціною.\n' +
   '🔎 <b>Пошук за артикулом</b> — введіть частину артикулу або назви товару.\n' +
   '📊 <b>Статус</b> — хто з потенційних постачальників вже написаний/відповів/дав ціну.\n' +
+  '📄 <b>Файл з усіма товарами</b> — .xlsx з фото, артикулом, назвою, усіма нашими цінами і цінами всіх прив\'язаних постачальників.\n' +
   'У картці товару: 📷 фото, наші ціни (🇩🇪 німецька/🇺🇦 українська/💰 продажна) і ціни вже наявних постачальників — усе можна виправити прямо тут (✏️).\n' +
   'У картці постачальника (потенційного): ✅ Написав / 📩 Відповіли / ❌ Відмовили / 🏆 Домовились / 💬 Нотатка / 💰 Внести ціну.\n' +
   '/cancel — скасувати поточну дію в будь-який момент.';
@@ -297,6 +299,10 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     if (text === '🔎 Пошук за артикулом' || text === '/search') {
       this.pending.set(chatId, { kind: 'search' });
       await this.telegram.sendMessage(chatId, '🔎 Введіть частину артикулу або назви товару:');
+      return;
+    }
+    if (text === '📄 Файл з усіма товарами' || text === '/export') {
+      await this.sendCatalogExport(chatId, identity);
       return;
     }
 
@@ -606,6 +612,140 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       ],
     };
     await this.telegram.sendMessage(chatId, `🏭 <b>${supplierName}</b> — товари (${products.length} шт., стор. ${pageClamped + 1}/${totalPages}):`, keyboard);
+  }
+
+  /**
+   * Full-catalog .xlsx export (2026-11-09 user request — "потрібно щоб
+   * генерувало файл з усіма товарами там фото артикул назву всіх
+   * постачальників які є і ціни які є"): one row per tracked product —
+   * photo embedded (when there is one AND it's a format ExcelJS can embed;
+   * not every FileAsset is — skipped gracefully, same "no photo, no
+   * placeholder fetch" discipline as the catalog-sourcing report earlier
+   * this session), article, name, our 5 real price fields, and every
+   * already-onboarded supplier's own price for that product.
+   */
+  private async sendCatalogExport(chatId: string, identity: ResolvedIdentity): Promise<void> {
+    await this.telegram.sendMessage(chatId, '⏳ Генерую файл з усіма товарами — це може зайняти хвилину...');
+
+    const products = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+      tx.product.findMany({
+        where: { sourcingCategoryId: { not: null }, deletedAt: null },
+        orderBy: [{ article: 'asc' }],
+        select: {
+          id: true,
+          article: true,
+          name: true,
+          germanPriceExclVat: true,
+          germanPriceInclVat: true,
+          localPriceExclVat: true,
+          localPriceInclVat: true,
+          sellPriceEur: true,
+          sourcingCategory: { select: { name: true } },
+          suppliers: { select: { price: true, supplierOfferedPrice: true, supplier: { select: { name: true } } } },
+        },
+      }),
+    );
+    if (products.length === 0) {
+      await this.telegram.sendMessage(chatId, 'Поки немає жодного відстежуваного товару.');
+      return;
+    }
+
+    const photoAssets = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+      tx.fileAsset.findMany({
+        where: { entityType: 'Product', entityId: { in: products.map((p) => p.id) }, domain: 'PRODUCT_PHOTO', deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, entityId: true },
+      }),
+    );
+    const photoAssetIdByProductId = new Map<string, string>();
+    for (const fa of photoAssets) {
+      if (!photoAssetIdByProductId.has(fa.entityId)) photoAssetIdByProductId.set(fa.entityId, fa.id);
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Каталог');
+    sheet.columns = [
+      { header: 'Фото', width: 14 },
+      { header: 'Категорія', width: 30 },
+      { header: 'Артикул', width: 16 },
+      { header: 'Назва', width: 45 },
+      { header: 'DE без ПДВ', width: 12 },
+      { header: 'DE з ПДВ', width: 12 },
+      { header: 'UA без ПДВ', width: 12 },
+      { header: 'UA з ПДВ', width: 12 },
+      { header: 'Наша ціна продажу', width: 14 },
+      { header: 'Постачальники', width: 60 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+
+    const EMBED_EXTENSIONS: Record<string, 'jpeg' | 'png' | 'gif'> = {
+      'image/jpeg': 'jpeg',
+      'image/jpg': 'jpeg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+    };
+
+    let photosEmbedded = 0;
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      const rowNumber = i + 2;
+      const suppliersText = p.suppliers
+        .map((s) => {
+          const bits = [
+            s.price !== null ? `наша: ${this.formatPrice(s.price)}` : null,
+            s.supplierOfferedPrice !== null ? `постач.: ${this.formatPrice(s.supplierOfferedPrice)}` : null,
+          ]
+            .filter((x): x is string => x !== null)
+            .join(', ');
+          return `${s.supplier.name}${bits ? ` (${bits})` : ''}`;
+        })
+        .join('; ');
+
+      sheet.addRow([
+        '',
+        p.sourcingCategory?.name ?? '',
+        p.article,
+        p.name,
+        this.priceToNumber(p.germanPriceExclVat),
+        this.priceToNumber(p.germanPriceInclVat),
+        this.priceToNumber(p.localPriceExclVat),
+        this.priceToNumber(p.localPriceInclVat),
+        this.priceToNumber(p.sellPriceEur),
+        suppliersText,
+      ]);
+      sheet.getRow(rowNumber).height = 60;
+
+      const fileAssetId = photoAssetIdByProductId.get(p.id);
+      if (fileAssetId) {
+        try {
+          const { bytes, mimeType } = await this.filesService.getFileAssetBytes({ userId: identity.userId, companyId: identity.companyId }, fileAssetId);
+          const extension = EMBED_EXTENSIONS[mimeType];
+          if (extension) {
+            const imageId = workbook.addImage({ buffer: bytes as any, extension });
+            sheet.addImage(imageId, { tl: { col: 0, row: rowNumber - 1 }, ext: { width: 70, height: 70 } });
+            photosEmbedded++;
+          }
+        } catch (err) {
+          this.logger.warn(`Catalog export: failed to embed photo for product ${p.id}: ${String(err)}`);
+        }
+      }
+    }
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const sent = await this.telegram.sendDocument(
+      chatId,
+      buffer,
+      `catalog-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `📄 ${products.length} товарів, ${photosEmbedded} з фото.`,
+    );
+    if (!sent) {
+      await this.telegram.sendMessage(chatId, '❌ Не вдалося надіслати файл (можливо, він надто великий). Спробуйте ще раз.');
+    }
+  }
+
+  private priceToNumber(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    return typeof value === 'object' && 'toNumber' in (value as any) ? (value as any).toNumber() : Number(value);
   }
 
   private async sendCandidate(chatId: string, identity: ResolvedIdentity, candidateId: string): Promise<void> {
