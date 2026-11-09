@@ -2,7 +2,30 @@ import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs
 import { SourcingOutreachStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SourcingBotPrismaService } from '../../prisma/sourcing-bot-prisma.service';
-import { SourcingBotApiClient, TelegramInlineKeyboard, TelegramUpdate } from './sourcing-bot-api.client';
+import { FilesService } from '../files/files.service';
+import { SourcingBotApiClient, TelegramInlineKeyboard, TelegramReplyKeyboard, TelegramUpdate } from './sourcing-bot-api.client';
+
+const PAGE_SIZE = 10;
+
+/** Persistent bottom menu (2026-11-09 user request — "ще меню типа назад пошук по артикулу по категорії по постачальниках і ще щось корисне"). */
+const MAIN_MENU: TelegramReplyKeyboard = {
+  keyboard: [
+    [{ text: '📂 Категорії' }, { text: '🏭 Постачальники' }],
+    [{ text: '🔎 Пошук за артикулом' }, { text: '📊 Статус' }],
+    [{ text: '❓ Допомога' }],
+  ],
+  resize_keyboard: true,
+};
+
+const HELP_TEXT =
+  '🤖 <b>Як це працює</b>\n\n' +
+  '📂 <b>Категорії</b> — список напрямків пошуку, у кожній: текст запиту для копіювання, товари з цінами, потенційні постачальники.\n' +
+  '🏭 <b>Постачальники</b> — усі наявні постачальники (ARGIP, Sturtz тощо), по кожному — які товари й за якою ціною.\n' +
+  '🔎 <b>Пошук за артикулом</b> — введіть частину артикулу або назви товару.\n' +
+  '📊 <b>Статус</b> — хто з потенційних постачальників вже написаний/відповів/дав ціну.\n' +
+  'У картці товару: 📷 фото, наші ціни (🇩🇪 німецька/🇺🇦 українська/💰 продажна) і ціни вже наявних постачальників — усе можна виправити прямо тут (✏️).\n' +
+  'У картці постачальника (потенційного): ✅ Написав / 📩 Відповіли / ❌ Відмовили / 🏆 Домовились / 💬 Нотатка / 💰 Внести ціну.\n' +
+  '/cancel — скасувати поточну дію в будь-який момент.';
 
 /** Reused rather than inventing a new permission — "who can manage purchase orders" is a reasonable proxy for "procurement staff trusted to add a new candidate supplier" in this company's role setup. */
 const ADMIN_PERMISSION_KEY = 'purchase-orders:manage';
@@ -33,6 +56,11 @@ const PRICE_FIELDS = [
 ];
 type PriceField = (typeof PRICE_FIELDS)[number]['field'];
 
+/** Telegram inline button text has a practical length limit — long product names would otherwise get silently cut off or make the button wrap oddly. */
+function truncateLabel(name: string, max = 40): string {
+  return name.length > max ? `${name.slice(0, max - 1)}…` : name;
+}
+
 const STATUS_LABELS: Record<SourcingOutreachStatus, string> = {
   NOT_CONTACTED: '⬜ Не написали',
   CONTACTED: '✉️ Написали',
@@ -49,7 +77,8 @@ type PendingAction =
   | { kind: 'quote_price'; candidateSupplierId: string }
   | { kind: 'quote_note'; candidateSupplierId: string; priceEur: number }
   | { kind: 'fix_price'; productId: string; field: PriceField }
-  | { kind: 'add_candidate'; categoryId: string };
+  | { kind: 'add_candidate'; categoryId: string }
+  | { kind: 'search' };
 
 interface ResolvedIdentity {
   userId: string;
@@ -67,20 +96,30 @@ interface ResolvedIdentity {
  * for the full isolation rationale (own token, own systemd unit, own
  * BYPASSRLS Postgres role).
  *
- * Flow:
+ * Flow (persistent bottom menu — "📂 Категорії / 🏭 Постачальники / 🔎 Пошук
+ * за артикулом / 📊 Статус / ❓ Допомога" — always one tap away, 2026-11-09
+ * user request):
  *   1. Not paired -> `/start <code>` (UsersService#generateSourcingBotPairingCode,
  *      a button on /notifications mirroring the existing Telegram one).
- *   2. Main menu -> pick a `SourcingCategory`.
- *   3. Category view -> "📋 Текст запиту" (the category's rfqTemplate,
- *      verbatim, copy-pasteable), "💰 Поточні ціни" (every linked
- *      Product's real germanPrice/localPrice/sellPriceEur fields — NOT a
- *      shadow copy, see Product.sourcingCategoryId's own schema comment),
- *      and the category's candidate suppliers as buttons.
- *   4. Candidate view -> contact details + current SourcingOutreach.status
+ *   2. 📂 Категорії -> pick a `SourcingCategory` -> "📋 Текст запиту"
+ *      (the category's rfqTemplate, verbatim, copy-pasteable), "💰 Товари і
+ *      ціни" (a paginated picker over every linked Product — tapping one
+ *      opens the full product card: photo if any, our own 5 real price
+ *      fields, AND every already-onboarded Supplier's own
+ *      ProductSupplier.price/supplierOfferedPrice for that product — none
+ *      of it a shadow copy, see Product.sourcingCategoryId's own schema
+ *      comment), and the category's candidate suppliers as buttons.
+ *   3. 🏭 Постачальники -> every real Supplier already linked to a
+ *      tracked product -> that supplier's own product list (same picker ->
+ *      product-card flow as above) — "мав на увазі... щоб відображались
+ *      ціни існуючих постачальників" (2026-11-09).
+ *   4. 🔎 Пошук за артикулом -> free-text search across article/name among
+ *      tracked products -> same product-card flow.
+ *   5. Candidate view -> contact details + current SourcingOutreach.status
  *      + action buttons (✅ Написав / 📩 Відповіли / ❌ Відмовили /
  *      🏆 Домовились / 💬 Нотатка / 💰 Внести ціну).
- *   5. "📊 Статус" -> cross-category list of every candidate's status.
- *   6. Admin-only "➕ Додати постачальника" (gated on
+ *   6. 📊 Статус -> cross-category list of every candidate's status.
+ *   7. Admin-only "➕ Додати постачальника" (gated on
  *      ADMIN_PERMISSION_KEY) -> one free-text message, semicolon-separated
  *      fields, creates a new SourcingCandidateSupplier + its NOT_CONTACTED
  *      SourcingOutreach row.
@@ -105,6 +144,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
   constructor(
     private readonly pairingPrisma: SourcingBotPrismaService,
     private readonly prisma: PrismaService,
+    private readonly filesService: FilesService,
     private readonly telegram: SourcingBotApiClient,
   ) {}
 
@@ -195,7 +235,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       data: { sourcingBotChatId: chatId, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
     });
     this.identityCache.delete(chatId);
-    await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}! Ось список категорій для пошуку постачальників:`);
+    await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}! Ось список категорій для пошуку постачальників:`, MAIN_MENU);
     await this.sendMainMenu(chatId);
   }
 
@@ -211,7 +251,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       } else {
         const identity = await this.resolveIdentity(chatId);
         if (identity) {
-          await this.telegram.sendMessage(chatId, `👋 Вітаю, ${identity.fullName}!`);
+          await this.telegram.sendMessage(chatId, `👋 Вітаю, ${identity.fullName}!`, MAIN_MENU);
           await this.sendMainMenu(chatId);
         } else {
           await this.telegram.sendMessage(chatId, 'Щоб почати, згенеруйте код на сторінці «Сповіщення» в ERP і надішліть: /start КОД');
@@ -242,6 +282,23 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       await this.sendStatusOverview(chatId, identity);
       return;
     }
+    if (text === '📂 Категорії' || text === '/categories') {
+      await this.sendMainMenu(chatId);
+      return;
+    }
+    if (text === '🏭 Постачальники' || text === '/suppliers') {
+      await this.sendSupplierList(chatId, identity);
+      return;
+    }
+    if (text === '❓ Допомога' || text === '/help') {
+      await this.telegram.sendMessage(chatId, HELP_TEXT);
+      return;
+    }
+    if (text === '🔎 Пошук за артикулом' || text === '/search') {
+      this.pending.set(chatId, { kind: 'search' });
+      await this.telegram.sendMessage(chatId, '🔎 Введіть частину артикулу або назви товару:');
+      return;
+    }
 
     await this.sendMainMenu(chatId);
   }
@@ -269,10 +326,19 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
         await this.sendRfqText(chatId, identity, rest[0]);
         return;
       case 'prices':
-        await this.sendPriceList(chatId, identity, rest[0]);
+        await this.sendProductPicker(chatId, identity, rest[0], Number(rest[1] ?? 0));
+        return;
+      case 'product':
+        await this.sendProductDetail(chatId, identity, rest[0]);
         return;
       case 'fixprice':
         await this.startFixPrice(chatId, rest[0], rest[1] as PriceField);
+        return;
+      case 'suppliers':
+        await this.sendSupplierList(chatId, identity);
+        return;
+      case 'supplier':
+        await this.sendSupplierProducts(chatId, identity, rest[0], Number(rest[1] ?? 0));
         return;
       case 'cand':
         await this.sendCandidate(chatId, identity, rest[0]);
@@ -348,7 +414,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     const keyboard: TelegramInlineKeyboard = {
       inline_keyboard: [
         [{ text: '📋 Текст запиту', callback_data: `rfq:${category.id}` }],
-        [{ text: '💰 Поточні ціни', callback_data: `prices:${category.id}` }],
+        [{ text: '💰 Товари і ціни', callback_data: `prices:${category.id}:0` }],
         ...category.candidates.map((c) => [
           { text: `${STATUS_LABELS[c.outreach?.status ?? 'NOT_CONTACTED']} ${c.name}`, callback_data: `cand:${c.id}` },
         ]),
@@ -373,40 +439,173 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     return `€${n.toFixed(2)}`;
   }
 
-  private async sendPriceList(chatId: string, identity: ResolvedIdentity, categoryId: string): Promise<void> {
+  /** Paginated article/name picker — a category can hold 100+ products, so dumping one message per product (the original design) would flood the chat; this shows PAGE_SIZE buttons at a time, tapping one opens the full sendProductDetail card. */
+  private async sendProductPicker(chatId: string, identity: ResolvedIdentity, categoryId: string, page: number): Promise<void> {
     const products = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.product.findMany({
         where: { sourcingCategoryId: categoryId, deletedAt: null },
         orderBy: { article: 'asc' },
-        select: { id: true, article: true, name: true, germanPriceExclVat: true, germanPriceInclVat: true, localPriceExclVat: true, localPriceInclVat: true, sellPriceEur: true },
+        select: { id: true, article: true, name: true },
       }),
     );
     if (products.length === 0) {
       await this.telegram.sendMessage(chatId, 'У цій категорії ще немає товарів з прив\'язкою.');
       return;
     }
+    const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
+    const pageClamped = Math.min(Math.max(page, 0), totalPages - 1);
+    const pageItems = products.slice(pageClamped * PAGE_SIZE, (pageClamped + 1) * PAGE_SIZE);
 
-    for (const p of products) {
-      const lines = PRICE_FIELDS.map(({ field, icon, label }) => {
-        const formatted = this.formatPrice(p[field]);
-        return formatted ? `${icon} ${label}: ${formatted}` : null;
-      }).filter((x): x is string => x !== null);
+    const navRow: TelegramInlineKeyboard['inline_keyboard'][number] = [];
+    if (pageClamped > 0) navRow.push({ text: '⬅️ Попередні', callback_data: `prices:${categoryId}:${pageClamped - 1}` });
+    if (pageClamped < totalPages - 1) navRow.push({ text: 'Наступні ➡️', callback_data: `prices:${categoryId}:${pageClamped + 1}` });
 
-      const text = `📦 <b>${p.article}</b> — ${p.name}\n${lines.length > 0 ? lines.join('\n') : '<i>жодна ціна не вказана</i>'}`;
-      const keyboard: TelegramInlineKeyboard = {
-        inline_keyboard: [
-          PRICE_FIELDS.slice(0, 3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${p.id}:${field}` })),
-          PRICE_FIELDS.slice(3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${p.id}:${field}` })),
-        ],
-      };
-      await this.telegram.sendMessage(chatId, text, keyboard);
+    const keyboard: TelegramInlineKeyboard = {
+      inline_keyboard: [
+        ...pageItems.map((p) => [{ text: `📦 ${p.article} — ${truncateLabel(p.name)}`, callback_data: `product:${p.id}` }]),
+        ...(navRow.length > 0 ? [navRow] : []),
+        [{ text: '⬅️ До категорії', callback_data: `cat:${categoryId}` }],
+      ],
+    };
+    await this.telegram.sendMessage(
+      chatId,
+      `💰 Товари категорії (${products.length} шт., стор. ${pageClamped + 1}/${totalPages}):`,
+      keyboard,
+    );
+  }
+
+  /** Full card for one product: photo (if any), our own 5 price fields, AND every already-linked real supplier's price (ProductSupplier.price/supplierOfferedPrice) — not a shadow copy, read live. */
+  private async sendProductDetail(chatId: string, identity: ResolvedIdentity, productId: string): Promise<void> {
+    const result = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, async (tx) => {
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: {
+          id: true,
+          article: true,
+          name: true,
+          sourcingCategoryId: true,
+          germanPriceExclVat: true,
+          germanPriceInclVat: true,
+          localPriceExclVat: true,
+          localPriceInclVat: true,
+          sellPriceEur: true,
+        },
+      });
+      if (!product) return null;
+      const supplierLinks = await tx.productSupplier.findMany({
+        where: { productId },
+        select: { price: true, supplierOfferedPrice: true, supplier: { select: { name: true } } },
+      });
+      const photo = await tx.fileAsset.findFirst({
+        where: { entityType: 'Product', entityId: productId, domain: 'PRODUCT_PHOTO', deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+      });
+      let photoUrl: string | null = null;
+      if (photo) {
+        const { downloadUrl } = await this.filesService.getDownloadUrl({ userId: identity.userId, companyId: identity.companyId }, photo.id);
+        photoUrl = downloadUrl;
+      }
+      return { product, supplierLinks, photoUrl };
+    });
+
+    if (!result) {
+      await this.telegram.sendMessage(chatId, 'Товар не знайдено.');
+      return;
     }
+    const { product, supplierLinks, photoUrl } = result;
+
+    const ourLines = PRICE_FIELDS.map(({ field, icon, label }) => {
+      const formatted = this.formatPrice(product[field]);
+      return formatted ? `${icon} ${label}: ${formatted}` : null;
+    }).filter((x): x is string => x !== null);
+
+    const supplierLines = supplierLinks.map((link) => {
+      const bits = [
+        link.price !== null ? `наша ціна: ${this.formatPrice(link.price)}` : null,
+        link.supplierOfferedPrice !== null ? `постачальник пропонує: ${this.formatPrice(link.supplierOfferedPrice)}` : null,
+      ]
+        .filter((x): x is string => x !== null)
+        .join(', ');
+      return `🏭 ${link.supplier.name}${bits ? ` — ${bits}` : ''}`;
+    });
+
+    const caption = [
+      `📦 <b>${product.article}</b> — ${product.name}`,
+      ourLines.length > 0 ? ourLines.join('\n') : '<i>жодна власна ціна не вказана</i>',
+      supplierLines.length > 0 ? `\n<b>Постачальники:</b>\n${supplierLines.join('\n')}` : '\n<i>жодного постачальника ще не прив\'язано</i>',
+    ].join('\n');
+
+    const keyboard: TelegramInlineKeyboard = {
+      inline_keyboard: [
+        PRICE_FIELDS.slice(0, 3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${product.id}:${field}` })),
+        PRICE_FIELDS.slice(3).map(({ field, icon, label }) => ({ text: `✏️ ${icon} ${label}`, callback_data: `fixprice:${product.id}:${field}` })),
+        [{ text: '⬅️ До списку товарів', callback_data: `prices:${product.sourcingCategoryId}:0` }],
+      ],
+    };
+
+    if (photoUrl) {
+      const sent = await this.telegram.sendPhoto(chatId, photoUrl, caption, keyboard);
+      if (sent) return;
+    }
+    await this.telegram.sendMessage(chatId, caption, keyboard);
   }
 
   private async startFixPrice(chatId: string, productId: string, field: PriceField): Promise<void> {
     const label = PRICE_FIELDS.find((f) => f.field === field)?.label ?? field;
     this.pending.set(chatId, { kind: 'fix_price', productId, field });
     await this.telegram.sendMessage(chatId, `✏️ Введіть нове значення для «${label}» (число, напр. 123.45; «-» щоб очистити). /cancel — скасувати.`);
+  }
+
+  /** Every existing (real, already-onboarded) Supplier that supplies at least one product in a sourcing category — "мав на увазі... щоб відображались ціни існуючих постачальників" + "меню... по постачальниках". */
+  private async sendSupplierList(chatId: string, identity: ResolvedIdentity): Promise<void> {
+    const links = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+      tx.productSupplier.findMany({
+        where: { product: { sourcingCategoryId: { not: null }, deletedAt: null } },
+        select: { supplierId: true, supplier: { select: { name: true } } },
+        distinct: ['supplierId'],
+      }),
+    );
+    if (links.length === 0) {
+      await this.telegram.sendMessage(chatId, 'Жоден наявний постачальник ще не прив\'язаний до товарів із цих категорій.');
+      return;
+    }
+    const sorted = [...links].sort((a, b) => a.supplier.name.localeCompare(b.supplier.name));
+    const keyboard: TelegramInlineKeyboard = {
+      inline_keyboard: sorted.map((l) => [{ text: `🏭 ${l.supplier.name}`, callback_data: `supplier:${l.supplierId}:0` }]),
+    };
+    await this.telegram.sendMessage(chatId, '🏭 Наявні постачальники:', keyboard);
+  }
+
+  private async sendSupplierProducts(chatId: string, identity: ResolvedIdentity, supplierId: string, page: number): Promise<void> {
+    const result = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+      tx.productSupplier.findMany({
+        where: { supplierId, product: { sourcingCategoryId: { not: null }, deletedAt: null } },
+        select: { product: { select: { id: true, article: true, name: true } }, supplier: { select: { name: true } } },
+      }),
+    );
+    if (result.length === 0) {
+      await this.telegram.sendMessage(chatId, 'У цього постачальника немає товарів у відстежуваних категоріях.');
+      return;
+    }
+    const supplierName = result[0].supplier.name;
+    const products = result.map((r) => r.product).sort((a, b) => a.article.localeCompare(b.article));
+
+    const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
+    const pageClamped = Math.min(Math.max(page, 0), totalPages - 1);
+    const pageItems = products.slice(pageClamped * PAGE_SIZE, (pageClamped + 1) * PAGE_SIZE);
+
+    const navRow: TelegramInlineKeyboard['inline_keyboard'][number] = [];
+    if (pageClamped > 0) navRow.push({ text: '⬅️ Попередні', callback_data: `supplier:${supplierId}:${pageClamped - 1}` });
+    if (pageClamped < totalPages - 1) navRow.push({ text: 'Наступні ➡️', callback_data: `supplier:${supplierId}:${pageClamped + 1}` });
+
+    const keyboard: TelegramInlineKeyboard = {
+      inline_keyboard: [
+        ...pageItems.map((p) => [{ text: `📦 ${p.article} — ${truncateLabel(p.name)}`, callback_data: `product:${p.id}` }]),
+        ...(navRow.length > 0 ? [navRow] : []),
+        [{ text: '⬅️ До постачальників', callback_data: 'suppliers' }],
+      ],
+    };
+    await this.telegram.sendMessage(chatId, `🏭 <b>${supplierName}</b> — товари (${products.length} шт., стор. ${pageClamped + 1}/${totalPages}):`, keyboard);
   }
 
   private async sendCandidate(chatId: string, identity: ResolvedIdentity, candidateId: string): Promise<void> {
@@ -539,6 +738,36 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
           tx.product.update({ where: { id: action.productId }, data: { [action.field]: value } }),
         );
         await this.telegram.sendMessage(chatId, '✅ Ціну оновлено в каталозі.');
+        await this.sendProductDetail(chatId, identity, action.productId);
+        return;
+      }
+      case 'search': {
+        this.pending.delete(chatId);
+        const query = text.trim();
+        if (query.length < 2) {
+          await this.telegram.sendMessage(chatId, 'Введіть хоча б 2 символи.');
+          return;
+        }
+        const matches = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
+          tx.product.findMany({
+            where: {
+              sourcingCategoryId: { not: null },
+              deletedAt: null,
+              OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
+            },
+            orderBy: { article: 'asc' },
+            select: { id: true, article: true, name: true },
+            take: 15,
+          }),
+        );
+        if (matches.length === 0) {
+          await this.telegram.sendMessage(chatId, `🔎 Нічого не знайдено за «${query}» серед відстежуваних товарів.`);
+          return;
+        }
+        const keyboard: TelegramInlineKeyboard = {
+          inline_keyboard: matches.map((p) => [{ text: `📦 ${p.article} — ${truncateLabel(p.name)}`, callback_data: `product:${p.id}` }]),
+        };
+        await this.telegram.sendMessage(chatId, `🔎 Знайдено ${matches.length}${matches.length === 15 ? '+' : ''} за «${query}»:`, keyboard);
         return;
       }
       case 'add_candidate': {

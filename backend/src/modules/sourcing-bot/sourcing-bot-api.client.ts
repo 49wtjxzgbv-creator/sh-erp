@@ -9,6 +9,14 @@ export interface TelegramInlineKeyboard {
   inline_keyboard: TelegramInlineKeyboardButton[][];
 }
 
+/** Persistent bottom menu (2026-11-09 user request — "ще меню типа назад пошук по артикулу по категорії по постачальниках") — always one tap away instead of only inline buttons under one message. */
+export interface TelegramReplyKeyboard {
+  keyboard: Array<Array<{ text: string }>>;
+  resize_keyboard: true;
+}
+
+export type TelegramReplyMarkup = TelegramInlineKeyboard | TelegramReplyKeyboard;
+
 export interface TelegramPhotoSize {
   file_id: string;
   file_size?: number;
@@ -66,7 +74,7 @@ export class SourcingBotApiClient {
     }
   }
 
-  async sendMessage(chatId: string, text: string, replyMarkup?: TelegramInlineKeyboard): Promise<void> {
+  async sendMessage(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup): Promise<void> {
     await this.call('sendMessage', { chat_id: chatId, text, reply_markup: replyMarkup, parse_mode: 'HTML' });
   }
 

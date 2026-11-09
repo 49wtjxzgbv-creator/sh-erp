@@ -4,6 +4,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
   let service: SourcingBotService;
   let pairingPrisma: any;
   let prisma: any;
+  let filesService: any;
   let telegram: any;
   let tx: any;
 
@@ -30,7 +31,9 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
     process.env.SOURCING_BOT_COMPANY_ID = 'c1';
     tx = {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
-      product: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
+      product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), update: jest.fn() },
+      productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
+      fileAsset: { findFirst: jest.fn().mockResolvedValue(null) },
       sourcingCandidateSupplier: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
     };
@@ -40,14 +43,15 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       role: { findUnique: jest.fn().mockResolvedValue({ id: 'role1', permissions: [] }) },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
+    filesService = { getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }) };
     telegram = {
       getUpdates: jest.fn().mockResolvedValue([]),
       sendMessage: jest.fn(),
-      sendPhoto: jest.fn(),
+      sendPhoto: jest.fn().mockResolvedValue(false),
       answerCallbackQuery: jest.fn(),
       editMessageText: jest.fn(),
     };
-    service = new SourcingBotService(pairingPrisma, prisma, telegram);
+    service = new SourcingBotService(pairingPrisma, prisma, filesService, telegram);
   });
 
   describe('/start pairing', () => {
@@ -86,7 +90,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
         where: { id: 'u1' },
         data: { sourcingBotChatId: chatId, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
       });
-      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Готово'));
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Готово'), expect.anything());
       // code lookup + existing-chat check + one more re-resolve for the main menu that follows (cache was cleared on pairing)
       expect(pairingPrisma.user.findFirst).toHaveBeenCalledTimes(3);
     });
@@ -99,7 +103,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
 
       await service.handleUpdate(msg('/start'));
 
-      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Вітаю'));
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Вітаю'), expect.anything());
     });
 
     it('a user with no membership in the configured sourcing-bot company is treated as not paired — other memberships they hold are irrelevant', async () => {
@@ -230,6 +234,102 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
         },
       });
       expect(tx.sourcingOutreach.create).toHaveBeenCalledWith({ data: { candidateSupplierId: 'newcand', status: 'NOT_CONTACTED' } });
+    });
+  });
+
+  describe('product detail (2026-11-09 — "мав на увазі фото товару... ціни існуючих постачальників")', () => {
+    beforeEach(pairAndClear);
+
+    it('sends the photo via sendPhoto when the product has a PRODUCT_PHOTO FileAsset, with our prices AND every linked real supplier price', async () => {
+      tx.product.findUnique.mockResolvedValue({
+        id: 'prod1',
+        article: 'K00285',
+        name: 'Linsen-Flanschkopf-Schraube',
+        sourcingCategoryId: 'cat1',
+        germanPriceExclVat: 0.08,
+        germanPriceInclVat: null,
+        localPriceExclVat: null,
+        localPriceInclVat: null,
+        sellPriceEur: 0.15,
+      });
+      tx.productSupplier.findMany.mockResolvedValue([{ price: 0.1, supplierOfferedPrice: 0.09, supplier: { name: 'ARGIP' } }]);
+      tx.fileAsset.findFirst.mockResolvedValue({ id: 'file1' });
+      telegram.sendPhoto.mockResolvedValue(true);
+
+      await service.handleUpdate(cb('product:prod1'));
+
+      expect(filesService.getDownloadUrl).toHaveBeenCalledWith({ userId: 'u1', companyId: 'c1' }, 'file1');
+      expect(telegram.sendPhoto).toHaveBeenCalledWith(
+        chatId,
+        'https://example.test/photo.jpg',
+        expect.stringMatching(/ARGIP.*наша ціна.*постачальник пропонує/s),
+        expect.anything(),
+      );
+      expect(telegram.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a plain text message when there is no photo', async () => {
+      tx.product.findUnique.mockResolvedValue({
+        id: 'prod1',
+        article: 'K00285',
+        name: 'Linsen-Flanschkopf-Schraube',
+        sourcingCategoryId: 'cat1',
+        germanPriceExclVat: null,
+        germanPriceInclVat: null,
+        localPriceExclVat: null,
+        localPriceInclVat: null,
+        sellPriceEur: null,
+      });
+
+      await service.handleUpdate(cb('product:prod1'));
+
+      expect(telegram.sendPhoto).not.toHaveBeenCalled();
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('K00285'), expect.anything());
+    });
+  });
+
+  describe('supplier browsing (2026-11-09)', () => {
+    beforeEach(pairAndClear);
+
+    it('lists distinct real suppliers linked to tracked products', async () => {
+      tx.productSupplier.findMany.mockResolvedValue([
+        { supplierId: 's1', supplier: { name: 'ARGIP' } },
+        { supplierId: 's2', supplier: { name: 'Sturtz' } },
+      ]);
+
+      await service.handleUpdate(msg('🏭 Постачальники'));
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        chatId,
+        expect.anything(),
+        { inline_keyboard: [[{ text: '🏭 ARGIP', callback_data: 'supplier:s1:0' }], [{ text: '🏭 Sturtz', callback_data: 'supplier:s2:0' }]] },
+      );
+    });
+  });
+
+  describe('search by article (2026-11-09)', () => {
+    beforeEach(pairAndClear);
+
+    it('tapping 🔎 Пошук prompts, then the next message searches article/name among tracked products', async () => {
+      await service.handleUpdate(msg('🔎 Пошук за артикулом'));
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Введіть'));
+
+      tx.product.findMany.mockResolvedValue([{ id: 'prod1', article: 'K00285', name: 'Linsen-Flanschkopf-Schraube' }]);
+      await service.handleUpdate(msg('K00285'));
+
+      expect(tx.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            sourcingCategoryId: { not: null },
+            OR: [{ article: { contains: 'K00285', mode: 'insensitive' } }, { name: { contains: 'K00285', mode: 'insensitive' } }],
+          }),
+        }),
+      );
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        chatId,
+        expect.stringContaining('Знайдено'),
+        { inline_keyboard: [[{ text: '📦 K00285 — Linsen-Flanschkopf-Schraube', callback_data: 'product:prod1' }]] },
+      );
     });
   });
 });
