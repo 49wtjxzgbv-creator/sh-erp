@@ -211,11 +211,24 @@ export class CustomerOrderShortageService {
       return groups.get(key)!;
     };
 
+    // "ціни його мають підтягуватись в його ж каталог... та в наступних
+    // заявках автоматично підтягуватися" (2026-11-09): staff's own `price`
+    // still wins when set, but falls back to the supplier's own quoted
+    // `supplierOfferedPrice` (ProductSupplier only — AssemblySupplier has
+    // no equivalent field, so this is always a no-op fallback there)
+    // instead of leaving the line unpriced just because staff never typed
+    // a number in. Real production gap this closes: a product this
+    // supplier already quoted via a заявка, bought again straight through
+    // the shortage picker (no new заявка involved this time), used to show
+    // no price at all.
+    const resolveLinkPrice = (link: any): number | null =>
+      link.price != null ? Number(link.price) : link.supplierOfferedPrice != null ? Number(link.supplierOfferedPrice) : null;
+
     const toSupplierOptions = (links: any[]): SupplierOption[] =>
       links.map((l) => ({
         supplierId: l.supplierId,
         supplierName: supplierById.get(l.supplierId)?.name ?? 'Unknown supplier',
-        price: l.price != null ? Number(l.price) : null,
+        price: resolveLinkPrice(l),
       }));
 
     const ambiguousLines: ShortageLine[] = [];
@@ -281,7 +294,7 @@ export class CustomerOrderShortageService {
       } else if (links.length === 1) {
         getGroup(links[0].supplierId).lines.push({
           ...line,
-          price: links[0].price != null ? Number(links[0].price) : null,
+          price: resolveLinkPrice(links[0]),
         });
       } else {
         getGroup(product?.defaultSupplierId ?? null).lines.push({
@@ -312,7 +325,7 @@ export class CustomerOrderShortageService {
       } else if (links.length === 1) {
         getGroup(links[0].supplierId).lines.push({
           ...line,
-          price: links[0].price != null ? Number(links[0].price) : null,
+          price: resolveLinkPrice(links[0]),
         });
       } else {
         getGroup(assembly?.defaultSupplierId ?? null).lines.push(line);

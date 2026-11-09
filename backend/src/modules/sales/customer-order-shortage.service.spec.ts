@@ -82,6 +82,36 @@ describe('CustomerOrderShortageService', () => {
       expect(line.sourceRequirementId).toBeUndefined(); // suggestion only, nothing persisted
     });
 
+    it(
+      "ціни його мають підтягуватись... та в наступних заявках автоматично підтягуватися (2026-11-09): falls back to " +
+        "ProductSupplier.supplierOfferedPrice when staff's own price is null, for a single linked supplier",
+      async () => {
+        prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+        prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 }]);
+        prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 0 }]);
+        prisma.tenant.productSupplier.findMany.mockResolvedValue([{ productId: 'p1', supplierId: 'sup1', price: null, supplierOfferedPrice: 5.4 }]);
+        prisma.tenant.supplier.findMany.mockResolvedValue([{ id: 'sup1', name: 'Гармата' }]);
+
+        const result = await service.previewShortage(user, 'co1');
+
+        const line = result.groups.find((g) => g.supplierId === 'sup1')!.lines.find((l) => l.productId === 'p1')!;
+        expect(line.price).toBe(5.4);
+      },
+    );
+
+    it("staff's own ProductSupplier.price still wins over supplierOfferedPrice when both are set", async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
+      prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 1 }]);
+      prisma.tenant.product.findMany.mockResolvedValue([{ id: 'p1', article: 'P1', name: 'Part', defaultSupplierId: null, qty: 0 }]);
+      prisma.tenant.productSupplier.findMany.mockResolvedValue([{ productId: 'p1', supplierId: 'sup1', price: 7, supplierOfferedPrice: 5.4 }]);
+      prisma.tenant.supplier.findMany.mockResolvedValue([{ id: 'sup1', name: 'Гармата' }]);
+
+      const result = await service.previewShortage(user, 'co1');
+
+      const line = result.groups.find((g) => g.supplierId === 'sup1')!.lines.find((l) => l.productId === 'p1')!;
+      expect(line.price).toBe(7);
+    });
+
     it('caps the suggested "Заброньовано" at what is actually available, leaving the remainder as "Кількість до замовлення"', async () => {
       prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1', items: [{ assemblyId: 'a1', qty: 1 }] });
       prisma.tenant.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }]); // needed = 10
