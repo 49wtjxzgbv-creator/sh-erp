@@ -39,6 +39,7 @@ describe('SuppliersService', () => {
           update: jest.fn(),
           updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         },
+        productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
     audit = { record: jest.fn() };
@@ -296,5 +297,24 @@ describe('SuppliersService', () => {
       expect(email.send).toHaveBeenCalledWith('supplier@example.com', expect.any(String), expect.any(String));
       expect(result).toEqual({ supplierId: 'supplier-new', requiresAcceptance: true });
     });
+  });
+
+  describe('getLinkedProducts', () => {
+    it(
+      "усі товари ним не оцінені (2026-11-09) — surfaces supplierOfferedPrice alongside staff's own price, " +
+        "so staff can see whether this supplier has priced a product even when `price` was never manually entered",
+      async () => {
+        prisma.tenant.supplier.findUnique.mockResolvedValue({ id: 's1', connection: null });
+        prisma.tenant.productSupplier.findMany.mockResolvedValue([
+          { id: 'ps1', productId: 'p1', price: null, supplierOfferedPrice: 5.4, isDefault: false, product: { article: 'A1', name: 'Widget' } },
+        ]);
+
+        const result = await service.getLinkedProducts(user, 's1');
+
+        expect(result).toEqual([
+          { id: 'ps1', productId: 'p1', productArticle: 'A1', productName: 'Widget', price: null, supplierOfferedPrice: 5.4, isDefault: false },
+        ]);
+      },
+    );
   });
 });

@@ -70,6 +70,17 @@ export class SuppliersService {
       productArticle: r.product.article,
       productName: r.product.name,
       price: r.price,
+      // "усі замовлення усі товари ним не оцінені" (2026-11-09) — the
+      // existing `price` above is staff's OWN entered price (schema.prisma's
+      // own comment: "never read or written by our own staff-side logic" —
+      // about the supplier-portal fields, i.e. the reverse for `price`),
+      // genuinely a different number from what the supplier themselves
+      // quoted. The "Ціна постачальника" column already showed `price`
+      // before this — surfacing supplierOfferedPrice alongside it as its
+      // own column lets staff actually see whether this supplier has
+      // priced the product at all, instead of reading an empty `price` as
+      // "never quoted".
+      supplierOfferedPrice: r.supplierOfferedPrice,
       isDefault: r.isDefault,
     }));
   }

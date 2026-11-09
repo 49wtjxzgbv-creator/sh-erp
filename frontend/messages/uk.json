@@ -950,7 +950,9 @@
     "generateCombinedPdfButton": "Сформувати об'єднаний PDF",
     "downloadCombinedPdf": "Завантажити об'єднаний PDF",
     "setOrderDeliveryDateButton": "Встановити дату для всього замовлення",
-    "setOrderDeliveryDateHint": "Дата поставки для {count} товарів без графіка"
+    "setOrderDeliveryDateHint": "Дата поставки для {count} товарів без графіка",
+    "supplierOfferedPriceColumn": "Оцінка постачальника",
+    "supplierOfferedPriceNone": "не оцінив"
   },
   "finance": {
     "title": "Фінанси",

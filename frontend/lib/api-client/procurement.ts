@@ -99,7 +99,10 @@ export interface SupplierLinkedProduct {
   productId: string;
   productArticle: string;
   productName: string;
+  /** Staff's own entered price for this (product, supplier) pair — independent of what the supplier themselves quoted, see supplierOfferedPrice below. */
   price: DecimalString | null;
+  /** The price this supplier themselves quoted (via quotePurchaseRequest, or the portal's own catalog edit) — "усі товари ним не оцінені" (2026-11-09): shown as its own column so staff can tell "never priced by this supplier" apart from "priced, but we haven't typed our own number in yet". */
+  supplierOfferedPrice: DecimalString | null;
   isDefault: boolean;
 }
 

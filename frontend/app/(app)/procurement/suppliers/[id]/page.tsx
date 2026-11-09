@@ -211,6 +211,7 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
                   <TableHead>{t('article')}</TableHead>
                   <TableHead>{t('productName')}</TableHead>
                   <TableHead>{t('supplierPrice')}</TableHead>
+                  <TableHead>{t('supplierOfferedPriceColumn')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,6 +228,13 @@ function SupplierLinkedEntitiesCard({ supplierId }: { supplierId: string }) {
                       {p.isDefault && <Badge variant="secondary" className="ml-2">{t('defaultSupplier')}</Badge>}
                     </TableCell>
                     <TableCell>{toNumber(p.price) != null ? formatEur(toNumber(p.price)!) : '—'}</TableCell>
+                    <TableCell>
+                      {toNumber(p.supplierOfferedPrice) != null ? (
+                        formatEur(toNumber(p.supplierOfferedPrice)!)
+                      ) : (
+                        <span className="text-muted-foreground">{t('supplierOfferedPriceNone')}</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

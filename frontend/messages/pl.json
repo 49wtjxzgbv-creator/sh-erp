@@ -943,7 +943,9 @@
     "generateCombinedPdfButton": "Generate combined PDF",
     "downloadCombinedPdf": "Download combined PDF",
     "setOrderDeliveryDateButton": "Set delivery date for the whole order",
-    "setOrderDeliveryDateHint": "Delivery date for {count} items with no schedule yet"
+    "setOrderDeliveryDateHint": "Delivery date for {count} items with no schedule yet",
+    "supplierOfferedPriceColumn": "Supplier quoted price",
+    "supplierOfferedPriceNone": "not quoted"
   },
   "sales": {
     "title": "Sales",
