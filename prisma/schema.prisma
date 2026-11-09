@@ -212,6 +212,11 @@ model Company {
   cuttingPlanStocks   CuttingPlanStock[]
   cuttingPlanCuts     CuttingPlanCut[]
 
+  // Procurement sourcing bot (2026-11-09)
+  sourcingCategories         SourcingCategory[]
+  sourcingCandidateSuppliers SourcingCandidateSupplier[]
+  sourcingOutreaches         SourcingOutreach[]
+
   // Quotations module (2026-08-27)
   customers               Customer[]
   quotations              Quotation[]
@@ -256,6 +261,17 @@ model User {
   telegramChatId               String?   @unique
   telegramPairingCode          String?   @unique
   telegramPairingCodeExpiresAt DateTime?
+
+  // Procurement sourcing bot (2026-11-09) — a SEPARATE Telegram bot/token
+  // from the production-notifications one above, so its own
+  // chatId/pairingCode live on their own columns rather than reusing
+  // telegramChatId/telegramPairingCode (a chat paired to one bot has no
+  // relationship to the other bot's pairing state). Same
+  // generate-code-from-an-authenticated-session, `/start <code>` pairing
+  // flow as above — see UsersService#generateSourcingBotPairingCode.
+  sourcingBotChatId               String?   @unique
+  sourcingBotPairingCode          String?   @unique
+  sourcingBotPairingCodeExpiresAt DateTime?
 
   // "Подати роботу за іншого працівника" (2026-10-05 user request): the
   // SAME paired User/chat as the notification opt-in above, now also able
@@ -859,6 +875,14 @@ model Product {
 
   defaultSupplierId String? @db.Uuid // single-column FK — see header §cross-tenant (optional relation)
 
+  // Procurement sourcing bot (2026-11-09) — "потрібен якийсь зручний бот
+  // телеграм... по категоріях з списком можливих постачальників". Marks a
+  // product as actively being sourced for a cheaper Ukrainian alternative;
+  // null for the vast majority of the catalog. Single-column FK, same
+  // pattern as defaultSupplierId just above — not composite, SetNull on
+  // delete so removing a sourcing category never deletes the product.
+  sourcingCategoryId String? @db.Uuid
+
   legacyId String?
 
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
@@ -868,6 +892,7 @@ model Product {
   company                   Company                    @relation(fields: [companyId], references: [id], onDelete: Restrict)
   unit                      CompanyUnit                @relation(fields: [companyId, unitId], references: [companyId, id]) // composite
   defaultSupplier           Supplier?                  @relation(fields: [defaultSupplierId], references: [id], onDelete: SetNull)
+  sourcingCategory          SourcingCategory?          @relation(fields: [sourcingCategoryId], references: [id], onDelete: SetNull)
   assemblyComponents        AssemblyComponent[]
   stockMovements            StockMovement[]
   warehouseStocks           WarehouseStock[]
@@ -893,6 +918,7 @@ model Product {
   @@index([companyId, name])
   @@index([companyId, barcode])
   @@index([companyId, unitId])
+  @@index([companyId, sourcingCategoryId])
   @@map("products")
 }
 
@@ -4590,4 +4616,105 @@ enum PricingSource {
   // benchmark price with no VAT claim at all, Product.germanPriceInclVat
   // is explicitly labeled "з ПДВ".
   GERMAN_PRICE
+}
+
+// Procurement sourcing bot (2026-11-09) — "потрібен якийсь зручний бот
+// телеграм щоб це всек було зручно опрацьовувати по категоріях з списком
+// можливих постачальників текстом який писати та наявною ціною". Backs a
+// standalone Telegram bot (separate process/token from TelegramBotModule's
+// production-notifications bot, see backend/src/modules/sourcing-bot/) that
+// lets the user + procurement team browse categories of catalog items the
+// company wants to re-source cheaper in Ukraine, see candidate suppliers
+// with ready RFQ text, see the item's real price fields (Product's own
+// german/local*Price*/sellPriceEur — deliberately NOT duplicated here, see
+// Product.sourcingCategoryId's own comment), and track outreach status.
+model SourcingCategory {
+  id          String @id @default(uuid()) @db.Uuid
+  companyId   String @db.Uuid
+  code        String // short stable key, e.g. "A", "B", "G_A" — matches the categories from the original catalog-sourcing analysis
+  name        String
+  rfqTemplate String @db.Text // ready-to-send inquiry text, shown verbatim by the bot's "📋 Текст запиту" button
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company    Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  products   Product[]
+  candidates SourcingCandidateSupplier[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, id]) // composite-FK target for Product.sourcingCategoryId/SourcingCandidateSupplier.categoryId
+  @@index([companyId, sortOrder])
+  @@map("sourcing_categories")
+}
+
+// A prospective new supplier found via research (web search, cold lead) —
+// NOT a real onboarded vendor (that's `Supplier`). Deliberately a separate,
+// much lighter model: no portal access, no products/assembly links, nothing
+// that would make it show up anywhere else in the app. If a candidate turns
+// into a real relationship, staff create a normal `Supplier` row by hand —
+// this model never auto-promotes into one.
+model SourcingCandidateSupplier {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @db.Uuid
+  categoryId String @db.Uuid
+
+  name       String
+  region     String? // oblast, e.g. "Хмельницька обл." — lets the bot's status view group/filter by region later
+  location   String?
+  phone      String?
+  email      String?
+  website    String?
+  whatTheyDo String? @db.Text
+  source     String  @default("web_search") // "web_search" | "user_added" (via the bot's admin-only "➕ Додати постачальника")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category SourcingCategory  @relation(fields: [companyId, categoryId], references: [companyId, id]) // composite
+  outreach SourcingOutreach?
+
+  @@unique([companyId, id]) // composite-FK target for SourcingOutreach.candidateSupplierId
+  @@index([companyId, categoryId])
+  @@map("sourcing_candidate_suppliers")
+}
+
+enum SourcingOutreachStatus {
+  NOT_CONTACTED
+  CONTACTED
+  AWAITING_RESPONSE
+  RESPONDED
+  QUOTE_RECEIVED
+  REJECTED
+  WON
+}
+
+// One evolving record per candidate (not a history log — v1 deliberately
+// keeps only the latest status/note/quote, matching exactly what was asked
+// for: "хто кому написав, яку відповідь отримали, нові ціни від нових
+// постачальників"). Created alongside its SourcingCandidateSupplier (seed
+// script, or the bot's "➕ Додати постачальника") at NOT_CONTACTED.
+model SourcingOutreach {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  companyId           String                 @db.Uuid
+  candidateSupplierId String                 @db.Uuid
+  status              SourcingOutreachStatus @default(NOT_CONTACTED)
+  lastNote            String?                @db.Text
+  quotedPriceEur      Decimal?               @db.Decimal(14, 2)
+  quotedPriceNote     String? // free text, e.g. "з ПДВ" / "без ПДВ" / "за 100 шт" — deliberately not a rigid enum, candidates quote in all sorts of ways
+  contactedByUserId   String?                @db.Uuid // plain id, no formal relation — same convention as FileAsset.uploadedById
+  contactedAt         DateTime?              @db.Timestamptz(3)
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company   Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  candidate SourcingCandidateSupplier @relation(fields: [companyId, candidateSupplierId], references: [companyId, id], onDelete: Cascade) // composite
+
+  @@unique([companyId, candidateSupplierId])
+  @@index([companyId, status])
+  @@map("sourcing_outreaches")
 }

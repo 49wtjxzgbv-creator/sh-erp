@@ -37,19 +37,27 @@ describe('UsersService', () => {
   });
 
   describe('me() — self-service profile lookup (2026-09-06, dashboard greeting by name)', () => {
-    it('returns id/fullName/email/telegramPaired for the current user, nothing else (never the raw passwordHash/chat id)', async () => {
-      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', passwordHash: 'secret-hash', telegramChatId: '555' });
+    it('returns id/fullName/email/telegramPaired/sourcingBotPaired for the current user, nothing else (never the raw passwordHash/chat id)', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        fullName: 'Іван Петренко',
+        email: 'admin@b.com',
+        passwordHash: 'secret-hash',
+        telegramChatId: '555',
+        sourcingBotChatId: '777',
+      });
 
       const result = await service.me(user);
 
-      expect(result).toEqual({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramPaired: true });
+      expect(result).toEqual({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramPaired: true, sourcingBotPaired: true });
       expect(prisma.tenant.user.findUnique).toHaveBeenCalledWith({ where: { id: 'u1' } });
     });
 
-    it('telegramPaired is false when no Telegram chat id is set', async () => {
-      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramChatId: null });
+    it('telegramPaired/sourcingBotPaired are false when no chat id is set for either bot', async () => {
+      prisma.tenant.user.findUnique.mockResolvedValue({ id: 'u1', fullName: 'Іван Петренко', email: 'admin@b.com', telegramChatId: null, sourcingBotChatId: null });
       const result = await service.me(user);
       expect(result.telegramPaired).toBe(false);
+      expect(result.sourcingBotPaired).toBe(false);
     });
 
     it('throws when the user row is somehow gone', async () => {
@@ -158,6 +166,44 @@ describe('UsersService', () => {
       expect(prisma.tenant.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { telegramChatId: null, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
+      });
+    });
+  });
+
+  describe('generateSourcingBotPairingCode (2026-11-09 — procurement sourcing bot)', () => {
+    it('writes a 6-char code + a ~15min expiry on the sourcingBot* fields, no special permission required', async () => {
+      const expiresAt = new Date('2026-11-09T12:15:00Z');
+      prisma.tenant.user.update.mockResolvedValue({ sourcingBotPairingCode: 'ABC123', sourcingBotPairingCodeExpiresAt: expiresAt });
+
+      const result = await service.generateSourcingBotPairingCode(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledTimes(1);
+      const call = prisma.tenant.user.update.mock.calls[0][0];
+      expect(call.where).toEqual({ id: 'u1' });
+      expect(call.data.sourcingBotPairingCode).toHaveLength(6);
+      expect(result.pairingCode).toBe(call.data.sourcingBotPairingCode);
+    });
+
+    it('retries with a fresh code on a unique-constraint collision', async () => {
+      const collision = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0' });
+      prisma.tenant.user.update.mockRejectedValueOnce(collision).mockResolvedValueOnce({ sourcingBotPairingCode: 'ZZZ999' });
+
+      const result = await service.generateSourcingBotPairingCode(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledTimes(2);
+      expect(result.pairingCode).toHaveLength(6);
+    });
+  });
+
+  describe('unlinkSourcingBot (2026-11-09)', () => {
+    it('clears every sourcing-bot-related field on the User row, independent of the notifications-bot fields', async () => {
+      prisma.tenant.user.update.mockResolvedValue({ id: 'u1', sourcingBotChatId: null });
+
+      await service.unlinkSourcingBot(user);
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { sourcingBotChatId: null, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
       });
     });
   });

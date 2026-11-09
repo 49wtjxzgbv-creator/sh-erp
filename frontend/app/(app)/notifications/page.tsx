@@ -5,7 +5,13 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useLowStockDigestPreview, useSendLowStockDigestNow } from '@/lib/hooks/use-notifications';
 import { useCompanySettings } from '@/lib/hooks/use-settings';
-import { useMyProfile, useGenerateMyTelegramPairingCode, useUnlinkMyTelegram } from '@/lib/hooks/use-users';
+import {
+  useMyProfile,
+  useGenerateMyTelegramPairingCode,
+  useUnlinkMyTelegram,
+  useGenerateMySourcingBotPairingCode,
+  useUnlinkMySourcingBot,
+} from '@/lib/hooks/use-users';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -105,6 +111,7 @@ export default function NotificationsPage() {
       </Card>
 
       <TelegramSupervisorCard />
+      <SourcingBotCard />
     </div>
   );
 }
@@ -195,6 +202,98 @@ function TelegramSupervisorCard() {
             )}
             <Button size="sm" loading={generateCode.isPending} onClick={handleGenerate}>
               {t('telegramSupervisorGenerateCode')}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Procurement sourcing bot (2026-11-09) — a SEPARATE Telegram bot/token
+ * from the production-notifications one above (TelegramSupervisorCard).
+ * Pair here, then browse sourcing categories/candidate suppliers/RFQ
+ * texts and track outreach status directly in that bot.
+ */
+function SourcingBotCard() {
+  const t = useTranslations('notifications');
+  const tc = useTranslations('common');
+  const apiErrorMessage = useApiErrorMessage();
+  const { data: profile } = useMyProfile();
+  const generateCode = useGenerateMySourcingBotPairingCode();
+  const unlinkSourcingBot = useUnlinkMySourcingBot();
+  const [error, setError] = useState<string | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<{ code: string; expiresAt: string } | null>(null);
+
+  async function handleGenerate() {
+    setError(null);
+    try {
+      const result = await generateCode.mutateAsync();
+      setGeneratedCode({ code: result.pairingCode, expiresAt: result.expiresAt });
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  async function handleUnlink() {
+    setError(null);
+    setGeneratedCode(null);
+    try {
+      await unlinkSourcingBot.mutateAsync();
+    } catch (err) {
+      setError(apiErrorMessage(err, tc('error')));
+    }
+  }
+
+  const isPaired = Boolean(profile?.sourcingBotPaired);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          {t('sourcingBotTitle')}
+          {isPaired ? <Badge variant="success">{t('sourcingBotPaired')}</Badge> : <Badge variant="secondary">{t('sourcingBotNotPaired')}</Badge>}
+        </CardTitle>
+        <CardDescription>{t('sourcingBotDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {isPaired ? (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                {t('sourcingBotUnlink')}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('sourcingBotUnlinkConfirmTitle')}</DialogTitle>
+                <DialogDescription>{t('sourcingBotUnlinkConfirmDescription')}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">{tc('cancel')}</Button>
+                </DialogClose>
+                <Button variant="destructive" loading={unlinkSourcingBot.isPending} onClick={handleUnlink}>
+                  {t('sourcingBotUnlink')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <>
+            {generatedCode && (
+              <div className="rounded-md border bg-secondary/30 p-3">
+                <p className="text-xs text-muted-foreground">{t('sourcingBotCodeLabel')}</p>
+                <p className="font-mono text-2xl font-semibold tracking-widest">{generatedCode.code}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('sourcingBotCodeExpiresAt', { time: new Date(generatedCode.expiresAt).toLocaleTimeString() })}
+                </p>
+              </div>
+            )}
+            <Button size="sm" loading={generateCode.isPending} onClick={handleGenerate}>
+              {t('sourcingBotGenerateCode')}
             </Button>
           </>
         )}

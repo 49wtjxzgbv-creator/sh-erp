@@ -1375,7 +1375,17 @@
     "telegramSupervisorCodeExpiresAt": "Valid until {time}",
     "telegramSupervisorUnlink": "Unsubscribe",
     "telegramSupervisorUnlinkConfirmTitle": "Unsubscribe from notifications?",
-    "telegramSupervisorUnlinkConfirmDescription": "You will no longer receive new-submission notifications in Telegram until you subscribe again."
+    "telegramSupervisorUnlinkConfirmDescription": "You will no longer receive new-submission notifications in Telegram until you subscribe again.",
+    "sourcingBotTitle": "Supplier-sourcing bot (Telegram)",
+    "sourcingBotDescription": "A separate bot for working with the cheaper-Ukrainian-supplier sourcing report: categories, contacts, inquiry text, prices, and outreach status — right in Telegram.",
+    "sourcingBotPaired": "Linked",
+    "sourcingBotNotPaired": "Not linked",
+    "sourcingBotGenerateCode": "Generate code",
+    "sourcingBotCodeLabel": "Pairing code",
+    "sourcingBotCodeExpiresAt": "Valid until {time}",
+    "sourcingBotUnlink": "Unlink",
+    "sourcingBotUnlinkConfirmTitle": "Unlink the supplier-sourcing bot?",
+    "sourcingBotUnlinkConfirmDescription": "This Telegram account will no longer have access to the supplier-sourcing bot until you link it again."
   },
   "billing": {
     "title": "Billing",

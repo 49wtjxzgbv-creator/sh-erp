@@ -12,6 +12,8 @@ import {
   unlinkMyTelegram,
   generateTelegramPairingCodeForUser,
   unlinkTelegramForUser,
+  generateMySourcingBotPairingCode,
+  unlinkMySourcingBot,
   getMyIpLocation,
   type InviteUserInput,
   type ChangePasswordInput,
@@ -83,6 +85,23 @@ export function useUnlinkMyTelegram() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => unlinkMyTelegram(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
+  });
+}
+
+/** Procurement sourcing bot pairing (2026-11-09) — a SEPARATE bot/token from the notifications one above; same self-service shape. */
+export function useGenerateMySourcingBotPairingCode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => generateMySourcingBotPairingCode(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
+  });
+}
+
+export function useUnlinkMySourcingBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unlinkMySourcingBot(),
     onSuccess: () => qc.invalidateQueries({ queryKey: myProfileKey }),
   });
 }

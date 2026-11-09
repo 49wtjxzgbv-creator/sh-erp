@@ -88,4 +88,16 @@ export class UsersController {
   async unlinkTelegramForUser(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
     return this.usersService.unlinkTelegramForUser(user, userId);
   }
+
+  @Post('me/sourcing-bot-pairing-code')
+  @ApiOperation({ summary: 'Generate a one-time code to link your Telegram account to the procurement sourcing bot (a separate bot/token from the notifications one above).' })
+  async generateSourcingBotPairingCode(@CurrentUser() user: RequestUser) {
+    return this.usersService.generateSourcingBotPairingCode(user);
+  }
+
+  @Post('me/sourcing-bot-unlink')
+  @ApiOperation({ summary: 'Unlink your Telegram account from the procurement sourcing bot.' })
+  async unlinkSourcingBot(@CurrentUser() user: RequestUser) {
+    return this.usersService.unlinkSourcingBot(user);
+  }
 }

@@ -221,7 +221,13 @@ export class UsersService {
   async me(user: RequestUser) {
     const dbUser = await this.prisma.tenant.user.findUnique({ where: { id: user.userId } });
     if (!dbUser) throw new CodedNotFoundException('USER_NOT_FOUND', 'User not found.');
-    return { id: dbUser.id, fullName: dbUser.fullName, email: dbUser.email, telegramPaired: Boolean(dbUser.telegramChatId) };
+    return {
+      id: dbUser.id,
+      fullName: dbUser.fullName,
+      email: dbUser.email,
+      telegramPaired: Boolean(dbUser.telegramChatId),
+      sourcingBotPaired: Boolean(dbUser.sourcingBotChatId),
+    };
   }
 
   /**
@@ -311,6 +317,48 @@ export class UsersService {
       after: { expiresAt: result.expiresAt },
     });
     return result;
+  }
+
+  /**
+   * Procurement sourcing bot pairing (2026-11-09) — a SEPARATE Telegram
+   * bot/token from the notifications one above, so it gets its own
+   * pairing-code pair on User (sourcingBotPairingCode/*ExpiresAt) rather
+   * than reusing telegramPairingCode. Same TTL/alphabet/retry-on-collision
+   * shape as generatePairingCodeFor.
+   */
+  async generateSourcingBotPairingCode(user: RequestUser) {
+    return this.generateSourcingBotPairingCodeFor(user.userId);
+  }
+
+  async unlinkSourcingBot(user: RequestUser) {
+    await this.prisma.tenant.user.update({
+      where: { id: user.userId },
+      data: { sourcingBotChatId: null, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
+    });
+    return { unlinked: true };
+  }
+
+  private async generateSourcingBotPairingCodeFor(targetUserId: string) {
+    const expiresAt = new Date(Date.now() + TELEGRAM_PAIRING_CODE_TTL_MINUTES * 60_000);
+    let updated;
+    let code = '';
+    for (let attempt = 0; attempt < 10; attempt++) {
+      code = randomPairingCode();
+      try {
+        updated = await this.prisma.tenant.user.update({
+          where: { id: targetUserId },
+          data: { sourcingBotPairingCode: code, sourcingBotPairingCodeExpiresAt: expiresAt },
+        });
+        break;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
+        throw err;
+      }
+    }
+    if (!updated) {
+      throw new CodedConflictException('SOURCING_BOT_PAIRING_CODE_GENERATION_FAILED', 'Could not generate a unique pairing code — try again.');
+    }
+    return { pairingCode: code, expiresAt: updated.sourcingBotPairingCodeExpiresAt };
   }
 
   async unlinkTelegram(user: RequestUser) {

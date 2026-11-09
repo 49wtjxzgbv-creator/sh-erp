@@ -1484,7 +1484,17 @@
     "telegramSupervisorCodeExpiresAt": "Дійсний до {time}",
     "telegramSupervisorUnlink": "Відписатись",
     "telegramSupervisorUnlinkConfirmTitle": "Відписатись від сповіщень?",
-    "telegramSupervisorUnlinkConfirmDescription": "Ви більше не отримуватимете сповіщення про нові подання в Telegram, доки не підпишетесь знову."
+    "telegramSupervisorUnlinkConfirmDescription": "Ви більше не отримуватимете сповіщення про нові подання в Telegram, доки не підпишетесь знову.",
+    "sourcingBotTitle": "Бот пошуку постачальників (Telegram)",
+    "sourcingBotDescription": "Окремий бот для роботи зі звітом пошуку дешевших українських постачальників: категорії, контакти, текст запиту, ціни та статус перемовин — прямо в Telegram.",
+    "sourcingBotPaired": "Прив'язано",
+    "sourcingBotNotPaired": "Не прив'язано",
+    "sourcingBotGenerateCode": "Згенерувати код",
+    "sourcingBotCodeLabel": "Код прив'язки",
+    "sourcingBotCodeExpiresAt": "Дійсний до {time}",
+    "sourcingBotUnlink": "Відв'язати",
+    "sourcingBotUnlinkConfirmTitle": "Відв'язати бота пошуку постачальників?",
+    "sourcingBotUnlinkConfirmDescription": "Цей Telegram-акаунт більше не матиме доступу до бота пошуку постачальників, доки не прив'яжете його знову."
   },
   "billing": {
     "title": "Тарифи та оплата",

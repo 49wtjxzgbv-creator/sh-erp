@@ -33,6 +33,13 @@ cd "$REPO_ROOT"
 
 BACKEND_ENV=/etc/sh-erp/backend.env
 FRONTEND_ENV=/etc/sh-erp/frontend.env
+# Procurement sourcing bot (2026-11-09) — deliberately OPTIONAL at the
+# deploy-script level: this file won't exist yet on the very first deploy
+# after this feature lands (no real Telegram bot token created yet), and
+# this script must not start hard-failing every existing deploy because of
+# a brand-new, separate component. See step 5/6 below for how its
+# restart/health-check is skipped (with a warning) when absent.
+SOURCING_BOT_ENV=/etc/sh-erp/sourcing-bot.env
 
 echo "=== 0. Sanity checks ==="
 for f in "$BACKEND_ENV" "$FRONTEND_ENV"; do
@@ -42,6 +49,10 @@ for f in "$BACKEND_ENV" "$FRONTEND_ENV"; do
     exit 1
   fi
 done
+if [ ! -f "$SOURCING_BOT_ENV" ]; then
+  echo "NOTE: $SOURCING_BOT_ENV not found — the procurement sourcing bot will not be (re)started this" >&2
+  echo "deploy. See ops/systemd/sourcing-bot.env.example to set it up when ready; safe to ignore until then." >&2
+fi
 
 echo "=== 1. Postgres up (Docker — see docker-compose.prod.yml's header comment for why only this stays containerized) ==="
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres
@@ -121,6 +132,11 @@ fi
 echo "=== 5. Restarting services ==="
 sudo systemctl restart sh-erp-backend
 sudo systemctl restart sh-erp-frontend
+if [ -f "$SOURCING_BOT_ENV" ]; then
+  sudo systemctl restart sh-erp-sourcing-bot
+else
+  echo "Skipping sh-erp-sourcing-bot restart — $SOURCING_BOT_ENV not present yet."
+fi
 
 echo "=== 6. Verifying ==="
 echo "--- Waiting for backend /health ---"
@@ -144,8 +160,17 @@ if ! curl -fsS http://127.0.0.1:3002/ >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "--- Confirming both systemd units report active ---"
+echo "--- Confirming backend/frontend systemd units report active ---"
 systemctl is-active --quiet sh-erp-backend || { echo "ERROR: sh-erp-backend is not active." >&2; exit 1; }
 systemctl is-active --quiet sh-erp-frontend || { echo "ERROR: sh-erp-frontend is not active." >&2; exit 1; }
+
+if [ -f "$SOURCING_BOT_ENV" ]; then
+  echo "--- Confirming sh-erp-sourcing-bot is active (no HTTP health endpoint — long-polling process, not a server) ---"
+  if ! systemctl is-active --quiet sh-erp-sourcing-bot; then
+    echo "ERROR: sh-erp-sourcing-bot is not active. Recent logs:" >&2
+    journalctl -u sh-erp-sourcing-bot --no-pager -n 50 >&2
+    exit 1
+  fi
+fi
 
 echo "=== Deploy complete. No manual steps remain. ==="

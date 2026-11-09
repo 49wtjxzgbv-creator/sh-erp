@@ -110,4 +110,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'CuttingPlan',
   'CuttingPlanStock',
   'CuttingPlanCut',
+  // Procurement sourcing bot (2026-11-09)
+  'SourcingCategory',
+  'SourcingCandidateSupplier',
+  'SourcingOutreach',
 ]);

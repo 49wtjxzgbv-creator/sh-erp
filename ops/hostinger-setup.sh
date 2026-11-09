@@ -57,12 +57,13 @@ else
   echo "shserp user already exists, skipping."
 fi
 
-echo "--- /etc/sh-erp for the two EnvironmentFiles systemd reads (root:shserp, 0750 — real secrets, never world-readable) ---"
+echo "--- /etc/sh-erp for the three EnvironmentFiles systemd reads (root:shserp, 0750 — real secrets, never world-readable) ---"
 mkdir -p /etc/sh-erp
 chown root:shserp /etc/sh-erp
 chmod 750 /etc/sh-erp
-echo "Populate /etc/sh-erp/backend.env and /etc/sh-erp/frontend.env from backend/.env.example and"
-echo "frontend/.env.example (docs/deployment.md's env-var checklist has the full list), then:"
+echo "Populate /etc/sh-erp/backend.env, /etc/sh-erp/frontend.env, and /etc/sh-erp/sourcing-bot.env from"
+echo "backend/.env.example, frontend/.env.example, and ops/systemd/sourcing-bot.env.example"
+echo "(docs/deployment.md's env-var checklist has the full list), then:"
 echo "  chown root:shserp /etc/sh-erp/*.env && chmod 640 /etc/sh-erp/*.env"
 
 echo "--- Firewall (ufw): allow SSH, HTTP, HTTPS only ---"
@@ -84,18 +85,23 @@ echo "--- Installing systemd unit files ---"
 if [ -d "$(dirname "$0")/systemd" ]; then
   cp "$(dirname "$0")/systemd/sh-erp-backend.service" /etc/systemd/system/
   cp "$(dirname "$0")/systemd/sh-erp-frontend.service" /etc/systemd/system/
+  # Procurement sourcing bot (2026-11-09) — its OWN unit, deliberately
+  # decoupled from sh-erp-backend (see that unit file's own header
+  # comment). Same repo checkout, same dist/, different env file/process.
+  cp "$(dirname "$0")/systemd/sh-erp-sourcing-bot.service" /etc/systemd/system/
   systemctl daemon-reload
-  systemctl enable sh-erp-backend sh-erp-frontend
+  systemctl enable sh-erp-backend sh-erp-frontend sh-erp-sourcing-bot
   echo "Units installed and enabled (not started yet — nothing to run until the first deploy)."
 else
-  echo "WARNING: ops/systemd/ not found relative to this script — copy sh-erp-backend.service and" >&2
-  echo "sh-erp-frontend.service into /etc/systemd/system/ manually, then 'systemctl daemon-reload'." >&2
+  echo "WARNING: ops/systemd/ not found relative to this script — copy sh-erp-backend.service," >&2
+  echo "sh-erp-frontend.service, and sh-erp-sourcing-bot.service into /etc/systemd/system/ manually," >&2
+  echo "then 'systemctl daemon-reload'." >&2
 fi
 
 echo ""
 echo "=== System-level setup complete. Remaining steps (docs/deployment.md has the full detail): ==="
 echo "  1. Clone this repo to /opt/sh-erp (chown -R shserp:shserp /opt/sh-erp) if not already there."
-echo "  2. Create /etc/sh-erp/backend.env and /etc/sh-erp/frontend.env (see above), chmod 640."
+echo "  2. Create /etc/sh-erp/backend.env, /etc/sh-erp/frontend.env, and /etc/sh-erp/sourcing-bot.env (see above), chmod 640."
 echo "  3. Copy ops/nginx/*.conf.template to /etc/nginx/sites-available/, filling in your real domains,"
 echo "     symlink into sites-enabled/, nginx -t, systemctl reload nginx."
 echo "  4. Run: certbot --nginx -d app.<your-domain> -d api.<your-domain>"

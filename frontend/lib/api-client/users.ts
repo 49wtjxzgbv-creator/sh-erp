@@ -45,6 +45,8 @@ export interface MyProfile {
   fullName: string;
   email: string;
   telegramPaired: boolean;
+  /** Procurement sourcing bot (2026-11-09) — a SEPARATE Telegram bot/token, independent pairing state from telegramPaired above. */
+  sourcingBotPaired: boolean;
 }
 
 export function getMyProfile(): Promise<MyProfile> {
@@ -123,4 +125,13 @@ export function generateTelegramPairingCodeForUser(userId: string): Promise<Tele
 
 export function unlinkTelegramForUser(userId: string): Promise<{ unlinked: true }> {
   return apiClient.post<{ unlinked: true }>(`users/${userId}/telegram-unlink`);
+}
+
+/** Procurement sourcing bot pairing (2026-11-09) — a SEPARATE bot/token from the notifications one above; same self-service shape. */
+export function generateMySourcingBotPairingCode(): Promise<TelegramPairingCode> {
+  return apiClient.post<TelegramPairingCode>('users/me/sourcing-bot-pairing-code');
+}
+
+export function unlinkMySourcingBot(): Promise<{ unlinked: true }> {
+  return apiClient.post<{ unlinked: true }>('users/me/sourcing-bot-unlink');
 }
