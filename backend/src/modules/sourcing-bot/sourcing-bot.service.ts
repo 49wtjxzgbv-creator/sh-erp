@@ -506,9 +506,12 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
         where: { productId },
         select: { price: true, supplierOfferedPrice: true, supplier: { select: { name: true } } },
       });
+      // Most RECENT photo, not the oldest (2026-11-09 user report: "воно
+      // взагалі якесь старе фото підтягує") — a re-uploaded photo doesn't
+      // delete the old FileAsset row, it just adds a new one alongside it.
       const photo = await tx.fileAsset.findFirst({
         where: { entityType: 'Product', entityId: productId, domain: 'PRODUCT_PHOTO', deletedAt: null },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' },
       });
       let photoUrl: string | null = null;
       if (photo) {
@@ -705,10 +708,13 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     // already-known storageKey needs no tenant context at all, so it can
     // safely run outside the transaction (holding a DB transaction open
     // for ~300 R2 round-trips would be its own problem).
+    // Most RECENT photo per product, not the oldest (same "воно взагалі
+    // якесь старе фото підтягує" report as sendProductDetail's own fix
+    // above) — descending order + "first wins" in the dedup loop below.
     const photoAssets = await this.prisma.runInTenantTransaction({ companyId: identity.companyId, userId: identity.userId }, (tx) =>
       tx.fileAsset.findMany({
         where: { entityType: 'Product', entityId: { in: products.map((p) => p.id) }, domain: 'PRODUCT_PHOTO', deletedAt: null },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' },
         select: { entityId: true, storageKey: true, mimeType: true },
       }),
     );
