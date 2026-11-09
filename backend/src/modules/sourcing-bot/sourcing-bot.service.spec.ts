@@ -377,7 +377,23 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
   });
 
   describe('catalog export (2026-11-09 — "щоб генерувало файл з усіма товарами там фото артикул назву всіх постачальників і ціни")', () => {
-    beforeEach(pairAndClear);
+    beforeEach(async () => {
+      await pairAndClear();
+      // Admin-only (2026-11-09 — "можливо зробити щоб цей файл пдф...
+      // ніхто не міг скачати") — every test below acts as an admin
+      // unless it explicitly overrides this, matching the real gate.
+      pairingPrisma.role.findUnique.mockResolvedValue({ id: 'role1', permissions: [{ permission: { key: 'purchase-orders:manage' } }] });
+    });
+
+    it('refuses a non-admin, without touching the database or rendering anything', async () => {
+      pairingPrisma.role.findUnique.mockResolvedValue({ id: 'role1', permissions: [] });
+
+      await service.handleUpdate(msg('📄 Файл з усіма товарами'));
+
+      expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('тільки адміністратор'));
+      expect(tx.product.findMany).not.toHaveBeenCalled();
+      expect(mockRenderHtmlToPdf).not.toHaveBeenCalled();
+    });
 
     it('renders a PDF covering the WHOLE catalog (not just tracked products), embeds photos as data URIs, and sends it as a document', async () => {
       tx.product.findMany.mockResolvedValue([
