@@ -21,8 +21,10 @@ import { LoadingBlock } from '@/components/ui/loading-block';
 import { RequirePermission } from '@/components/domain/auth/require-permission';
 
 interface EditableLine extends Omit<ShortageGroupLineInput, 'price'> {
-  /** Own article/SKU — display/print only, never submitted back (not part of ShortageGroupLineInput). */
+  /** Own article/SKU — also submitted back as ShortageGroupLineInput.article (2026-11-09 fix) so the created PurchaseOrderItem.articleSnapshot isn't just the combined `description` again. */
   article: string | null;
+  /** The product's/assembly's own name, no article prefix — also submitted back as ShortageGroupLineInput.name (2026-11-09 fix), same reasoning as `article` above. */
+  name: string;
   /** Frozen at hydration — the original gross requirement, kept visible and never mutated by editing `qty`. */
   neededQty: number;
   currentStock: number;
@@ -158,6 +160,7 @@ function ShortagePreviewPageInner() {
         subAssemblyId: line.subAssemblyId,
         description: line.description,
         article: line.article,
+        name: line.name,
         qty: previewQtyOverrides?.get(lineId(line)) ?? line.qtyToPurchase ?? line.neededQty,
         neededQty: line.neededQty,
         currentStock: line.currentStock,
@@ -172,6 +175,7 @@ function ShortagePreviewPageInner() {
       subAssemblyId: line.subAssemblyId,
       description: line.description,
       article: line.article,
+      name: line.name,
       qty: line.qtyToPurchase ?? line.neededQty,
       neededQty: line.neededQty,
       currentStock: line.currentStock,
@@ -275,11 +279,13 @@ function ShortagePreviewPageInner() {
     const group = groups[groupIdx];
     const items = group.lines
       .filter((l) => l.qty > 0)
-      .map(({ kind, productId, subAssemblyId, description, qty, price, sourceRequirementId }) => ({
+      .map(({ kind, productId, subAssemblyId, description, article, name, qty, price, sourceRequirementId }) => ({
         kind,
         productId,
         subAssemblyId,
         description,
+        article,
+        name,
         qty,
         price: price ?? undefined,
         sourceRequirementId,

@@ -33,6 +33,26 @@ export class ShortageGroupLineInputDto {
   @MinLength(1)
   description!: string;
 
+  @ApiPropertyOptional({
+    description:
+      "Own article/SKU, carried through from the preview's own ShortageLine.article — used for the created " +
+      'PurchaseOrderItem.articleSnapshot. Falls back to `description` when omitted (older callers).',
+  })
+  @IsOptional()
+  @IsString()
+  article?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "The product's/assembly's own name with no article prefix, carried through from the preview's own " +
+      "ShortageLine.name — used for the created PurchaseOrderItem.productNameSnapshot (2026-11-09 fix: this used " +
+      "to fall back to the combined `description` for both fields, which is why a printed PO line used to show " +
+      '"article — name" in BOTH its article and name columns). Falls back to `description` when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @ApiProperty({
     description:
       'Quantity to actually order for this line — pre-filled from the preview\'s gross requirement but ' +

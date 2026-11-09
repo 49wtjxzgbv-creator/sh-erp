@@ -20,6 +20,8 @@ export interface ShortageLine {
   description: string;
   /** Own article/SKU (2026-09-23 user request — a separate printed column, not folded into `description`) — already the leading part of `description` for a PRODUCT line, but never was for ASSEMBLY, so this is the only reliable source for both kinds. Null when the product/assembly genuinely has none set. */
   article: string | null;
+  /** The product's/assembly's own name, with no article prefix — `description` stays the combined "article — name" display string for the UI, but createPurchaseOrdersFromGroups needs article and name as two genuinely separate values for PurchaseOrderItem.articleSnapshot/productNameSnapshot (2026-11-09 fix — see that method's own comment for the real bug this closes). */
+  name: string;
   neededQty: number;
   currentStock: number;
   /**
@@ -266,6 +268,7 @@ export class CustomerOrderShortageService {
         productId,
         description: product ? `${product.article} — ${product.name}` : productId,
         article: product?.article ?? null,
+        name: product?.name ?? productId,
         neededQty,
         currentStock: Number(product?.qty ?? 0),
         price: null,
@@ -299,6 +302,7 @@ export class CustomerOrderShortageService {
         subAssemblyId,
         description: assembly?.name ?? subAssemblyId,
         article: assembly?.article ?? null,
+        name: assembly?.name ?? subAssemblyId,
         neededQty,
         currentStock: inStockCount,
         price: null,
@@ -378,6 +382,16 @@ export class CustomerOrderShortageService {
    * group, `sourceCustomerOrderId` set so the link back to this order is
    * traceable, and each line's `sourceRequirementId` (when present) carried
    * through so receiving it auto-reserves for this order.
+   *
+   * `articleSnapshot`/`productNameSnapshot` come from `line.article`/
+   * `line.name` (2026-11-09 fix — "артикул воно пише і артикул і назву
+   * товару і в назві товару пише і артикул і назву товару"): both used to
+   * fall back to the same combined `line.description` ("article — name"),
+   * so a printed PO (and the supplier portal's own "План виробництва" PDF,
+   * which reads straight off these two columns) showed the identical
+   * combined string in BOTH its article and name columns. Still falls back
+   * to `description` when a caller omits the new fields, for whatever
+   * reason never sends them.
    */
   async createPurchaseOrdersFromGroups(user: RequestUser, orderId: string, dto: CreatePurchaseOrdersFromGroupsDto) {
     const order = await this.prisma.tenant.customerOrder.findUnique({ where: { id: orderId } });
@@ -391,8 +405,8 @@ export class CustomerOrderShortageService {
         sourceCustomerOrderId: orderId,
         items: group.items.map((line) => ({
           productId: line.kind === 'PRODUCT' ? line.productId : undefined,
-          articleSnapshot: line.description,
-          productNameSnapshot: line.description,
+          articleSnapshot: line.article || line.description,
+          productNameSnapshot: line.name || line.description,
           qtyOrdered: line.qty,
           expectedPrice: line.price,
           sourceRequirementId: line.sourceRequirementId,

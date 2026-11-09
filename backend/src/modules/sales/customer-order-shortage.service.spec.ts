@@ -120,7 +120,7 @@ describe('CustomerOrderShortageService', () => {
       expect(group.supplierName).toBe('Acme Supplier');
       // article (2026-09-23): the ASSEMBLY line's own — never available at all before this field existed.
       expect(group.lines).toEqual([
-        { kind: 'ASSEMBLY', subAssemblyId: 'purchasedSub', description: 'Bought Sub', article: 'BS-1', neededQty: 6, currentStock: 1, price: null },
+        { kind: 'ASSEMBLY', subAssemblyId: 'purchasedSub', description: 'Bought Sub', article: 'BS-1', name: 'Bought Sub', neededQty: 6, currentStock: 1, price: null },
       ]);
       // 'shouldNotAppear' must never have been reached
       expect(result.groups.some((g) => g.lines.some((l: any) => l.productId === 'shouldNotAppear'))).toBe(false);
@@ -335,6 +335,48 @@ describe('CustomerOrderShortageService', () => {
           supplierNameSnapshot: 'Acme',
           sourceCustomerOrderId: 'co1',
           items: [expect.objectContaining({ productId: 'p1', qtyOrdered: 8, sourceRequirementId: 'req1' })],
+        }),
+      );
+    });
+
+    it(
+      'uses the line\'s own article/name for articleSnapshot/productNameSnapshot, not the combined description for both ' +
+        '(2026-11-09 fix — printed PO used to show "article — name" in BOTH its article and name columns)',
+      async () => {
+        prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+        purchaseOrdersService.create.mockResolvedValue({ id: 'po1' });
+
+        await service.createPurchaseOrdersFromGroups(user, 'co1', {
+          groups: [
+            {
+              supplierId: 'sup1',
+              supplierName: 'Acme',
+              items: [{ kind: 'PRODUCT', productId: 'p1', description: 'ABC-1 — Widget', article: 'ABC-1', name: 'Widget', qty: 8 }],
+            },
+          ],
+        } as any);
+
+        expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+          user,
+          expect.objectContaining({
+            items: [expect.objectContaining({ articleSnapshot: 'ABC-1', productNameSnapshot: 'Widget' })],
+          }),
+        );
+      },
+    );
+
+    it('falls back to the combined description for both fields when article/name are omitted (older caller)', async () => {
+      prisma.tenant.customerOrder.findUnique.mockResolvedValue({ id: 'co1' });
+      purchaseOrdersService.create.mockResolvedValue({ id: 'po1' });
+
+      await service.createPurchaseOrdersFromGroups(user, 'co1', {
+        groups: [{ supplierId: 'sup1', supplierName: 'Acme', items: [{ kind: 'PRODUCT', productId: 'p1', description: 'ABC-1 — Widget', qty: 8 }] }],
+      } as any);
+
+      expect(purchaseOrdersService.create).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({
+          items: [expect.objectContaining({ articleSnapshot: 'ABC-1 — Widget', productNameSnapshot: 'ABC-1 — Widget' })],
         }),
       );
     });

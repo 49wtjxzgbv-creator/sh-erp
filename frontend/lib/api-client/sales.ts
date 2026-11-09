@@ -375,6 +375,8 @@ export interface ShortageLine {
   description: string;
   /** Own article/SKU — a separate field from `description` (which already leads with it for a PRODUCT line, but never carried one for ASSEMBLY). Null when genuinely unset. */
   article: string | null;
+  /** The product's/assembly's own name, no article prefix — `description` stays the combined display string. Submit this (and `article`) back in ShortageGroupLineInput, not `description`, so the created PurchaseOrderItem's articleSnapshot/productNameSnapshot don't both end up as the same combined string (2026-11-09 fix). */
+  name: string;
   /** Real JSON number — computed result, not a Prisma Decimal field. See file header. */
   neededQty: number;
   /** Real JSON number. Shown side-by-side with neededQty, never auto-subtracted ("no hidden arithmetic" rule) — the human decides the actual order qty. */
@@ -420,6 +422,10 @@ export interface ShortageGroupLineInput {
   productId?: string;
   subAssemblyId?: string;
   description: string;
+  /** Own article/SKU — see ShortageLine.article. Used for the created PurchaseOrderItem.articleSnapshot (2026-11-09 fix). */
+  article?: string | null;
+  /** The product's/assembly's own name, no article prefix — see ShortageLine.name. Used for the created PurchaseOrderItem.productNameSnapshot (2026-11-09 fix). */
+  name?: string;
   /** The actual qty to order — pre-filled from the preview's qtyToPurchase (neededQty minus what's already reserved) but human-editable before committing. */
   qty: number;
   /** Carried through from the preview so the created PurchaseOrderItem.expectedPrice is populated. Omitted when no price was known. */
