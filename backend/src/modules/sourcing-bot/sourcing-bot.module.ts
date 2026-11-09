@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SourcingBotPrismaService } from '../../prisma/sourcing-bot-prisma.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { FilesModule } from '../files/files.module';
+import { AuditModule } from '../audit/audit.module';
 import { SourcingBotApiClient } from './sourcing-bot-api.client';
 import { SourcingBotService } from './sourcing-bot.service';
 
@@ -26,9 +27,14 @@ import { SourcingBotService } from './sourcing-bot.service';
  * presigned R2 URL (2026-11-09 user request — "мав на увазі фото
  * товару"), same presign-and-hand-to-the-client pattern every other photo
  * flow in this backend already uses — no new storage/upload path.
+ * `AuditModule` — `@Global()` in the main app, but this standalone
+ * process's own tiny module tree (see main.ts) never imports it on its
+ * own, and `FilesService` depends on `AuditService` directly; without
+ * this the bot fails to boot at all ("Nest can't resolve dependencies of
+ * the FilesService... AuditService").
  */
 @Module({
-  imports: [PrismaModule, FilesModule],
+  imports: [PrismaModule, FilesModule, AuditModule],
   providers: [SourcingBotService, SourcingBotApiClient, SourcingBotPrismaService],
 })
 export class SourcingBotModule {}
