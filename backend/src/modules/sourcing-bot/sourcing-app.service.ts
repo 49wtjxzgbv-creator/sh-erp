@@ -13,7 +13,7 @@ function tenantCtx(identity: ResolvedSourcingIdentity) {
 }
 
 /** Shared by category-product-list and search rows — a lean projection, not the full detail card. */
-interface ProductRow {
+export interface ProductRow {
   id: string;
   article: string;
   name: string;
