@@ -66,14 +66,15 @@ describe('UsersService', () => {
     });
   });
 
-  it('list() includes telegramPaired per member (2026-10-06 — so the admin users page can offer "generate code" vs "unlink")', async () => {
+  it('list() includes telegramPaired/sourcingBotPaired per member (2026-10-06/2026-11-09 — so the admin users page can offer "generate code" vs "unlink" for either bot)', async () => {
     prisma.tenant.companyMembership.findMany.mockResolvedValue([{ userId: 'u1', roleId: 'role1', createdAt: new Date('2026-01-01') }]);
-    prisma.tenant.user.findMany.mockResolvedValue([{ id: 'u1', email: 'a@b.com', fullName: 'A B', active: true, telegramChatId: '555' }]);
+    prisma.tenant.user.findMany.mockResolvedValue([{ id: 'u1', email: 'a@b.com', fullName: 'A B', active: true, telegramChatId: '555', sourcingBotChatId: '999' }]);
     prisma.tenant.role.findMany.mockResolvedValue([{ id: 'role1', name: 'Owner' }]);
 
     const result = await service.list(user);
 
     expect(result[0].telegramPaired).toBe(true);
+    expect(result[0].sourcingBotPaired).toBe(true);
   });
 
   it('invite() creates a new account with a temp password for a brand-new email', async () => {
@@ -240,6 +241,41 @@ describe('UsersService', () => {
         data: { telegramChatId: null, telegramPairingCode: null, telegramPairingCodeExpiresAt: null },
       });
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'user.telegram_unlinked_by_admin', entityId: 'u2' }));
+    });
+  });
+
+  describe('generateSourcingBotPairingCodeForUser / unlinkSourcingBotForUser (2026-11-09 — "я сам не можу генерувати посилання іншим користувачам")', () => {
+    it('generates a code for the TARGET user, not the caller, once membership is confirmed', async () => {
+      prisma.tenant.companyMembership.findUnique.mockResolvedValue({ id: 'm2', userId: 'u2', companyId: 'c1', roleId: 'role1' });
+      const expiresAt = new Date('2026-11-09T12:15:00Z');
+      prisma.tenant.user.update.mockResolvedValue({ sourcingBotPairingCode: 'ABC123', sourcingBotPairingCodeExpiresAt: expiresAt });
+
+      const result = await service.generateSourcingBotPairingCodeForUser(user, 'u2');
+
+      expect(prisma.tenant.companyMembership.findUnique).toHaveBeenCalledWith({ where: { companyId_userId: { companyId: 'c1', userId: 'u2' } } });
+      const call = prisma.tenant.user.update.mock.calls[0][0];
+      expect(call.where).toEqual({ id: 'u2' });
+      expect(result.pairingCode).toHaveLength(6);
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'user.sourcing_bot_pairing_code_generated_by_admin', entityId: 'u2' }));
+    });
+
+    it("refuses to generate a code for someone outside the admin's own company", async () => {
+      prisma.tenant.companyMembership.findUnique.mockResolvedValue(null);
+      await expect(service.generateSourcingBotPairingCodeForUser(user, 'u2')).rejects.toThrow();
+      expect(prisma.tenant.user.update).not.toHaveBeenCalled();
+    });
+
+    it("unlinkSourcingBotForUser clears the TARGET user's sourcing-bot fields, scoped to the same company", async () => {
+      prisma.tenant.companyMembership.findUnique.mockResolvedValue({ id: 'm2', userId: 'u2', companyId: 'c1', roleId: 'role1' });
+      prisma.tenant.user.update.mockResolvedValue({ id: 'u2', sourcingBotChatId: null });
+
+      await service.unlinkSourcingBotForUser(user, 'u2');
+
+      expect(prisma.tenant.user.update).toHaveBeenCalledWith({
+        where: { id: 'u2' },
+        data: { sourcingBotChatId: null, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
+      });
+      expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'user.sourcing_bot_unlinked_by_admin', entityId: 'u2' }));
     });
   });
 });

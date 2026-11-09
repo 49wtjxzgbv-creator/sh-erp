@@ -8,6 +8,7 @@ import { roleDisplayName } from '@/lib/role-labels';
 import { useSessionStore } from '@/lib/auth/session-store';
 import { InviteUserDialog } from '@/components/domain/admin/invite-user-dialog';
 import { TelegramPairingCell } from '@/components/domain/admin/telegram-pairing-cell';
+import { SourcingBotPairingCell } from '@/components/domain/admin/sourcing-bot-pairing-cell';
 import { useApiErrorMessage } from '@/lib/api-error-message';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,7 @@ export default function AdminUsersPage() {
               <TableHead>{t('email')}</TableHead>
               <TableHead>{t('role')}</TableHead>
               <TableHead>Telegram</TableHead>
+              <TableHead>Sourcing bot</TableHead>
               <TableHead>{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -100,6 +102,9 @@ export default function AdminUsersPage() {
                   </TableCell>
                   <TableCell>
                     <TelegramPairingCell userId={u.userId} fullName={u.fullName} telegramPaired={u.telegramPaired} />
+                  </TableCell>
+                  <TableCell>
+                    <SourcingBotPairingCell userId={u.userId} fullName={u.fullName} sourcingBotPaired={u.sourcingBotPaired} />
                   </TableCell>
                   <TableCell>
                     {isSelf ? (

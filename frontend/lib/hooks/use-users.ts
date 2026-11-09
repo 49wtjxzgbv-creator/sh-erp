@@ -14,6 +14,8 @@ import {
   unlinkTelegramForUser,
   generateMySourcingBotPairingCode,
   unlinkMySourcingBot,
+  generateSourcingBotPairingCodeForUser,
+  unlinkSourcingBotForUser,
   getMyIpLocation,
   type InviteUserInput,
   type ChangePasswordInput,
@@ -119,6 +121,23 @@ export function useUnlinkTelegramForUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (userId: string) => unlinkTelegramForUser(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
+  });
+}
+
+/** Admin-initiated pairing (2026-11-09 — "я сам не можу генерувати посилання іншим користувачам"), /admin users page — invalidates useUsers so that member's paired badge refreshes right away. */
+export function useGenerateSourcingBotPairingCodeForUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => generateSourcingBotPairingCodeForUser(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
+  });
+}
+
+export function useUnlinkSourcingBotForUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => unlinkSourcingBotForUser(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
   });
 }

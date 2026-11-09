@@ -33,6 +33,8 @@ export interface CompanyMember {
   memberSince: string;
   /** 2026-10-06 — lets the admin users page offer "generate code" vs "unlink" per member. */
   telegramPaired: boolean;
+  /** 2026-11-09 — same, for the separate procurement sourcing bot. */
+  sourcingBotPaired: boolean;
 }
 
 export function listUsers(): Promise<CompanyMember[]> {
@@ -134,4 +136,13 @@ export function generateMySourcingBotPairingCode(): Promise<TelegramPairingCode>
 
 export function unlinkMySourcingBot(): Promise<{ unlinked: true }> {
   return apiClient.post<{ unlinked: true }>('users/me/sourcing-bot-unlink');
+}
+
+/** Admin-initiated pairing (2026-11-09 — "я сам не можу генерувати посилання іншим користувачам"): requires users:manage, scoped to a member of the admin's own company — see users.service.ts#generateSourcingBotPairingCodeForUser. */
+export function generateSourcingBotPairingCodeForUser(userId: string): Promise<TelegramPairingCode> {
+  return apiClient.post<TelegramPairingCode>(`users/${userId}/sourcing-bot-pairing-code`);
+}
+
+export function unlinkSourcingBotForUser(userId: string): Promise<{ unlinked: true }> {
+  return apiClient.post<{ unlinked: true }>(`users/${userId}/sourcing-bot-unlink`);
 }

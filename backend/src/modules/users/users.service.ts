@@ -97,6 +97,10 @@ export class UsersService {
         // paired (so an admin knows whether to offer "generate code" or
         // "unlink"), same boolean-presence shape as me()'s own telegramPaired.
         telegramPaired: Boolean(u?.telegramChatId),
+        // Same boolean-presence shape as telegramPaired above, for the
+        // sourcing bot's own admin-generate-for-colleague flow (2026-11-09
+        // — "я сам не можу генерувати посилання іншим користувачам").
+        sourcingBotPaired: Boolean(u?.sourcingBotChatId),
       };
     });
   }
@@ -331,8 +335,46 @@ export class UsersService {
   }
 
   async unlinkSourcingBot(user: RequestUser) {
+    return this.unlinkSourcingBotFor(user.userId);
+  }
+
+  /**
+   * Admin counterpart to generateSourcingBotPairingCode (2026-11-09 —
+   * "нема такого я сам не можу генерувати посилання іншим користувачам"):
+   * same shape/guard as generateTelegramPairingCodeForUser above, just for
+   * the separate sourcing-bot pairing columns.
+   */
+  async generateSourcingBotPairingCodeForUser(user: RequestUser, targetUserId: string) {
+    await this.getMembershipOrThrow(user.companyId, targetUserId);
+    const result = await this.generateSourcingBotPairingCodeFor(targetUserId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'user.sourcing_bot_pairing_code_generated_by_admin',
+      entityType: 'User',
+      entityId: targetUserId,
+      after: { expiresAt: result.expiresAt },
+    });
+    return result;
+  }
+
+  /** Admin counterpart to unlinkSourcingBot — same company-membership guard as generateSourcingBotPairingCodeForUser. */
+  async unlinkSourcingBotForUser(user: RequestUser, targetUserId: string) {
+    await this.getMembershipOrThrow(user.companyId, targetUserId);
+    const result = await this.unlinkSourcingBotFor(targetUserId);
+    await this.auditService.record({
+      companyId: user.companyId,
+      actorUserId: user.userId,
+      action: 'user.sourcing_bot_unlinked_by_admin',
+      entityType: 'User',
+      entityId: targetUserId,
+    });
+    return result;
+  }
+
+  private async unlinkSourcingBotFor(targetUserId: string) {
     await this.prisma.tenant.user.update({
-      where: { id: user.userId },
+      where: { id: targetUserId },
       data: { sourcingBotChatId: null, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
     });
     return { unlinked: true };

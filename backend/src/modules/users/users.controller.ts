@@ -100,4 +100,18 @@ export class UsersController {
   async unlinkSourcingBot(@CurrentUser() user: RequestUser) {
     return this.usersService.unlinkSourcingBot(user);
   }
+
+  @Post(':userId/sourcing-bot-pairing-code')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: "Generate a sourcing-bot pairing code for ANOTHER member of this company (so an admin can invite a colleague without that colleague logging into the ERP themselves)." })
+  async generateSourcingBotPairingCodeForUser(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
+    return this.usersService.generateSourcingBotPairingCodeForUser(user, userId);
+  }
+
+  @Post(':userId/sourcing-bot-unlink')
+  @RequirePermissions('users:manage')
+  @ApiOperation({ summary: "Unlink ANOTHER member's sourcing-bot account." })
+  async unlinkSourcingBotForUser(@CurrentUser() user: RequestUser, @Param('userId') userId: string) {
+    return this.usersService.unlinkSourcingBotForUser(user, userId);
+  }
 }
