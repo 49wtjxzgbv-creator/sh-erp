@@ -7,6 +7,23 @@ import { SourcingBotApiClient, TelegramInlineKeyboard, TelegramUpdate } from './
 /** Reused rather than inventing a new permission — "who can manage purchase orders" is a reasonable proxy for "procurement staff trusted to add a new candidate supplier" in this company's role setup. */
 const ADMIN_PERMISSION_KEY = 'purchase-orders:manage';
 
+/**
+ * This bot's sourcing data lives entirely in ONE company (2026-11-09 user
+ * correction: "ми все це робимо тільки для компанії 131313" — this
+ * company's own ERP spans several legally-separate businesses sharing one
+ * installation, and a staff member can easily hold membership in more than
+ * one of them). Rather than guessing a companyId from "how many
+ * memberships does this user have" (fragile — breaks the moment a sourcing
+ * team member also happens to have access to an unrelated company), this
+ * bot checks for a membership specifically in THIS configured company,
+ * ignoring any others the user may also belong to.
+ */
+function getTargetCompanyId(): string {
+  const id = process.env.SOURCING_BOT_COMPANY_ID;
+  if (!id) throw new Error('SOURCING_BOT_COMPANY_ID is not set.');
+  return id;
+}
+
 const PRICE_FIELDS = [
   { field: 'germanPriceExclVat' as const, label: 'DE без ПДВ' },
   { field: 'germanPriceInclVat' as const, label: 'DE з ПДВ' },
@@ -139,14 +156,14 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
     const user = await this.pairingPrisma.user.findFirst({ where: { sourcingBotChatId: chatId } });
     if (!user) return null;
 
-    const memberships = await this.pairingPrisma.companyMembership.findMany({ where: { userId: user.id } });
-    if (memberships.length !== 1) {
-      this.logger.warn(`User ${user.id} has ${memberships.length} company memberships — sourcing bot assumes exactly one.`);
+    const companyId = getTargetCompanyId();
+    const membership = await this.pairingPrisma.companyMembership.findFirst({ where: { userId: user.id, companyId } });
+    if (!membership) {
+      this.logger.warn(`User ${user.id} has no membership in the configured sourcing-bot company ${companyId}.`);
       return null;
     }
-    const companyId = memberships[0].companyId;
     const role = await this.pairingPrisma.role.findUnique({
-      where: { id: memberships[0].roleId },
+      where: { id: membership.roleId },
       include: { permissions: { include: { permission: true } } },
     });
     const isAdmin = role?.permissions.some((rp) => rp.permission.key === ADMIN_PERMISSION_KEY) ?? false;

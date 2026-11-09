@@ -27,6 +27,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
   }
 
   beforeEach(() => {
+    process.env.SOURCING_BOT_COMPANY_ID = 'c1';
     tx = {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       product: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
@@ -35,7 +36,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
     };
     pairingPrisma = {
       user: { findFirst: jest.fn().mockResolvedValue(null), update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...user, ...data })) },
-      companyMembership: { findMany: jest.fn().mockResolvedValue([{ companyId: 'c1', roleId: 'role1' }]) },
+      companyMembership: { findFirst: jest.fn().mockResolvedValue({ companyId: 'c1', roleId: 'role1' }) },
       role: { findUnique: jest.fn().mockResolvedValue({ id: 'role1', permissions: [] }) },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
@@ -91,7 +92,7 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
     });
   });
 
-  describe('company resolution from membership', () => {
+  describe('company resolution — targets the configured SOURCING_BOT_COMPANY_ID specifically', () => {
     it('a user with exactly one membership resolves normally', async () => {
       pairingPrisma.user.findFirst.mockResolvedValue({ ...user, sourcingBotChatId: chatId });
       tx.sourcingCategory.findMany.mockResolvedValue([]);
@@ -101,9 +102,10 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Вітаю'));
     });
 
-    it('a user with zero or multiple memberships is treated as not paired, rather than guessing a company', async () => {
+    it('a user with no membership in the configured sourcing-bot company is treated as not paired — other memberships they hold are irrelevant', async () => {
       pairingPrisma.user.findFirst.mockResolvedValue({ ...user, sourcingBotChatId: chatId });
-      pairingPrisma.companyMembership.findMany.mockResolvedValue([{ companyId: 'c1', roleId: 'role1' }, { companyId: 'c2', roleId: 'role2' }]);
+      // Has a membership somewhere else (e.g. a different company in this same ERP installation), but NOT in SOURCING_BOT_COMPANY_ID ('c1').
+      pairingPrisma.companyMembership.findFirst.mockResolvedValue(null);
 
       await service.handleUpdate(msg('/start'));
 
