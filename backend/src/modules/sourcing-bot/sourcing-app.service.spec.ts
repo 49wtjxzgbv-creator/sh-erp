@@ -21,6 +21,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
       assembly: { findMany: jest.fn().mockResolvedValue([]) },
       assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
+      sourcingNote: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn(), deleteMany: jest.fn() },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     filesService = {
@@ -179,6 +180,19 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         { id: 'asm2', name: 'Моноблок Б', article: null, photoUrl: null },
       ]);
     });
+
+    // "нотатки до товару/постачальника... видимий усій команді" (2026-11-10)
+    it('includes the team-shared note when one exists, null otherwise', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      tx.sourcingNote.findMany.mockResolvedValue([{ entityId: 'p1', note: 'Перевірити зразок перед замовленням', updatedAt: new Date() }]);
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(tx.sourcingNote.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { entityType: 'Product', entityId: { in: ['p1'] } } }),
+      );
+      expect(result.note).toBe('Перевірити зразок перед замовленням');
+    });
   });
 
   describe('getAssemblies (2026-11-10 — "пошук товарів не по категоріям а по виробах")', () => {
@@ -287,6 +301,20 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       const [p1, p2] = result[0].products;
       expect(p1.photoUrl).toBe('https://example.test/photo.jpg');
       expect(p2.photoUrl).toBeNull();
+    });
+
+    it('includes the team-shared note on the supplier, null when none exists', async () => {
+      tx.productSupplier.findMany.mockResolvedValue([
+        { price: 10, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+      ]);
+      tx.sourcingNote.findMany.mockResolvedValue([{ entityId: 's1', note: 'Повільна доставка', updatedAt: new Date() }]);
+
+      const result = await service.getSuppliers(identity as any);
+
+      expect(tx.sourcingNote.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { entityType: 'Supplier', entityId: { in: ['s1'] } } }),
+      );
+      expect(result[0].note).toBe('Повільна доставка');
     });
   });
 
@@ -399,6 +427,27 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('throws a coded error when the provider returns no text at all', async () => {
       geminiAdapter.generateContent.mockResolvedValue({ message: { role: 'model', parts: [] } });
       await expect(service.translateName(identity as any, 'test')).rejects.toMatchObject({ response: { code: 'SOURCING_TRANSLATE_EMPTY' } });
+    });
+  });
+
+  describe('upsertNote (2026-11-10 — "нотатки до товару/постачальника... видимий усій команді")', () => {
+    it('upserts a non-empty note by the company/entityType/entityId compound key', async () => {
+      const result = await service.upsertNote(identity as any, 'Product', 'p1', '  Перевірити зразок  ');
+
+      expect(tx.sourcingNote.upsert).toHaveBeenCalledWith({
+        where: { companyId_entityType_entityId: { companyId: 'c1', entityType: 'Product', entityId: 'p1' } },
+        create: { entityType: 'Product', entityId: 'p1', note: 'Перевірити зразок', updatedByUserId: 'u1' },
+        update: { note: 'Перевірити зразок', updatedByUserId: 'u1' },
+      });
+      expect(result).toEqual({ note: 'Перевірити зразок' });
+    });
+
+    it('a blank/whitespace-only note deletes the row instead of storing an empty string', async () => {
+      const result = await service.upsertNote(identity as any, 'Supplier', 's1', '   ');
+
+      expect(tx.sourcingNote.deleteMany).toHaveBeenCalledWith({ where: { entityType: 'Supplier', entityId: 's1' } });
+      expect(tx.sourcingNote.upsert).not.toHaveBeenCalled();
+      expect(result).toEqual({ note: null });
     });
   });
 });

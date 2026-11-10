@@ -141,6 +141,8 @@ export interface ProductDetail {
   candidateSuppliers: CandidateSupplier[];
   /** "до якого виробу специфікації він належить" (2026-11-10) — every виріб (Assembly) this product is a direct BOM component of. */
   usedInAssemblies: Array<{ id: string; name: string; article: string | null; photoUrl: string | null }>;
+  /** "нотатки до товару/постачальника... видимий усій команді" (2026-11-10) — a single team-shared note, null when none set. */
+  note: string | null;
 }
 
 export interface RealSupplier {
@@ -148,6 +150,7 @@ export interface RealSupplier {
   name: string;
   phone: string | null;
   email: string | null;
+  note: string | null;
   products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }>;
 }
 

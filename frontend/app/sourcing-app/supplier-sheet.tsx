@@ -2,6 +2,7 @@
 
 import { MobileSheet } from './mobile-sheet';
 import { ContactLinks } from './contact-links';
+import { NoteEditor } from './note-editor';
 import { formatEur } from '@/lib/utils';
 import type { RealSupplier } from './sourcing-app-client';
 
@@ -26,6 +27,8 @@ export function SupplierSheet({
       {supplier && (
         <div className="space-y-3 pb-4">
           <ContactLinks phone={supplier.phone} email={supplier.email} website={null} />
+
+          <NoteEditor entityType="Supplier" entityId={supplier.id} note={supplier.note} />
 
           <p className="text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>
             {supplier.products.length} товар{supplier.products.length === 1 ? '' : supplier.products.length < 5 ? 'и' : 'ів'}

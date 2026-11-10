@@ -8,6 +8,7 @@ import { StatusPill } from './status-pill';
 import { Model3DViewer } from './model-3d-viewer';
 import { DocumentPreview } from './document-preview';
 import { AddCandidateSheet } from './add-candidate-sheet';
+import { NoteEditor } from './note-editor';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -141,6 +142,8 @@ export function ProductSheet({
             {translateError && <p className="mt-0.5 text-sm text-red-500">{translateError instanceof Error ? translateError.message : 'Переклад не вдався.'}</p>}
             <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>{product.article}</p>
           </div>
+
+          <NoteEditor entityType="Product" entityId={product.id} note={product.note} />
 
           {/* "в описі також має писати до якого виробу специфікації він
               належить" (2026-11-10) */}

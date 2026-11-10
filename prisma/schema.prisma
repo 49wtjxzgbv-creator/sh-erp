@@ -216,6 +216,7 @@ model Company {
   sourcingCategories         SourcingCategory[]
   sourcingCandidateSuppliers SourcingCandidateSupplier[]
   sourcingOutreaches         SourcingOutreach[]
+  sourcingNotes              SourcingNote[]
 
   // Quotations module (2026-08-27)
   customers               Customer[]
@@ -4725,4 +4726,29 @@ model SourcingOutreach {
   @@unique([companyId, candidateSupplierId])
   @@index([companyId, status])
   @@map("sourcing_outreaches")
+}
+
+// "нотатки до товару/постачальника — короткий текстовий комент, видимий
+// усій команді" (2026-11-10) — a SEPARATE table, not a note column added
+// directly to the core `Product`/`Supplier` models: same isolation
+// reasoning as the rest of this bot's own tables (sourcing-bot.module.ts's
+// header comment) — a sourcing-only field has no business living on
+// models the whole ERP reads/writes. `entityType`/`entityId` is the same
+// polymorphic pair `FileAsset` already uses, not a new convention. One
+// row per entity (upsert on save) — a single team-shared note, not a
+// per-user or threaded comment list; `updatedByUserId`/`updatedAt` is
+// purely "who/when last touched this," last-write-wins.
+model SourcingNote {
+  id              String   @id @default(uuid()) @db.Uuid
+  companyId       String   @db.Uuid
+  entityType      String // "Product" | "Supplier"
+  entityId        String   @db.Uuid
+  note            String   @db.Text
+  updatedByUserId String   @db.Uuid
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, entityType, entityId])
+  @@map("sourcing_notes")
 }

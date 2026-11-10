@@ -200,3 +200,16 @@ export function useUpdateOutreach() {
     },
   });
 }
+
+/** "нотатки до товару/постачальника — короткий текстовий комент, видимий усій команді" (2026-11-10) — an empty note clears it (server-side: see UpsertNoteDto's own comment). */
+export function useUpsertNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { entityType: 'Product' | 'Supplier'; entityId: string; note: string }) =>
+      sourcingAppClient.patch<{ note: string | null }>('notes', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'products'] });
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'suppliers'] });
+    },
+  });
+}

@@ -114,4 +114,5 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'SourcingCategory',
   'SourcingCandidateSupplier',
   'SourcingOutreach',
+  'SourcingNote',
 ]);

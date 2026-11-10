@@ -97,6 +97,44 @@ export class SourcingAppService {
     return urlByEntityId;
   }
 
+  /** Batched team-shared note lookup — "нотатки до товару/постачальника... видимий усій команді" (2026-11-10), same `entityType`/`entityId` convention `photoUrlsByEntityId` already uses. */
+  private async notesByEntityId(
+    tx: TenantPrismaClient,
+    entityType: string,
+    entityIds: string[],
+  ): Promise<Map<string, { note: string; updatedAt: Date }>> {
+    if (entityIds.length === 0) return new Map();
+    const rows = await tx.sourcingNote.findMany({
+      where: { entityType, entityId: { in: entityIds } },
+      select: { entityId: true, note: true, updatedAt: true },
+    });
+    return new Map(rows.map((r) => [r.entityId, { note: r.note, updatedAt: r.updatedAt }]));
+  }
+
+  /**
+   * "нотатки до товару/постачальника — короткий текстовий комент, видимий
+   * усій команді" (2026-11-10). A trimmed-empty note DELETES the row
+   * rather than storing an empty string — mirrors
+   * AiSettingsService#updateSettings's own "'' means unset" convention —
+   * so a cleared note genuinely disappears instead of lingering as a
+   * blank row forever.
+   */
+  async upsertNote(identity: ResolvedSourcingIdentity, entityType: string, entityId: string, note: string): Promise<{ note: string | null }> {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const trimmed = note.trim();
+      if (trimmed.length === 0) {
+        await tx.sourcingNote.deleteMany({ where: { entityType, entityId } });
+        return { note: null };
+      }
+      await tx.sourcingNote.upsert({
+        where: { companyId_entityType_entityId: { companyId: identity.companyId, entityType, entityId } },
+        create: { entityType, entityId, note: trimmed, updatedByUserId: identity.userId } as any,
+        update: { note: trimmed, updatedByUserId: identity.userId },
+      });
+      return { note: trimmed };
+    });
+  }
+
   /** ALL `PRODUCT_PHOTO` rows for ONE product, newest first, as presigned URLs — unlike `photoUrlsByProductId` (list views, one thumbnail each), the product-detail card shows every photo ever uploaded for a gallery/lightbox, not just the latest. */
   private async allPhotoUrlsForProduct(tx: TenantPrismaClient, identity: ResolvedSourcingIdentity, productId: string): Promise<string[]> {
     const photos = await tx.fileAsset.findMany({
@@ -391,11 +429,14 @@ export class SourcingAppService {
       const usedInAssemblies = [...new Map(assemblyLinks.map((l) => [l.assembly.id, l.assembly])).values()];
       const assemblyPhotoUrlById = await this.photoUrlsByEntityId(tx, identity, 'Assembly', 'ASSEMBLY_PHOTO', usedInAssemblies.map((a) => a.id));
 
-      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById };
+      // "нотатки до товару/постачальника... видимий усій команді" (2026-11-10)
+      const noteByProductId = await this.notesByEntityId(tx, 'Product', [product.id]);
+
+      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId };
     });
 
     if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
-    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById } = result;
+    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId } = result;
 
     return {
       id: product.id,
@@ -405,6 +446,7 @@ export class SourcingAppService {
       modelUrl,
       documents,
       prices: this.toPriceList(product),
+      note: noteByProductId.get(product.id)?.note ?? null,
       category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
       usedInAssemblies: usedInAssemblies.map((a) => ({
         id: a.id,
@@ -451,9 +493,12 @@ export class SourcingAppService {
       // other product list in this service already does.
       const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, [...new Set(links.map((l) => l.product.id))]);
 
+      // "нотатки до товару/постачальника... видимий усій команді" (2026-11-10)
+      const noteBySupplierId = await this.notesByEntityId(tx, 'Supplier', [...new Set(links.map((l) => l.supplier.id))]);
+
       const bySupplierId = new Map<
         string,
-        { id: string; name: string; phone: string | null; email: string | null; products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }> }
+        { id: string; name: string; phone: string | null; email: string | null; note: string | null; products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }> }
       >();
       for (const link of links) {
         const existing = bySupplierId.get(link.supplier.id);
@@ -468,7 +513,7 @@ export class SourcingAppService {
         if (existing) {
           existing.products.push(productEntry);
         } else {
-          bySupplierId.set(link.supplier.id, { ...link.supplier, products: [productEntry] });
+          bySupplierId.set(link.supplier.id, { ...link.supplier, note: noteBySupplierId.get(link.supplier.id)?.note ?? null, products: [productEntry] });
         }
       }
       return [...bySupplierId.values()].sort((a, b) => a.name.localeCompare(b.name));
