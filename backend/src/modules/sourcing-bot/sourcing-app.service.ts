@@ -401,6 +401,15 @@ export class SourcingAppService {
         select: { price: true, supplierOfferedPrice: true, supplier: { select: { id: true, name: true } } },
       });
 
+      // "правка ціни щоб було тільки через підтвердження в основній erp"
+      // (2026-11-10) — shown so staff don't propose the same change twice
+      // while an earlier one is still awaiting review.
+      const pendingProposals = await tx.sourcingPriceProposal.findMany({
+        where: { productId, status: 'PENDING' },
+        select: { supplierId: true, proposedPriceEur: true, note: true },
+      });
+      const pendingProposalBySupplierId = new Map(pendingProposals.map((p) => [p.supplierId, p]));
+
       const photoUrls = await this.allPhotoUrlsForProduct(tx, identity, product.id);
       const { modelUrl, documents } = await this.findModelAndDocuments(identity, product.id);
 
@@ -432,11 +441,11 @@ export class SourcingAppService {
       // "нотатки до товару/постачальника... видимий усій команді" (2026-11-10)
       const noteByProductId = await this.notesByEntityId(tx, 'Product', [product.id]);
 
-      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId };
+      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId, pendingProposalBySupplierId };
     });
 
     if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
-    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId } = result;
+    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById, noteByProductId, pendingProposalBySupplierId } = result;
 
     return {
       id: product.id,
@@ -454,12 +463,16 @@ export class SourcingAppService {
         article: a.article,
         photoUrl: assemblyPhotoUrlById.get(a.id) ?? null,
       })),
-      realSuppliers: supplierLinks.map((link) => ({
-        id: link.supplier.id,
-        name: link.supplier.name,
-        ourPrice: priceNumber(link.price),
-        supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
-      })),
+      realSuppliers: supplierLinks.map((link) => {
+        const pending = pendingProposalBySupplierId.get(link.supplier.id);
+        return {
+          id: link.supplier.id,
+          name: link.supplier.name,
+          ourPrice: priceNumber(link.price),
+          supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
+          pendingProposal: pending ? { proposedPriceEur: Number(pending.proposedPriceEur), note: pending.note } : null,
+        };
+      }),
       candidateSuppliers: candidates.map((c) => ({
         id: c.id,
         name: c.name,
@@ -582,6 +595,27 @@ export class SourcingAppService {
       });
       await tx.sourcingOutreach.create({ data: { candidateSupplierId: candidate.id, status: 'NOT_CONTACTED' } as any });
       return { id: candidate.id };
+    });
+  }
+
+  /**
+   * "правка ціни щоб було тільки через підтвердження в основній erp"
+   * (2026-11-10) — this method's ENTIRE job is to record the proposal.
+   * It never writes `ProductSupplier.price` itself — that only happens
+   * when a human approves it in the main ERP (see
+   * `PriceProposalsService#approve` in the procurement module). Same
+   * admin-only gate as `createCandidate` — proposing a price change is a
+   * procurement-staff action, not a plain-read one.
+   */
+  async createPriceProposal(identity: ResolvedSourcingIdentity, productId: string, supplierId: string, proposedPriceEur: number, note: string | undefined) {
+    if (!identity.isAdmin) {
+      throw new CodedForbiddenException('SOURCING_PRICE_PROPOSAL_FORBIDDEN', 'Only a procurement admin can propose a price change.');
+    }
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const proposal = await tx.sourcingPriceProposal.create({
+        data: { productId, supplierId, proposedPriceEur, note: note ?? null, proposedByUserId: identity.userId } as any,
+      });
+      return { id: proposal.id, status: proposal.status };
     });
   }
 

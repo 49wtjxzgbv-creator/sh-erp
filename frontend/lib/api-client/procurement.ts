@@ -551,3 +551,31 @@ export function convertPurchaseRequestToOrder(
 export function deletePurchaseRequest(id: string): Promise<{ ok: true }> {
   return apiClient.delete<{ ok: true }>(`purchase-requests/${id}`);
 }
+
+/**
+ * "правка ціни щоб було тільки через підтвердження в основній erp"
+ * (2026-11-10) — review queue for price changes proposed from the
+ * Telegram sourcing Mini App. Approving copies `proposedPriceEur` into
+ * `ProductSupplier.price`; rejecting leaves that price untouched.
+ */
+export interface PriceProposal {
+  id: string;
+  product: { id: string; article: string; name: string };
+  supplier: { id: string; name: string };
+  proposedPriceEur: number;
+  note: string | null;
+  proposedByUserId: string;
+  createdAt: string;
+}
+
+export function queryPriceProposals(): Promise<PriceProposal[]> {
+  return apiClient.get<PriceProposal[]>('price-proposals');
+}
+
+export function approvePriceProposal(id: string): Promise<PriceProposal> {
+  return apiClient.patch<PriceProposal>(`price-proposals/${id}/approve`, {});
+}
+
+export function rejectPriceProposal(id: string): Promise<PriceProposal> {
+  return apiClient.patch<PriceProposal>(`price-proposals/${id}/reject`, {});
+}

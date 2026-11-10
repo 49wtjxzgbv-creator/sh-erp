@@ -39,6 +39,9 @@ import {
   cancelPurchaseRequest,
   convertPurchaseRequestToOrder,
   deletePurchaseRequest,
+  queryPriceProposals,
+  approvePriceProposal,
+  rejectPriceProposal,
   type QuerySuppliersInput,
   type CreateSupplierInput,
   type UpdateSupplierInput,
@@ -391,5 +394,26 @@ export function useDeletePurchaseRequest() {
   return useMutation({
     mutationFn: (id: string) => deletePurchaseRequest(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase-requests'] }),
+  });
+}
+
+/** "правка ціни щоб було тільки через підтвердження в основній erp" (2026-11-10) — review queue for price changes proposed from the Telegram sourcing Mini App. */
+export function usePriceProposals() {
+  return useQuery({ queryKey: ['price-proposals'], queryFn: () => queryPriceProposals() });
+}
+
+export function useApprovePriceProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => approvePriceProposal(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['price-proposals'] }),
+  });
+}
+
+export function useRejectPriceProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => rejectPriceProposal(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['price-proposals'] }),
   });
 }

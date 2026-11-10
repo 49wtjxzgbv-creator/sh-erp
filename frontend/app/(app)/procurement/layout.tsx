@@ -10,6 +10,7 @@ const TABS = [
   { href: '/procurement', labelKey: 'purchaseOrders' },
   { href: '/procurement/requests', labelKey: 'purchaseRequests', permission: 'purchase-requests:read' },
   { href: '/procurement/suppliers', labelKey: 'suppliers', permission: 'suppliers:read' },
+  { href: '/procurement/price-proposals', labelKey: 'priceProposals', permission: 'suppliers:read' },
 ] as const;
 
 export default function ProcurementLayout({ children }: { children: React.ReactNode }) {
@@ -19,7 +20,9 @@ export default function ProcurementLayout({ children }: { children: React.ReactN
     ? '/procurement/suppliers'
     : pathname.startsWith('/procurement/requests')
       ? '/procurement/requests'
-      : '/procurement';
+      : pathname.startsWith('/procurement/price-proposals')
+        ? '/procurement/price-proposals'
+        : '/procurement';
   const canReadSuppliers = useHasPermission('suppliers:read');
   const canReadPurchaseRequests = useHasPermission('purchase-requests:read');
   const tabs = TABS.filter((tab) => {

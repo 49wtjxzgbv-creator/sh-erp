@@ -104,6 +104,8 @@ export interface RealSupplierPrice {
   name: string;
   ourPrice: number | null;
   supplierOfferedPrice: number | null;
+  /** "правка ціни щоб було тільки через підтвердження в основній erp" (2026-11-10) — null unless there's already a PENDING proposal awaiting review. */
+  pendingProposal: { proposedPriceEur: number; note: string | null } | null;
 }
 
 export type OutreachStatus = 'NOT_CONTACTED' | 'CONTACTED' | 'AWAITING_RESPONSE' | 'RESPONDED' | 'QUOTE_RECEIVED' | 'REJECTED' | 'WON';

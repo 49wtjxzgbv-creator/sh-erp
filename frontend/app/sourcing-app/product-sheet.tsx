@@ -9,10 +9,10 @@ import { Model3DViewer } from './model-3d-viewer';
 import { DocumentPreview } from './document-preview';
 import { AddCandidateSheet } from './add-candidate-sheet';
 import { NoteEditor } from './note-editor';
+import { RealSupplierRow } from './real-supplier-row';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { formatEur } from '@/lib/utils';
 import { getTelegramWebApp } from './telegram-webapp';
 import { useProductDetail, useMe, useTranslateName } from './use-sourcing-app';
 
@@ -188,14 +188,7 @@ export function ProductSheet({
               <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Наявні постачальники</p>
               <div className="space-y-2">
                 {product.realSuppliers.map((s) => (
-                  <div key={s.id} className="rounded-lg p-2.5 text-sm" style={{ background: 'var(--tg-secondary-bg)' }}>
-                    <p className="font-medium">🏭 {s.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>
-                      {s.ourPrice !== null && `наша: ${formatEur(s.ourPrice)}`}
-                      {s.ourPrice !== null && s.supplierOfferedPrice !== null && ' · '}
-                      {s.supplierOfferedPrice !== null && `постачальник: ${formatEur(s.supplierOfferedPrice)}`}
-                    </p>
-                  </div>
+                  <RealSupplierRow key={s.id} productId={product.id} supplier={s} canPropose={Boolean(me?.isAdmin)} />
                 ))}
               </div>
             </section>

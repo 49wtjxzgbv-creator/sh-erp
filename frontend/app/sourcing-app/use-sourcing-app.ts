@@ -188,6 +188,18 @@ export function useCreateCandidate() {
   });
 }
 
+/** "правка ціни щоб було тільки через підтвердження в основній erp" (2026-11-10) — server-enforced admin-only (403 otherwise), same as useCreateCandidate; never writes a price itself, only proposes one for a human to confirm. */
+export function useCreatePriceProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { productId: string; supplierId: string; proposedPriceEur: number; note?: string }) =>
+      sourcingAppClient.post<{ id: string; status: string }>('price-proposals', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'products'] });
+    },
+  });
+}
+
 export function useUpdateOutreach() {
   const qc = useQueryClient();
   return useMutation({

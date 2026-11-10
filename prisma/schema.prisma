@@ -217,6 +217,7 @@ model Company {
   sourcingCandidateSuppliers SourcingCandidateSupplier[]
   sourcingOutreaches         SourcingOutreach[]
   sourcingNotes              SourcingNote[]
+  sourcingPriceProposals     SourcingPriceProposal[]
 
   // Quotations module (2026-08-27)
   customers               Customer[]
@@ -901,6 +902,7 @@ model Product {
   purchaseOrderItems        PurchaseOrderItem[]
   purchaseRequestItems      PurchaseRequestItem[]
   suppliers                 ProductSupplier[]
+  sourcingPriceProposals    SourcingPriceProposal[]
   stockReservations         StockReservation[]
   orderMaterialRequirements OrderMaterialRequirement[]
 
@@ -1018,6 +1020,7 @@ model Supplier {
   inviteTokens                  SupplierInviteToken[]
   productLinks                  ProductSupplier[]
   assemblyLinks                 AssemblySupplier[]
+  sourcingPriceProposals        SourcingPriceProposal[]
   // Finance module (2026-08-24) — counterparty on a PurchaseOrderDocument.
   // Deliberately reused, not a separate "Counterparty"/"Payee" entity: audit
   // confirmed `Supplier` has no required field beyond `name` and no relation
@@ -4751,4 +4754,45 @@ model SourcingNote {
 
   @@unique([companyId, entityType, entityId])
   @@map("sourcing_notes")
+}
+
+enum SourcingPriceProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// "правка ціни щоб було тільки через підтвердження в основній erp"
+// (2026-11-10) — the Mini App can only ever CREATE a proposal here, never
+// write `ProductSupplier.price` directly. Same "never let an external/
+// bring-your-own input silently overwrite the staff-owned price field"
+// convention as `ProductSupplier.supplierOfferedPrice`'s own comment
+// (that one is the SUPPLIER'S self-reported quote; this one is OUR OWN
+// staff proposing a change from inside the sourcing tool — different
+// source, same rule: a human must explicitly confirm it in the main ERP
+// before `price` itself ever changes). Single-column product/supplier
+// FKs, not the composite (companyId, id) form — mirrors `ProductSupplier`
+// itself exactly, the closest analogous model.
+model SourcingPriceProposal {
+  id               String                       @id @default(uuid()) @db.Uuid
+  companyId        String                       @db.Uuid
+  productId        String                       @db.Uuid
+  supplierId       String                       @db.Uuid
+  proposedPriceEur Decimal                      @db.Decimal(14, 2)
+  note             String?
+  status           SourcingPriceProposalStatus  @default(PENDING)
+  proposedByUserId String                       @db.Uuid
+  reviewedByUserId String?                      @db.Uuid
+  reviewedAt       DateTime?                    @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([companyId, productId])
+  @@map("sourcing_price_proposals")
 }

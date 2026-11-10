@@ -15,13 +15,14 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     tx = {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-      productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
+      productSupplier: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
       assembly: { findMany: jest.fn().mockResolvedValue([]) },
       assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingNote: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn(), deleteMany: jest.fn() },
+      sourcingPriceProposal: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     filesService = {
@@ -106,7 +107,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
 
       const result = await service.getProductDetail(identity as any, 'p1');
 
-      expect(result.realSuppliers).toEqual([{ id: 's1', name: 'ARGIP', ourPrice: 12, supplierOfferedPrice: 11 }]);
+      expect(result.realSuppliers).toEqual([{ id: 's1', name: 'ARGIP', ourPrice: 12, supplierOfferedPrice: 11, pendingProposal: null }]);
       expect(result.candidateSuppliers[0]).toMatchObject({ id: 'cand1', status: 'CONTACTED', statusLabel: '✉️ Написали' });
       expect(result.category).toEqual({ id: 'cat1', name: 'А. Метизи', rfqTemplate: 'Доброго дня!' });
       expect(result.photoUrls).toEqual(['https://example.test/photo.jpg']);
@@ -192,6 +193,20 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         expect.objectContaining({ where: { entityType: 'Product', entityId: { in: ['p1'] } } }),
       );
       expect(result.note).toBe('Перевірити зразок перед замовленням');
+    });
+
+    // "правка ціни щоб було тільки через підтвердження в основній erp" (2026-11-10)
+    it('attaches the pending price proposal (if any) onto its own real supplier', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      tx.productSupplier.findMany.mockResolvedValue([{ price: 12, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP' } }]);
+      tx.sourcingPriceProposal.findMany.mockResolvedValue([{ supplierId: 's1', proposedPriceEur: 14.5, note: 'подешевшало' }]);
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(tx.sourcingPriceProposal.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productId: 'p1', status: 'PENDING' } }),
+      );
+      expect(result.realSuppliers[0].pendingProposal).toEqual({ proposedPriceEur: 14.5, note: 'подешевшало' });
     });
   });
 
@@ -350,6 +365,27 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         expect.objectContaining({ data: expect.objectContaining({ candidateSupplierId: 'cand1', status: 'NOT_CONTACTED' }) }),
       );
       expect(result).toEqual({ id: 'cand1' });
+    });
+  });
+
+  describe('createPriceProposal (2026-11-10 — "правка ціни щоб було тільки через підтвердження в основній erp")', () => {
+    it('refuses a non-admin, without touching the database', async () => {
+      await expect(
+        service.createPriceProposal({ ...identity, isAdmin: false } as any, 'p1', 's1', 14.5, undefined),
+      ).rejects.toMatchObject({ response: { code: 'SOURCING_PRICE_PROPOSAL_FORBIDDEN' } });
+      expect(tx.sourcingPriceProposal.create).not.toHaveBeenCalled();
+    });
+
+    it('an admin creates a PENDING proposal — never touches ProductSupplier.price', async () => {
+      tx.sourcingPriceProposal.create.mockResolvedValue({ id: 'prop1', status: 'PENDING' });
+
+      const result = await service.createPriceProposal({ ...identity, isAdmin: true } as any, 'p1', 's1', 14.5, 'подешевшало');
+
+      expect(tx.sourcingPriceProposal.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ productId: 'p1', supplierId: 's1', proposedPriceEur: 14.5, note: 'подешевшало', proposedByUserId: 'u1' }) }),
+      );
+      expect(tx.productSupplier.update).not.toHaveBeenCalled();
+      expect(result).toEqual({ id: 'prop1', status: 'PENDING' });
     });
   });
 

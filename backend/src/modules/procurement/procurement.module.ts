@@ -17,6 +17,8 @@ import { PurchaseOrderCommentsService } from './purchase-order-comments.service'
 import { SuppliersController } from './suppliers.controller';
 import { SuppliersService } from './suppliers.service';
 import { SupplierCatalogService } from './supplier-catalog.service';
+import { PriceProposalsController } from './price-proposals.controller';
+import { PriceProposalsService } from './price-proposals.service';
 
 @Module({
   imports: [
@@ -26,7 +28,7 @@ import { SupplierCatalogService } from './supplier-catalog.service';
     FinanceModule, // for ExchangeRatesService#getBaseCurrency — PurchaseOrdersService.create() defaults currency to the company's own base currency (2026-10-29 multi-currency)
     ProductionModule, // for FinishedGoodsService#receivePurchased — PurchaseOrdersService.receive()'s виріб branch (2026-11-04). Safe direction: ProductionModule only imports InventoryModule/HrModule, no cycle back through ProcurementModule.
   ],
-  controllers: [SuppliersController, PurchaseOrdersController, PurchaseRequestsController],
+  controllers: [SuppliersController, PurchaseOrdersController, PurchaseRequestsController, PriceProposalsController],
   providers: [
     SuppliersService,
     PurchaseOrdersService,
@@ -38,6 +40,7 @@ import { SupplierCatalogService } from './supplier-catalog.service';
     DeliverySchedulesService,
     PurchaseOrderCommentsService,
     SupplierCatalogService,
+    PriceProposalsService,
   ],
   // DeliverySchedulesService/PurchaseOrderCommentsService exported so
   // SupplierPortalModule can share the same state machines (Phase 1/2)

@@ -8,6 +8,7 @@ import { UpdateOutreachDto } from './dto/update-outreach.dto';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { TranslateNameDto } from './dto/translate-name.dto';
 import { UpsertNoteDto } from './dto/upsert-note.dto';
+import { CreatePriceProposalDto } from './dto/create-price-proposal.dto';
 
 /**
  * HTTP API for the procurement sourcing Mini App (2026-11-10 — "веб версію
@@ -131,5 +132,11 @@ export class SourcingAppController {
   @ApiOperation({ summary: 'Set (or, with an empty note, clear) the team-shared note on a product or real supplier — "нотатки до товару/постачальника... видимий усій команді".' })
   async upsertNote(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Body() dto: UpsertNoteDto) {
     return this.sourcingAppService.upsertNote(identity, dto.entityType, dto.entityId, dto.note);
+  }
+
+  @Post('price-proposals')
+  @ApiOperation({ summary: 'Propose a new price for a real supplier\'s product (procurement-admin only) — never writes ProductSupplier.price directly; a human confirms in the main ERP.' })
+  async createPriceProposal(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Body() dto: CreatePriceProposalDto) {
+    return this.sourcingAppService.createPriceProposal(identity, dto.productId, dto.supplierId, dto.proposedPriceEur, dto.note);
   }
 }
