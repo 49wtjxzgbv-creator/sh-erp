@@ -1,14 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MobileSheet } from './mobile-sheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { getTelegramWebApp } from './telegram-webapp';
 import { useCategories, useCreateCandidate } from './use-sourcing-app';
 
-/** Admin-only "➕ Додати постачальника" form (2026-11-10 — "має бути можливість додавати можливих постачальників"), the Mini App's form equivalent of the bot's own admin-only text flow. */
-export function AddCandidateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * Admin-only "➕ Додати постачальника" form (2026-11-10 — "має бути
+ * можливість додавати можливих постачальників"), the Mini App's form
+ * equivalent of the bot's own admin-only text flow.
+ *
+ * "дододай щоб також можливого постачальника можна було додати у картці
+ * товару" (2026-11-10) — `fixedCategory`, when provided (opened from a
+ * product card), locks the category to that product's own one instead of
+ * showing the picker — a candidate added from a product card is obviously
+ * meant for that product's category, so asking the admin to re-pick it
+ * would just be friction.
+ */
+export function AddCandidateSheet({
+  open,
+  onClose,
+  fixedCategory,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fixedCategory?: { id: string; name: string };
+}) {
   const { data: categories } = useCategories();
   const createCandidate = useCreateCandidate();
 
@@ -21,8 +40,12 @@ export function AddCandidateSheet({ open, onClose }: { open: boolean; onClose: (
   const [website, setWebsite] = useState('');
   const [whatTheyDo, setWhatTheyDo] = useState('');
 
+  useEffect(() => {
+    if (open) setCategoryId(fixedCategory?.id ?? '');
+  }, [open, fixedCategory?.id]);
+
   function reset() {
-    setCategoryId('');
+    setCategoryId(fixedCategory?.id ?? '');
     setName('');
     setRegion('');
     setLocation('');
@@ -59,20 +82,27 @@ export function AddCandidateSheet({ open, onClose }: { open: boolean; onClose: (
   return (
     <MobileSheet open={open} onOpenChange={(o) => !o && onClose()} title="Додати постачальника">
       <div className="space-y-3 pb-4">
-        <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Категорія *</p>
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className="w-full rounded-lg border p-2.5 text-sm"
-            style={fieldStyle}
-          >
-            <option value="">— Оберіть категорію —</option>
-            {categories?.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </div>
+        {fixedCategory ? (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Категорія</p>
+            <p className="rounded-lg p-2.5 text-sm" style={fieldStyle}>{fixedCategory.name}</p>
+          </div>
+        ) : (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Категорія *</p>
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="w-full rounded-lg border p-2.5 text-sm"
+              style={fieldStyle}
+            >
+              <option value="">— Оберіть категорію —</option>
+              {categories?.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Назва *</p>

@@ -98,13 +98,33 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('resolves a 3D model URL when the product has a usable PRODUCT_DOCUMENT .glb (optimized variant preferred)', async () => {
       tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
       filesService.listForEntities.mockResolvedValue({
-        p1: [{ originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb', optimizedDownloadUrl: 'https://example.test/part-optimized.glb' }],
+        p1: [{ id: 'f1', originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb', optimizedDownloadUrl: 'https://example.test/part-optimized.glb' }],
       });
 
       const result = await service.getProductDetail(identity as any, 'p1');
 
       expect(filesService.listForEntities).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', companyId: 'c1' }), 'Product', ['p1'], ['PRODUCT_DOCUMENT']);
       expect(result.modelUrl).toBe('https://example.test/part-optimized.glb');
+    });
+
+    it('pulls in PDF/DXF documents (2026-11-10 — "щоб у картку товару підтягувався пдф файл і dxf") without listing the model file again as a document', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      filesService.listForEntities.mockResolvedValue({
+        p1: [
+          { id: 'f1', originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb' },
+          { id: 'f2', originalName: 'drawing.pdf', downloadUrl: 'https://example.test/drawing.pdf' },
+          { id: 'f3', originalName: 'part.dxf', downloadUrl: 'https://example.test/part.dxf' },
+          { id: 'f4', originalName: 'readme.txt', downloadUrl: 'https://example.test/readme.txt' },
+        ],
+      });
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(result.modelUrl).toBe('https://example.test/part.glb');
+      expect(result.documents).toEqual([
+        { id: 'f2', name: 'drawing.pdf', url: 'https://example.test/drawing.pdf' },
+        { id: 'f3', name: 'part.dxf', url: 'https://example.test/part.dxf' },
+      ]);
     });
   });
 

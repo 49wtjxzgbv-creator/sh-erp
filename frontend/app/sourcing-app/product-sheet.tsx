@@ -5,12 +5,17 @@ import { MobileSheet } from './mobile-sheet';
 import { PriceChips } from './price-chips';
 import { StatusPill } from './status-pill';
 import { Model3DViewer } from './model-3d-viewer';
+import { AddCandidateSheet } from './add-candidate-sheet';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { formatEur } from '@/lib/utils';
 import { getTelegramWebApp } from './telegram-webapp';
-import { useProductDetail } from './use-sourcing-app';
+import { useProductDetail, useMe } from './use-sourcing-app';
+
+function documentIcon(name: string): string {
+  return /\.pdf$/i.test(name) ? '📕' : '📐';
+}
 
 export function ProductSheet({
   productId,
@@ -22,9 +27,12 @@ export function ProductSheet({
   onOpenCandidate: (candidateId: string) => void;
 }) {
   const { data: product, isLoading } = useProductDetail(productId);
+  // Already past the shell's own SDK-readiness gate by the time this sheet can even open.
+  const { data: me } = useMe(true);
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [show3d, setShow3d] = useState(false);
+  const [showAddCandidate, setShowAddCandidate] = useState(false);
 
   // "при закриті і відкритті цього ж товару постійно відкривається 3д чи
   // фото" (2026-11-10 real user report): this component never unmounts
@@ -36,6 +44,7 @@ export function ProductSheet({
   useEffect(() => {
     setLightboxIndex(null);
     setShow3d(false);
+    setShowAddCandidate(false);
     setCopied(false);
   }, [productId]);
 
@@ -129,7 +138,31 @@ export function ProductSheet({
             </section>
           )}
 
-          {product.candidateSuppliers.length > 0 && (
+          {product.documents.length > 0 && (
+            <section>
+              {/* "щоб у картку товару підтягувався пдф файл і dxf якщо вони є" (2026-11-10) */}
+              <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Документи</p>
+              <div className="space-y-1.5">
+                {product.documents.map((doc) => (
+                  <a
+                    key={doc.id}
+                    href={doc.url}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      getTelegramWebApp()?.openLink(doc.url);
+                    }}
+                    className="flex items-center gap-2 rounded-lg p-2.5 text-sm"
+                    style={{ background: 'var(--tg-secondary-bg)' }}
+                  >
+                    <span>{documentIcon(doc.name)}</span>
+                    <span className="truncate">{doc.name}</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(product.candidateSuppliers.length > 0 || (me?.isAdmin && product.category)) && (
             <section>
               <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Можливі постачальники</p>
               <div className="space-y-2">
@@ -145,6 +178,12 @@ export function ProductSheet({
                     <StatusPill status={c.status} label={c.statusLabel} />
                   </button>
                 ))}
+                {/* "дододай щоб також можливого постачальника можна було додати у картці товару" (2026-11-10) — locked to this product's own category, see AddCandidateSheet's own comment. */}
+                {me?.isAdmin && product.category && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => setShowAddCandidate(true)}>
+                    ➕ Додати постачальника
+                  </Button>
+                )}
               </div>
             </section>
           )}
@@ -161,6 +200,9 @@ export function ProductSheet({
         <PhotoLightbox src={product.photoUrls[lightboxIndex]} alt={product.name} onClose={() => setLightboxIndex(null)} />
       )}
       {product?.modelUrl && show3d && <Model3DViewer src={product.modelUrl} onClose={() => setShow3d(false)} />}
+      {product?.category && (
+        <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} fixedCategory={product.category} />
+      )}
     </MobileSheet>
   );
 }

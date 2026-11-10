@@ -91,17 +91,25 @@ export class SourcingAppService {
   }
 
   /**
-   * A usable 3D model for this product, if one exists (2026-11-10 — "і
-   * 3д"). Products never get a dedicated 3D-model upload slot — a `.glb`
-   * or `.step` (auto-converted to `.glb` by StepConversionService) simply
-   * lives among the product's own `PRODUCT_DOCUMENT` files, same as the
-   * BOM/Assembly 3D pipeline. `listForEntities` already resolves every
-   * conversion/optimization variant to a presigned URL (see its own header
-   * comments) — this just applies the same precedence `ArViewButton`/the
-   * BOM 3D viewer use: optimized > mobile-optimized > STEP-converted >
-   * already-.glb.
+   * A usable 3D model PLUS any PDF/DXF among this product's own
+   * `PRODUCT_DOCUMENT` files (2026-11-10 — "і 3д" / "щоб у картку товару
+   * підтягувався пдф файл і dxf якщо вони є"). Products never get a
+   * dedicated 3D-model upload slot — a `.glb` or `.step` (auto-converted
+   * to `.glb` by StepConversionService) simply lives among the product's
+   * own documents, same as the BOM/Assembly 3D pipeline. One batched
+   * `listForEntities` call serves both: `listForEntities` already
+   * resolves every conversion/optimization variant to a presigned URL
+   * (see its own header comments) — the model URL applies the same
+   * precedence `ArViewButton`/the BOM 3D viewer use (optimized >
+   * mobile-optimized > STEP-converted > already-.glb); the PDF/DXF list
+   * excludes whatever file that model URL came from, so the same file
+   * never shows up twice (once as "🧊 3D", once again as a plain
+   * document link).
    */
-  private async findModelUrl(identity: ResolvedSourcingIdentity, productId: string): Promise<string | null> {
+  private async findModelAndDocuments(
+    identity: ResolvedSourcingIdentity,
+    productId: string,
+  ): Promise<{ modelUrl: string | null; documents: Array<{ id: string; name: string; url: string }> }> {
     const byProductId = await this.filesService.listForEntities(
       { userId: identity.userId, companyId: identity.companyId },
       'Product',
@@ -109,11 +117,23 @@ export class SourcingAppService {
       ['PRODUCT_DOCUMENT'],
     );
     const files = byProductId[productId] ?? [];
+
+    let modelUrl: string | null = null;
+    let modelFileId: string | null = null;
     for (const file of files) {
       const url = file.optimizedDownloadUrl ?? file.mobileOptimizedDownloadUrl ?? file.convertedDownloadUrl ?? (/\.glb$/i.test(file.originalName) ? file.downloadUrl : undefined);
-      if (url) return url;
+      if (url) {
+        modelUrl = url;
+        modelFileId = file.id;
+        break;
+      }
     }
-    return null;
+
+    const documents = files
+      .filter((f) => f.id !== modelFileId && /\.(pdf|dxf)$/i.test(f.originalName))
+      .map((f) => ({ id: f.id, name: f.originalName, url: f.downloadUrl }));
+
+    return { modelUrl, documents };
   }
 
   private toPriceList(product: Record<string, unknown>): ProductRow['prices'] {
@@ -223,7 +243,7 @@ export class SourcingAppService {
       });
 
       const photoUrls = await this.allPhotoUrlsForProduct(tx, identity, product.id);
-      const modelUrl = await this.findModelUrl(identity, product.id);
+      const { modelUrl, documents } = await this.findModelAndDocuments(identity, product.id);
 
       const candidates = product.sourcingCategoryId
         ? await tx.sourcingCandidateSupplier.findMany({
@@ -237,11 +257,11 @@ export class SourcingAppService {
         ? await tx.sourcingCategory.findUnique({ where: { id: product.sourcingCategoryId }, select: { id: true, name: true, rfqTemplate: true } })
         : null;
 
-      return { product, supplierLinks, photoUrls, modelUrl, candidates, category };
+      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category };
     });
 
     if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
-    const { product, supplierLinks, photoUrls, modelUrl, candidates, category } = result;
+    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category } = result;
 
     return {
       id: product.id,
@@ -249,6 +269,7 @@ export class SourcingAppService {
       name: product.name,
       photoUrls,
       modelUrl,
+      documents,
       prices: this.toPriceList(product),
       category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
       realSuppliers: supplierLinks.map((link) => ({

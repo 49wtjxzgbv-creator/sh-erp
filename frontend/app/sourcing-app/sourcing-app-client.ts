@@ -124,6 +124,8 @@ export interface ProductDetail {
   photoUrls: string[];
   /** Presigned .glb URL if this product has a usable 3D model among its PRODUCT_DOCUMENT files (2026-11-10 — "і 3д") — null when none exists. */
   modelUrl: string | null;
+  /** PDF/DXF files among this product's PRODUCT_DOCUMENT files (2026-11-10 — "щоб у картку товару підтягувався пдф файл і dxf якщо вони є"), excluding whichever file `modelUrl` itself came from. */
+  documents: Array<{ id: string; name: string; url: string }>;
   prices: PriceEntry[];
   category: { id: string; name: string; rfqTemplate: string } | null;
   realSuppliers: RealSupplierPrice[];
