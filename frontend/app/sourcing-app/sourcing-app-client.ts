@@ -116,7 +116,10 @@ export interface ProductDetail {
   id: string;
   article: string;
   name: string;
-  photoUrl: string | null;
+  /** Every uploaded photo, newest first — not just one (2026-11-10 — "перегляд фото товарів"), for a tap-to-zoom gallery. */
+  photoUrls: string[];
+  /** Presigned .glb URL if this product has a usable 3D model among its PRODUCT_DOCUMENT files (2026-11-10 — "і 3д") — null when none exists. */
+  modelUrl: string | null;
   prices: PriceEntry[];
   category: { id: string; name: string; rfqTemplate: string } | null;
   realSuppliers: RealSupplierPrice[];

@@ -18,7 +18,10 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       sourcingOutreach: { update: jest.fn() },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
-    filesService = { getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }) };
+    filesService = {
+      getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
+      listForEntities: jest.fn().mockResolvedValue({}),
+    };
     service = new SourcingAppService(prisma, filesService);
   });
 
@@ -62,7 +65,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         germanPriceExclVat: 10, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: 15,
       });
       tx.productSupplier.findMany.mockResolvedValue([{ price: 12, supplierOfferedPrice: 11, supplier: { id: 's1', name: 'ARGIP' } }]);
-      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1', entityId: 'p1' }]);
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1' }]);
       tx.sourcingCandidateSupplier.findMany.mockResolvedValue([{ id: 'cand1', name: 'НовийПостач', region: null, location: null, phone: null, email: null, website: null, whatTheyDo: null, outreach: { status: 'CONTACTED' } }]);
       tx.sourcingCategory.findUnique.mockResolvedValue({ id: 'cat1', name: 'А. Метизи', rfqTemplate: 'Доброго дня!' });
 
@@ -71,7 +74,32 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result.realSuppliers).toEqual([{ id: 's1', name: 'ARGIP', ourPrice: 12, supplierOfferedPrice: 11 }]);
       expect(result.candidateSuppliers[0]).toMatchObject({ id: 'cand1', status: 'CONTACTED', statusLabel: '✉️ Написали' });
       expect(result.category).toEqual({ id: 'cat1', name: 'А. Метизи', rfqTemplate: 'Доброго дня!' });
-      expect(result.photoUrl).toBe('https://example.test/photo.jpg');
+      expect(result.photoUrls).toEqual(['https://example.test/photo.jpg']);
+      expect(result.modelUrl).toBeNull();
+    });
+
+    it('returns every uploaded photo (not just the newest), newest first', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file-new' }, { id: 'file-old' }]);
+      filesService.getDownloadUrl.mockImplementation((_actor: unknown, fileAssetId: string) =>
+        Promise.resolve({ downloadUrl: `https://example.test/${fileAssetId}.jpg` }),
+      );
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(result.photoUrls).toEqual(['https://example.test/file-new.jpg', 'https://example.test/file-old.jpg']);
+    });
+
+    it('resolves a 3D model URL when the product has a usable PRODUCT_DOCUMENT .glb (optimized variant preferred)', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      filesService.listForEntities.mockResolvedValue({
+        p1: [{ originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb', optimizedDownloadUrl: 'https://example.test/part-optimized.glb' }],
+      });
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', companyId: 'c1' }), 'Product', ['p1'], ['PRODUCT_DOCUMENT']);
+      expect(result.modelUrl).toBe('https://example.test/part-optimized.glb');
     });
   });
 

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { MobileSheet } from './mobile-sheet';
 import { PriceChips } from './price-chips';
 import { StatusPill } from './status-pill';
+import { Model3DViewer } from './model-3d-viewer';
+import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { formatEur } from '@/lib/utils';
@@ -21,6 +23,8 @@ export function ProductSheet({
 }) {
   const { data: product, isLoading } = useProductDetail(productId);
   const [copied, setCopied] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [show3d, setShow3d] = useState(false);
 
   async function copyRfq() {
     if (!product?.category) return;
@@ -40,14 +44,49 @@ export function ProductSheet({
         </div>
       ) : (
         <div className="space-y-4 pb-4">
-          <div className="flex h-44 items-center justify-center overflow-hidden rounded-xl" style={{ background: 'var(--tg-secondary-bg)' }}>
-            {product.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
-              <img src={product.photoUrl} alt={product.name} className="h-full w-full object-contain" />
-            ) : (
-              <span className="text-5xl">📦</span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => product.photoUrls.length > 0 && setLightboxIndex(0)}
+              className="flex h-44 w-full items-center justify-center overflow-hidden rounded-xl"
+              style={{ background: 'var(--tg-secondary-bg)' }}
+              disabled={product.photoUrls.length === 0}
+            >
+              {product.photoUrls.length > 0 ? (
+                // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
+                <img src={product.photoUrls[0]} alt={product.name} className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-5xl">📦</span>
+              )}
+            </button>
+            {product.modelUrl && (
+              <button
+                type="button"
+                onClick={() => setShow3d(true)}
+                className="absolute right-2 top-2 flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold shadow-md"
+                style={{ background: 'var(--tg-button)', color: 'var(--tg-button-text)' }}
+              >
+                🧊 3D
+              </button>
             )}
           </div>
+
+          {product.photoUrls.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto">
+              {product.photoUrls.map((url, i) => (
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => setLightboxIndex(i)}
+                  className="h-14 w-14 shrink-0 overflow-hidden rounded-lg"
+                  style={{ background: 'var(--tg-secondary-bg)', ...(i === lightboxIndex ? { boxShadow: '0 0 0 2px var(--tg-link)' } : {}) }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL thumbnail */}
+                  <img src={url} alt="" className="h-full w-full object-contain" />
+                </button>
+              ))}
+            </div>
+          )}
 
           <div>
             <p className="text-base font-semibold">{product.name}</p>
@@ -104,6 +143,11 @@ export function ProductSheet({
           )}
         </div>
       )}
+
+      {product && lightboxIndex !== null && (
+        <PhotoLightbox src={product.photoUrls[lightboxIndex]} alt={product.name} onClose={() => setLightboxIndex(null)} />
+      )}
+      {product?.modelUrl && show3d && <Model3DViewer src={product.modelUrl} onClose={() => setShow3d(false)} />}
     </MobileSheet>
   );
 }

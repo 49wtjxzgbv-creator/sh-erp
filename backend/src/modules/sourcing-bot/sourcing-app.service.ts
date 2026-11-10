@@ -74,6 +74,44 @@ export class SourcingAppService {
     return urlByProductId;
   }
 
+  /** ALL `PRODUCT_PHOTO` rows for ONE product, newest first, as presigned URLs — unlike `photoUrlsByProductId` (list views, one thumbnail each), the product-detail card shows every photo ever uploaded for a gallery/lightbox, not just the latest. */
+  private async allPhotoUrlsForProduct(tx: TenantPrismaClient, identity: ResolvedSourcingIdentity, productId: string): Promise<string[]> {
+    const photos = await tx.fileAsset.findMany({
+      where: { entityType: 'Product', entityId: productId, domain: 'PRODUCT_PHOTO', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    return Promise.all(
+      photos.map(async (p) => (await this.filesService.getDownloadUrl({ userId: identity.userId, companyId: identity.companyId }, p.id)).downloadUrl),
+    );
+  }
+
+  /**
+   * A usable 3D model for this product, if one exists (2026-11-10 — "і
+   * 3д"). Products never get a dedicated 3D-model upload slot — a `.glb`
+   * or `.step` (auto-converted to `.glb` by StepConversionService) simply
+   * lives among the product's own `PRODUCT_DOCUMENT` files, same as the
+   * BOM/Assembly 3D pipeline. `listForEntities` already resolves every
+   * conversion/optimization variant to a presigned URL (see its own header
+   * comments) — this just applies the same precedence `ArViewButton`/the
+   * BOM 3D viewer use: optimized > mobile-optimized > STEP-converted >
+   * already-.glb.
+   */
+  private async findModelUrl(identity: ResolvedSourcingIdentity, productId: string): Promise<string | null> {
+    const byProductId = await this.filesService.listForEntities(
+      { userId: identity.userId, companyId: identity.companyId },
+      'Product',
+      [productId],
+      ['PRODUCT_DOCUMENT'],
+    );
+    const files = byProductId[productId] ?? [];
+    for (const file of files) {
+      const url = file.optimizedDownloadUrl ?? file.mobileOptimizedDownloadUrl ?? file.convertedDownloadUrl ?? (/\.glb$/i.test(file.originalName) ? file.downloadUrl : undefined);
+      if (url) return url;
+    }
+    return null;
+  }
+
   private toPriceList(product: Record<string, unknown>): ProductRow['prices'] {
     return PRICE_FIELDS.map(({ field, icon, label }) => {
       const value = priceNumber(product[field]);
@@ -180,7 +218,8 @@ export class SourcingAppService {
         select: { price: true, supplierOfferedPrice: true, supplier: { select: { id: true, name: true } } },
       });
 
-      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, [product.id]);
+      const photoUrls = await this.allPhotoUrlsForProduct(tx, identity, product.id);
+      const modelUrl = await this.findModelUrl(identity, product.id);
 
       const candidates = product.sourcingCategoryId
         ? await tx.sourcingCandidateSupplier.findMany({
@@ -194,17 +233,18 @@ export class SourcingAppService {
         ? await tx.sourcingCategory.findUnique({ where: { id: product.sourcingCategoryId }, select: { id: true, name: true, rfqTemplate: true } })
         : null;
 
-      return { product, supplierLinks, photoUrl: photoUrlByProductId.get(product.id) ?? null, candidates, category };
+      return { product, supplierLinks, photoUrls, modelUrl, candidates, category };
     });
 
     if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
-    const { product, supplierLinks, photoUrl, candidates, category } = result;
+    const { product, supplierLinks, photoUrls, modelUrl, candidates, category } = result;
 
     return {
       id: product.id,
       article: product.article,
       name: product.name,
-      photoUrl,
+      photoUrls,
+      modelUrl,
       prices: this.toPriceList(product),
       category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
       realSuppliers: supplierLinks.map((link) => ({
