@@ -11,6 +11,7 @@ import {
   type CandidateSupplier,
   type StatusOverview,
   type UpdateOutreachInput,
+  type CreateCandidateInput,
 } from './sourcing-app-client';
 
 /** The Mini App's own "not paired yet" screen checks for this specific code (TelegramWebAppAuthGuard) rather than a generic error state. */
@@ -80,6 +81,18 @@ export function useStatusOverview() {
   return useQuery({
     queryKey: ['sourcing-app', 'status'],
     queryFn: () => sourcingAppClient.get<StatusOverview>('status'),
+  });
+}
+
+/** "має бути можливість додавати можливих постачальників" (2026-11-10) — the server independently enforces admin-only (403 otherwise); the Postачальники page only shows the button when `useMe().isAdmin` is true. */
+export function useCreateCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCandidateInput) => sourcingAppClient.post('candidates', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'candidates'] });
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'status'] });
+    },
   });
 }
 

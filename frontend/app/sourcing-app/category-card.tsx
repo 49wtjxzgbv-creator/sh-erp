@@ -4,6 +4,7 @@ import type { SourcingCategorySummary } from './sourcing-app-client';
 
 /** Category code → icon, matching the item clusters each category actually covers (metizy/tube/laser/motors/bearings/gears/t-nuts/turned-parts/frames/belts — see expand-sourcing-catalog.ts on the backend for the full list this mirrors). */
 const CATEGORY_ICONS: Record<string, string> = {
+  ALL: '🗂️',
   A: '🔩',
   B: '📏',
   V: '⚡',

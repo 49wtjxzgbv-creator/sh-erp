@@ -42,6 +42,17 @@ export interface TelegramWebApp {
     onClick(callback: () => void): void;
     offClick(callback: () => void): void;
   };
+  /**
+   * Bot API 7.7+ — Telegram's own vertical-swipe-to-minimize gesture
+   * otherwise competes with any drag gesture inside the Mini App (2026-11-10
+   * real user report: the 3D viewer "opens but doesn't rotate" — orbit-drag
+   * never reaches model-viewer because Telegram's WebView claims the
+   * vertical component of the gesture first). Optional on the real client
+   * object — guard with `?.()` since an older Telegram client won't have
+   * it.
+   */
+  disableVerticalSwipes?(): void;
+  enableVerticalSwipes?(): void;
 }
 
 declare global {

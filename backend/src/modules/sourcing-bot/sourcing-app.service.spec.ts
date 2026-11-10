@@ -14,8 +14,8 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
       productSupplier: { findMany: jest.fn().mockResolvedValue([]) },
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
-      sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]) },
-      sourcingOutreach: { update: jest.fn() },
+      sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+      sourcingOutreach: { update: jest.fn(), create: jest.fn() },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     filesService = {
@@ -50,6 +50,11 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         { field: 'germanPriceExclVat', icon: '🇩🇪', label: 'DE без ПДВ', value: 10 },
         { field: 'sellPriceEur', icon: '💰', label: 'Наша ціна продажу', value: 15 },
       ]);
+    });
+
+    it('the "all" sentinel id browses every category\'s products, not just one (2026-11-10 — "категорія всі")', async () => {
+      await service.getCategoryProducts(identity as any, 'all', undefined, 0);
+      expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ sourcingCategoryId: { not: null } }) });
     });
   });
 
@@ -121,6 +126,32 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.sourcingCandidateSupplier.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ categoryId: 'cat1' }) }),
       );
+    });
+  });
+
+  describe('createCandidate (2026-11-10 — "має бути можливість додавати можливих постачальників")', () => {
+    it('refuses a non-admin, without touching the database', async () => {
+      await expect(
+        service.createCandidate({ ...identity, isAdmin: false } as any, { categoryId: 'cat1', name: 'Новий' } as any),
+      ).rejects.toMatchObject({ response: { code: 'SOURCING_CANDIDATE_CREATE_FORBIDDEN' } });
+      expect(tx.sourcingCandidateSupplier.create).not.toHaveBeenCalled();
+    });
+
+    it('an admin creates the candidate plus its NOT_CONTACTED outreach row', async () => {
+      tx.sourcingCandidateSupplier.create.mockResolvedValue({ id: 'cand1' });
+      const result = await service.createCandidate({ ...identity, isAdmin: true } as any, {
+        categoryId: 'cat1',
+        name: 'Новий Постач',
+        phone: '+380501112233',
+      } as any);
+
+      expect(tx.sourcingCandidateSupplier.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ categoryId: 'cat1', name: 'Новий Постач', phone: '+380501112233', source: 'user_added' }) }),
+      );
+      expect(tx.sourcingOutreach.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ candidateSupplierId: 'cand1', status: 'NOT_CONTACTED' }) }),
+      );
+      expect(result).toEqual({ id: 'cand1' });
     });
   });
 

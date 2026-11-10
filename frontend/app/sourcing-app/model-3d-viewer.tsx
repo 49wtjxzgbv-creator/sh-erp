@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Loader2 } from 'lucide-react';
+import { getTelegramWebApp } from './telegram-webapp';
 
 let modelViewerReady: Promise<void> | null = null;
 function ensureModelViewerRegistered(): Promise<void> {
@@ -19,6 +20,13 @@ function ensureModelViewerRegistered(): Promise<void> {
  * zoom, via Google's `<model-viewer>` web component — the SAME library
  * `ArViewButton`/the BOM 3D viewer already use elsewhere in this app, just
  * rendered visibly here instead of hidden-for-AR-handoff-only.
+ *
+ * "відкривається але не крутиться" (2026-11-10 real user report): Telegram's
+ * OWN vertical-swipe-to-minimize gesture was claiming the drag before
+ * model-viewer's internal orbit-controls ever saw it — `disableVerticalSwipes`
+ * (Bot API 7.7+) while this is open fixes that; `touchAction: 'none'` on the
+ * element itself additionally stops the browser's own default touch-scroll
+ * handling from competing for the same gesture.
  */
 export function Model3DViewer({ src, onClose }: { src: string; onClose: () => void }) {
   const [ready, setReady] = useState(false);
@@ -34,6 +42,12 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
   }, []);
 
   useEffect(() => {
+    const webApp = getTelegramWebApp();
+    webApp?.disableVerticalSwipes?.();
+    return () => webApp?.enableVerticalSwipes?.();
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
     }
@@ -42,21 +56,27 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex flex-col bg-black/90">
+    <div className="fixed inset-0 z-[100] bg-black/90">
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
+        className="absolute right-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
         aria-label="Закрити"
         style={{ top: 'max(1rem, env(safe-area-inset-top))' }}
       >
         <X className="h-7 w-7" />
       </button>
       {!ready ? (
-        <div className="flex flex-1 items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-white" />
         </div>
       ) : (
+        // Absolute, not a flex child (2026-11-09 known issue, see
+        // ArViewButton's own comment: a near-zero-size target during the
+        // first paint stalls model-viewer's internal render loop) —
+        // `inset-0` on an already `fixed inset-0` ancestor guarantees a
+        // real, non-zero pixel size from the very first frame, no flex
+        // layout timing involved.
         <model-viewer
           src={src}
           camera-controls
@@ -64,10 +84,14 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
           shadow-intensity="1"
           exposure="1"
           interaction-prompt="none"
-          style={{ width: '100%', height: '100%', flex: 1 }}
+          className="absolute inset-0"
+          style={{ width: '100%', height: '100%', touchAction: 'none' }}
         />
       )}
-      <p className="pb-6 text-center text-xs text-white/60" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+      <p
+        className="absolute inset-x-0 bottom-0 text-center text-xs text-white/60"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
         Потягніть, щоб обертати · Защипніть, щоб наблизити
       </p>
     </div>,

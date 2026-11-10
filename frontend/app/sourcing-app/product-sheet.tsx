@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MobileSheet } from './mobile-sheet';
 import { PriceChips } from './price-chips';
 import { StatusPill } from './status-pill';
@@ -25,6 +25,19 @@ export function ProductSheet({
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [show3d, setShow3d] = useState(false);
+
+  // "при закриті і відкритті цього ж товару постійно відкривається 3д чи
+  // фото" (2026-11-10 real user report): this component never unmounts
+  // between opens (the parent page just toggles `productId` while
+  // `<ProductSheet>` itself stays mounted), so leftover `lightboxIndex`/
+  // `show3d` state from a PREVIOUS visit silently reopened the lightbox or
+  // 3D viewer the instant the sheet reopened — even for a different
+  // product. Reset on every open/close/product-switch.
+  useEffect(() => {
+    setLightboxIndex(null);
+    setShow3d(false);
+    setCopied(false);
+  }, [productId]);
 
   async function copyRfq() {
     if (!product?.category) return;

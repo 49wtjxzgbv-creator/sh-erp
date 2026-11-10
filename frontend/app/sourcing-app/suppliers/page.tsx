@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useSuppliers, useCandidates } from '../use-sourcing-app';
+import { useSuppliers, useCandidates, useMe } from '../use-sourcing-app';
 import { SupplierCard } from '../supplier-card';
 import { CandidateRow } from '../candidate-row';
 import { CandidateSheet } from '../candidate-sheet';
+import { AddCandidateSheet } from '../add-candidate-sheet';
 
 type Tab = 'real' | 'candidates';
 
@@ -14,7 +16,12 @@ export default function SuppliersPage() {
   const [tab, setTab] = useState<Tab>('real');
   const [region, setRegion] = useState<string | undefined>(undefined);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [showAddCandidate, setShowAddCandidate] = useState(false);
 
+  // Already past the shell's own SDK-readiness gate by the time any page
+  // mounts (SourcingAppShell only renders `children` once the Telegram SDK
+  // script is loaded) — always-enabled here is safe.
+  const { data: me } = useMe(true);
   const { data: realSuppliers, isLoading: loadingReal } = useSuppliers();
   const { data: candidates, isLoading: loadingCandidates } = useCandidates(undefined, region);
 
@@ -36,6 +43,14 @@ export default function SuppliersPage() {
           {regions.map((r) => (
             <Chip key={r} active={region === r} onClick={() => setRegion(r)}>{r}</Chip>
           ))}
+        </div>
+      )}
+
+      {tab === 'candidates' && me?.isAdmin && (
+        <div className="px-3 pb-2">
+          <Button size="sm" variant="outline" className="w-full" onClick={() => setShowAddCandidate(true)}>
+            ➕ Додати постачальника
+          </Button>
         </div>
       )}
 
@@ -64,6 +79,7 @@ export default function SuppliersPage() {
       </div>
 
       <CandidateSheet candidateId={selectedCandidateId} onClose={() => setSelectedCandidateId(null)} />
+      <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} />
     </div>
   );
 }

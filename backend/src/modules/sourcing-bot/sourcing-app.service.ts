@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
-import { CodedNotFoundException } from '../../common/api-exceptions';
+import { CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { PRICE_FIELDS, STATUS_LABELS, priceNumber } from './sourcing-shared';
 import { UpdateOutreachDto } from './dto/update-outreach.dto';
+import { CreateCandidateDto } from './dto/create-candidate.dto';
 
 const APP_PAGE_SIZE = 30;
+
+/** Sentinel categoryId for the Mini App's synthetic "Всі товари" entry (2026-11-10 — "в категоріях має бути категорія всі щоб просто гортати всі товари") — no real SourcingCategory has this id, so it can never collide with one. */
+export const ALL_CATEGORIES_ID = 'all';
 
 function tenantCtx(identity: ResolvedSourcingIdentity) {
   return { companyId: identity.companyId, userId: identity.userId };
@@ -122,7 +126,7 @@ export class SourcingAppService {
   async getCategoryProducts(identity: ResolvedSourcingIdentity, categoryId: string, search: string | undefined, page: number) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const where = {
-        sourcingCategoryId: categoryId,
+        sourcingCategoryId: categoryId === ALL_CATEGORIES_ID ? { not: null } : categoryId,
         deletedAt: null,
         ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
       };
@@ -329,6 +333,41 @@ export class SourcingAppService {
       quotedPriceEur: priceNumber(c.outreach?.quotedPriceEur),
       quotedPriceNote: c.outreach?.quotedPriceNote ?? null,
     }));
+  }
+
+  /**
+   * "має бути можливість додавати можливих постачальників" (2026-11-10) —
+   * the Mini App's form equivalent of the bot's own admin-only
+   * "➕ Додати постачальника" text flow (same ADMIN_PERMISSION_KEY check,
+   * same two-separate-top-level-creates shape — see
+   * SourcingBotService#handlePendingInput's `add_candidate` case for why
+   * a nested `outreach: { create }` isn't used).
+   */
+  async createCandidate(identity: ResolvedSourcingIdentity, dto: CreateCandidateDto) {
+    if (!identity.isAdmin) {
+      throw new CodedForbiddenException('SOURCING_CANDIDATE_CREATE_FORBIDDEN', 'Only a procurement admin can add a new candidate supplier.');
+    }
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      // `as any` on both creates — same as SourcingBotService's own
+      // add_candidate flow: the tenant-scoping extension auto-stamps
+      // `companyId` onto the entry-point row of a top-level create, which
+      // Prisma's generated input type doesn't reflect as optional.
+      const candidate = await tx.sourcingCandidateSupplier.create({
+        data: {
+          categoryId: dto.categoryId,
+          name: dto.name,
+          region: dto.region ?? null,
+          location: dto.location ?? null,
+          phone: dto.phone ?? null,
+          email: dto.email ?? null,
+          website: dto.website ?? null,
+          whatTheyDo: dto.whatTheyDo ?? null,
+          source: 'user_added',
+        } as any,
+      });
+      await tx.sourcingOutreach.create({ data: { candidateSupplierId: candidate.id, status: 'NOT_CONTACTED' } as any });
+      return { id: candidate.id };
+    });
   }
 
   /** Same writes as the bot's setstatus/note/quote_price+quote_note flows — see SourcingBotService's own comments for why a plain note edit does NOT stamp contactedByUserId/contactedAt but a status change or a quote does. */

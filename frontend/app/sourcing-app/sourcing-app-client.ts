@@ -51,6 +51,10 @@ class SourcingAppClient {
   patch<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('PATCH', path, body);
   }
+
+  post<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('POST', path, body);
+  }
 }
 
 export const sourcingAppClient = new SourcingAppClient();
@@ -145,3 +149,18 @@ export interface UpdateOutreachInput {
   quotedPriceEur?: number;
   quotedPriceNote?: string;
 }
+
+/** "має бути можливість додавати можливих постачальників" (2026-11-10) — form equivalent of the bot's own admin-only add-candidate flow. */
+export interface CreateCandidateInput {
+  categoryId: string;
+  name: string;
+  region?: string;
+  location?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  whatTheyDo?: string;
+}
+
+/** "ALL" sentinel categoryId (2026-11-10 — "категорія всі, щоб просто гортати всі товари") — must match the backend's ALL_CATEGORIES_ID exactly. */
+export const ALL_CATEGORIES_ID = 'all';

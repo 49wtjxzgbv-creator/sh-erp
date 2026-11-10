@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TelegramWebAppAuthGuard } from './telegram-webapp-auth.guard';
 import { CurrentSourcingIdentity } from './current-sourcing-identity.decorator';
 import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { SourcingAppService } from './sourcing-app.service';
 import { UpdateOutreachDto } from './dto/update-outreach.dto';
+import { CreateCandidateDto } from './dto/create-candidate.dto';
 
 /**
  * HTTP API for the procurement sourcing Mini App (2026-11-10 — "веб версію
@@ -71,6 +72,12 @@ export class SourcingAppController {
     @Query('region') region?: string,
   ) {
     return this.sourcingAppService.getCandidates(identity, categoryId, region);
+  }
+
+  @Post('candidates')
+  @ApiOperation({ summary: 'Add a new candidate supplier (procurement-admin only) — same shape as the bot\'s own admin-only ➕ Додати постачальника flow.' })
+  async createCandidate(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Body() dto: CreateCandidateDto) {
+    return this.sourcingAppService.createCandidate(identity, dto);
   }
 
   @Patch('candidates/:id/outreach')

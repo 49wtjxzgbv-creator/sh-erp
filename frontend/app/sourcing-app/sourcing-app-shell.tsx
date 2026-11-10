@@ -59,7 +59,7 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
             <header className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 20%, transparent)' }}>
               <p className="text-sm font-semibold">👋 {me?.fullName ?? 'Пошук постачальників'}</p>
             </header>
-            <main className="flex-1 overflow-y-auto pb-16">{children}</main>
+            <main className="flex-1 overflow-y-auto">{children}</main>
             <BottomTabBar />
           </>
         )}
