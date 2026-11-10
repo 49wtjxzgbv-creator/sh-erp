@@ -2078,6 +2078,14 @@ model ProductionOrder {
 
   legacyId String?
 
+  // "передавати у виробництво... коли якісь деталі відсутні на складі"
+  // (2026-11-10) — true when start() was explicitly told to proceed
+  // despite a raw-material (PRODUCT-type) shortage, letting
+  // WarehouseStock/Product.qty go negative for the short line(s) rather
+  // than blocking the order. Never set for a sub-assembly shortage — that
+  // case stays blocked unconditionally (see start()'s own comment).
+  startedWithShortage Boolean @default(false)
+
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   completedAt DateTime? @db.Timestamptz(3)
 

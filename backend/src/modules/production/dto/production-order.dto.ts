@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDate,
   IsInt,
   IsNumber,
@@ -128,6 +129,21 @@ export class StartProductionOrderDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+
+  /**
+   * "додай можливість передавати у виробництво та виготовляти вироби коли
+   * якісь деталі відсутні на складі" (2026-11-10) — explicit opt-in to
+   * start despite a PRODUCT-type (raw-material) shortage, letting
+   * WarehouseStock/Product.qty go negative for the short line(s) rather
+   * than blocking the whole order. Never applies to an ASSEMBLY-type
+   * (sub-assembly) shortage — a FinishedGood unit that doesn't physically
+   * exist yet can't be marked CONSUMED, so that case stays blocked
+   * regardless of this flag (see start()'s own comment).
+   */
+  @ApiPropertyOptional({ description: 'Start anyway despite a raw-material shortage (allows negative stock for the short product lines). Never overrides a sub-assembly shortage.' })
+  @IsOptional()
+  @IsBoolean()
+  allowShortage?: boolean;
 }
 
 export class QueryProductionOrdersDto {

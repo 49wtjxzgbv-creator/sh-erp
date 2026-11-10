@@ -307,17 +307,24 @@ export default function ProductionOrderDetailPage() {
     }
   }
 
-  async function handleStart() {
+  async function handleStart(allowShortage?: boolean) {
     setStartError(null);
     setStartShortages([]);
     try {
-      await startOrder.mutateAsync({ warehouseId });
+      await startOrder.mutateAsync({ warehouseId, allowShortage });
     } catch (err) {
       setStartError(apiErrorMessage(err, tc('error')));
       const shortages = err instanceof ApiError ? (err.body as { shortages?: ProductionShortageLine[] } | undefined)?.shortages : undefined;
       setStartShortages(shortages ?? []);
     }
   }
+
+  // "передавати у виробництво... коли якісь деталі відсутні на складі"
+  // (2026-11-10) — a sub-assembly (ASSEMBLY) shortage can never be forced
+  // (see StartProductionOrderDto's own comment: there's no physical unit
+  // to consume), so the override only makes sense when every shortage line
+  // is a raw material.
+  const canForceStart = startShortages.length > 0 && startShortages.every((s) => s.kind === 'PRODUCT');
 
   async function handleAdvance() {
     setAdvanceError(null);
@@ -342,6 +349,7 @@ export default function ProductionOrderDetailPage() {
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold">{t('orderHeader')}</h2>
           <Badge variant={STATUS_VARIANT[order.status]}>{t(`status${order.status}`)}</Badge>
+          {order.startedWithShortage && <Badge variant="destructive">{t('startedWithShortageBadge')}</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AssemblySpecPrint assemblyId={order.assemblyId} qty={Number(order.unitsPlanned)} />
@@ -534,7 +542,7 @@ export default function ProductionOrderDetailPage() {
                     <DialogClose asChild>
                       <Button variant="outline">{tc('cancel')}</Button>
                     </DialogClose>
-                    <Button loading={startOrder.isPending} onClick={handleStart}>
+                    <Button loading={startOrder.isPending} onClick={() => handleStart()}>
                       {t('startOrder')}
                     </Button>
                   </DialogFooter>
@@ -542,24 +550,47 @@ export default function ProductionOrderDetailPage() {
               </Dialog>
               {startError && <p className="text-sm text-destructive">{startError}</p>}
               {startShortages.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tb('component')}</TableHead>
-                      <TableHead>{tb('needed')}</TableHead>
-                      <TableHead>{tb('available')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {startShortages.map((s, i) => (
-                      <TableRow key={i}>
-                        <TableCell><ShortageComponentCell line={s} /></TableCell>
-                        <TableCell>{s.needed}</TableCell>
-                        <TableCell>{s.available}</TableCell>
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tb('component')}</TableHead>
+                        <TableHead>{tb('needed')}</TableHead>
+                        <TableHead>{tb('available')}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {startShortages.map((s, i) => (
+                        <TableRow key={i}>
+                          <TableCell><ShortageComponentCell line={s} /></TableCell>
+                          <TableCell>{s.needed}</TableCell>
+                          <TableCell>{s.available}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {canForceStart && (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="destructive">{t('startAnywayDespiteShortage')}</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>{t('startAnywayConfirmTitle')}</DialogTitle>
+                          <DialogDescription>{t('startAnywayConfirmDescription')}</DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">{tc('cancel')}</Button>
+                          </DialogClose>
+                          <Button variant="destructive" loading={startOrder.isPending} onClick={() => handleStart(true)}>
+                            {t('startAnywayDespiteShortage')}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

@@ -91,6 +91,8 @@ export interface ProductionOrder {
   fullCostEur: DecimalString | null;
   createdAt: string;
   completedAt: string | null;
+  /** "передавати у виробництво... коли якісь деталі відсутні на складі" (2026-11-10) — true when start() was explicitly told to proceed despite a raw-material shortage; WarehouseStock/Product.qty may be negative for the short line(s). */
+  startedWithShortage: boolean;
   /** This batch's parent order line (План-графік §1) — null for production orders not created via "give to production". One CustomerOrderItem can have many batches. */
   customerOrderItemId: string | null;
   /** Set instead of customerOrderItemId for a sub-assembly batch planned from the "Хід виробництва" tree or at order creation — never both at once. */
@@ -171,6 +173,8 @@ export function revertProductionOrderStart(id: string): Promise<ProductionOrder>
 
 export interface StartProductionOrderInput {
   warehouseId?: string;
+  /** "передавати у виробництво... коли якісь деталі відсутні на складі" (2026-11-10) — start anyway despite a raw-material shortage (allows negative stock for the short lines). Never overrides a sub-assembly shortage — see `ProductionShortageLine`'s own comment. */
+  allowShortage?: boolean;
 }
 
 /** Shape of the `shortages` array on a start() 400 body (production-orders.service.ts's `ShortageLine`) — ASSEMBLY-kind entries mean the required sub-assembly hasn't been produced yet (checked as `FinishedGood` rows with status IN_STOCK, not just "is it composable"), not a raw-material stock issue. */

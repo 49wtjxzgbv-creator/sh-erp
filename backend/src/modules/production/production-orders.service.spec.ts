@@ -305,6 +305,49 @@ describe('ProductionOrdersService', () => {
       prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'COMPLETED' });
       await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
     });
+
+    // "передавати у виробництво... коли якісь деталі відсутні на складі" (2026-11-10)
+    describe('allowShortage override', () => {
+      it('still rejects an ASSEMBLY shortage even with allowShortage: true — no physical unit exists to consume', async () => {
+        prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          components: [{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }],
+        });
+        prisma.tenant.finishedGood.count.mockResolvedValue(1); // need 2, only 1
+
+        await expect(service.start(user, 'po1', { allowShortage: true })).rejects.toThrow(BadRequestException);
+        expect(stock.applyMovement).not.toHaveBeenCalled();
+      });
+
+      it('rejects a PRODUCT shortage without allowShortage (default, unchanged)', async () => {
+        prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
+        });
+        prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 0 });
+
+        await expect(service.start(user, 'po1', {})).rejects.toThrow(BadRequestException);
+        expect(stock.applyMovement).not.toHaveBeenCalled();
+      });
+
+      it('proceeds past a PRODUCT shortage with allowShortage: true, consuming beyond what is in stock', async () => {
+        prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
+        });
+        prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 0 });
+        prisma.tenant.product.findUniqueOrThrow.mockResolvedValue({ id: 'p1', sellPriceEur: 3 });
+        prisma.tenant.productionStage.findMany.mockResolvedValue([]);
+        prisma.tenant.productionOrder.update.mockImplementation(({ data }: any) => Promise.resolve({ ...baseOrder, ...data }));
+
+        await service.start(user, 'po1', { allowShortage: true });
+
+        expect(stock.applyMovement).toHaveBeenCalledWith(user, expect.objectContaining({ productId: 'p1', qtyDelta: -20 }));
+        expect(prisma.tenant.productionOrder.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ startedWithShortage: true }) }),
+        );
+      });
+    });
   });
 
   describe('checkReadiness — read-only counterpart of the same availability check (2026-10-06, Telegram bot "Перевірити готовність")', () => {
@@ -323,7 +366,7 @@ describe('ProductionOrdersService', () => {
 
       const result = await service.checkReadiness(user, 'po1');
 
-      expect(result).toEqual({ unitsPlanned: 2, ready: true, shortages: [] });
+      expect(result).toEqual({ unitsPlanned: 2, ready: true, shortages: [], forceable: false });
       expect(stock.applyMovement).not.toHaveBeenCalled();
       expect(prisma.tenant.finishedGood.createMany).not.toHaveBeenCalled();
     });
@@ -346,12 +389,28 @@ describe('ProductionOrdersService', () => {
         { kind: 'PRODUCT', productId: 'p1', needed: 20, available: 5 },
         { kind: 'ASSEMBLY', subAssemblyId: 'sub1', needed: 2, available: 1 },
       ]);
+      // "передавати у виробництво... коли якісь деталі відсутні на складі"
+      // (2026-11-10) — not forceable: an ASSEMBLY-kind line is in the mix.
+      expect(result.forceable).toBe(false);
+    });
+
+    it('reports forceable=true when every shortage line is a raw material (no sub-assembly short)', async () => {
+      prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({
+        id: 'v1',
+        components: [{ componentType: 'PRODUCT', productId: 'p1', qtyPerUnit: 10 }],
+      });
+      prisma.tenant.warehouseStock.findUnique.mockResolvedValue({ qty: 5, reservedQty: 0 });
+
+      const result = await service.checkReadiness(user, 'po1');
+
+      expect(result.ready).toBe(false);
+      expect(result.forceable).toBe(true);
     });
 
     it('works for an order NOT in PLANNED status too — readiness is about the BOM/stock, not the lifecycle stage', async () => {
       prisma.tenant.productionOrder.findUnique.mockResolvedValue({ ...baseOrder, status: 'IN_PROGRESS' });
       prisma.tenant.assemblyVersion.findUnique.mockResolvedValue({ id: 'v1', components: [] });
-      await expect(service.checkReadiness(user, 'po1')).resolves.toEqual({ unitsPlanned: 2, ready: true, shortages: [] });
+      await expect(service.checkReadiness(user, 'po1')).resolves.toEqual({ unitsPlanned: 2, ready: true, shortages: [], forceable: false });
     });
 
     it('rejects pre-versioning legacy data with no locked BOM version', async () => {

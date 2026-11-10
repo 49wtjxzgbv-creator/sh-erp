@@ -368,7 +368,10 @@ export class ProductionOrdersService {
    * genuinely non-trivial (physical stock minus OTHER orders' reservations,
    * sub-assembly FIFO availability).
    */
-  async checkReadiness(user: RequestUser, id: string): Promise<{ unitsPlanned: number; ready: boolean; shortages: ShortageLine[] }> {
+  async checkReadiness(
+    user: RequestUser,
+    id: string,
+  ): Promise<{ unitsPlanned: number; ready: boolean; shortages: ShortageLine[]; forceable: boolean }> {
     const order = await this.findOne(user, id);
     if (!order.assemblyVersionId) {
       throw new CodedConflictException(
@@ -386,7 +389,13 @@ export class ProductionOrdersService {
     const warehouseId = await this.resolveDefaultWarehouseId();
     const customerOrderId = await this.resolveCustomerOrderId(order);
     const { shortages } = await this.computeShortages(user, unitsPlanned, warehouseId, customerOrderId, version.components);
-    return { unitsPlanned, ready: shortages.length === 0, shortages };
+    // "передавати у виробництво... коли якісь деталі відсутні на складі"
+    // (2026-11-10) — tells the frontend whether a "Запустити попри дефіцит"
+    // override button makes sense here: only when every shortage is a raw
+    // material (PRODUCT), never when a sub-assembly (ASSEMBLY) is short —
+    // see start()'s own comment for why that case can never be forced.
+    const forceable = shortages.length > 0 && shortages.every((s) => s.kind === 'PRODUCT');
+    return { unitsPlanned, ready: shortages.length === 0, shortages, forceable };
   }
 
   /** Pass 1 of start() — see that method's own "Stock-reservation spec §4/§16" comments for the "available = physical minus OTHER orders' reservations" rule this implements per line. Pulled out so checkReadiness() above can run the identical check without consuming anything. */
@@ -485,7 +494,19 @@ export class ProductionOrdersService {
       version.components,
     );
 
-    if (shortages.length > 0) {
+    // "передавати у виробництво... коли якісь деталі відсутні на складі"
+    // (2026-11-10): an ASSEMBLY-type (sub-assembly) shortage ALWAYS blocks,
+    // `allowShortage` or not — pass 2 below consumes a sub-assembly by
+    // marking a specific, physically-existing FinishedGood row CONSUMED,
+    // and there is no such row to mark when none is IN_STOCK. A
+    // PRODUCT-type (raw-material) shortage is overridable: pass 2's own
+    // stock movement has no floor-at-zero guard (see StockService#applyMovement),
+    // so letting it proceed just lets WarehouseStock/Product.qty go
+    // negative for the short line(s) — a real, visible debt rather than a
+    // silently-blocked order.
+    const hasAssemblyShortage = shortages.some((s) => s.kind === 'ASSEMBLY');
+    const hasProductShortage = shortages.some((s) => s.kind === 'PRODUCT');
+    if (hasAssemblyShortage || (hasProductShortage && !dto.allowShortage)) {
       throw new CodedBadRequestException(
         'PRODUCTION_INSUFFICIENT_STOCK',
         'Insufficient stock/finished goods to start this production order.',
@@ -675,6 +696,7 @@ export class ProductionOrdersService {
         deliveryCostEur: ownDelivery,
         otherCostEur: ownOther,
         fullCostEur: totalLocalCostEur,
+        startedWithShortage: hasProductShortage,
       },
     });
 
@@ -684,7 +706,7 @@ export class ProductionOrdersService {
       action: 'production_order.started',
       entityType: 'ProductionOrder',
       entityId: order.id,
-      after: { status: updated.status, unitsPlanned, totalLocalCostEur, totalGermanCostEur, serials },
+      after: { status: updated.status, unitsPlanned, totalLocalCostEur, totalGermanCostEur, serials, startedWithShortage: hasProductShortage },
     });
 
     return this.findOne(user, order.id);
