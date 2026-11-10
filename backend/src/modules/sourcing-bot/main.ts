@@ -1,5 +1,6 @@
 import { Module, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import helmet from 'helmet';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SourcingBotModule } from './sourcing-bot.module';
@@ -20,7 +21,11 @@ import { SourcingHealthController } from './sourcing-health.controller';
  * automatically as part of Nest's normal module-init lifecycle, same as
  * it always did under `createApplicationContext` — nothing extra to call.
  */
-@Module({ imports: [PrismaModule, SourcingBotModule, SourcingAppModule], controllers: [SourcingHealthController] })
+// ScheduleModule.forRoot() is registered in the MAIN backend's own
+// app.module.ts already, but this is a fully separate process (see this
+// file's own header comment) — @Cron decorators (StaleOutreachReminderService)
+// do nothing unless this process registers its own scheduler too.
+@Module({ imports: [PrismaModule, ScheduleModule.forRoot(), SourcingBotModule, SourcingAppModule], controllers: [SourcingHealthController] })
 class SourcingBotAppModule {}
 
 async function bootstrap() {

@@ -6,6 +6,7 @@ import { AuditModule } from '../audit/audit.module';
 import { SourcingBotApiClient } from './sourcing-bot-api.client';
 import { SourcingBotService } from './sourcing-bot.service';
 import { SourcingIdentityService } from './sourcing-identity.service';
+import { StaleOutreachReminderService } from './stale-outreach-reminder.service';
 
 /**
  * Procurement sourcing bot (2026-11-09) — deliberately NOT part of
@@ -39,7 +40,7 @@ import { SourcingIdentityService } from './sourcing-identity.service';
  */
 @Module({
   imports: [PrismaModule, FilesModule, AuditModule],
-  providers: [SourcingBotService, SourcingBotApiClient, SourcingBotPrismaService, SourcingIdentityService],
+  providers: [SourcingBotService, SourcingBotApiClient, SourcingBotPrismaService, SourcingIdentityService, StaleOutreachReminderService],
   exports: [SourcingIdentityService],
 })
 export class SourcingBotModule {}
