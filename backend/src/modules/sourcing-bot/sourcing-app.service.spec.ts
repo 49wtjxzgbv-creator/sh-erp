@@ -224,6 +224,22 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result).toHaveLength(1);
       expect(result[0].products).toHaveLength(2);
     });
+
+    // "цей повний список товарів який відкриваємо у постачальника має бути
+    // з фото" (2026-11-10)
+    it('attaches a thumbnail photoUrl per product, null when none uploaded', async () => {
+      tx.productSupplier.findMany.mockResolvedValue([
+        { price: 10, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+        { price: 20, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p2', article: 'A2', name: 'Товар 2' } },
+      ]);
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'photo1', entityId: 'p1' }]);
+
+      const result = await service.getSuppliers(identity as any);
+
+      const [p1, p2] = result[0].products;
+      expect(p1.photoUrl).toBe('https://example.test/photo.jpg');
+      expect(p2.photoUrl).toBeNull();
+    });
   });
 
   describe('getCandidates', () => {

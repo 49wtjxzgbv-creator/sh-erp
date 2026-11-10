@@ -37,9 +37,17 @@ export function SupplierSheet({
                 key={p.id}
                 type="button"
                 onClick={() => onOpenProduct(p.id)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg p-2.5 text-left text-sm active:opacity-70"
+                className="flex w-full items-center gap-2.5 rounded-lg p-2.5 text-left text-sm active:opacity-70"
                 style={{ background: 'var(--tg-secondary-bg)' }}
               >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md" style={{ background: 'var(--tg-bg)' }}>
+                  {p.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL thumbnail
+                    <img src={p.photoUrl} alt="" className="h-full w-full object-contain" />
+                  ) : (
+                    '📦'
+                  )}
+                </span>
                 <span className="min-w-0 flex-1 truncate">
                   <span style={{ color: 'var(--tg-hint)' }}>{p.article}</span> — {p.name}
                 </span>

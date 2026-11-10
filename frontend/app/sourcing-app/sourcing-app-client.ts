@@ -146,7 +146,7 @@ export interface RealSupplier {
   name: string;
   phone: string | null;
   email: string | null;
-  products: Array<{ id: string; article: string; name: string; ourPrice: number | null; supplierOfferedPrice: number | null }>;
+  products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }>;
 }
 
 export interface StatusOverview {

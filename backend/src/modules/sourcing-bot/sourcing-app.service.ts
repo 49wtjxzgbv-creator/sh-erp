@@ -391,8 +391,8 @@ export class SourcingAppService {
 
   /** Every real, already-onboarded Supplier linked to at least one tracked product, with their linked products. */
   async getSuppliers(identity: ResolvedSourcingIdentity) {
-    const links = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      tx.productSupplier.findMany({
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const links = await tx.productSupplier.findMany({
         where: { product: { sourcingCategoryId: { not: null }, deletedAt: null } },
         select: {
           price: true,
@@ -400,26 +400,35 @@ export class SourcingAppService {
           supplier: { select: { id: true, name: true, phone: true, email: true } },
           product: { select: { id: true, article: true, name: true } },
         },
-      }),
-    );
+      });
 
-    const bySupplierId = new Map<string, { id: string; name: string; phone: string | null; email: string | null; products: Array<{ id: string; article: string; name: string; ourPrice: number | null; supplierOfferedPrice: number | null }> }>();
-    for (const link of links) {
-      const existing = bySupplierId.get(link.supplier.id);
-      const productEntry = {
-        id: link.product.id,
-        article: link.product.article,
-        name: link.product.name,
-        ourPrice: priceNumber(link.price),
-        supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
-      };
-      if (existing) {
-        existing.products.push(productEntry);
-      } else {
-        bySupplierId.set(link.supplier.id, { ...link.supplier, products: [productEntry] });
+      // "цей повний список товарів який відкриваємо у постачальника має
+      // бути з фото" (2026-11-10) — same thumbnail-per-product lookup every
+      // other product list in this service already does.
+      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, [...new Set(links.map((l) => l.product.id))]);
+
+      const bySupplierId = new Map<
+        string,
+        { id: string; name: string; phone: string | null; email: string | null; products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }> }
+      >();
+      for (const link of links) {
+        const existing = bySupplierId.get(link.supplier.id);
+        const productEntry = {
+          id: link.product.id,
+          article: link.product.article,
+          name: link.product.name,
+          photoUrl: photoUrlByProductId.get(link.product.id) ?? null,
+          ourPrice: priceNumber(link.price),
+          supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
+        };
+        if (existing) {
+          existing.products.push(productEntry);
+        } else {
+          bySupplierId.set(link.supplier.id, { ...link.supplier, products: [productEntry] });
+        }
       }
-    }
-    return [...bySupplierId.values()].sort((a, b) => a.name.localeCompare(b.name));
+      return [...bySupplierId.values()].sort((a, b) => a.name.localeCompare(b.name));
+    });
   }
 
   async getCandidates(identity: ResolvedSourcingIdentity, categoryId?: string, region?: string) {
