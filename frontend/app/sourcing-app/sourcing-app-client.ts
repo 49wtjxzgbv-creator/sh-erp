@@ -157,7 +157,25 @@ export interface RealSupplier {
   phone: string | null;
   email: string | null;
   note: string | null;
-  products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }>;
+  products: Array<{
+    id: string;
+    article: string;
+    name: string;
+    photoUrl: string | null;
+    ourPrice: number | null;
+    supplierOfferedPrice: number | null;
+    /** "правка ціни щоб було тільки через підтвердження в основній erp" (2026-11-11) — same per-(supplier,product) pending-proposal shape ProductDetail's own realSuppliers already carry, now also on the supplier-centric view. */
+    pendingProposal: { proposedPriceEur: number; note: string | null } | null;
+  }>;
+}
+
+/** "у списку постачальників наших теж має бути пагінація" (2026-11-11) — getSuppliers paginates by supplier, same shape ProductListResponse already uses. */
+export interface SupplierListResponse {
+  items: RealSupplier[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export interface StatusOverview {
@@ -182,6 +200,8 @@ export interface CreateCandidateInput {
   email?: string;
   website?: string;
   whatTheyDo?: string;
+  /** Client-side only — `useCreateCandidate` strips this before posting; it exists purely so that hook's own `onSuccess` knows which product's cache to invalidate when this candidate was added from a product card (2026-11-11). Never sent to the backend. */
+  productId?: string;
 }
 
 /** "ALL" sentinel categoryId (2026-11-10 — "категорія всі, щоб просто гортати всі товари") — must match the backend's ALL_CATEGORIES_ID exactly. */

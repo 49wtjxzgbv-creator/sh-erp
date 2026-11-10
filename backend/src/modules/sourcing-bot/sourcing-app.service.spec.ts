@@ -15,6 +15,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     tx = {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+      supplier: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
       productSupplier: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
@@ -260,15 +261,18 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ suppliers: { none: {} } }) });
     });
 
-    it('recurses through ASSEMBLY lines to collect sub-assembly products too', async () => {
-      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: string } }) => {
-        if (where.assemblyId === 'parent') {
+    // "flattenAssemblyProductIds" batches by LEVEL (2026-11-11): one query
+    // per depth, each `where.assemblyId` an `{ in: [...] }` of every
+    // assembly id at that level — not one query per node.
+    it('recurses through ASSEMBLY lines to collect sub-assembly products too, batching one query per BOM depth', async () => {
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: { in: string[] } } }) => {
+        if (where.assemblyId.in.includes('parent')) {
           return Promise.resolve([
             { componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null },
             { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'child' },
           ]);
         }
-        if (where.assemblyId === 'child') {
+        if (where.assemblyId.in.includes('child')) {
           return Promise.resolve([{ componentType: 'PRODUCT', productId: 'p2', subAssemblyId: null }]);
         }
         return Promise.resolve([]);
@@ -278,15 +282,16 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
 
       await service.getAssemblyProducts(identity as any, 'parent', undefined, 0);
 
+      expect(tx.assemblyComponent.findMany).toHaveBeenCalledTimes(2); // level 0 (parent) → level 1 (child); child has no sub-assembly, so the walk stops there
       const where = tx.product.count.mock.calls[0][0].where;
       expect(where.id.in).toEqual(expect.arrayContaining(['p1', 'p2']));
       expect(where.id.in).toHaveLength(2);
     });
 
     it('a circular BOM does not loop forever — same cycle-guard shape as AssembliesService#flattenRequirements', async () => {
-      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: string } }) => {
-        if (where.assemblyId === 'a') return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'b' }]);
-        if (where.assemblyId === 'b') return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'a' }]);
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: { in: string[] } } }) => {
+        if (where.assemblyId.in.includes('a')) return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'b' }]);
+        if (where.assemblyId.in.includes('b')) return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'a' }]);
         return Promise.resolve([]);
       });
 
@@ -301,36 +306,57 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     });
   });
 
-  describe('getSuppliers', () => {
+  describe('getSuppliers (paginated by supplier, 2026-11-11)', () => {
+    beforeEach(() => {
+      tx.supplier.findMany.mockResolvedValue([{ id: 's1', name: 'ARGIP', phone: null, email: null }]);
+      tx.supplier.count.mockResolvedValue(1);
+    });
+
     it('groups multiple linked products under the same supplier', async () => {
       tx.productSupplier.findMany.mockResolvedValue([
-        { price: 10, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
-        { price: 20, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p2', article: 'A2', name: 'Товар 2' } },
+        { supplierId: 's1', price: 10, supplierOfferedPrice: null, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+        { supplierId: 's1', price: 20, supplierOfferedPrice: null, product: { id: 'p2', article: 'A2', name: 'Товар 2' } },
       ]);
       const result = await service.getSuppliers(identity as any);
-      expect(result).toHaveLength(1);
-      expect(result[0].products).toHaveLength(2);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].products).toHaveLength(2);
+    });
+
+    it('paginates by supplier, reporting hasMore from the total', async () => {
+      tx.supplier.count.mockResolvedValue(45);
+      const result = await service.getSuppliers(identity as any, 0);
+      expect(tx.supplier.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 30 }));
+      expect(result.total).toBe(45);
+      expect(result.hasMore).toBe(true);
+    });
+
+    it('returns an empty page without querying product links when no supplier matches', async () => {
+      tx.supplier.findMany.mockResolvedValue([]);
+      tx.supplier.count.mockResolvedValue(0);
+      const result = await service.getSuppliers(identity as any);
+      expect(result).toEqual({ items: [], total: 0, page: 0, pageSize: 30, hasMore: false });
+      expect(tx.productSupplier.findMany).not.toHaveBeenCalled();
     });
 
     // "цей повний список товарів який відкриваємо у постачальника має бути
     // з фото" (2026-11-10)
     it('attaches a thumbnail photoUrl per product, null when none uploaded', async () => {
       tx.productSupplier.findMany.mockResolvedValue([
-        { price: 10, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
-        { price: 20, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p2', article: 'A2', name: 'Товар 2' } },
+        { supplierId: 's1', price: 10, supplierOfferedPrice: null, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+        { supplierId: 's1', price: 20, supplierOfferedPrice: null, product: { id: 'p2', article: 'A2', name: 'Товар 2' } },
       ]);
       tx.fileAsset.findMany.mockResolvedValue([{ id: 'photo1', entityId: 'p1' }]);
 
       const result = await service.getSuppliers(identity as any);
 
-      const [p1, p2] = result[0].products;
+      const [p1, p2] = result.items[0].products;
       expect(p1.photoUrl).toBe('https://example.test/photo.jpg');
       expect(p2.photoUrl).toBeNull();
     });
 
     it('includes the team-shared note on the supplier, null when none exists', async () => {
       tx.productSupplier.findMany.mockResolvedValue([
-        { price: 10, supplierOfferedPrice: null, supplier: { id: 's1', name: 'ARGIP', phone: null, email: null }, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+        { supplierId: 's1', price: 10, supplierOfferedPrice: null, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
       ]);
       tx.sourcingNote.findMany.mockResolvedValue([{ entityId: 's1', note: 'Повільна доставка', updatedAt: new Date() }]);
 
@@ -339,7 +365,21 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.sourcingNote.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { entityType: 'Supplier', entityId: { in: ['s1'] } } }),
       );
-      expect(result[0].note).toBe('Повільна доставка');
+      expect(result.items[0].note).toBe('Повільна доставка');
+    });
+
+    // "правка ціни щоб було тільки через підтвердження в основній erp"
+    // (2026-11-10) — SupplierSheet's own product rows need this too
+    // (2026-11-11), not just ProductSheet's.
+    it('attaches a pending price proposal onto its own (supplier, product) pair', async () => {
+      tx.productSupplier.findMany.mockResolvedValue([
+        { supplierId: 's1', price: 10, supplierOfferedPrice: null, product: { id: 'p1', article: 'A1', name: 'Товар 1' } },
+      ]);
+      tx.sourcingPriceProposal.findMany.mockResolvedValue([{ supplierId: 's1', productId: 'p1', proposedPriceEur: 12.5, note: null }]);
+
+      const result = await service.getSuppliers(identity as any);
+
+      expect(result.items[0].products[0].pendingProposal).toEqual({ proposedPriceEur: 12.5, note: null });
     });
   });
 

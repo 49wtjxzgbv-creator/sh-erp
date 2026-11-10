@@ -65,7 +65,15 @@ export default function SourcingAppSearchPage() {
         ) : !data || data.items.length === 0 ? (
           <p className="p-6 text-center text-sm" style={{ color: 'var(--tg-hint)' }}>Нічого не знайдено за «{debounced}».</p>
         ) : (
-          data.items.map((product) => <ProductRow key={product.id} product={product} onClick={() => setSelectedProductId(product.id)} />)
+          <>
+            {data.items.map((product) => <ProductRow key={product.id} product={product} onClick={() => setSelectedProductId(product.id)} />)}
+            {/* "показано лише перші 30 результатів — не було видно, що пошук обрізаний" (2026-11-11) */}
+            {data.hasMore && (
+              <p className="p-3 text-center text-xs" style={{ color: 'var(--tg-hint)' }}>
+                Показано перші {data.items.length} з {data.total} — уточніть пошук для точнішого результату.
+              </p>
+            )}
+          </>
         )}
       </div>
 

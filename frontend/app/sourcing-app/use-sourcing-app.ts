@@ -9,6 +9,7 @@ import {
   type ProductDetail,
   type SourcingCategorySummary,
   type RealSupplier,
+  type SupplierListResponse,
   type CandidateSupplier,
   type StatusOverview,
   type UpdateOutreachInput,
@@ -149,15 +150,16 @@ export function useProductDetail(productId: string | null) {
 export function useSearch(query: string, filter?: ProductFilter) {
   return useQuery({
     queryKey: ['sourcing-app', 'search', query, filter],
-    queryFn: () => sourcingAppClient.get<{ items: ProductListResponse['items'] }>('search', { q: query, filter }),
+    queryFn: () => sourcingAppClient.get<{ items: ProductListResponse['items']; total: number; hasMore: boolean }>('search', { q: query, filter }),
     enabled: query.trim().length >= 2,
   });
 }
 
-export function useSuppliers() {
+/** "у списку постачальників наших теж має бути пагінація" (2026-11-11) — getSuppliers had no pagination at all before, unlike every product list. */
+export function useSuppliers(page = 0) {
   return useQuery({
-    queryKey: ['sourcing-app', 'suppliers'],
-    queryFn: () => sourcingAppClient.get<RealSupplier[]>('suppliers'),
+    queryKey: ['sourcing-app', 'suppliers', page],
+    queryFn: () => sourcingAppClient.get<SupplierListResponse>('suppliers', { page: String(page) }),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -176,14 +178,26 @@ export function useStatusOverview() {
   });
 }
 
-/** "має бути можливість додавати можливих постачальників" (2026-11-10) — the server independently enforces admin-only (403 otherwise); the Postачальники page only shows the button when `useMe().isAdmin` is true. */
+/**
+ * "має бути можливість додавати можливих постачальників" (2026-11-10) —
+ * the server independently enforces admin-only (403 otherwise); the
+ * Постачальники page only shows the button when `useMe().isAdmin` is true.
+ *
+ * "додав постачальника з картки товару, а він там не з'явився" (2026-11-11)
+ * — `input.productId`, when present (set by `AddCandidateSheet` whenever
+ * it was opened from a product's own card), is stripped out before
+ * posting (the backend DTO doesn't know this field) but still invalidates
+ * that exact product's own detail query, so its `candidateSuppliers` list
+ * reflects the addition without needing the sheet closed and reopened.
+ */
 export function useCreateCandidate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateCandidateInput) => sourcingAppClient.post('candidates', input),
-    onSuccess: () => {
+    mutationFn: ({ productId: _productId, ...input }: CreateCandidateInput) => sourcingAppClient.post('candidates', input),
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['sourcing-app', 'candidates'] });
       qc.invalidateQueries({ queryKey: ['sourcing-app', 'status'] });
+      if (variables.productId) qc.invalidateQueries({ queryKey: ['sourcing-app', 'products', variables.productId] });
     },
   });
 }
@@ -196,6 +210,8 @@ export function useCreatePriceProposal() {
       sourcingAppClient.post<{ id: string; status: string }>('price-proposals', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sourcing-app', 'products'] });
+      // "у SupplierSheet теж має бути можливість запропонувати ціну" (2026-11-11) — getSuppliers now carries the same pendingProposal shape, so a proposal made from either sheet must refresh both.
+      qc.invalidateQueries({ queryKey: ['sourcing-app', 'suppliers'] });
     },
   });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { MobileSheet } from './mobile-sheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,16 +18,32 @@ import { useCategories, useCreateCandidate } from './use-sourcing-app';
  * showing the picker — a candidate added from a product card is obviously
  * meant for that product's category, so asking the admin to re-pick it
  * would just be friction.
+ *
+ * `productId`, when provided (opened from a product card), is passed
+ * through to `useCreateCandidate` purely so its own cache invalidation can
+ * refresh that product's own `candidateSuppliers` list (2026-11-11 — a
+ * candidate added this way used to stay invisible on the product card
+ * until it was closed and reopened).
  */
 export function AddCandidateSheet({
   open,
   onClose,
   fixedCategory,
+  productId,
 }: {
   open: boolean;
   onClose: () => void;
   fixedCategory?: { id: string; name: string };
+  productId?: string;
 }) {
+  const categoryFieldId = useId();
+  const nameFieldId = useId();
+  const regionFieldId = useId();
+  const locationFieldId = useId();
+  const phoneFieldId = useId();
+  const emailFieldId = useId();
+  const websiteFieldId = useId();
+  const whatTheyDoFieldId = useId();
   const { data: categories } = useCategories();
   const createCandidate = useCreateCandidate();
 
@@ -67,6 +83,7 @@ export function AddCandidateSheet({
         email: email.trim() || undefined,
         website: website.trim() || undefined,
         whatTheyDo: whatTheyDo.trim() || undefined,
+        productId,
       });
       getTelegramWebApp()?.HapticFeedback.notificationOccurred('success');
       reset();
@@ -89,8 +106,9 @@ export function AddCandidateSheet({
           </div>
         ) : (
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Категорія *</p>
+            <label htmlFor={categoryFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Категорія *</label>
             <select
+              id={categoryFieldId}
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
               className="w-full rounded-lg border p-2.5 text-sm"
@@ -105,38 +123,39 @@ export function AddCandidateSheet({
         )}
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Назва *</p>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. ТОВ «Метиз Капітал»" />
+          <label htmlFor={nameFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Назва *</label>
+          <Input id={nameFieldId} value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. ТОВ «Метиз Капітал»" />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Область</p>
-          <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="напр. Хмельницька обл." />
+          <label htmlFor={regionFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Область</label>
+          <Input id={regionFieldId} value={region} onChange={(e) => setRegion(e.target.value)} placeholder="напр. Хмельницька обл." />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Місто/адреса</p>
-          <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="напр. м. Хмельницький, вул. ..." />
+          <label htmlFor={locationFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Місто/адреса</label>
+          <Input id={locationFieldId} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="напр. м. Хмельницький, вул. ..." />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Телефон</p>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380..." inputMode="tel" />
+          <label htmlFor={phoneFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Телефон</label>
+          <Input id={phoneFieldId} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380..." inputMode="tel" />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Email</p>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="info@..." inputMode="email" />
+          <label htmlFor={emailFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Email</label>
+          <Input id={emailFieldId} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="info@..." inputMode="email" />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Сайт</p>
-          <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="example.com" />
+          <label htmlFor={websiteFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Сайт</label>
+          <Input id={websiteFieldId} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="example.com" />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Що роблять</p>
+          <label htmlFor={whatTheyDoFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Що роблять</label>
           <textarea
+            id={whatTheyDoFieldId}
             value={whatTheyDo}
             onChange={(e) => setWhatTheyDo(e.target.value)}
             rows={2}

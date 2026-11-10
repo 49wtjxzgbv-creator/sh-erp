@@ -259,7 +259,7 @@ export function ProductSheet({
       {product?.modelUrl && show3d && <Model3DViewer src={product.modelUrl} onClose={() => setShow3d(false)} />}
       <DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       {product?.category && (
-        <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} fixedCategory={product.category} />
+        <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} fixedCategory={product.category} productId={product.id} />
       )}
     </MobileSheet>
   );

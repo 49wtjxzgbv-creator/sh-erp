@@ -56,10 +56,14 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <>
-            <header className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 20%, transparent)' }}>
+            {/* "видно що фон напівпрозорий" (2026-11-10)-class fixes already gave every full-screen overlay (MobileSheet, Model3DViewer, DocumentPreview) a safe-area-aware top inset — this header is the one piece of chrome visible on EVERY screen and was the one left out. */}
+            <header
+              className="shrink-0 border-b px-4 pb-3"
+              style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 20%, transparent)', paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+            >
               <p className="text-sm font-semibold">👋 {me?.fullName ?? 'Пошук постачальників'}</p>
             </header>
-            <main className="flex-1 overflow-y-auto">{children}</main>
+            <main id="sourcing-app-scroll" className="flex-1 overflow-y-auto">{children}</main>
             <BottomTabBar />
           </>
         )}

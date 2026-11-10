@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,11 @@ export default function AssemblyProductsPage() {
 
   const { data, isLoading } = useAssemblyProducts(params.id, search, page, filter);
   const { translateAll, progress } = useBulkTranslate();
+
+  // Scroll-to-top on page change — see categories/[id]/page.tsx's own comment.
+  useEffect(() => {
+    document.getElementById('sourcing-app-scroll')?.scrollTo({ top: 0 });
+  }, [page]);
 
   return (
     <div className="flex h-full flex-col">

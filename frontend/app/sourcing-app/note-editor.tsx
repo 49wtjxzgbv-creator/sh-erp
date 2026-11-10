@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { getTelegramWebApp } from './telegram-webapp';
 import { useUpsertNote } from './use-sourcing-app';
 
 /**
@@ -12,6 +13,7 @@ import { useUpsertNote } from './use-sourcing-app';
  * both already pass around for other lookups.
  */
 export function NoteEditor({ entityType, entityId, note }: { entityType: 'Product' | 'Supplier'; entityId: string; note: string | null }) {
+  const fieldId = useId();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(note ?? '');
   const upsertNote = useUpsertNote();
@@ -22,16 +24,28 @@ export function NoteEditor({ entityType, entityId, note }: { entityType: 'Produc
     setEditing(false);
   }, [entityId, note]);
 
+  // "зберіг нотатку і нічого не відбулось" (2026-11-11) — the mutation had
+  // no error handling at all; a failed save used to look identical to a
+  // successful one (editor just closed either way). Matches the
+  // try/catch+haptic+showAlert convention every other mutation in this app
+  // already follows (AddCandidateSheet, CandidateSheet).
   async function save() {
-    await upsertNote.mutateAsync({ entityType, entityId, note: value });
-    setEditing(false);
+    try {
+      await upsertNote.mutateAsync({ entityType, entityId, note: value });
+      getTelegramWebApp()?.HapticFeedback.notificationOccurred('success');
+      setEditing(false);
+    } catch {
+      getTelegramWebApp()?.HapticFeedback.notificationOccurred('error');
+      getTelegramWebApp()?.showAlert('Не вдалося зберегти нотатку. Спробуйте ще раз.');
+    }
   }
 
   if (editing) {
     return (
       <section>
-        <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Нотатка команди</p>
+        <label htmlFor={fieldId} className="mb-1.5 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Нотатка команди</label>
         <textarea
+          id={fieldId}
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -61,7 +75,8 @@ export function NoteEditor({ entityType, entityId, note }: { entityType: 'Produc
     <section>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Нотатка команди</p>
-        <button type="button" onClick={() => setEditing(true)} aria-label="Редагувати нотатку">✏️</button>
+        {/* "-m-2 p-2" keeps the ✏️ glyph visually unchanged while widening the actual tap target toward the ~44px convention every other icon-only button in this app uses (DocumentPreview/Model3DViewer close buttons). */}
+        <button type="button" onClick={() => setEditing(true)} aria-label="Редагувати нотатку" className="-m-2 rounded-full p-2">✏️</button>
       </div>
       <p className="whitespace-pre-wrap rounded-lg p-2.5 text-sm" style={{ background: 'var(--tg-secondary-bg)' }}>{note}</p>
     </section>

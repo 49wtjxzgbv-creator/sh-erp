@@ -2,10 +2,10 @@
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 import { useCategories, useAssemblies } from './use-sourcing-app';
 import { CategoryCard } from './category-card';
 import { AssemblyCard } from './assembly-card';
+import { SegmentButton } from './pill-controls';
 import { ALL_CATEGORIES_ID } from './sourcing-app-client';
 
 type Mode = 'categories' | 'assemblies';
@@ -74,18 +74,5 @@ export default function SourcingAppHomePage() {
         )}
       </div>
     </div>
-  );
-}
-
-function SegmentButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn('flex-1 rounded-lg py-2 text-sm font-medium transition-colors')}
-      style={active ? { background: 'var(--tg-button)', color: 'var(--tg-button-text)' } : { background: 'var(--tg-secondary-bg)', color: 'var(--tg-text)' }}
-    >
-      {children}
-    </button>
   );
 }

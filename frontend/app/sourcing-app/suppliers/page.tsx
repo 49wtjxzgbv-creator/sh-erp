@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { useSuppliers, useCandidates, useMe } from '../use-sourcing-app';
 import { SupplierCard } from '../supplier-card';
 import { SupplierSheet } from '../supplier-sheet';
@@ -11,12 +10,14 @@ import { CandidateRow } from '../candidate-row';
 import { CandidateSheet } from '../candidate-sheet';
 import { AddCandidateSheet } from '../add-candidate-sheet';
 import { ProductSheet } from '../product-sheet';
+import { Chip, SegmentButton } from '../pill-controls';
 
 type Tab = 'real' | 'candidates';
 
 export default function SuppliersPage() {
   const [tab, setTab] = useState<Tab>('real');
   const [region, setRegion] = useState<string | undefined>(undefined);
+  const [page, setPage] = useState(0);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
@@ -26,7 +27,8 @@ export default function SuppliersPage() {
   // mounts (SourcingAppShell only renders `children` once the Telegram SDK
   // script is loaded) — always-enabled here is safe.
   const { data: me } = useMe(true);
-  const { data: realSuppliers, isLoading: loadingReal } = useSuppliers();
+  const { data: supplierPage, isLoading: loadingReal } = useSuppliers(page);
+  const realSuppliers = supplierPage?.items;
   const { data: candidates, isLoading: loadingCandidates } = useCandidates(undefined, region);
 
   const regions = useMemo(() => {
@@ -37,7 +39,7 @@ export default function SuppliersPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="sticky top-0 z-10 flex gap-2 p-3" style={{ background: 'var(--tg-bg)' }}>
-        <SegmentButton active={tab === 'real'} onClick={() => setTab('real')}>Наші</SegmentButton>
+        <SegmentButton active={tab === 'real'} onClick={() => { setTab('real'); setPage(0); }}>Наші</SegmentButton>
         <SegmentButton active={tab === 'candidates'} onClick={() => setTab('candidates')}>Можливі</SegmentButton>
       </div>
 
@@ -68,7 +70,23 @@ export default function SuppliersPage() {
           ) : !realSuppliers || realSuppliers.length === 0 ? (
             <p className="p-6 text-center text-sm" style={{ color: 'var(--tg-hint)' }}>Жоден постачальник ще не прив&apos;язаний.</p>
           ) : (
-            realSuppliers.map((s) => <SupplierCard key={s.id} supplier={s} onClick={() => setSelectedSupplierId(s.id)} />)
+            <>
+              {realSuppliers.map((s) => <SupplierCard key={s.id} supplier={s} onClick={() => setSelectedSupplierId(s.id)} />)}
+              {(page > 0 || supplierPage.hasMore) && (
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  {page > 0 && (
+                    <Button variant="outline" size="sm" onClick={() => setPage((p) => p - 1)}>
+                      ⬅️ Попередні
+                    </Button>
+                  )}
+                  {supplierPage.hasMore && (
+                    <Button variant="outline" size="sm" onClick={() => setPage((p) => p + 1)}>
+                      Наступні ➡️
+                    </Button>
+                  )}
+                </div>
+              )}
+            </>
           )
         ) : loadingCandidates ? (
           <>
@@ -88,34 +106,9 @@ export default function SuppliersPage() {
         supplier={realSuppliers?.find((s) => s.id === selectedSupplierId) ?? null}
         onClose={() => setSelectedSupplierId(null)}
         onOpenProduct={(productId) => setSelectedProductId(productId)}
+        canPropose={Boolean(me?.isAdmin)}
       />
       <ProductSheet productId={selectedProductId} onClose={() => setSelectedProductId(null)} onOpenCandidate={(candidateId) => setSelectedCandidateId(candidateId)} />
     </div>
-  );
-}
-
-function SegmentButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn('flex-1 rounded-lg py-2 text-sm font-medium transition-colors')}
-      style={active ? { background: 'var(--tg-button)', color: 'var(--tg-button-text)' } : { background: 'var(--tg-secondary-bg)', color: 'var(--tg-text)' }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 rounded-full px-3 py-1 text-xs font-medium"
-      style={active ? { background: 'var(--tg-button)', color: 'var(--tg-button-text)' } : { background: 'var(--tg-secondary-bg)', color: 'var(--tg-text)' }}
-    >
-      {children}
-    </button>
   );
 }

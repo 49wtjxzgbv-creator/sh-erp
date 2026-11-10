@@ -85,9 +85,9 @@ export class SourcingAppController {
   }
 
   @Get('suppliers')
-  @ApiOperation({ summary: 'Every real, already-onboarded supplier linked to a tracked product, with their linked products.' })
-  async suppliers(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity) {
-    return this.sourcingAppService.getSuppliers(identity);
+  @ApiOperation({ summary: 'Paginated, every real, already-onboarded supplier linked to a tracked product, with their linked products.' })
+  async suppliers(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Query('page') page?: string) {
+    return this.sourcingAppService.getSuppliers(identity, Number(page ?? 0) || 0);
   }
 
   @Get('candidates')

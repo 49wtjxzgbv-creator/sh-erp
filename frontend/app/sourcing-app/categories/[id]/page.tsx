@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,15 @@ export default function CategoryProductsPage() {
 
   const { data, isLoading } = useCategoryProducts(params.id, search, page, filter);
   const { translateAll, progress } = useBulkTranslate();
+
+  // "Наступні" sits at the BOTTOM of a scrolled list — without this, tapping
+  // it swaps in the next page while the view stays scrolled to where the
+  // button was, landing the user at the bottom of the new page instead of
+  // its start (2026-11-11). The scrollable element is the shell's own
+  // `<main>` (`sourcing-app-shell.tsx`), not anything local to this page.
+  useEffect(() => {
+    document.getElementById('sourcing-app-scroll')?.scrollTo({ top: 0 });
+  }, [page]);
 
   return (
     <div className="flex h-full flex-col">

@@ -301,33 +301,44 @@ export class SourcingAppService {
 
   /**
    * Every DISTINCT real `Product` anywhere in `assemblyId`'s BOM tree, at
-   * ANY depth — same recursive-flatten-with-cycle-guard shape as
+   * ANY depth — same cycle-guard shape as
    * `AssembliesService#flattenRequirements` (private there, so
    * reimplemented here rather than exported just for this one caller);
    * unlike that method this doesn't aggregate quantities — a sourcing
    * tool cares "which parts does this product need," not "how many of
    * each," so a plain distinct id set is enough.
+   *
+   * Walks breadth-first BY LEVEL rather than recursing node-by-node
+   * (2026-11-11) — the original per-node recursion issued one
+   * `assemblyComponent.findMany` per sub-assembly, sequentially, which is
+   * a real N+1 chain for a wide/deep BOM tree. Batching every assembly id
+   * at the current depth into a single `{ in: [...] }` query cuts that to
+   * one round-trip per LEVEL instead of per NODE.
    */
-  private async flattenAssemblyProductIds(tx: TenantPrismaClient, assemblyId: string, visited: Set<string>): Promise<Set<string>> {
+  private async flattenAssemblyProductIds(tx: TenantPrismaClient, rootAssemblyId: string): Promise<Set<string>> {
     const productIds = new Set<string>();
-    if (visited.has(assemblyId)) return productIds;
-    visited.add(assemblyId);
+    const visited = new Set<string>([rootAssemblyId]);
+    let frontier = [rootAssemblyId];
 
-    const components = await tx.assemblyComponent.findMany({ where: { assemblyId } });
-    for (const line of components) {
-      if (line.componentType === 'PRODUCT' && line.productId) {
-        productIds.add(line.productId);
-      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
-        const nested = await this.flattenAssemblyProductIds(tx, line.subAssemblyId, visited);
-        for (const id of nested) productIds.add(id);
+    while (frontier.length > 0) {
+      const components = await tx.assemblyComponent.findMany({ where: { assemblyId: { in: frontier } } });
+      const nextFrontier: string[] = [];
+      for (const line of components) {
+        if (line.componentType === 'PRODUCT' && line.productId) {
+          productIds.add(line.productId);
+        } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId && !visited.has(line.subAssemblyId)) {
+          visited.add(line.subAssemblyId);
+          nextFrontier.push(line.subAssemblyId);
+        }
       }
+      frontier = nextFrontier;
     }
     return productIds;
   }
 
   async getAssemblyProducts(identity: ResolvedSourcingIdentity, assemblyId: string, search: string | undefined, page: number, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
-      const productIds = [...(await this.flattenAssemblyProductIds(tx, assemblyId, new Set()))];
+      const productIds = [...(await this.flattenAssemblyProductIds(tx, assemblyId))];
       if (productIds.length === 0) return { items: [], total: 0, page, pageSize: APP_PAGE_SIZE, hasMore: false };
 
       const where = this.applyProductFilter(
@@ -343,21 +354,27 @@ export class SourcingAppService {
     });
   }
 
+  /**
+   * Capped at `APP_PAGE_SIZE` results, same as every other list here — but
+   * unlike those, this used to return only `{ items }` with no `total`, so
+   * a query matching more than that cap silently truncated with zero
+   * indication the result was cut off (2026-11-11). `hasMore` lets the
+   * search screen show "показано перші N з total" instead.
+   */
   async search(identity: ResolvedSourcingIdentity, query: string, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
-      const products = await tx.product.findMany({
-        where: this.applyProductFilter(
-          {
-            sourcingCategoryId: { not: null },
-            deletedAt: null,
-            OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
-          },
-          filter,
-        ),
-        orderBy: { article: 'asc' },
-        take: APP_PAGE_SIZE,
-        select: this.productRowSelect,
-      });
+      const where = this.applyProductFilter(
+        {
+          sourcingCategoryId: { not: null },
+          deletedAt: null,
+          OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
+        },
+        filter,
+      );
+      const [total, products] = await Promise.all([
+        tx.product.count({ where }),
+        tx.product.findMany({ where, orderBy: { article: 'asc' }, take: APP_PAGE_SIZE, select: this.productRowSelect }),
+      ]);
       const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
       const items: ProductRow[] = products.map((p) => ({
         id: p.id,
@@ -368,7 +385,7 @@ export class SourcingAppService {
         supplierCount: p._count.suppliers,
         weightKg: priceNumber(p.weightPerUnitKg),
       }));
-      return { items };
+      return { items, total, hasMore: total > items.length };
     });
   }
 
@@ -485,15 +502,37 @@ export class SourcingAppService {
     };
   }
 
-  /** Every real, already-onboarded Supplier linked to at least one tracked product, with their linked products. */
-  async getSuppliers(identity: ResolvedSourcingIdentity) {
+  /**
+   * Every real, already-onboarded Supplier linked to at least one tracked
+   * product, with their linked products — paginated by SUPPLIER
+   * (2026-11-11; this list had no pagination at all before, unlike every
+   * product list in this service). Fetches the page of suppliers first,
+   * then only the links/notes/pending-proposals for just those suppliers
+   * — not every link in the company, same "paginate the real unit, then
+   * batch-fetch its details" shape `queryProductRows` already uses.
+   */
+  async getSuppliers(identity: ResolvedSourcingIdentity, page = 0) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const supplierWhere = { productLinks: { some: { product: { sourcingCategoryId: { not: null }, deletedAt: null } } } };
+      const [total, supplierRows] = await Promise.all([
+        tx.supplier.count({ where: supplierWhere }),
+        tx.supplier.findMany({
+          where: supplierWhere,
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true, phone: true, email: true },
+          skip: page * APP_PAGE_SIZE,
+          take: APP_PAGE_SIZE,
+        }),
+      ]);
+      if (supplierRows.length === 0) return { items: [], total, page, pageSize: APP_PAGE_SIZE, hasMore: false };
+
+      const supplierIds = supplierRows.map((s) => s.id);
       const links = await tx.productSupplier.findMany({
-        where: { product: { sourcingCategoryId: { not: null }, deletedAt: null } },
+        where: { supplierId: { in: supplierIds }, product: { sourcingCategoryId: { not: null }, deletedAt: null } },
         select: {
+          supplierId: true,
           price: true,
           supplierOfferedPrice: true,
-          supplier: { select: { id: true, name: true, phone: true, email: true } },
           product: { select: { id: true, article: true, name: true } },
         },
       });
@@ -504,29 +543,47 @@ export class SourcingAppService {
       const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, [...new Set(links.map((l) => l.product.id))]);
 
       // "нотатки до товару/постачальника... видимий усій команді" (2026-11-10)
-      const noteBySupplierId = await this.notesByEntityId(tx, 'Supplier', [...new Set(links.map((l) => l.supplier.id))]);
+      const noteBySupplierId = await this.notesByEntityId(tx, 'Supplier', supplierIds);
 
-      const bySupplierId = new Map<
-        string,
-        { id: string; name: string; phone: string | null; email: string | null; note: string | null; products: Array<{ id: string; article: string; name: string; photoUrl: string | null; ourPrice: number | null; supplierOfferedPrice: number | null }> }
-      >();
+      // "правка ціни щоб було тільки через підтвердження в основній erp"
+      // (2026-11-10) — surfaced per (supplier, product) pair here too, same
+      // shape `getProductDetail`'s own `pendingProposalBySupplierId` uses,
+      // so SupplierSheet's product rows can show/propose a price without a
+      // detour through the product's own card (2026-11-11).
+      const pendingProposals = await tx.sourcingPriceProposal.findMany({
+        where: { supplierId: { in: supplierIds }, status: 'PENDING' },
+        select: { productId: true, supplierId: true, proposedPriceEur: true, note: true },
+      });
+      const pendingProposalByKey = new Map(pendingProposals.map((p) => [`${p.supplierId}:${p.productId}`, p]));
+
+      const linksBySupplierId = new Map<string, typeof links>();
       for (const link of links) {
-        const existing = bySupplierId.get(link.supplier.id);
-        const productEntry = {
-          id: link.product.id,
-          article: link.product.article,
-          name: link.product.name,
-          photoUrl: photoUrlByProductId.get(link.product.id) ?? null,
-          ourPrice: priceNumber(link.price),
-          supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
-        };
-        if (existing) {
-          existing.products.push(productEntry);
-        } else {
-          bySupplierId.set(link.supplier.id, { ...link.supplier, note: noteBySupplierId.get(link.supplier.id)?.note ?? null, products: [productEntry] });
-        }
+        const list = linksBySupplierId.get(link.supplierId) ?? [];
+        list.push(link);
+        linksBySupplierId.set(link.supplierId, list);
       }
-      return [...bySupplierId.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+      const items = supplierRows.map((s) => ({
+        id: s.id,
+        name: s.name,
+        phone: s.phone,
+        email: s.email,
+        note: noteBySupplierId.get(s.id)?.note ?? null,
+        products: (linksBySupplierId.get(s.id) ?? []).map((link) => {
+          const pending = pendingProposalByKey.get(`${s.id}:${link.product.id}`);
+          return {
+            id: link.product.id,
+            article: link.product.article,
+            name: link.product.name,
+            photoUrl: photoUrlByProductId.get(link.product.id) ?? null,
+            ourPrice: priceNumber(link.price),
+            supplierOfferedPrice: priceNumber(link.supplierOfferedPrice),
+            pendingProposal: pending ? { proposedPriceEur: Number(pending.proposedPriceEur), note: pending.note } : null,
+          };
+        }),
+      }));
+
+      return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
     });
   }
 

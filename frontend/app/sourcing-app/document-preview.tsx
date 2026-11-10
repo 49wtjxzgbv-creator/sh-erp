@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { getTelegramWebApp } from './telegram-webapp';
 
 const Dxf2DViewer = dynamic(() => import('@/components/domain/files/dxf-2d-viewer').then((m) => m.Dxf2DViewer), { ssr: false });
 
@@ -16,6 +18,21 @@ const Dxf2DViewer = dynamic(() => import('@/components/domain/files/dxf-2d-viewe
  * underneath instead of reaching the preview.
  */
 export function DocumentPreview({ doc, onClose }: { doc: { id: string; name: string; url: string } | null; onClose: () => void }) {
+  // Same gesture conflict `Model3DViewer` already documents and fixes
+  // (2026-11-10): the DXF branch below has its own pointer-driven
+  // pan/pinch-zoom, exposed to the exact same fight with Telegram's
+  // vertical-swipe-to-minimize gesture unless explicitly disabled. The
+  // hook itself always runs (this component stays mounted with `doc`
+  // toggling null/non-null, unlike `Model3DViewer` which mounts/unmounts
+  // whole) — only the effect's BODY is conditioned on `doc`, so the hook
+  // count never changes across renders.
+  useEffect(() => {
+    if (!doc) return;
+    const webApp = getTelegramWebApp();
+    webApp?.disableVerticalSwipes?.();
+    return () => webApp?.enableVerticalSwipes?.();
+  }, [doc]);
+
   if (!doc) return null;
   const isDxf = /\.dxf$/i.test(doc.name);
 
@@ -37,7 +54,7 @@ export function DocumentPreview({ doc, onClose }: { doc: { id: string; name: str
               <X className="h-5 w-5" />
             </DialogPrimitive.Close>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             {isDxf ? (
               <Dxf2DViewer url={doc.url} />
             ) : (

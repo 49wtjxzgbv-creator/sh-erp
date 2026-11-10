@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatEur } from '@/lib/utils';
+import { getTelegramWebApp } from './telegram-webapp';
 import { useCreatePriceProposal } from './use-sourcing-app';
 import type { RealSupplierPrice } from './sourcing-app-client';
 
@@ -24,10 +25,16 @@ export function RealSupplierRow({ productId, supplier, canPropose }: { productId
   async function submit() {
     const proposedPriceEur = Number(price);
     if (!Number.isFinite(proposedPriceEur) || proposedPriceEur <= 0) return;
-    await createProposal.mutateAsync({ productId, supplierId: supplier.id, proposedPriceEur, note: note.trim() || undefined });
-    setProposing(false);
-    setPrice('');
-    setNote('');
+    try {
+      await createProposal.mutateAsync({ productId, supplierId: supplier.id, proposedPriceEur, note: note.trim() || undefined });
+      getTelegramWebApp()?.HapticFeedback.notificationOccurred('success');
+      setProposing(false);
+      setPrice('');
+      setNote('');
+    } catch {
+      getTelegramWebApp()?.HapticFeedback.notificationOccurred('error');
+      getTelegramWebApp()?.showAlert('Не вдалося надіслати пропозицію ціни. Спробуйте ще раз.');
+    }
   }
 
   return (

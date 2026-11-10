@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { MobileSheet } from './mobile-sheet';
 import { StatusPill } from './status-pill';
 import { ContactLinks } from './contact-links';
@@ -27,6 +27,8 @@ const STATUS_OPTIONS: Array<{ status: OutreachStatus; label: string }> = [
  * list), and this avoids adding one just for this sheet.
  */
 export function CandidateSheet({ candidateId, onClose }: { candidateId: string | null; onClose: () => void }) {
+  const noteFieldId = useId();
+  const priceFieldId = useId();
   const { data: candidates } = useCandidates();
   const candidate = candidates?.find((c) => c.id === candidateId) ?? null;
   const updateOutreach = useUpdateOutreach();
@@ -104,10 +106,8 @@ export function CandidateSheet({ candidateId, onClose }: { candidateId: string |
                   type="button"
                   disabled={updateOutreach.isPending}
                   onClick={() => setStatus(opt.status)}
-                  className={cn(
-                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors active:opacity-70 disabled:opacity-50',
-                    candidate.status === opt.status ? 'ring-2' : '',
-                  )}
+                  aria-pressed={candidate.status === opt.status}
+                  className={cn('rounded-lg px-3 py-2 text-sm font-medium transition-colors active:opacity-70 disabled:opacity-50')}
                   style={{ background: 'var(--tg-secondary-bg)', ...(candidate.status === opt.status ? { boxShadow: `0 0 0 2px var(--tg-link)` } : {}) }}
                 >
                   {opt.label}
@@ -117,8 +117,9 @@ export function CandidateSheet({ candidateId, onClose }: { candidateId: string |
           </section>
 
           <section>
-            <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Нотатка</p>
+            <label htmlFor={noteFieldId} className="mb-1.5 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Нотатка</label>
             <textarea
+              id={noteFieldId}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
@@ -129,8 +130,8 @@ export function CandidateSheet({ candidateId, onClose }: { candidateId: string |
           </section>
 
           <section>
-            <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Названа ціна (€)</p>
-            <Input value={quotedPrice} onChange={(e) => setQuotedPrice(e.target.value)} placeholder="напр. 150.50" inputMode="decimal" />
+            <label htmlFor={priceFieldId} className="mb-1.5 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Названа ціна (€)</label>
+            <Input id={priceFieldId} value={quotedPrice} onChange={(e) => setQuotedPrice(e.target.value)} placeholder="напр. 150.50" inputMode="decimal" />
           </section>
 
           <Button className="w-full" onClick={saveNoteAndQuote} loading={updateOutreach.isPending}>
