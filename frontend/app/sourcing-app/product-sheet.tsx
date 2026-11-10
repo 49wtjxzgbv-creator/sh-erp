@@ -5,6 +5,7 @@ import { MobileSheet } from './mobile-sheet';
 import { PriceChips } from './price-chips';
 import { StatusPill } from './status-pill';
 import { Model3DViewer } from './model-3d-viewer';
+import { DocumentPreview } from './document-preview';
 import { AddCandidateSheet } from './add-candidate-sheet';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,6 +36,7 @@ export function ProductSheet({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [show3d, setShow3d] = useState(false);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ id: string; name: string; url: string } | null>(null);
 
   // "при закриті і відкритті цього ж товару постійно відкривається 3д чи
   // фото" (2026-11-10 real user report): this component never unmounts
@@ -47,6 +49,7 @@ export function ProductSheet({
     setLightboxIndex(null);
     setShow3d(false);
     setShowAddCandidate(false);
+    setPreviewDoc(null);
     setCopied(false);
   }, [productId]);
 
@@ -159,19 +162,16 @@ export function ProductSheet({
               <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Документи</p>
               <div className="space-y-1.5">
                 {product.documents.map((doc) => (
-                  <a
+                  <button
                     key={doc.id}
-                    href={doc.url}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      getTelegramWebApp()?.openLink(doc.url);
-                    }}
-                    className="flex items-center gap-2 rounded-lg p-2.5 text-sm"
+                    type="button"
+                    onClick={() => setPreviewDoc(doc)}
+                    className="flex w-full items-center gap-2 rounded-lg p-2.5 text-left text-sm active:opacity-70"
                     style={{ background: 'var(--tg-secondary-bg)' }}
                   >
                     <span>{documentIcon(doc.name)}</span>
                     <span className="truncate">{doc.name}</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             </section>
@@ -215,6 +215,7 @@ export function ProductSheet({
         <PhotoLightbox src={product.photoUrls[lightboxIndex]} alt={product.name} onClose={() => setLightboxIndex(null)} />
       )}
       {product?.modelUrl && show3d && <Model3DViewer src={product.modelUrl} onClose={() => setShow3d(false)} />}
+      <DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       {product?.category && (
         <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} fixedCategory={product.category} />
       )}
