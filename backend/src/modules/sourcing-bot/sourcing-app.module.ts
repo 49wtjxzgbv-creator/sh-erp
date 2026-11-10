@@ -3,6 +3,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { FilesModule } from '../files/files.module';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
+import { DeepSeekAdapter } from '../ai/providers/deepseek.adapter';
 import { SourcingBotModule } from './sourcing-bot.module';
 import { SourcingAppController } from './sourcing-app.controller';
 import { SourcingAppService } from './sourcing-app.service';
@@ -16,8 +17,9 @@ import { TelegramWebAppAuthGuard } from './telegram-webapp-auth.guard';
  * copies that drift) — this module adds no new Telegram bot/token, no new
  * long-polling loop, just a guarded REST API on top of the same data.
  *
- * `AiSettingsService`/`GeminiAdapter` (2026-11-10, name translation) are
- * provided directly here rather than importing the full `AiModule` —
+ * `AiSettingsService`/`GeminiAdapter`/`DeepSeekAdapter` (2026-11-10, name
+ * translation) are provided directly here rather than importing the full
+ * `AiModule` —
  * that module's own tool registry transitively drags in Bom/Sales/
  * Inventory/Hr/Reports, exactly the unrelated coupling this standalone
  * process's isolation is meant to avoid (see `sourcing-bot.module.ts`'s
@@ -28,6 +30,6 @@ import { TelegramWebAppAuthGuard } from './telegram-webapp-auth.guard';
 @Module({
   imports: [PrismaModule, FilesModule, SourcingBotModule],
   controllers: [SourcingAppController],
-  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter],
+  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter, DeepSeekAdapter],
 })
 export class SourcingAppModule {}

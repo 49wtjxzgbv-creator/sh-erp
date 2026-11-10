@@ -4,9 +4,15 @@ import { formatEur } from '@/lib/utils';
 import { ContactLinks } from './contact-links';
 import type { RealSupplier } from './sourcing-app-client';
 
-export function SupplierCard({ supplier }: { supplier: RealSupplier }) {
+/** "коли ми натискаємо на якогось то відкривався список товарів які вони постачають" (2026-11-10) — the whole card is a button opening the full product list in `SupplierSheet`; this preview keeps showing just the first 5. */
+export function SupplierCard({ supplier, onClick }: { supplier: RealSupplier; onClick: () => void }) {
   return (
-    <div className="rounded-xl p-3" style={{ background: 'var(--tg-section-bg)' }}>
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl p-3 text-left active:opacity-70"
+      style={{ background: 'var(--tg-section-bg)' }}
+    >
       <p className="text-sm font-semibold">🏭 {supplier.name}</p>
       <ContactLinks phone={supplier.phone} email={supplier.email} website={null} />
       <p className="mt-2 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>
@@ -23,6 +29,6 @@ export function SupplierCard({ supplier }: { supplier: RealSupplier }) {
           <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>і ще {supplier.products.length - 5}…</p>
         )}
       </div>
-    </div>
+    </button>
   );
 }

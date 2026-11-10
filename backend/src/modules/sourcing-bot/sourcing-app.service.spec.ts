@@ -5,6 +5,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   let filesService: any;
   let aiSettingsService: any;
   let geminiAdapter: any;
+  let deepSeekAdapter: any;
   let tx: any;
   let service: SourcingAppService;
 
@@ -26,9 +27,13 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
       listForEntities: jest.fn().mockResolvedValue({}),
     };
-    aiSettingsService = { getGeminiApiKey: jest.fn().mockResolvedValue('test-gemini-key') };
+    aiSettingsService = {
+      getProvider: jest.fn().mockResolvedValue('gemini'),
+      getEffectiveApiKey: jest.fn().mockResolvedValue('test-gemini-key'),
+    };
     geminiAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва' }] } }) };
-    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter);
+    deepSeekAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва (DeepSeek)' }] } }) };
+    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter);
   });
 
   describe('getCategories', () => {
@@ -300,7 +305,8 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('uses the platform/company Gemini key and returns the translated text', async () => {
       const result = await service.translateName(identity as any, 'Rillenkugellager-6205-2RS');
 
-      expect(aiSettingsService.getGeminiApiKey).toHaveBeenCalledWith('c1');
+      expect(aiSettingsService.getProvider).toHaveBeenCalledWith('c1');
+      expect(aiSettingsService.getEffectiveApiKey).toHaveBeenCalledWith('c1');
       expect(geminiAdapter.generateContent).toHaveBeenCalledWith(
         [{ role: 'user', parts: [{ text: expect.stringContaining('Rillenkugellager-6205-2RS') }] }],
         'test-gemini-key',
@@ -308,7 +314,25 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result).toEqual({ translated: 'Перекладена назва' });
     });
 
-    it('throws a coded error when Gemini returns no text at all', async () => {
+    // "переклад не працює" (2026-11-10 follow-up) — a company that switched
+    // to DeepSeek was still being routed through GeminiAdapter with a
+    // Gemini-only key lookup, which silently failed. Routes through
+    // DeepSeekAdapter instead whenever that's the company's own provider.
+    it('routes through DeepSeekAdapter when that is the company\'s configured provider', async () => {
+      aiSettingsService.getProvider.mockResolvedValue('deepseek');
+      aiSettingsService.getEffectiveApiKey.mockResolvedValue('test-deepseek-key');
+
+      const result = await service.translateName(identity as any, 'Rillenkugellager-6205-2RS');
+
+      expect(deepSeekAdapter.generateContent).toHaveBeenCalledWith(
+        [{ role: 'user', parts: [{ text: expect.stringContaining('Rillenkugellager-6205-2RS') }] }],
+        'test-deepseek-key',
+      );
+      expect(geminiAdapter.generateContent).not.toHaveBeenCalled();
+      expect(result).toEqual({ translated: 'Перекладена назва (DeepSeek)' });
+    });
+
+    it('throws a coded error when the provider returns no text at all', async () => {
       geminiAdapter.generateContent.mockResolvedValue({ message: { role: 'model', parts: [] } });
       await expect(service.translateName(identity as any, 'test')).rejects.toMatchObject({ response: { code: 'SOURCING_TRANSLATE_EMPTY' } });
     });

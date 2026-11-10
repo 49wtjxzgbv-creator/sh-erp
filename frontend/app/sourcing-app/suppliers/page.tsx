@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSuppliers, useCandidates, useMe } from '../use-sourcing-app';
 import { SupplierCard } from '../supplier-card';
+import { SupplierSheet } from '../supplier-sheet';
 import { CandidateRow } from '../candidate-row';
 import { CandidateSheet } from '../candidate-sheet';
 import { AddCandidateSheet } from '../add-candidate-sheet';
+import { ProductSheet } from '../product-sheet';
 
 type Tab = 'real' | 'candidates';
 
@@ -17,6 +19,8 @@ export default function SuppliersPage() {
   const [region, setRegion] = useState<string | undefined>(undefined);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [showAddCandidate, setShowAddCandidate] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   // Already past the shell's own SDK-readiness gate by the time any page
   // mounts (SourcingAppShell only renders `children` once the Telegram SDK
@@ -64,7 +68,7 @@ export default function SuppliersPage() {
           ) : !realSuppliers || realSuppliers.length === 0 ? (
             <p className="p-6 text-center text-sm" style={{ color: 'var(--tg-hint)' }}>Жоден постачальник ще не прив&apos;язаний.</p>
           ) : (
-            realSuppliers.map((s) => <SupplierCard key={s.id} supplier={s} />)
+            realSuppliers.map((s) => <SupplierCard key={s.id} supplier={s} onClick={() => setSelectedSupplierId(s.id)} />)
           )
         ) : loadingCandidates ? (
           <>
@@ -80,6 +84,12 @@ export default function SuppliersPage() {
 
       <CandidateSheet candidateId={selectedCandidateId} onClose={() => setSelectedCandidateId(null)} />
       <AddCandidateSheet open={showAddCandidate} onClose={() => setShowAddCandidate(false)} />
+      <SupplierSheet
+        supplier={realSuppliers?.find((s) => s.id === selectedSupplierId) ?? null}
+        onClose={() => setSelectedSupplierId(null)}
+        onOpenProduct={(productId) => setSelectedProductId(productId)}
+      />
+      <ProductSheet productId={selectedProductId} onClose={() => setSelectedProductId(null)} onOpenCandidate={(candidateId) => setSelectedCandidateId(candidateId)} />
     </div>
   );
 }

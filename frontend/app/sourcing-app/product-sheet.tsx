@@ -31,7 +31,7 @@ export function ProductSheet({
   // Already past the shell's own SDK-readiness gate by the time this sheet can even open.
   const { data: me } = useMe(true);
   // "додай можливість перекладу назв товарів на українську" (2026-11-10) — called with a hook's own key, not a mutation, so retapping the same name reuses the cached translation (see useTranslateName's own comment).
-  const { data: translation, refetch: translate, isFetching: isTranslating } = useTranslateName(product?.name ?? '');
+  const { data: translation, error: translateError, refetch: translate, isFetching: isTranslating } = useTranslateName(product?.name ?? '');
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [show3d, setShow3d] = useState(false);
@@ -130,6 +130,8 @@ export function ProductSheet({
               </button>
             </div>
             {translation && <p className="mt-0.5 text-sm" style={{ color: 'var(--tg-link)' }}>{translation.translated}</p>}
+            {/* "натискаю і нічого не відбувається" (2026-11-10) — a failed translate call used to fail silently; now surfaced so a provider/key issue is visible instead of looking like a dead button. */}
+            {translateError && <p className="mt-0.5 text-sm text-red-500">{translateError instanceof Error ? translateError.message : 'Переклад не вдався.'}</p>}
             <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>{product.article}</p>
           </div>
 

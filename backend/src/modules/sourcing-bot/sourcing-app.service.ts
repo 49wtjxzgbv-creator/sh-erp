@@ -4,6 +4,7 @@ import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
+import { DeepSeekAdapter } from '../ai/providers/deepseek.adapter';
 import { AiProviderException } from '../ai/providers/ai-provider.port';
 import { CodedBadRequestException, CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 import { ResolvedSourcingIdentity } from './sourcing-identity.service';
@@ -44,6 +45,7 @@ export class SourcingAppService {
     private readonly filesService: FilesService,
     private readonly aiSettingsService: AiSettingsService,
     private readonly geminiAdapter: GeminiAdapter,
+    private readonly deepSeekAdapter: DeepSeekAdapter,
   ) {}
 
   async getCategories(identity: ResolvedSourcingIdentity) {
@@ -541,27 +543,37 @@ export class SourcingAppService {
    * "додай можливість перекладу назв товарів на українську" (2026-11-10)
    * — most product names in this catalog are German (imported from a
    * German supplier, see expand-sourcing-catalog.ts), so an on-demand,
-   * per-name translate button is far more useful than nothing. Uses the
-   * SAME platform-provided Gemini key the main ERP's AI module falls
-   * back to (`AiSettingsService#getGeminiApiKey` — per-company key if the
-   * company ever sets one, else `AI_PLATFORM_API_KEY`) — but deliberately
-   * injects `AiSettingsService`/`GeminiAdapter` directly here rather than
-   * importing the full `AiModule`, which transitively pulls in Bom/Sales/
-   * Inventory/Hr/Reports (its tool registry's dependencies) — exactly the
-   * kind of heavy, unrelated coupling this standalone process's isolation
-   * is meant to avoid (see sourcing-bot.module.ts's own header comment).
+   * per-name translate button is far more useful than nothing. Resolves
+   * the company's OWN configured provider/key (`AiSettingsService#getProvider`
+   * + `getEffectiveApiKey` — same pair `AiService#resolveProvider` uses in
+   * the main ERP), not hardcoded Gemini: a company that switched to
+   * DeepSeek has a DeepSeek key, not a Gemini one, and there is no
+   * platform-wide DeepSeek fallback (see `getEffectiveApiKey`'s own
+   * comment) — hardcoding Gemini here silently failed for exactly that
+   * company ("переклад не працює", 2026-11-10 follow-up) since
+   * `AI_PLATFORM_API_KEY` was never actually configured in this
+   * environment either. Deliberately injects `AiSettingsService`/
+   * `GeminiAdapter`/`DeepSeekAdapter` directly here rather than importing
+   * the full `AiModule`, which transitively pulls in Bom/Sales/Inventory/
+   * Hr/Reports (its tool registry's dependencies) — exactly the kind of
+   * heavy, unrelated coupling this standalone process's isolation is
+   * meant to avoid (see sourcing-bot.module.ts's own header comment).
    * Deliberately skips `AiActionsService`'s quota/usage-logging (that
    * machinery needs the tool registry too) — a single short product-name
    * translation is negligible token volume next to the chat
    * assistant/invoice-OCR features that system actually guards against.
    */
   async translateName(identity: ResolvedSourcingIdentity, text: string): Promise<{ translated: string }> {
-    // "переклад не працює" (2026-11-10, live): AiSettingsService#getGeminiApiKey
-    // reads `prisma.tenant` directly, which throws "No tenant context
-    // available" unless called from inside an active
-    // runInTenantTransaction scope — the exact same gotcha already fixed
-    // for FilesService calls elsewhere in this file.
-    const apiKey = await this.prisma.runInTenantTransaction(tenantCtx(identity), () => this.aiSettingsService.getGeminiApiKey(identity.companyId));
+    // "переклад не працює" (2026-11-10, live): AiSettingsService reads
+    // `prisma.tenant` directly, which throws "No tenant context available"
+    // unless called from inside an active runInTenantTransaction scope —
+    // the exact same gotcha already fixed for FilesService calls elsewhere
+    // in this file.
+    const { provider, apiKey } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async () => ({
+      provider: await this.aiSettingsService.getProvider(identity.companyId),
+      apiKey: await this.aiSettingsService.getEffectiveApiKey(identity.companyId),
+    }));
+    const adapter = provider === 'deepseek' ? this.deepSeekAdapter : this.geminiAdapter;
     const prompt =
       'Переклади цю технічну назву деталі/товару українською мовою. ' +
       'Поверни ТІЛЬКИ переклад, без пояснень і без лапок. ' +
@@ -569,7 +581,7 @@ export class SourcingAppService {
       'Збережи числа, артикули та розміри як є.\n\n' +
       text;
     try {
-      const result = await this.geminiAdapter.generateContent([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
+      const result = await adapter.generateContent([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
       const translated = result.message.parts.find((p) => p.text !== undefined)?.text?.trim();
       if (!translated) throw new CodedBadRequestException('SOURCING_TRANSLATE_EMPTY', 'Переклад не вдався — порожня відповідь.');
       return { translated };
