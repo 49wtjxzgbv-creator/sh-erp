@@ -137,6 +137,30 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         { id: 'f3', name: 'part.dxf', url: 'https://example.test/part.dxf' },
       ]);
     });
+
+    // "в описі також має писати до якого виробу специфікації він належить"
+    // (2026-11-10)
+    it('lists every виріб (Assembly) this product is a direct component of, deduped, with photo', async () => {
+      tx.product.findUnique.mockResolvedValue({ id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: null, germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null });
+      tx.assemblyComponent.findMany.mockResolvedValue([
+        { assembly: { id: 'asm1', name: 'Моноблок А', article: 'M-A' } },
+        { assembly: { id: 'asm1', name: 'Моноблок А', article: 'M-A' } }, // same assembly twice (e.g. two BOM lines) — must not duplicate
+        { assembly: { id: 'asm2', name: 'Моноблок Б', article: null } },
+      ]);
+      tx.fileAsset.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.entityType === 'Assembly' && where.entityId?.in?.includes('asm1') ? [{ id: 'photo1', entityId: 'asm1' }] : []),
+      );
+
+      const result = await service.getProductDetail(identity as any, 'p1');
+
+      expect(tx.assemblyComponent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productId: 'p1', componentType: 'PRODUCT', assembly: { deletedAt: null } } }),
+      );
+      expect(result.usedInAssemblies).toEqual([
+        { id: 'asm1', name: 'Моноблок А', article: 'M-A', photoUrl: 'https://example.test/photo.jpg' },
+        { id: 'asm2', name: 'Моноблок Б', article: null, photoUrl: null },
+      ]);
+    });
   });
 
   describe('getAssemblies (2026-11-10 — "пошук товарів не по категоріям а по виробах")', () => {

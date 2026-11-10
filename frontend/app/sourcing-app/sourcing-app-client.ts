@@ -139,6 +139,8 @@ export interface ProductDetail {
   category: { id: string; name: string; rfqTemplate: string } | null;
   realSuppliers: RealSupplierPrice[];
   candidateSuppliers: CandidateSupplier[];
+  /** "до якого виробу специфікації він належить" (2026-11-10) — every виріб (Assembly) this product is a direct BOM component of. */
+  usedInAssemblies: Array<{ id: string; name: string; article: string | null; photoUrl: string | null }>;
 }
 
 export interface RealSupplier {

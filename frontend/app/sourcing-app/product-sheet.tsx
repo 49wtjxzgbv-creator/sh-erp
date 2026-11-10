@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { MobileSheet } from './mobile-sheet';
 import { PriceChips } from './price-chips';
 import { StatusPill } from './status-pill';
@@ -27,6 +28,7 @@ export function ProductSheet({
   onClose: () => void;
   onOpenCandidate: (candidateId: string) => void;
 }) {
+  const router = useRouter();
   const { data: product, isLoading } = useProductDetail(productId);
   // Already past the shell's own SDK-readiness gate by the time this sheet can even open.
   const { data: me } = useMe(true);
@@ -52,6 +54,11 @@ export function ProductSheet({
     setPreviewDoc(null);
     setCopied(false);
   }, [productId]);
+
+  function openAssembly(assemblyId: string) {
+    onClose();
+    router.push(`/sourcing-app/assemblies/${assemblyId}`);
+  }
 
   async function copyRfq() {
     if (!product?.category) return;
@@ -134,6 +141,39 @@ export function ProductSheet({
             {translateError && <p className="mt-0.5 text-sm text-red-500">{translateError instanceof Error ? translateError.message : 'Переклад не вдався.'}</p>}
             <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>{product.article}</p>
           </div>
+
+          {/* "в описі також має писати до якого виробу специфікації він
+              належить" (2026-11-10) */}
+          {product.usedInAssemblies.length > 0 && (
+            <section>
+              <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Входить до виробу</p>
+              <div className="space-y-1.5">
+                {product.usedInAssemblies.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => openAssembly(a.id)}
+                    className="flex w-full items-center gap-2.5 rounded-lg p-2.5 text-left text-sm active:opacity-70"
+                    style={{ background: 'var(--tg-secondary-bg)' }}
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md" style={{ background: 'var(--tg-bg)' }}>
+                      {a.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL thumbnail
+                        <img src={a.photoUrl} alt="" className="h-full w-full object-contain" />
+                      ) : (
+                        '🏭'
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {a.article && <span style={{ color: 'var(--tg-hint)' }}>{a.article} — </span>}
+                      {a.name}
+                    </span>
+                    <span style={{ color: 'var(--tg-hint)' }}>›</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Наші ціни</p>

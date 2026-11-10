@@ -353,11 +353,24 @@ export class SourcingAppService {
         ? await tx.sourcingCategory.findUnique({ where: { id: product.sourcingCategoryId }, select: { id: true, name: true, rfqTemplate: true } })
         : null;
 
-      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category };
+      // "в описі також має писати до якого виробу специфікації він
+      // належить" (2026-11-10) — reverse lookup, same shape ProductsService
+      // #getUsedInAssemblies already uses in the main ERP's own product
+      // detail page. Direct parents only (this component line's own
+      // assembly), not a recursive "grandparent" walk — matches what the
+      // user actually asked for ("до якого виробу він належить").
+      const assemblyLinks = await tx.assemblyComponent.findMany({
+        where: { productId: product.id, componentType: 'PRODUCT', assembly: { deletedAt: null } },
+        select: { assembly: { select: { id: true, name: true, article: true } } },
+      });
+      const usedInAssemblies = [...new Map(assemblyLinks.map((l) => [l.assembly.id, l.assembly])).values()];
+      const assemblyPhotoUrlById = await this.photoUrlsByEntityId(tx, identity, 'Assembly', 'ASSEMBLY_PHOTO', usedInAssemblies.map((a) => a.id));
+
+      return { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById };
     });
 
     if (!result) throw new CodedNotFoundException('SOURCING_PRODUCT_NOT_FOUND', 'Product not found.');
-    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category } = result;
+    const { product, supplierLinks, photoUrls, modelUrl, documents, candidates, category, usedInAssemblies, assemblyPhotoUrlById } = result;
 
     return {
       id: product.id,
@@ -368,6 +381,12 @@ export class SourcingAppService {
       documents,
       prices: this.toPriceList(product),
       category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
+      usedInAssemblies: usedInAssemblies.map((a) => ({
+        id: a.id,
+        name: a.name,
+        article: a.article,
+        photoUrl: assemblyPhotoUrlById.get(a.id) ?? null,
+      })),
       realSuppliers: supplierLinks.map((link) => ({
         id: link.supplier.id,
         name: link.supplier.name,
