@@ -67,6 +67,24 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       await service.getCategoryProducts(identity as any, 'all', undefined, 0);
       expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ sourcingCategoryId: { not: null } }) });
     });
+
+    // "фільтри в списку товарів — лише без жодного постачальника / лише без ціни" (2026-11-10)
+    it('filter=noSupplier adds a suppliers:{none:{}} clause', async () => {
+      await service.getCategoryProducts(identity as any, 'cat1', undefined, 0, 'noSupplier');
+      expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ suppliers: { none: {} } }) });
+    });
+
+    it('filter=noPrice adds a sellPriceEur:null clause', async () => {
+      await service.getCategoryProducts(identity as any, 'cat1', undefined, 0, 'noPrice');
+      expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ sellPriceEur: null }) });
+    });
+
+    it('an unrecognized filter value is ignored (no extra clause)', async () => {
+      await service.getCategoryProducts(identity as any, 'cat1', undefined, 0, 'bogus');
+      const where = tx.product.count.mock.calls[0][0].where;
+      expect(where).not.toHaveProperty('suppliers');
+      expect(where).not.toHaveProperty('sellPriceEur');
+    });
   });
 
   describe('getProductDetail', () => {
@@ -195,6 +213,12 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
 
       expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ id: { in: expect.arrayContaining(['p1', 'p2']) } }) });
       expect(result.items).toHaveLength(2);
+    });
+
+    it('filter=noSupplier/noPrice composes with the flattened id list', async () => {
+      tx.assemblyComponent.findMany.mockResolvedValue([{ componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null }]);
+      await service.getAssemblyProducts(identity as any, 'asm1', undefined, 0, 'noSupplier');
+      expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ suppliers: { none: {} } }) });
     });
 
     it('recurses through ASSEMBLY lines to collect sub-assembly products too', async () => {

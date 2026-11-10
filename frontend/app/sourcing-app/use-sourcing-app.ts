@@ -39,10 +39,13 @@ export function useCategories() {
   });
 }
 
-export function useCategoryProducts(categoryId: string, search: string, page: number) {
+/** "фільтри в списку товарів — лише без жодного постачальника / лише без ціни" (2026-11-10). */
+export type ProductFilter = 'noSupplier' | 'noPrice' | undefined;
+
+export function useCategoryProducts(categoryId: string, search: string, page: number, filter?: ProductFilter) {
   return useQuery({
-    queryKey: ['sourcing-app', 'categories', categoryId, 'products', search, page],
-    queryFn: () => sourcingAppClient.get<ProductListResponse>(`categories/${categoryId}/products`, { search: search || undefined, page: String(page) }),
+    queryKey: ['sourcing-app', 'categories', categoryId, 'products', search, page, filter],
+    queryFn: () => sourcingAppClient.get<ProductListResponse>(`categories/${categoryId}/products`, { search: search || undefined, page: String(page), filter }),
     enabled: Boolean(categoryId),
   });
 }
@@ -56,10 +59,10 @@ export function useAssemblies() {
   });
 }
 
-export function useAssemblyProducts(assemblyId: string, search: string, page: number) {
+export function useAssemblyProducts(assemblyId: string, search: string, page: number, filter?: ProductFilter) {
   return useQuery({
-    queryKey: ['sourcing-app', 'assemblies', assemblyId, 'products', search, page],
-    queryFn: () => sourcingAppClient.get<ProductListResponse>(`assemblies/${assemblyId}/products`, { search: search || undefined, page: String(page) }),
+    queryKey: ['sourcing-app', 'assemblies', assemblyId, 'products', search, page, filter],
+    queryFn: () => sourcingAppClient.get<ProductListResponse>(`assemblies/${assemblyId}/products`, { search: search || undefined, page: String(page), filter }),
     enabled: Boolean(assemblyId),
   });
 }
@@ -91,10 +94,10 @@ export function useProductDetail(productId: string | null) {
   });
 }
 
-export function useSearch(query: string) {
+export function useSearch(query: string, filter?: ProductFilter) {
   return useQuery({
-    queryKey: ['sourcing-app', 'search', query],
-    queryFn: () => sourcingAppClient.get<{ items: ProductListResponse['items'] }>('search', { q: query }),
+    queryKey: ['sourcing-app', 'search', query, filter],
+    queryFn: () => sourcingAppClient.get<{ items: ProductListResponse['items'] }>('search', { q: query, filter }),
     enabled: query.trim().length >= 2,
   });
 }

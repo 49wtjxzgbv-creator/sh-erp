@@ -5,11 +5,12 @@ import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAssemblyProducts } from '../../use-sourcing-app';
+import { useAssemblyProducts, type ProductFilter } from '../../use-sourcing-app';
 import { useTelegramBackButton } from '../../use-telegram-back-button';
 import { ProductRow } from '../../product-row';
 import { ProductSheet } from '../../product-sheet';
 import { CandidateSheet } from '../../candidate-sheet';
+import { ProductFilterChips } from '../../product-filter-chips';
 
 /** "пошук товарів не по категоріям а по виробах... відкриваємо [специфікацію] і у нас весь список товарів які в неї входять" (2026-11-10) — same list/sheet shape as categories/[id]/page.tsx, just backed by a flattened BOM instead of a sourcing category. */
 export default function AssemblyProductsPage() {
@@ -17,6 +18,7 @@ export default function AssemblyProductsPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState<ProductFilter>(undefined);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
@@ -24,19 +26,22 @@ export default function AssemblyProductsPage() {
   // на головне" (2026-11-10) — see categories/[id]/page.tsx's own comment.
   useTelegramBackButton(() => router.back());
 
-  const { data, isLoading } = useAssemblyProducts(params.id, search, page);
+  const { data, isLoading } = useAssemblyProducts(params.id, search, page, filter);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 p-3" style={{ background: 'var(--tg-bg)' }}>
-        <Input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-          placeholder="Пошук за артикулом або назвою…"
-        />
+      <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>
+        <div className="p-3 pb-2">
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Пошук за артикулом або назвою…"
+          />
+        </div>
+        <ProductFilterChips value={filter} onChange={(next) => { setFilter(next); setPage(0); }} />
       </div>
 
       <div className="flex-1">

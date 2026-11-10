@@ -3,14 +3,16 @@
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSearch } from '../use-sourcing-app';
+import { useSearch, type ProductFilter } from '../use-sourcing-app';
 import { ProductRow } from '../product-row';
 import { ProductSheet } from '../product-sheet';
 import { CandidateSheet } from '../candidate-sheet';
+import { ProductFilterChips } from '../product-filter-chips';
 
 export default function SourcingAppSearchPage() {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
+  const [filter, setFilter] = useState<ProductFilter>(undefined);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
@@ -19,17 +21,20 @@ export default function SourcingAppSearchPage() {
     return () => clearTimeout(timeout);
   }, [query]);
 
-  const { data, isFetching } = useSearch(debounced);
+  const { data, isFetching } = useSearch(debounced, filter);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 p-3" style={{ background: 'var(--tg-bg)' }}>
-        <Input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Пошук за артикулом або назвою у всьому каталозі…"
-        />
+      <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>
+        <div className="p-3 pb-2">
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Пошук за артикулом або назвою у всьому каталозі…"
+          />
+        </div>
+        <ProductFilterChips value={filter} onChange={setFilter} />
       </div>
 
       <div className="flex-1">

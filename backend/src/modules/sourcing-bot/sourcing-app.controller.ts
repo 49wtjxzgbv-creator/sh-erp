@@ -41,8 +41,9 @@ export class SourcingAppController {
     @Param('id') categoryId: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
+    @Query('filter') filter?: string,
   ) {
-    return this.sourcingAppService.getCategoryProducts(identity, categoryId, search, Number(page ?? 0) || 0);
+    return this.sourcingAppService.getCategoryProducts(identity, categoryId, search, Number(page ?? 0) || 0, filter);
   }
 
   @Get('assemblies')
@@ -58,8 +59,9 @@ export class SourcingAppController {
     @Param('id') assemblyId: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
+    @Query('filter') filter?: string,
   ) {
-    return this.sourcingAppService.getAssemblyProducts(identity, assemblyId, search, Number(page ?? 0) || 0);
+    return this.sourcingAppService.getAssemblyProducts(identity, assemblyId, search, Number(page ?? 0) || 0, filter);
   }
 
   @Get('products/:id')
@@ -70,10 +72,14 @@ export class SourcingAppController {
 
   @Get('search')
   @ApiOperation({ summary: 'Cross-category article/name search among tracked products.' })
-  async search(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Query('q') q?: string) {
+  async search(
+    @CurrentSourcingIdentity() identity: ResolvedSourcingIdentity,
+    @Query('q') q?: string,
+    @Query('filter') filter?: string,
+  ) {
     const query = (q ?? '').trim();
     if (query.length < 2) return { items: [] };
-    return this.sourcingAppService.search(identity, query);
+    return this.sourcingAppService.search(identity, query, filter);
   }
 
   @Get('suppliers')

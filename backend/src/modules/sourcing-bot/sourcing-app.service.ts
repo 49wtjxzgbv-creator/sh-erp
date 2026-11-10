@@ -175,6 +175,22 @@ export class SourcingAppService {
   } as const;
 
   /** Shared by category/assembly product lists and search — one `where` clause in, one paginated+photo-attached `ProductRow[]` out. Not used by `getProductDetail`'s own full card, which needs more fields than this lean projection. */
+  /**
+   * "фільтри в списку товарів — лише без жодного постачальника / лише без
+   * ціни" (2026-11-10) — applied as a plain `where` extension so it
+   * composes with each caller's own scoping (category/assembly/search)
+   * rather than needing its own query path. `noPrice` means our own
+   * `sellPriceEur` specifically — the one field every price chip and cost
+   * calculation in this app is pinned to (see `AssembliesService`'s own
+   * header comment on that convention) — not any of the other four
+   * informational price fields.
+   */
+  private applyProductFilter(where: Record<string, unknown>, filter: string | undefined): Record<string, unknown> {
+    if (filter === 'noSupplier') return { ...where, suppliers: { none: {} } };
+    if (filter === 'noPrice') return { ...where, sellPriceEur: null };
+    return where;
+  }
+
   private async queryProductRows(
     tx: TenantPrismaClient,
     identity: ResolvedSourcingIdentity,
@@ -197,13 +213,16 @@ export class SourcingAppService {
     return { items, total };
   }
 
-  async getCategoryProducts(identity: ResolvedSourcingIdentity, categoryId: string, search: string | undefined, page: number) {
+  async getCategoryProducts(identity: ResolvedSourcingIdentity, categoryId: string, search: string | undefined, page: number, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
-      const where = {
-        sourcingCategoryId: categoryId === ALL_CATEGORIES_ID ? { not: null } : categoryId,
-        deletedAt: null,
-        ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
-      };
+      const where = this.applyProductFilter(
+        {
+          sourcingCategoryId: categoryId === ALL_CATEGORIES_ID ? { not: null } : categoryId,
+          deletedAt: null,
+          ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
+        },
+        filter,
+      );
       const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE });
       return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
     });
@@ -264,29 +283,35 @@ export class SourcingAppService {
     return productIds;
   }
 
-  async getAssemblyProducts(identity: ResolvedSourcingIdentity, assemblyId: string, search: string | undefined, page: number) {
+  async getAssemblyProducts(identity: ResolvedSourcingIdentity, assemblyId: string, search: string | undefined, page: number, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const productIds = [...(await this.flattenAssemblyProductIds(tx, assemblyId, new Set()))];
       if (productIds.length === 0) return { items: [], total: 0, page, pageSize: APP_PAGE_SIZE, hasMore: false };
 
-      const where = {
-        id: { in: productIds },
-        deletedAt: null,
-        ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
-      };
+      const where = this.applyProductFilter(
+        {
+          id: { in: productIds },
+          deletedAt: null,
+          ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
+        },
+        filter,
+      );
       const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE });
       return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
     });
   }
 
-  async search(identity: ResolvedSourcingIdentity, query: string) {
+  async search(identity: ResolvedSourcingIdentity, query: string, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const products = await tx.product.findMany({
-        where: {
-          sourcingCategoryId: { not: null },
-          deletedAt: null,
-          OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
-        },
+        where: this.applyProductFilter(
+          {
+            sourcingCategoryId: { not: null },
+            deletedAt: null,
+            OR: [{ article: { contains: query, mode: 'insensitive' } }, { name: { contains: query, mode: 'insensitive' } }],
+          },
+          filter,
+        ),
         orderBy: { article: 'asc' },
         take: APP_PAGE_SIZE,
         select: {

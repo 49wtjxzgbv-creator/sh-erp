@@ -5,17 +5,19 @@ import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useCategoryProducts } from '../../use-sourcing-app';
+import { useCategoryProducts, type ProductFilter } from '../../use-sourcing-app';
 import { useTelegramBackButton } from '../../use-telegram-back-button';
 import { ProductRow } from '../../product-row';
 import { ProductSheet } from '../../product-sheet';
 import { CandidateSheet } from '../../candidate-sheet';
+import { ProductFilterChips } from '../../product-filter-chips';
 
 export default function CategoryProductsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState<ProductFilter>(undefined);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
@@ -26,19 +28,22 @@ export default function CategoryProductsPage() {
   // tab was actually active, not always the default one.
   useTelegramBackButton(() => router.back());
 
-  const { data, isLoading } = useCategoryProducts(params.id, search, page);
+  const { data, isLoading } = useCategoryProducts(params.id, search, page, filter);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 p-3" style={{ background: 'var(--tg-bg)' }}>
-        <Input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-          placeholder="Пошук за артикулом або назвою…"
-        />
+      <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>
+        <div className="p-3 pb-2">
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Пошук за артикулом або назвою…"
+          />
+        </div>
+        <ProductFilterChips value={filter} onChange={(next) => { setFilter(next); setPage(0); }} />
       </div>
 
       <div className="flex-1">
