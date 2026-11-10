@@ -832,7 +832,12 @@ describe('CustomerOrdersService', () => {
       const { items } = await service.query(user, {});
 
       expect(prisma.tenant.finishedGood.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { productionOrderId: { in: ['po1', 'po-sub'] }, confirmedByExecutionId: { not: null } } }),
+        expect.objectContaining({
+          where: {
+            productionOrderId: { in: ['po1', 'po-sub'] },
+            OR: [{ confirmedByExecutionId: { not: null } }, { status: 'SHIPPED' }],
+          },
+        }),
       );
       expect(items[0].percentComplete).toBe(30); // 3 confirmed on po1 / 10 ordered = 30%, po-sub's unit excluded
     });

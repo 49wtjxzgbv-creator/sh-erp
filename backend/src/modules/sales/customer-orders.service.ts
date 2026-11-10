@@ -299,6 +299,15 @@ export class CustomerOrdersService {
    * Deliberately NOT getItemQuantitySummary's older "completed" (any
    * FinishedGood row, any confirmation state) — kept consistent with this
    * session's Склад "В роботі"/"Готова продукція" split instead.
+   *
+   * ALSO counts a unit already `status: 'SHIPPED'` even if it was never
+   * confirmed via a ProductionExecution (2026-11-10 — real order #440172:
+   * 16 units already shipped to the customer, but confirmedByExecutionId
+   * stayed null because no labor was meant to be charged against THIS
+   * order for them, e.g. built from existing stock/a prior batch — this
+   * metric reads as "% виготовлено", so a unit the customer already has
+   * must count as done regardless of why its own labor confirmation never
+   * happened).
    */
   private async withProductionProgress<T extends Record<string, any>>(
     orders: T[],
@@ -325,7 +334,10 @@ export class CustomerOrdersService {
     const allBatchIds = (batches as any[]).map((b) => b.id);
     const readyGoods = allBatchIds.length
       ? await this.prisma.tenant.finishedGood.findMany({
-          where: { productionOrderId: { in: allBatchIds }, confirmedByExecutionId: { not: null } },
+          where: {
+            productionOrderId: { in: allBatchIds },
+            OR: [{ confirmedByExecutionId: { not: null } }, { status: 'SHIPPED' }],
+          },
           select: { productionOrderId: true },
         })
       : [];
