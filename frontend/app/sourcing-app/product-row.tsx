@@ -1,9 +1,15 @@
 'use client';
 
 import { PriceChips } from './price-chips';
+import { useTranslateName } from './use-sourcing-app';
 import type { ProductRow as ProductRowData } from './sourcing-app-client';
 
 export function ProductRow({ product, onClick }: { product: ProductRowData; onClick: () => void }) {
+  // "перекласти всі" (2026-11-10) — reads the shared translate cache only
+  // (never fetches on its own, `enabled: false`); reactively shows the
+  // translated name the instant `useBulkTranslate`'s own fetch for this
+  // exact product name lands, with zero extra wiring here.
+  const { data: translation } = useTranslateName(product.name);
   return (
     <button
       type="button"
@@ -21,6 +27,7 @@ export function ProductRow({ product, onClick }: { product: ProductRowData; onCl
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{product.article} — {product.name}</p>
+        {translation && <p className="truncate text-xs" style={{ color: 'var(--tg-link)' }}>{translation.translated}</p>}
         <div className="mt-1">
           <PriceChips prices={product.prices} compact />
         </div>

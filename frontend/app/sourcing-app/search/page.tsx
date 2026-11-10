@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSearch, type ProductFilter } from '../use-sourcing-app';
+import { useSearch, useBulkTranslate, type ProductFilter } from '../use-sourcing-app';
 import { ProductRow } from '../product-row';
 import { ProductSheet } from '../product-sheet';
 import { CandidateSheet } from '../candidate-sheet';
@@ -22,6 +23,7 @@ export default function SourcingAppSearchPage() {
   }, [query]);
 
   const { data, isFetching } = useSearch(debounced, filter);
+  const { translateAll, progress } = useBulkTranslate();
 
   return (
     <div className="flex h-full flex-col">
@@ -34,7 +36,22 @@ export default function SourcingAppSearchPage() {
             placeholder="Пошук за артикулом або назвою у всьому каталозі…"
           />
         </div>
-        <ProductFilterChips value={filter} onChange={setFilter} />
+        <div className="flex items-center gap-2 px-3 pb-2">
+          <div className="flex-1 overflow-x-auto">
+            <ProductFilterChips value={filter} onChange={setFilter} />
+          </div>
+          {data && data.items.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              disabled={Boolean(progress)}
+              onClick={() => translateAll(data.items.map((p) => p.name))}
+            >
+              {progress ? `… ${progress.done}/${progress.total}` : '🇺🇦 Перекласти всі'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1">

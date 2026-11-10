@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api-client/types';
 import {
@@ -84,6 +85,57 @@ export function useTranslateName(text: string) {
     staleTime: Infinity,
     retry: false,
   });
+}
+
+/**
+ * "перекласти всі" (2026-11-10) — fans out `useTranslateName`'s own query
+ * through the query client directly, into the EXACT SAME cache keys
+ * (`['sourcing-app', 'translate', name]`) — any `ProductRow`/`ProductSheet`
+ * already mounted for one of these names re-renders the instant its own
+ * translation lands, with no extra plumbing (React Query shares cache
+ * across every observer of the same key, `enabled: false` only skips
+ * THIS hook's own auto-fetch, not its subscription to the cache).
+ * Bounded concurrency, not `Promise.all` over the whole list — matches
+ * `GeminiAdapter`'s own one-shot quota-retry design, not meant to be
+ * hammered by a dozen simultaneous calls at once. Already-cached names
+ * are skipped so retapping "перекласти всі" after opening a few products
+ * individually doesn't re-spend AI calls on those.
+ */
+export function useBulkTranslate() {
+  const qc = useQueryClient();
+  const [progress, setProgress] = useState<{ total: number; done: number } | null>(null);
+  const CONCURRENCY = 3;
+
+  async function translateAll(names: string[]) {
+    const pending = [...new Set(names.filter((n) => n.trim().length > 0))].filter(
+      (n) => qc.getQueryData(['sourcing-app', 'translate', n]) === undefined,
+    );
+    if (pending.length === 0) return;
+    setProgress({ total: pending.length, done: 0 });
+
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < pending.length) {
+        const name = pending[nextIndex++];
+        try {
+          await qc.fetchQuery({
+            queryKey: ['sourcing-app', 'translate', name],
+            queryFn: () => sourcingAppClient.post<{ translated: string }>('translate', { text: name }),
+            staleTime: Infinity,
+          });
+        } catch {
+          // Leave this one name uncached — the per-product 🇺🇦 button in
+          // ProductSheet still works for it individually; one failure
+          // (e.g. provider misconfigured) must not abort the whole batch.
+        }
+        setProgress((s) => (s ? { ...s, done: s.done + 1 } : s));
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker));
+    setProgress(null);
+  }
+
+  return { translateAll, progress };
 }
 
 export function useProductDetail(productId: string | null) {
