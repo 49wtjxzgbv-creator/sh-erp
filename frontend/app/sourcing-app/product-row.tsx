@@ -2,6 +2,7 @@
 
 import { PriceChips } from './price-chips';
 import { useTranslateName } from './use-sourcing-app';
+import { formatWeightKg } from './format-weight';
 import type { ProductRow as ProductRowData } from './sourcing-app-client';
 
 export function ProductRow({ product, onClick }: { product: ProductRowData; onClick: () => void }) {
@@ -32,11 +33,10 @@ export function ProductRow({ product, onClick }: { product: ProductRowData; onCl
           <PriceChips prices={product.prices} compact />
         </div>
       </div>
-      {product.supplierCount > 0 && (
-        <span className="shrink-0 text-xs" style={{ color: 'var(--tg-hint)' }}>
-          🏭 {product.supplierCount}
-        </span>
-      )}
+      <div className="flex shrink-0 flex-col items-end gap-0.5 text-xs" style={{ color: 'var(--tg-hint)' }}>
+        {product.supplierCount > 0 && <span>🏭 {product.supplierCount}</span>}
+        {product.weightKg !== null && <span>⚖️ {formatWeightKg(product.weightKg)}</span>}
+      </div>
     </button>
   );
 }

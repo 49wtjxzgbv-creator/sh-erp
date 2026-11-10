@@ -29,6 +29,8 @@ export interface ProductRow {
   photoUrl: string | null;
   prices: Array<{ field: string; icon: string; label: string; value: number }>;
   supplierCount: number;
+  /** "до кожного товару ще додати вагу" (2026-11-11) — Product.weightPerUnitKg, the same field AssembliesService#calculateWeight already reads live. */
+  weightKg: number | null;
 }
 
 /**
@@ -209,6 +211,7 @@ export class SourcingAppService {
     localPriceExclVat: true,
     localPriceInclVat: true,
     sellPriceEur: true,
+    weightPerUnitKg: true,
     _count: { select: { suppliers: true } },
   } as const;
 
@@ -247,6 +250,7 @@ export class SourcingAppService {
       photoUrl: photoUrlByProductId.get(p.id) ?? null,
       prices: this.toPriceList(p),
       supplierCount: p._count.suppliers,
+      weightKg: priceNumber(p.weightPerUnitKg),
     }));
     return { items, total };
   }
@@ -352,17 +356,7 @@ export class SourcingAppService {
         ),
         orderBy: { article: 'asc' },
         take: APP_PAGE_SIZE,
-        select: {
-          id: true,
-          article: true,
-          name: true,
-          germanPriceExclVat: true,
-          germanPriceInclVat: true,
-          localPriceExclVat: true,
-          localPriceInclVat: true,
-          sellPriceEur: true,
-          _count: { select: { suppliers: true } },
-        },
+        select: this.productRowSelect,
       });
       const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
       const items: ProductRow[] = products.map((p) => ({
@@ -372,6 +366,7 @@ export class SourcingAppService {
         photoUrl: photoUrlByProductId.get(p.id) ?? null,
         prices: this.toPriceList(p),
         supplierCount: p._count.suppliers,
+        weightKg: priceNumber(p.weightPerUnitKg),
       }));
       return { items };
     });
@@ -392,6 +387,7 @@ export class SourcingAppService {
           localPriceExclVat: true,
           localPriceInclVat: true,
           sellPriceEur: true,
+          weightPerUnitKg: true,
         },
       });
       if (!product) return null;
@@ -455,6 +451,7 @@ export class SourcingAppService {
       modelUrl,
       documents,
       prices: this.toPriceList(product),
+      weightKg: priceNumber(product.weightPerUnitKg),
       note: noteByProductId.get(product.id)?.note ?? null,
       category: category ? { id: category.id, name: category.name, rfqTemplate: category.rfqTemplate } : null,
       usedInAssemblies: usedInAssemblies.map((a) => ({

@@ -50,7 +50,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('includes the search term in the where clause and reports hasMore from the total', async () => {
       tx.product.count.mockResolvedValue(45);
       tx.product.findMany.mockResolvedValue([
-        { id: 'p1', article: '0013', name: 'Шуруповерт', germanPriceExclVat: 10, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: 15, _count: { suppliers: 2 } },
+        { id: 'p1', article: '0013', name: 'Шуруповерт', germanPriceExclVat: 10, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: 15, weightPerUnitKg: 1.5, _count: { suppliers: 2 } },
       ]);
 
       const result = await service.getCategoryProducts(identity as any, 'cat1', 'шуруп', 0);
@@ -58,11 +58,20 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ sourcingCategoryId: 'cat1', OR: expect.any(Array) }) });
       expect(result.total).toBe(45);
       expect(result.hasMore).toBe(true);
-      expect(result.items[0]).toMatchObject({ id: 'p1', article: '0013', supplierCount: 2 });
+      expect(result.items[0]).toMatchObject({ id: 'p1', article: '0013', supplierCount: 2, weightKg: 1.5 });
       expect(result.items[0].prices).toEqual([
         { field: 'germanPriceExclVat', icon: '🇩🇪', label: 'DE без ПДВ', value: 10 },
         { field: 'sellPriceEur', icon: '💰', label: 'Наша ціна продажу', value: 15 },
       ]);
+    });
+
+    // "до кожного товару ще додати вагу" (2026-11-11)
+    it('is null when the product has no weight set', async () => {
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: '0013', name: 'Шуруповерт', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, weightPerUnitKg: null, _count: { suppliers: 0 } },
+      ]);
+      const result = await service.getCategoryProducts(identity as any, 'cat1', undefined, 0);
+      expect(result.items[0].weightKg).toBeNull();
     });
 
     it('the "all" sentinel id browses every category\'s products, not just one (2026-11-10 — "категорія всі")', async () => {
@@ -98,7 +107,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('assembles prices, real supplier prices, and category candidate suppliers', async () => {
       tx.product.findUnique.mockResolvedValue({
         id: 'p1', article: '0013', name: 'Шуруповерт', sourcingCategoryId: 'cat1',
-        germanPriceExclVat: 10, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: 15,
+        germanPriceExclVat: 10, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: 15, weightPerUnitKg: 0.35,
       });
       tx.productSupplier.findMany.mockResolvedValue([{ price: 12, supplierOfferedPrice: 11, supplier: { id: 's1', name: 'ARGIP' } }]);
       tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1' }]);
@@ -112,6 +121,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result.category).toEqual({ id: 'cat1', name: 'А. Метизи', rfqTemplate: 'Доброго дня!' });
       expect(result.photoUrls).toEqual(['https://example.test/photo.jpg']);
       expect(result.modelUrl).toBeNull();
+      expect(result.weightKg).toBe(0.35);
     });
 
     it('returns every uploaded photo (not just the newest), newest first', async () => {

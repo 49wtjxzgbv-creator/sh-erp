@@ -10,6 +10,7 @@ import { DocumentPreview } from './document-preview';
 import { AddCandidateSheet } from './add-candidate-sheet';
 import { NoteEditor } from './note-editor';
 import { RealSupplierRow } from './real-supplier-row';
+import { formatWeightKg } from './format-weight';
 import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -140,7 +141,10 @@ export function ProductSheet({
             {translation && <p className="mt-0.5 text-sm" style={{ color: 'var(--tg-link)' }}>{translation.translated}</p>}
             {/* "натискаю і нічого не відбувається" (2026-11-10) — a failed translate call used to fail silently; now surfaced so a provider/key issue is visible instead of looking like a dead button. */}
             {translateError && <p className="mt-0.5 text-sm text-red-500">{translateError instanceof Error ? translateError.message : 'Переклад не вдався.'}</p>}
-            <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>{product.article}</p>
+            <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>
+              {product.article}
+              {product.weightKg !== null && ` · ⚖️ ${formatWeightKg(product.weightKg)}`}
+            </p>
           </div>
 
           <NoteEditor entityType="Product" entityId={product.id} note={product.note} />

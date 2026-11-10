@@ -80,6 +80,8 @@ export interface ProductRow {
   photoUrl: string | null;
   prices: PriceEntry[];
   supplierCount: number;
+  /** "до кожного товару ще додати вагу" (2026-11-11) — Product.weightPerUnitKg, in kg. */
+  weightKg: number | null;
 }
 
 /** "пошук товарів не по категоріям а по виробах" (2026-11-10) — a виріб/специфікація (Assembly), browsed by its real BOM components instead of a sourcing category. */
@@ -145,6 +147,8 @@ export interface ProductDetail {
   usedInAssemblies: Array<{ id: string; name: string; article: string | null; photoUrl: string | null }>;
   /** "нотатки до товару/постачальника... видимий усій команді" (2026-11-10) — a single team-shared note, null when none set. */
   note: string | null;
+  /** "до кожного товару ще додати вагу" (2026-11-11) — Product.weightPerUnitKg, in kg. */
+  weightKg: number | null;
 }
 
 export interface RealSupplier {
