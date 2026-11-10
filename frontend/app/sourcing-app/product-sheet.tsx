@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { formatEur } from '@/lib/utils';
 import { getTelegramWebApp } from './telegram-webapp';
-import { useProductDetail, useMe } from './use-sourcing-app';
+import { useProductDetail, useMe, useTranslateName } from './use-sourcing-app';
 
 function documentIcon(name: string): string {
   return /\.pdf$/i.test(name) ? '📕' : '📐';
@@ -29,6 +29,8 @@ export function ProductSheet({
   const { data: product, isLoading } = useProductDetail(productId);
   // Already past the shell's own SDK-readiness gate by the time this sheet can even open.
   const { data: me } = useMe(true);
+  // "додай можливість перекладу назв товарів на українську" (2026-11-10) — called with a hook's own key, not a mutation, so retapping the same name reuses the cached translation (see useTranslateName's own comment).
+  const { data: translation, refetch: translate, isFetching: isTranslating } = useTranslateName(product?.name ?? '');
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [show3d, setShow3d] = useState(false);
@@ -111,7 +113,20 @@ export function ProductSheet({
           )}
 
           <div>
-            <p className="text-base font-semibold">{product.name}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-base font-semibold">{product.name}</p>
+              <button
+                type="button"
+                onClick={() => translate()}
+                disabled={isTranslating}
+                className="shrink-0 rounded-full px-2 py-1 text-xs font-medium disabled:opacity-50"
+                style={{ background: 'var(--tg-secondary-bg)' }}
+                aria-label="Перекласти назву українською"
+              >
+                {isTranslating ? '…' : '🇺🇦'}
+              </button>
+            </div>
+            {translation && <p className="mt-0.5 text-sm" style={{ color: 'var(--tg-link)' }}>{translation.translated}</p>}
             <p className="text-xs" style={{ color: 'var(--tg-hint)' }}>{product.article}</p>
           </div>
 

@@ -12,6 +12,7 @@ import {
   type StatusOverview,
   type UpdateOutreachInput,
   type CreateCandidateInput,
+  type AssemblySummary,
 } from './sourcing-app-client';
 
 /** The Mini App's own "not paired yet" screen checks for this specific code (TelegramWebAppAuthGuard) rather than a generic error state. */
@@ -43,6 +44,42 @@ export function useCategoryProducts(categoryId: string, search: string, page: nu
     queryKey: ['sourcing-app', 'categories', categoryId, 'products', search, page],
     queryFn: () => sourcingAppClient.get<ProductListResponse>(`categories/${categoryId}/products`, { search: search || undefined, page: String(page) }),
     enabled: Boolean(categoryId),
+  });
+}
+
+/** "пошук товарів не по категоріям а по виробах" (2026-11-10). */
+export function useAssemblies() {
+  return useQuery({
+    queryKey: ['sourcing-app', 'assemblies'],
+    queryFn: () => sourcingAppClient.get<AssemblySummary[]>('assemblies'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAssemblyProducts(assemblyId: string, search: string, page: number) {
+  return useQuery({
+    queryKey: ['sourcing-app', 'assemblies', assemblyId, 'products', search, page],
+    queryFn: () => sourcingAppClient.get<ProductListResponse>(`assemblies/${assemblyId}/products`, { search: search || undefined, page: String(page) }),
+    enabled: Boolean(assemblyId),
+  });
+}
+
+/**
+ * "додай можливість перекладу назв товарів на українську" (2026-11-10) —
+ * on-demand, not automatic (most names are German). `useQuery` with
+ * `enabled: false` rather than a mutation — this keys the result on the
+ * exact text being translated, so retapping the SAME name within a
+ * session (or after navigating away and back to the same product) reuses
+ * the cached translation instead of re-spending an AI call. Triggered via
+ * the returned `refetch`.
+ */
+export function useTranslateName(text: string) {
+  return useQuery({
+    queryKey: ['sourcing-app', 'translate', text],
+    queryFn: () => sourcingAppClient.post<{ translated: string }>('translate', { text }),
+    enabled: false,
+    staleTime: Infinity,
+    retry: false,
   });
 }
 

@@ -82,6 +82,14 @@ export interface ProductRow {
   supplierCount: number;
 }
 
+/** "пошук товарів не по категоріям а по виробах" (2026-11-10) — a виріб/специфікація (Assembly), browsed by its real BOM components instead of a sourcing category. */
+export interface AssemblySummary {
+  id: string;
+  name: string;
+  article: string | null;
+  componentCount: number;
+}
+
 export interface ProductListResponse {
   items: ProductRow[];
   total: number;

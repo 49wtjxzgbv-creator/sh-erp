@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
-import { CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
+import { AiSettingsService } from '../ai/ai-settings.service';
+import { GeminiAdapter } from '../ai/providers/gemini.adapter';
+import { AiProviderException } from '../ai/providers/ai-provider.port';
+import { CodedBadRequestException, CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { PRICE_FIELDS, STATUS_LABELS, priceNumber } from './sourcing-shared';
 import { UpdateOutreachDto } from './dto/update-outreach.dto';
@@ -38,6 +41,8 @@ export class SourcingAppService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
+    private readonly aiSettingsService: AiSettingsService,
+    private readonly geminiAdapter: GeminiAdapter,
   ) {}
 
   async getCategories(identity: ResolvedSourcingIdentity) {
@@ -143,6 +148,41 @@ export class SourcingAppService {
     }).filter((x): x is NonNullable<typeof x> => x !== null);
   }
 
+  private readonly productRowSelect = {
+    id: true,
+    article: true,
+    name: true,
+    germanPriceExclVat: true,
+    germanPriceInclVat: true,
+    localPriceExclVat: true,
+    localPriceInclVat: true,
+    sellPriceEur: true,
+    _count: { select: { suppliers: true } },
+  } as const;
+
+  /** Shared by category/assembly product lists and search — one `where` clause in, one paginated+photo-attached `ProductRow[]` out. Not used by `getProductDetail`'s own full card, which needs more fields than this lean projection. */
+  private async queryProductRows(
+    tx: TenantPrismaClient,
+    identity: ResolvedSourcingIdentity,
+    where: Record<string, unknown>,
+    pagination: { skip?: number; take?: number } = {},
+  ): Promise<{ items: ProductRow[]; total: number }> {
+    const [total, products] = await Promise.all([
+      tx.product.count({ where }),
+      tx.product.findMany({ where, orderBy: { article: 'asc' }, select: this.productRowSelect, ...pagination }),
+    ]);
+    const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
+    const items: ProductRow[] = products.map((p) => ({
+      id: p.id,
+      article: p.article,
+      name: p.name,
+      photoUrl: photoUrlByProductId.get(p.id) ?? null,
+      prices: this.toPriceList(p),
+      supplierCount: p._count.suppliers,
+    }));
+    return { items, total };
+  }
+
   async getCategoryProducts(identity: ResolvedSourcingIdentity, categoryId: string, search: string | undefined, page: number) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const where = {
@@ -150,35 +190,69 @@ export class SourcingAppService {
         deletedAt: null,
         ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
       };
-      const [total, products] = await Promise.all([
-        tx.product.count({ where }),
-        tx.product.findMany({
-          where,
-          orderBy: { article: 'asc' },
-          skip: page * APP_PAGE_SIZE,
-          take: APP_PAGE_SIZE,
-          select: {
-            id: true,
-            article: true,
-            name: true,
-            germanPriceExclVat: true,
-            germanPriceInclVat: true,
-            localPriceExclVat: true,
-            localPriceInclVat: true,
-            sellPriceEur: true,
-            _count: { select: { suppliers: true } },
-          },
-        }),
-      ]);
-      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, products.map((p) => p.id));
-      const items: ProductRow[] = products.map((p) => ({
-        id: p.id,
-        article: p.article,
-        name: p.name,
-        photoUrl: photoUrlByProductId.get(p.id) ?? null,
-        prices: this.toPriceList(p),
-        supplierCount: p._count.suppliers,
-      }));
+      const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE });
+      return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
+    });
+  }
+
+  /**
+   * "пошук товарів не по категоріям а по виробах... відкриваємо
+   * [специфікацію] і у нас весь список товарів які в неї входять"
+   * (2026-11-10) — every real `Assembly` ("специфікація"/виріб this
+   * company manufactures), for a browse mode orthogonal to sourcing
+   * categories. `componentCount` is the cheap DIRECT line count (for the
+   * list screen only) — the real, recursively-flattened leaf product
+   * list is computed on demand in `getAssemblyProducts` below, same
+   * "cheap for the list, real query on drill-down" split as categories.
+   */
+  async getAssemblies(identity: ResolvedSourcingIdentity) {
+    const assemblies = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      tx.assembly.findMany({
+        where: { deletedAt: null },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, article: true, _count: { select: { components: true } } },
+      }),
+    );
+    return assemblies.map((a) => ({ id: a.id, name: a.name, article: a.article, componentCount: a._count.components }));
+  }
+
+  /**
+   * Every DISTINCT real `Product` anywhere in `assemblyId`'s BOM tree, at
+   * ANY depth — same recursive-flatten-with-cycle-guard shape as
+   * `AssembliesService#flattenRequirements` (private there, so
+   * reimplemented here rather than exported just for this one caller);
+   * unlike that method this doesn't aggregate quantities — a sourcing
+   * tool cares "which parts does this product need," not "how many of
+   * each," so a plain distinct id set is enough.
+   */
+  private async flattenAssemblyProductIds(tx: TenantPrismaClient, assemblyId: string, visited: Set<string>): Promise<Set<string>> {
+    const productIds = new Set<string>();
+    if (visited.has(assemblyId)) return productIds;
+    visited.add(assemblyId);
+
+    const components = await tx.assemblyComponent.findMany({ where: { assemblyId } });
+    for (const line of components) {
+      if (line.componentType === 'PRODUCT' && line.productId) {
+        productIds.add(line.productId);
+      } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId) {
+        const nested = await this.flattenAssemblyProductIds(tx, line.subAssemblyId, visited);
+        for (const id of nested) productIds.add(id);
+      }
+    }
+    return productIds;
+  }
+
+  async getAssemblyProducts(identity: ResolvedSourcingIdentity, assemblyId: string, search: string | undefined, page: number) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const productIds = [...(await this.flattenAssemblyProductIds(tx, assemblyId, new Set()))];
+      if (productIds.length === 0) return { items: [], total: 0, page, pageSize: APP_PAGE_SIZE, hasMore: false };
+
+      const where = {
+        id: { in: productIds },
+        deletedAt: null,
+        ...(search ? { OR: [{ article: { contains: search, mode: 'insensitive' as const } }, { name: { contains: search, mode: 'insensitive' as const } }] } : {}),
+      };
+      const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE });
       return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
     });
   }
@@ -441,5 +515,44 @@ export class SourcingAppService {
         statusLabel: STATUS_LABELS[c.outreach?.status ?? 'NOT_CONTACTED'],
       })),
     };
+  }
+
+  /**
+   * "додай можливість перекладу назв товарів на українську" (2026-11-10)
+   * — most product names in this catalog are German (imported from a
+   * German supplier, see expand-sourcing-catalog.ts), so an on-demand,
+   * per-name translate button is far more useful than nothing. Uses the
+   * SAME platform-provided Gemini key the main ERP's AI module falls
+   * back to (`AiSettingsService#getGeminiApiKey` — per-company key if the
+   * company ever sets one, else `AI_PLATFORM_API_KEY`) — but deliberately
+   * injects `AiSettingsService`/`GeminiAdapter` directly here rather than
+   * importing the full `AiModule`, which transitively pulls in Bom/Sales/
+   * Inventory/Hr/Reports (its tool registry's dependencies) — exactly the
+   * kind of heavy, unrelated coupling this standalone process's isolation
+   * is meant to avoid (see sourcing-bot.module.ts's own header comment).
+   * Deliberately skips `AiActionsService`'s quota/usage-logging (that
+   * machinery needs the tool registry too) — a single short product-name
+   * translation is negligible token volume next to the chat
+   * assistant/invoice-OCR features that system actually guards against.
+   */
+  async translateName(identity: ResolvedSourcingIdentity, text: string): Promise<{ translated: string }> {
+    const apiKey = await this.aiSettingsService.getGeminiApiKey(identity.companyId);
+    const prompt =
+      'Переклади цю технічну назву деталі/товару українською мовою. ' +
+      'Поверни ТІЛЬКИ переклад, без пояснень і без лапок. ' +
+      'Якщо це вже українською — поверни без змін. ' +
+      'Збережи числа, артикули та розміри як є.\n\n' +
+      text;
+    try {
+      const result = await this.geminiAdapter.generateContent([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
+      const translated = result.message.parts.find((p) => p.text !== undefined)?.text?.trim();
+      if (!translated) throw new CodedBadRequestException('SOURCING_TRANSLATE_EMPTY', 'Переклад не вдався — порожня відповідь.');
+      return { translated };
+    } catch (err) {
+      if (err instanceof AiProviderException) {
+        throw new CodedBadRequestException('SOURCING_TRANSLATE_FAILED', err.message);
+      }
+      throw err;
+    }
   }
 }

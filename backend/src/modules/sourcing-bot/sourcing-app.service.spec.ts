@@ -3,6 +3,8 @@ import { SourcingAppService } from './sourcing-app.service';
 describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   let prisma: any;
   let filesService: any;
+  let aiSettingsService: any;
+  let geminiAdapter: any;
   let tx: any;
   let service: SourcingAppService;
 
@@ -16,13 +18,17 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
+      assembly: { findMany: jest.fn().mockResolvedValue([]) },
+      assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
     };
     prisma = { runInTenantTransaction: jest.fn((_ctx: unknown, work: (tx: unknown) => unknown) => work(tx)) };
     filesService = {
       getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
       listForEntities: jest.fn().mockResolvedValue({}),
     };
-    service = new SourcingAppService(prisma, filesService);
+    aiSettingsService = { getGeminiApiKey: jest.fn().mockResolvedValue('test-gemini-key') };
+    geminiAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва' }] } }) };
+    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter);
   });
 
   describe('getCategories', () => {
@@ -128,6 +134,73 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     });
   });
 
+  describe('getAssemblies (2026-11-10 — "пошук товарів не по категоріям а по виробах")', () => {
+    it('maps _count.components to a plain componentCount', async () => {
+      tx.assembly.findMany.mockResolvedValue([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', _count: { components: 7 } }]);
+      const result = await service.getAssemblies(identity as any);
+      expect(result).toEqual([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7 }]);
+    });
+  });
+
+  describe('getAssemblyProducts', () => {
+    it('collects direct PRODUCT lines', async () => {
+      tx.assemblyComponent.findMany.mockResolvedValue([
+        { componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null },
+        { componentType: 'PRODUCT', productId: 'p2', subAssemblyId: null },
+      ]);
+      tx.product.count.mockResolvedValue(2);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Деталь 1', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, _count: { suppliers: 0 } },
+        { id: 'p2', article: 'A2', name: 'Деталь 2', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, _count: { suppliers: 0 } },
+      ]);
+
+      const result = await service.getAssemblyProducts(identity as any, 'asm1', undefined, 0);
+
+      expect(tx.product.count).toHaveBeenCalledWith({ where: expect.objectContaining({ id: { in: expect.arrayContaining(['p1', 'p2']) } }) });
+      expect(result.items).toHaveLength(2);
+    });
+
+    it('recurses through ASSEMBLY lines to collect sub-assembly products too', async () => {
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: string } }) => {
+        if (where.assemblyId === 'parent') {
+          return Promise.resolve([
+            { componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null },
+            { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'child' },
+          ]);
+        }
+        if (where.assemblyId === 'child') {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'p2', subAssemblyId: null }]);
+        }
+        return Promise.resolve([]);
+      });
+      tx.product.count.mockResolvedValue(2);
+      tx.product.findMany.mockResolvedValue([]);
+
+      await service.getAssemblyProducts(identity as any, 'parent', undefined, 0);
+
+      const where = tx.product.count.mock.calls[0][0].where;
+      expect(where.id.in).toEqual(expect.arrayContaining(['p1', 'p2']));
+      expect(where.id.in).toHaveLength(2);
+    });
+
+    it('a circular BOM does not loop forever — same cycle-guard shape as AssembliesService#flattenRequirements', async () => {
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: string } }) => {
+        if (where.assemblyId === 'a') return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'b' }]);
+        if (where.assemblyId === 'b') return Promise.resolve([{ componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'a' }]);
+        return Promise.resolve([]);
+      });
+
+      await expect(service.getAssemblyProducts(identity as any, 'a', undefined, 0)).resolves.toBeDefined();
+    });
+
+    it('returns an empty page without querying products when the assembly has none', async () => {
+      tx.assemblyComponent.findMany.mockResolvedValue([]);
+      const result = await service.getAssemblyProducts(identity as any, 'asm1', undefined, 0);
+      expect(result).toEqual({ items: [], total: 0, page: 0, pageSize: 30, hasMore: false });
+      expect(tx.product.count).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getSuppliers', () => {
     it('groups multiple linked products under the same supplier', async () => {
       tx.productSupplier.findMany.mockResolvedValue([
@@ -212,6 +285,24 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result.counts.CONTACTED).toBe(1);
       expect(result.counts.NOT_CONTACTED).toBe(1);
       expect(result.items).toHaveLength(2);
+    });
+  });
+
+  describe('translateName (2026-11-10 — "додай можливість перекладу назв товарів на українську")', () => {
+    it('uses the platform/company Gemini key and returns the translated text', async () => {
+      const result = await service.translateName(identity as any, 'Rillenkugellager-6205-2RS');
+
+      expect(aiSettingsService.getGeminiApiKey).toHaveBeenCalledWith('c1');
+      expect(geminiAdapter.generateContent).toHaveBeenCalledWith(
+        [{ role: 'user', parts: [{ text: expect.stringContaining('Rillenkugellager-6205-2RS') }] }],
+        'test-gemini-key',
+      );
+      expect(result).toEqual({ translated: 'Перекладена назва' });
+    });
+
+    it('throws a coded error when Gemini returns no text at all', async () => {
+      geminiAdapter.generateContent.mockResolvedValue({ message: { role: 'model', parts: [] } });
+      await expect(service.translateName(identity as any, 'test')).rejects.toMatchObject({ response: { code: 'SOURCING_TRANSLATE_EMPTY' } });
     });
   });
 });

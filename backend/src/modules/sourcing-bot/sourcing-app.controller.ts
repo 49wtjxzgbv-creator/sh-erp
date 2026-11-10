@@ -6,6 +6,7 @@ import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { SourcingAppService } from './sourcing-app.service';
 import { UpdateOutreachDto } from './dto/update-outreach.dto';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
+import { TranslateNameDto } from './dto/translate-name.dto';
 
 /**
  * HTTP API for the procurement sourcing Mini App (2026-11-10 — "веб версію
@@ -42,6 +43,23 @@ export class SourcingAppController {
     @Query('page') page?: string,
   ) {
     return this.sourcingAppService.getCategoryProducts(identity, categoryId, search, Number(page ?? 0) || 0);
+  }
+
+  @Get('assemblies')
+  @ApiOperation({ summary: 'Every "виріб"/специфікація (Assembly) this company manufactures, with its direct BOM-line count.' })
+  async assemblies(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity) {
+    return this.sourcingAppService.getAssemblies(identity);
+  }
+
+  @Get('assemblies/:id/products')
+  @ApiOperation({ summary: 'Every real Product anywhere in this assembly\'s BOM tree (recursively flattened through sub-assemblies), paginated.' })
+  async assemblyProducts(
+    @CurrentSourcingIdentity() identity: ResolvedSourcingIdentity,
+    @Param('id') assemblyId: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+  ) {
+    return this.sourcingAppService.getAssemblyProducts(identity, assemblyId, search, Number(page ?? 0) || 0);
   }
 
   @Get('products/:id')
@@ -88,6 +106,12 @@ export class SourcingAppController {
     @Body() dto: UpdateOutreachDto,
   ) {
     return this.sourcingAppService.updateOutreach(identity, candidateId, dto);
+  }
+
+  @Post('translate')
+  @ApiOperation({ summary: 'On-demand translate a product name to Ukrainian via the platform Gemini key — "додай можливість перекладу назв товарів на українську".' })
+  async translate(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Body() dto: TranslateNameDto) {
+    return this.sourcingAppService.translateName(identity, dto.text);
   }
 
   @Get('status')
