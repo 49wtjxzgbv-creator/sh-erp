@@ -88,6 +88,7 @@ export interface AssemblySummary {
   name: string;
   article: string | null;
   componentCount: number;
+  photoUrl: string | null;
 }
 
 export interface ProductListResponse {

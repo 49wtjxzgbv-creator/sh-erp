@@ -19,7 +19,12 @@ export default function CategoryProductsPage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
-  useTelegramBackButton(() => router.push('/sourcing-app'));
+  // "натискаємо повернутись назад то має повертатися у попереднє меню а не
+  // на головне" (2026-11-10) — router.back(), not a hardcoded push to
+  // /sourcing-app: the home page's Категорії/Виробами tab is reflected in
+  // its own URL (?mode=...), so a real back-navigation lands on whichever
+  // tab was actually active, not always the default one.
+  useTelegramBackButton(() => router.back());
 
   const { data, isLoading } = useCategoryProducts(params.id, search, page);
 

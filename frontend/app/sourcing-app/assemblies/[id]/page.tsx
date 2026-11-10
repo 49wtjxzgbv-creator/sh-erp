@@ -20,7 +20,9 @@ export default function AssemblyProductsPage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
-  useTelegramBackButton(() => router.push('/sourcing-app'));
+  // "натискаємо повернутись назад то має повертатися у попереднє меню а не
+  // на головне" (2026-11-10) — see categories/[id]/page.tsx's own comment.
+  useTelegramBackButton(() => router.back());
 
   const { data, isLoading } = useAssemblyProducts(params.id, search, page);
 

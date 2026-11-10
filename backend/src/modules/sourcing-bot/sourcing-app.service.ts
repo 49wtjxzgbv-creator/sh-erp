@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { FileDomain } from '@prisma/client';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
 import { AiSettingsService } from '../ai/ai-settings.service';
@@ -64,23 +65,34 @@ export class SourcingAppService {
 
   /** Most-recent `PRODUCT_PHOTO` per product id, as presigned URLs — one batched lookup per page instead of N+1. */
   private async photoUrlsByProductId(tx: TenantPrismaClient, identity: ResolvedSourcingIdentity, productIds: string[]): Promise<Map<string, string>> {
-    if (productIds.length === 0) return new Map();
+    return this.photoUrlsByEntityId(tx, identity, 'Product', 'PRODUCT_PHOTO', productIds);
+  }
+
+  /** Most-recent photo per entity id, as presigned URLs — one batched lookup, used for both Product (PRODUCT_PHOTO) and Assembly (ASSEMBLY_PHOTO) list thumbnails. */
+  private async photoUrlsByEntityId(
+    tx: TenantPrismaClient,
+    identity: ResolvedSourcingIdentity,
+    entityType: string,
+    domain: FileDomain,
+    entityIds: string[],
+  ): Promise<Map<string, string>> {
+    if (entityIds.length === 0) return new Map();
     const photos = await tx.fileAsset.findMany({
-      where: { entityType: 'Product', entityId: { in: productIds }, domain: 'PRODUCT_PHOTO', deletedAt: null },
+      where: { entityType, entityId: { in: entityIds }, domain, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       select: { id: true, entityId: true },
     });
-    const photoIdByProductId = new Map<string, string>();
-    for (const p of photos) if (!photoIdByProductId.has(p.entityId)) photoIdByProductId.set(p.entityId, p.id);
+    const photoIdByEntityId = new Map<string, string>();
+    for (const p of photos) if (!photoIdByEntityId.has(p.entityId)) photoIdByEntityId.set(p.entityId, p.id);
 
-    const urlByProductId = new Map<string, string>();
+    const urlByEntityId = new Map<string, string>();
     await Promise.all(
-      [...photoIdByProductId.entries()].map(async ([productId, photoId]) => {
+      [...photoIdByEntityId.entries()].map(async ([entityId, photoId]) => {
         const { downloadUrl } = await this.filesService.getDownloadUrl({ userId: identity.userId, companyId: identity.companyId }, photoId);
-        urlByProductId.set(productId, downloadUrl);
+        urlByEntityId.set(entityId, downloadUrl);
       }),
     );
-    return urlByProductId;
+    return urlByEntityId;
   }
 
   /** ALL `PRODUCT_PHOTO` rows for ONE product, newest first, as presigned URLs — unlike `photoUrlsByProductId` (list views, one thumbnail each), the product-detail card shows every photo ever uploaded for a gallery/lightbox, not just the latest. */
@@ -206,14 +218,22 @@ export class SourcingAppService {
    * "cheap for the list, real query on drill-down" split as categories.
    */
   async getAssemblies(identity: ResolvedSourcingIdentity) {
-    const assemblies = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      tx.assembly.findMany({
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const assemblies = await tx.assembly.findMany({
         where: { deletedAt: null },
         orderBy: { name: 'asc' },
         select: { id: true, name: true, article: true, _count: { select: { components: true } } },
-      }),
-    );
-    return assemblies.map((a) => ({ id: a.id, name: a.name, article: a.article, componentCount: a._count.components }));
+      });
+      // "у списку виробів також має бути фото виробу" (2026-11-10)
+      const photoUrlByAssemblyId = await this.photoUrlsByEntityId(tx, identity, 'Assembly', 'ASSEMBLY_PHOTO', assemblies.map((a) => a.id));
+      return assemblies.map((a) => ({
+        id: a.id,
+        name: a.name,
+        article: a.article,
+        componentCount: a._count.components,
+        photoUrl: photoUrlByAssemblyId.get(a.id) ?? null,
+      }));
+    });
   }
 
   /**
@@ -536,7 +556,12 @@ export class SourcingAppService {
    * assistant/invoice-OCR features that system actually guards against.
    */
   async translateName(identity: ResolvedSourcingIdentity, text: string): Promise<{ translated: string }> {
-    const apiKey = await this.aiSettingsService.getGeminiApiKey(identity.companyId);
+    // "переклад не працює" (2026-11-10, live): AiSettingsService#getGeminiApiKey
+    // reads `prisma.tenant` directly, which throws "No tenant context
+    // available" unless called from inside an active
+    // runInTenantTransaction scope — the exact same gotcha already fixed
+    // for FilesService calls elsewhere in this file.
+    const apiKey = await this.prisma.runInTenantTransaction(tenantCtx(identity), () => this.aiSettingsService.getGeminiApiKey(identity.companyId));
     const prompt =
       'Переклади цю технічну назву деталі/товару українською мовою. ' +
       'Поверни ТІЛЬКИ переклад, без пояснень і без лапок. ' +

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useCategories, useAssemblies } from './use-sourcing-app';
@@ -13,11 +12,23 @@ type Mode = 'categories' | 'assemblies';
 
 export default function SourcingAppHomePage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('categories');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // "коли... натискаємо повернутись назад то має повертатися у попереднє
+  // меню а не на головне" (2026-11-10) — the Категорії/Виробами toggle is
+  // reflected in the URL (not just component state) specifically so that
+  // the category/assembly detail pages' back-button (`router.back()`)
+  // actually lands back on whichever tab the user came from, not always
+  // the default one.
+  const mode: Mode = searchParams.get('mode') === 'assemblies' ? 'assemblies' : 'categories';
   const { data: categories, isLoading: loadingCategories } = useCategories();
   const { data: assemblies, isLoading: loadingAssemblies } = useAssemblies();
 
   const totalProductCount = categories?.reduce((sum, c) => sum + c.productCount, 0) ?? 0;
+
+  function setMode(next: Mode) {
+    router.replace(next === 'categories' ? pathname : `${pathname}?mode=${next}`, { scroll: false });
+  }
 
   return (
     <div className="flex h-full flex-col">

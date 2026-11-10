@@ -135,10 +135,18 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   });
 
   describe('getAssemblies (2026-11-10 — "пошук товарів не по категоріям а по виробах")', () => {
-    it('maps _count.components to a plain componentCount', async () => {
+    it('maps _count.components to a plain componentCount, with no photo', async () => {
       tx.assembly.findMany.mockResolvedValue([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', _count: { components: 7 } }]);
       const result = await service.getAssemblies(identity as any);
-      expect(result).toEqual([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7 }]);
+      expect(result).toEqual([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7, photoUrl: null }]);
+    });
+
+    it('includes a photoUrl when the assembly has an ASSEMBLY_PHOTO (2026-11-10 — "у списку виробів також має бути фото виробу")', async () => {
+      tx.assembly.findMany.mockResolvedValue([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', _count: { components: 7 } }]);
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1', entityId: 'asm1' }]);
+      const result = await service.getAssemblies(identity as any);
+      expect(tx.fileAsset.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ entityType: 'Assembly', domain: 'ASSEMBLY_PHOTO' }) }));
+      expect(result[0].photoUrl).toBe('https://example.test/photo.jpg');
     });
   });
 
