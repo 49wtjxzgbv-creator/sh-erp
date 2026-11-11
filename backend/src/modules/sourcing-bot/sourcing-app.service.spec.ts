@@ -592,6 +592,32 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       });
     });
 
+    // "поле від кого зараз [неправильне] ... вносити вручну перед
+    // генеруванням пдф" (2026-11-11)
+    it('uses the admin-provided fromName override instead of the company name', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }] });
+      tx.company.findUnique.mockResolvedValue({ name: 'Назва з профілю компанії' });
+      const renderHtmlSpy = jest.spyOn((service as any).outreachLetterRenderer, 'renderHtml');
+
+      await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1', 'Моя Фірма ТОВ');
+
+      expect(renderHtmlSpy).toHaveBeenCalledWith(expect.objectContaining({ fromName: 'Моя Фірма ТОВ' }));
+    });
+
+    it('falls back to the company name when no fromName override is given', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }] });
+      tx.company.findUnique.mockResolvedValue({ name: 'Назва з профілю компанії' });
+      const renderHtmlSpy = jest.spyOn((service as any).outreachLetterRenderer, 'renderHtml');
+
+      await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
+
+      expect(renderHtmlSpy).toHaveBeenCalledWith(expect.objectContaining({ fromName: 'Назва з профілю компанії' }));
+    });
+
     it('excludes a product with no PDF attached while keeping one that has it', async () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
       tx.product.findMany.mockResolvedValue([

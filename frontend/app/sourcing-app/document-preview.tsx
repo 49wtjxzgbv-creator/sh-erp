@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import { getTelegramWebApp } from './telegram-webapp';
 
 const Dxf2DViewer = dynamic(() => import('@/components/domain/files/dxf-2d-viewer').then((m) => m.Dxf2DViewer), { ssr: false });
+const PdfMultiPageViewer = dynamic(() => import('./pdf-multi-page-viewer').then((m) => m.PdfMultiPageViewer), { ssr: false });
 
 /**
  * "не скачування файлів має бути а також передперегляд dxf pdf файлів"
@@ -55,11 +56,7 @@ export function DocumentPreview({ doc, onClose }: { doc: { id: string; name: str
             </DialogPrimitive.Close>
           </div>
           <div className="min-h-0 flex-1" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            {isDxf ? (
-              <Dxf2DViewer url={doc.url} />
-            ) : (
-              <iframe src={doc.url} title={doc.name} className="h-full w-full border-0 bg-white" />
-            )}
+            {isDxf ? <Dxf2DViewer url={doc.url} /> : <PdfMultiPageViewer url={doc.url} />}
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

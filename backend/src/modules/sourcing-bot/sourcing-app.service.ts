@@ -830,7 +830,14 @@ export class SourcingAppService {
     categoryName: string,
     supplierName: string,
     items: CandidateOutreachItem[],
+    fromNameOverride?: string,
   ): Promise<Buffer> {
+    const trimmedOverride = fromNameOverride?.trim();
+    // "поле від кого зараз [неправильне] ... вносити вручну перед
+    // генеруванням" (2026-11-11) — the company lookup is now only a
+    // FALLBACK for when the admin leaves the field blank, not skipped
+    // entirely when an override is given (cheap enough either way not to
+    // bother branching the query itself).
     const [company, photoUrlByProductId] = await Promise.all([
       tx.company.findUnique({ where: { id: identity.companyId }, select: { name: true } }),
       this.photoUrlsByProductId(tx, identity, items.map((p) => p.id)),
@@ -838,7 +845,7 @@ export class SourcingAppService {
     const html = this.outreachLetterRenderer.renderHtml({
       categoryName,
       createdAt: new Date(),
-      fromName: company?.name ?? '',
+      fromName: trimmedOverride || company?.name || '',
       supplierName,
       items: items.map((p) => ({ article: p.article, name: p.name, photoUrl: photoUrlByProductId.get(p.id) ?? null })),
     });
@@ -930,7 +937,7 @@ export class SourcingAppService {
    * this Mini App is a real presigned R2 URL, which downloads/previews
    * fine; this now matches that, instead of being the one exception).
    */
-  async generateOutreachLetter(identity: ResolvedSourcingIdentity, candidateId: string) {
+  async generateOutreachLetter(identity: ResolvedSourcingIdentity, candidateId: string, fromNameOverride?: string) {
     if (!identity.isAdmin) {
       throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can generate an outreach letter.');
     }
@@ -980,7 +987,7 @@ export class SourcingAppService {
 
     const pdfFilename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
     const pdfUrl = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
-      const pdfBuffer = await this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items);
+      const pdfBuffer = await this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items, fromNameOverride);
       const { fileAssetId } = await this.filesService.storeGeneratedAsset({
         companyId: identity.companyId,
         actorUserId: identity.userId,
@@ -1006,7 +1013,7 @@ export class SourcingAppService {
   }
 
   /** Sends the reviewed text + a freshly-regenerated, freshly-remerged PDF via SMTP (see `EmailService#send`'s own comment on the new `attachments` param). */
-  async sendOutreachLetterEmail(identity: ResolvedSourcingIdentity, candidateId: string, text: string): Promise<{ sent: boolean }> {
+  async sendOutreachLetterEmail(identity: ResolvedSourcingIdentity, candidateId: string, text: string, fromNameOverride?: string): Promise<{ sent: boolean }> {
     if (!identity.isAdmin) {
       throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can send an outreach letter.');
     }
@@ -1033,7 +1040,7 @@ export class SourcingAppService {
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items),
+      this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items, fromNameOverride),
     );
     const filename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
     return this.emailService.send(candidate.email, `Запит на прорахунок - ${candidate.category.name}`, text, [

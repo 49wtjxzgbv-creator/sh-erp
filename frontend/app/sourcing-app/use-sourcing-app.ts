@@ -217,17 +217,24 @@ export function useCreatePriceProposal() {
   });
 }
 
-/** "сформувати листа" (2026-11-11) — stateless on the server (see SourcingAppService#generateOutreachLetter's own comment), so nothing here needs cache invalidation either; purely a query-shaped mutation. */
+/**
+ * "сформувати листа" (2026-11-11) — stateless on the server (see
+ * SourcingAppService#generateOutreachLetter's own comment), so nothing
+ * here needs cache invalidation either; purely a query-shaped mutation.
+ * `fromName`, when provided, overrides the PDF's "Від кого" field instead
+ * of the company's own registered name (2026-11-11 follow-up).
+ */
 export function useGenerateOutreachLetter() {
   return useMutation({
-    mutationFn: (candidateId: string) => sourcingAppClient.post<OutreachLetter>(`candidates/${candidateId}/outreach-letter`),
+    mutationFn: ({ candidateId, fromName }: { candidateId: string; fromName?: string }) =>
+      sourcingAppClient.post<OutreachLetter>(`candidates/${candidateId}/outreach-letter`, { fromName }),
   });
 }
 
 export function useSendOutreachLetterEmail() {
   return useMutation({
-    mutationFn: ({ candidateId, text }: { candidateId: string; text: string }) =>
-      sourcingAppClient.post<{ sent: boolean }>(`candidates/${candidateId}/outreach-letter/send`, { text }),
+    mutationFn: ({ candidateId, text, fromName }: { candidateId: string; text: string; fromName?: string }) =>
+      sourcingAppClient.post<{ sent: boolean }>(`candidates/${candidateId}/outreach-letter/send`, { text, fromName }),
   });
 }
 

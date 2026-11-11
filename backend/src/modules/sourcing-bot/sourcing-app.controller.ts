@@ -10,6 +10,7 @@ import { TranslateNameDto } from './dto/translate-name.dto';
 import { UpsertNoteDto } from './dto/upsert-note.dto';
 import { CreatePriceProposalDto } from './dto/create-price-proposal.dto';
 import { SendOutreachLetterDto } from './dto/send-outreach-letter.dto';
+import { GenerateOutreachLetterDto } from './dto/generate-outreach-letter.dto';
 
 /**
  * HTTP API for the procurement sourcing Mini App (2026-11-10 — "веб версію
@@ -143,8 +144,12 @@ export class SourcingAppController {
 
   @Post('candidates/:id/outreach-letter')
   @ApiOperation({ summary: 'Generate an AI outreach-letter text + a PDF (photo/article/name) of every product in the candidate\'s own category (procurement-admin only) — "сформувати лист".' })
-  async generateOutreachLetter(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Param('id') candidateId: string) {
-    return this.sourcingAppService.generateOutreachLetter(identity, candidateId);
+  async generateOutreachLetter(
+    @CurrentSourcingIdentity() identity: ResolvedSourcingIdentity,
+    @Param('id') candidateId: string,
+    @Body() dto: GenerateOutreachLetterDto,
+  ) {
+    return this.sourcingAppService.generateOutreachLetter(identity, candidateId, dto.fromName);
   }
 
   @Post('candidates/:id/outreach-letter/send')
@@ -154,6 +159,6 @@ export class SourcingAppController {
     @Param('id') candidateId: string,
     @Body() dto: SendOutreachLetterDto,
   ) {
-    return this.sourcingAppService.sendOutreachLetterEmail(identity, candidateId, dto.text);
+    return this.sourcingAppService.sendOutreachLetterEmail(identity, candidateId, dto.text, dto.fromName);
   }
 }

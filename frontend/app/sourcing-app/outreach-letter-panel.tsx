@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { DocumentPreview } from './document-preview';
 import { getTelegramWebApp } from './telegram-webapp';
 import { useGenerateOutreachLetter, useSendOutreachLetterEmail } from './use-sourcing-app';
@@ -27,10 +28,12 @@ import type { OutreachLetter } from './sourcing-app-client';
  * PDF has to be attached by hand there).
  */
 export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
+  const fromNameFieldId = useId();
   const textFieldId = useId();
   const generate = useGenerateOutreachLetter();
   const sendEmail = useSendOutreachLetterEmail();
 
+  const [fromName, setFromName] = useState('');
   const [letter, setLetter] = useState<OutreachLetter | null>(null);
   const [text, setText] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -41,6 +44,7 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
   // one (same class of bug `ProductSheet`'s own reset-on-open already
   // documents for lightbox/3D state).
   useEffect(() => {
+    setFromName('');
     setLetter(null);
     setText('');
     setPreviewOpen(false);
@@ -49,7 +53,7 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
 
   async function handleGenerate() {
     try {
-      const result = await generate.mutateAsync(candidateId);
+      const result = await generate.mutateAsync({ candidateId, fromName: fromName.trim() || undefined });
       setLetter(result);
       setText(result.text);
       setEmailSent(false);
@@ -63,7 +67,7 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
 
   async function handleSendEmail() {
     try {
-      const result = await sendEmail.mutateAsync({ candidateId, text });
+      const result = await sendEmail.mutateAsync({ candidateId, text, fromName: fromName.trim() || undefined });
       // "sent: false" (2026-11-11) — EmailService fails OPEN when SMTP
       // isn't configured (logs instead of throwing, see its own header
       // comment), so a resolved promise does NOT by itself mean delivery
@@ -104,6 +108,16 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
   return (
     <section>
       <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Запит на прорахунок</p>
+
+      {/* "поле від кого ... зроби щоб це можна було вносити вручну перед генеруванням пдф" (2026-11-11) — editable before generating (and before any "Згенерувати заново" too, so an edit here is never lost on a regenerate). Blank falls back to the company's own name. */}
+      <label htmlFor={fromNameFieldId} className="mb-1 block text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Від кого</label>
+      <Input
+        id={fromNameFieldId}
+        value={fromName}
+        onChange={(e) => setFromName(e.target.value)}
+        placeholder="напр. ТОВ «Наша Фірма»"
+        className="mb-2"
+      />
 
       {!letter ? (
         <Button variant="outline" className="w-full" onClick={handleGenerate} loading={generate.isPending}>
