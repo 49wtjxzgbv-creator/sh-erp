@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { FileDomain } from '@prisma/client';
+import { PDFDocument } from 'pdf-lib';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
@@ -19,6 +20,14 @@ const APP_PAGE_SIZE = 30;
 
 /** Sentinel categoryId for the Mini App's synthetic "Всі товари" entry (2026-11-10 — "в категоріях має бути категорія всі щоб просто гортати всі товари") — no real SourcingCategory has this id, so it can never collide with one. */
 export const ALL_CATEGORIES_ID = 'all';
+
+/** A category product that qualifies for an outreach letter — see `candidateOutreachItems`'s own comment on why "has at least one attached PDF" is the gate, not just category membership. */
+interface CandidateOutreachItem {
+  id: string;
+  article: string;
+  name: string;
+  pdfFileIds: string[];
+}
 
 function tenantCtx(identity: ResolvedSourcingIdentity) {
   return { companyId: identity.companyId, userId: identity.userId };
@@ -803,26 +812,76 @@ export class SourcingAppService {
    * already uses), not embedded bytes — `renderHtmlToPdf`'s Chromium page
    * has no network restriction, so it fetches them live, same as
    * `PurchaseRequestRendererService`'s own `photoUrl` field.
+   *
+   * "не додає вкладені до товару файли пдф" (2026-11-11 follow-up) — the
+   * table alone wasn't the whole ask; each product's own attached PDF
+   * (drawing) is merged in after the table pages, same real `pdf-lib`
+   * page-copy technique `PurchaseRequestPdfService#mergeAttachments`
+   * already uses for the exact same document family — not shared as a
+   * common util (same rationale that file's own header gives: small
+   * enough, and this caller's shape — `items` already filtered to
+   * PDF-only — differs).
    */
-  private async renderCandidateProductsPdf(
+  private async renderAndMergeCandidatePdf(
     tx: TenantPrismaClient,
     identity: ResolvedSourcingIdentity,
     categoryName: string,
     supplierName: string,
-    products: Array<{ id: string; article: string; name: string }>,
+    items: CandidateOutreachItem[],
   ): Promise<Buffer> {
     const [company, photoUrlByProductId] = await Promise.all([
       tx.company.findUnique({ where: { id: identity.companyId }, select: { name: true } }),
-      this.photoUrlsByProductId(tx, identity, products.map((p) => p.id)),
+      this.photoUrlsByProductId(tx, identity, items.map((p) => p.id)),
     ]);
     const html = this.outreachLetterRenderer.renderHtml({
       categoryName,
       createdAt: new Date(),
       fromName: company?.name ?? '',
       supplierName,
-      items: products.map((p) => ({ article: p.article, name: p.name, photoUrl: photoUrlByProductId.get(p.id) ?? null })),
+      items: items.map((p) => ({ article: p.article, name: p.name, photoUrl: photoUrlByProductId.get(p.id) ?? null })),
     });
-    return renderHtmlToPdf(html, 180_000);
+    const mainPdfBytes = await renderHtmlToPdf(html, 180_000);
+
+    const merged = await PDFDocument.create();
+    const mainDoc = await PDFDocument.load(mainPdfBytes);
+    for (const page of await merged.copyPages(mainDoc, mainDoc.getPageIndices())) merged.addPage(page);
+
+    for (const item of items) {
+      for (const fileId of item.pdfFileIds) {
+        try {
+          const { bytes, mimeType } = await this.filesService.getFileAssetBytes(identity, fileId);
+          if (mimeType !== 'application/pdf') continue;
+          const source = await PDFDocument.load(bytes);
+          for (const page of await merged.copyPages(source, source.getPageIndices())) merged.addPage(page);
+        } catch {
+          // One unreadable/corrupt attachment must not break the whole letter — same "skip, don't abort" rule `mergeAttachments` follows.
+        }
+      }
+    }
+    return Buffer.from(await merged.save());
+  }
+
+  /**
+   * "ті товари в яких пдф файла немає не потрібно додавати в запит на
+   * прорахунок" (2026-11-11) — a product only belongs in this letter if it
+   * actually HAS a PDF (`PRODUCT_DOCUMENT`) attached, since that file is
+   * merged into the final document; a product with no drawing has nothing
+   * to send the candidate besides a photo, which isn't enough on its own
+   * for a quote request. One batched `listForEntities` call for the whole
+   * category rather than one per product.
+   */
+  private async candidateOutreachItems(
+    identity: ResolvedSourcingIdentity,
+    products: Array<{ id: string; article: string; name: string }>,
+  ): Promise<CandidateOutreachItem[]> {
+    if (products.length === 0) return [];
+    const filesByProductId = await this.filesService.listForEntities(identity, 'Product', products.map((p) => p.id), ['PRODUCT_DOCUMENT']);
+    const items: CandidateOutreachItem[] = [];
+    for (const p of products) {
+      const pdfFileIds = (filesByProductId[p.id] ?? []).filter((f) => f.mimeType === 'application/pdf').map((f) => f.id);
+      if (pdfFileIds.length > 0) items.push({ ...p, pdfFileIds });
+    }
+    return items;
   }
 
   /**
@@ -839,22 +898,23 @@ export class SourcingAppService {
     if (!identity.isAdmin) {
       throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can generate an outreach letter.');
     }
-    const { candidate, products } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+    const { candidate, items } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const candidate = await tx.sourcingCandidateSupplier.findUnique({
         where: { id: candidateId },
         include: { category: { select: { id: true, name: true } } },
       });
-      if (!candidate) return { candidate: null, products: [] };
+      if (!candidate) return { candidate: null, items: [] };
       const products = await tx.product.findMany({
         where: { sourcingCategoryId: candidate.categoryId, deletedAt: null },
         orderBy: { article: 'asc' },
         select: { id: true, article: true, name: true },
       });
-      return { candidate, products };
+      const items = await this.candidateOutreachItems(identity, products);
+      return { candidate, items };
     });
     if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
-    if (products.length === 0) {
-      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Ця категорія поки не містить жодного товару.');
+    if (items.length === 0) {
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Жоден товар цієї категорії не має доданого PDF-файла.');
     }
 
     const { adapter, apiKey } = await this.resolveAiAdapter(identity);
@@ -883,47 +943,48 @@ export class SourcingAppService {
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderCandidateProductsPdf(tx, identity, candidate.category.name, candidate.name, products),
+      this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items),
     );
 
     return {
       text: generatedText,
       pdfBase64: pdfBuffer.toString('base64'),
       pdfFilename: `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`,
-      productCount: products.length,
+      productCount: items.length,
       candidateEmail: candidate.email,
       candidatePhone: candidate.phone,
     };
   }
 
-  /** Sends the reviewed text + a freshly-regenerated PDF via SMTP (see `EmailService#send`'s own comment on the new `attachments` param). */
+  /** Sends the reviewed text + a freshly-regenerated, freshly-remerged PDF via SMTP (see `EmailService#send`'s own comment on the new `attachments` param). */
   async sendOutreachLetterEmail(identity: ResolvedSourcingIdentity, candidateId: string, text: string): Promise<{ sent: boolean }> {
     if (!identity.isAdmin) {
       throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can send an outreach letter.');
     }
-    const { candidate, products } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+    const { candidate, items } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const candidate = await tx.sourcingCandidateSupplier.findUnique({
         where: { id: candidateId },
         include: { category: { select: { id: true, name: true } } },
       });
-      if (!candidate) return { candidate: null, products: [] };
+      if (!candidate) return { candidate: null, items: [] };
       const products = await tx.product.findMany({
         where: { sourcingCategoryId: candidate.categoryId, deletedAt: null },
         orderBy: { article: 'asc' },
         select: { id: true, article: true, name: true },
       });
-      return { candidate, products };
+      const items = await this.candidateOutreachItems(identity, products);
+      return { candidate, items };
     });
     if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
     if (!candidate.email) {
       throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_EMAIL', 'У цього постачальника не вказано email.');
     }
-    if (products.length === 0) {
-      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Ця категорія поки не містить жодного товару.');
+    if (items.length === 0) {
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Жоден товар цієї категорії не має доданого PDF-файла.');
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderCandidateProductsPdf(tx, identity, candidate.category.name, candidate.name, products),
+      this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items),
     );
     const filename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
     return this.emailService.send(candidate.email, `Запит на прорахунок - ${candidate.category.name}`, text, [

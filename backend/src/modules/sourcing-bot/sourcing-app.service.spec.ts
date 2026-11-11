@@ -1,9 +1,17 @@
+import { PDFDocument } from 'pdf-lib';
 import { SourcingAppService } from './sourcing-app.service';
 import { OutreachLetterRendererService } from './outreach-letter-renderer.service';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 
 jest.mock('../../common/pdf/html-to-pdf');
 const mockRenderHtmlToPdf = renderHtmlToPdf as jest.MockedFunction<typeof renderHtmlToPdf>;
+
+/** `renderAndMergeCandidatePdf` really parses this via pdf-lib (`PDFDocument.load`) — a literal fake buffer like `Buffer.from('%PDF-fake')` throws there, so every test touching that path needs a REAL, loadable PDF, same fixture pattern `supplier-request-documents-pdf.service.spec.ts` already uses for the same reason. */
+async function makeMinimalPdf(pageCount = 1): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < pageCount; i++) doc.addPage([595.28, 841.89]);
+  return Buffer.from(await doc.save());
+}
 
 describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   let prisma: any;
@@ -17,7 +25,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
 
   const identity = { userId: 'u1', companyId: 'c1', fullName: 'Іван', isAdmin: false };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tx = {
       sourcingCategory: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       product: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), count: jest.fn().mockResolvedValue(0) },
@@ -36,6 +44,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     filesService = {
       getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
       listForEntities: jest.fn().mockResolvedValue({}),
+      getFileAssetBytes: jest.fn().mockResolvedValue({ bytes: await makeMinimalPdf(), mimeType: 'application/pdf', originalName: 'drawing.pdf' }),
     };
     aiSettingsService = {
       getProvider: jest.fn().mockResolvedValue('gemini'),
@@ -44,7 +53,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     geminiAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва' }] } }) };
     deepSeekAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва (DeepSeek)' }] } }) };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
-    mockRenderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from('%PDF-fake'));
+    mockRenderHtmlToPdf.mockReset().mockResolvedValue(await makeMinimalPdf());
     service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter, emailService, new OutreachLetterRendererService());
   });
 
@@ -571,12 +580,44 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       });
     });
 
-    it('generates AI text referencing the candidate and category, plus a PDF, and reports productCount/contact fields', async () => {
+    // "ті товари в яких пдф файла немає не потрібно додавати в запит на
+    // прорахунок" (2026-11-11)
+    it('throws when the category has products but none of them has a PDF attached', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({}); // no PRODUCT_DOCUMENT files for p1 at all
+      await expect(service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_NO_PRODUCTS' },
+      });
+    });
+
+    it('excludes a product with no PDF attached while keeping one that has it', async () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
       tx.product.findMany.mockResolvedValue([
         { id: 'p1', article: 'A1', name: 'Гвинт М6' },
         { id: 'p2', article: 'A2', name: 'Гайка М6' },
       ]);
+      filesService.listForEntities.mockResolvedValue({
+        p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }],
+        p2: [{ id: 'f2', mimeType: 'image/jpeg', originalName: 'photo-only.jpg' }], // has a file, but not a PDF — still excluded
+      });
+
+      const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
+
+      expect(result.productCount).toBe(1);
+    });
+
+    it('generates AI text referencing the candidate and category, merges each product\'s own PDF in, and reports productCount/contact fields', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Гвинт М6' },
+        { id: 'p2', article: 'A2', name: 'Гайка М6' },
+      ]);
+      filesService.listForEntities.mockResolvedValue({
+        p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }],
+        p2: [{ id: 'f2', mimeType: 'application/pdf', originalName: 'gayka.pdf' }],
+      });
+      filesService.getFileAssetBytes.mockImplementation(async () => ({ bytes: await makeMinimalPdf(2), mimeType: 'application/pdf', originalName: 'drawing.pdf' }));
       geminiAdapter.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Доброго дня! Пропонуємо співпрацю.' }] } });
 
       const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
@@ -586,13 +627,17 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         'test-gemini-key',
       );
       expect(mockRenderHtmlToPdf).toHaveBeenCalled();
+      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'c1' }), 'f1');
+      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'c1' }), 'f2');
       expect(result).toMatchObject({
         text: 'Доброго дня! Пропонуємо співпрацю.',
         productCount: 2,
         candidateEmail: 'cand@example.test',
         candidatePhone: '+380501112233',
       });
-      expect(result.pdfBase64).toBe(Buffer.from('%PDF-fake').toString('base64'));
+      // 1 main table page + 2 pages from each merged attachment = 5
+      const merged = await PDFDocument.load(Buffer.from(result.pdfBase64, 'base64'));
+      expect(merged.getPageCount()).toBe(5);
     });
   });
 
@@ -609,15 +654,27 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     it('refuses when the candidate has no email on file', async () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue({ ...candidate, email: null });
       tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }] });
       await expect(service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'text')).rejects.toMatchObject({
         response: { code: 'SOURCING_OUTREACH_LETTER_NO_EMAIL' },
       });
       expect(emailService.send).not.toHaveBeenCalled();
     });
 
-    it('sends the reviewed text with a freshly-rendered PDF attached', async () => {
+    it('refuses when none of the category\'s products has a PDF attached', async () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
       tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({});
+      await expect(service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'text')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_NO_PRODUCTS' },
+      });
+      expect(emailService.send).not.toHaveBeenCalled();
+    });
+
+    it('sends the reviewed text with the table PDF plus each product\'s own PDF merged in', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({ p1: [{ id: 'f1', mimeType: 'application/pdf', originalName: 'gvynt.pdf' }] });
 
       const result = await service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'Доброго дня!');
 
@@ -625,8 +682,11 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         'cand@example.test',
         expect.stringContaining('А. Метизи'),
         'Доброго дня!',
-        [expect.objectContaining({ content: Buffer.from('%PDF-fake'), contentType: 'application/pdf' })],
+        [expect.objectContaining({ contentType: 'application/pdf' })],
       );
+      const [, , , attachments] = emailService.send.mock.calls[0];
+      const merged = await PDFDocument.load(attachments[0].content);
+      expect(merged.getPageCount()).toBe(2); // 1 table page + 1 page from the merged attachment
       expect(result).toEqual({ sent: true });
     });
   });
