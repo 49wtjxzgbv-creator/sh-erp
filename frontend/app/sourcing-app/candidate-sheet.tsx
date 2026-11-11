@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { getTelegramWebApp } from './telegram-webapp';
-import { useCandidates, useUpdateOutreach } from './use-sourcing-app';
+import { useCandidates, useMe, useUpdateOutreach } from './use-sourcing-app';
+import { OutreachLetterPanel } from './outreach-letter-panel';
 import type { OutreachStatus } from './sourcing-app-client';
 
 const STATUS_OPTIONS: Array<{ status: OutreachStatus; label: string }> = [
@@ -32,6 +33,8 @@ export function CandidateSheet({ candidateId, onClose }: { candidateId: string |
   const { data: candidates } = useCandidates();
   const candidate = candidates?.find((c) => c.id === candidateId) ?? null;
   const updateOutreach = useUpdateOutreach();
+  // Already past the shell's own SDK-readiness gate by the time this sheet can even open.
+  const { data: me } = useMe(true);
 
   const [note, setNote] = useState('');
   const [quotedPrice, setQuotedPrice] = useState('');
@@ -137,6 +140,8 @@ export function CandidateSheet({ candidateId, onClose }: { candidateId: string |
           <Button className="w-full" onClick={saveNoteAndQuote} loading={updateOutreach.isPending}>
             {saved ? '✅ Збережено' : 'Зберегти'}
           </Button>
+
+          {me?.isAdmin && <OutreachLetterPanel candidateId={candidate.id} />}
         </div>
       )}
     </MobileSheet>

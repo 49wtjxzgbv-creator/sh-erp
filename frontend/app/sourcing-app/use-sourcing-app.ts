@@ -10,6 +10,7 @@ import {
   type SourcingCategorySummary,
   type RealSupplier,
   type SupplierListResponse,
+  type OutreachLetter,
   type CandidateSupplier,
   type StatusOverview,
   type UpdateOutreachInput,
@@ -213,6 +214,20 @@ export function useCreatePriceProposal() {
       // "у SupplierSheet теж має бути можливість запропонувати ціну" (2026-11-11) — getSuppliers now carries the same pendingProposal shape, so a proposal made from either sheet must refresh both.
       qc.invalidateQueries({ queryKey: ['sourcing-app', 'suppliers'] });
     },
+  });
+}
+
+/** "сформувати листа" (2026-11-11) — stateless on the server (see SourcingAppService#generateOutreachLetter's own comment), so nothing here needs cache invalidation either; purely a query-shaped mutation. */
+export function useGenerateOutreachLetter() {
+  return useMutation({
+    mutationFn: (candidateId: string) => sourcingAppClient.post<OutreachLetter>(`candidates/${candidateId}/outreach-letter`),
+  });
+}
+
+export function useSendOutreachLetterEmail() {
+  return useMutation({
+    mutationFn: ({ candidateId, text }: { candidateId: string; text: string }) =>
+      sourcingAppClient.post<{ sent: boolean }>(`candidates/${candidateId}/outreach-letter/send`, { text }),
   });
 }
 

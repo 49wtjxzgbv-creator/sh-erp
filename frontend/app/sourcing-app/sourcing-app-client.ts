@@ -204,5 +204,15 @@ export interface CreateCandidateInput {
   productId?: string;
 }
 
+/** "сформувати листа ... запит на співпрацю з проханням прорахувати деталі" (2026-11-11) — AI-generated greeting + RFQ text, plus a PDF (photo/article/name) of every product in the candidate's own category. */
+export interface OutreachLetter {
+  text: string;
+  pdfBase64: string;
+  pdfFilename: string;
+  productCount: number;
+  candidateEmail: string | null;
+  candidatePhone: string | null;
+}
+
 /** "ALL" sentinel categoryId (2026-11-10 — "категорія всі, щоб просто гортати всі товари") — must match the backend's ALL_CATEGORIES_ID exactly. */
 export const ALL_CATEGORIES_ID = 'all';

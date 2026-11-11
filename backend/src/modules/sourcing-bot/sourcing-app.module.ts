@@ -4,6 +4,7 @@ import { FilesModule } from '../files/files.module';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
 import { DeepSeekAdapter } from '../ai/providers/deepseek.adapter';
+import { EmailService } from '../notifications/email.service';
 import { SourcingBotModule } from './sourcing-bot.module';
 import { SourcingAppController } from './sourcing-app.controller';
 import { SourcingAppService } from './sourcing-app.service';
@@ -26,10 +27,16 @@ import { TelegramWebAppAuthGuard } from './telegram-webapp-auth.guard';
  * header comment). Both classes' own real dependencies (`PrismaService`,
  * the globally-registered `AuditService`) are already satisfied by what
  * this module tree imports/has imported elsewhere.
+ *
+ * `EmailService` (2026-11-11, outreach-letter feature) is similarly
+ * standalone — no injected dependencies of its own beyond env vars — so it
+ * is provided directly too, rather than importing the whole
+ * `NotificationsModule` (which also registers `LowStockDigestService`/
+ * `NotificationsController`, unrelated to this process).
  */
 @Module({
   imports: [PrismaModule, FilesModule, SourcingBotModule],
   controllers: [SourcingAppController],
-  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter, DeepSeekAdapter],
+  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter, DeepSeekAdapter, EmailService],
 })
 export class SourcingAppModule {}

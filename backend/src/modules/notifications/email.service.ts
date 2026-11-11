@@ -35,7 +35,18 @@ export class EmailService {
     return this.transporter;
   }
 
-  async send(to: string, subject: string, text: string): Promise<{ sent: boolean }> {
+  /**
+   * `attachments` (2026-11-11 — sourcing Mini App's "сформувати лист"
+   * outreach-letter feature, the first real caller that needs to attach a
+   * file) — optional, passed straight through to nodemailer's own
+   * `sendMail` shape. Every existing caller omits it and is unaffected.
+   */
+  async send(
+    to: string,
+    subject: string,
+    text: string,
+    attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>,
+  ): Promise<{ sent: boolean }> {
     const transporter = this.getTransporter();
     if (!transporter) {
       this.logger.warn(`SMTP_HOST not configured — logging email instead of sending. To: ${to}, Subject: ${subject}`);
@@ -48,6 +59,7 @@ export class EmailService {
       to,
       subject,
       text,
+      attachments,
     });
     return { sent: true };
   }

@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { FileDomain } from '@prisma/client';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
+import { createR2Client, R2_BUCKET } from '../files/r2-client';
+import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
 import { DeepSeekAdapter } from '../ai/providers/deepseek.adapter';
 import { AiProviderException } from '../ai/providers/ai-provider.port';
+import { EmailService } from '../notifications/email.service';
 import { CodedBadRequestException, CodedForbiddenException, CodedNotFoundException } from '../../common/api-exceptions';
 import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { PRICE_FIELDS, STATUS_LABELS, priceNumber } from './sourcing-shared';
@@ -42,12 +46,16 @@ export interface ProductRow {
  */
 @Injectable()
 export class SourcingAppService {
+  private readonly logger = new Logger(SourcingAppService.name);
+  private readonly r2 = createR2Client();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
     private readonly aiSettingsService: AiSettingsService,
     private readonly geminiAdapter: GeminiAdapter,
     private readonly deepSeekAdapter: DeepSeekAdapter,
+    private readonly emailService: EmailService,
   ) {}
 
   async getCategories(identity: ResolvedSourcingIdentity) {
@@ -749,17 +757,24 @@ export class SourcingAppService {
    * translation is negligible token volume next to the chat
    * assistant/invoice-OCR features that system actually guards against.
    */
-  async translateName(identity: ResolvedSourcingIdentity, text: string): Promise<{ translated: string }> {
-    // "переклад не працює" (2026-11-10, live): AiSettingsService reads
-    // `prisma.tenant` directly, which throws "No tenant context available"
-    // unless called from inside an active runInTenantTransaction scope —
-    // the exact same gotcha already fixed for FilesService calls elsewhere
-    // in this file.
+  /**
+   * Shared provider/key resolution (2026-11-11 extraction — `translateName`
+   * had this inline; the new outreach-letter generator below needs the
+   * identical resolution, so it's now a single place instead of two). See
+   * `translateName`'s own history: `AiSettingsService` reads `prisma.tenant`
+   * directly, which throws "No tenant context available" unless called
+   * from inside an active `runInTenantTransaction` scope.
+   */
+  private async resolveAiAdapter(identity: ResolvedSourcingIdentity): Promise<{ adapter: GeminiAdapter | DeepSeekAdapter; apiKey: string }> {
     const { provider, apiKey } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async () => ({
       provider: await this.aiSettingsService.getProvider(identity.companyId),
       apiKey: await this.aiSettingsService.getEffectiveApiKey(identity.companyId),
     }));
-    const adapter = provider === 'deepseek' ? this.deepSeekAdapter : this.geminiAdapter;
+    return { adapter: provider === 'deepseek' ? this.deepSeekAdapter : this.geminiAdapter, apiKey };
+  }
+
+  async translateName(identity: ResolvedSourcingIdentity, text: string): Promise<{ translated: string }> {
+    const { adapter, apiKey } = await this.resolveAiAdapter(identity);
     const prompt =
       'Переклади цю технічну назву деталі/товару українською мовою. ' +
       'Поверни ТІЛЬКИ переклад, без пояснень і без лапок. ' +
@@ -777,5 +792,191 @@ export class SourcingAppService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Raw R2 bytes (not presigned URLs — `photoUrlsByProductId` is for the
+   * browser, this is for EMBEDDING into a server-rendered PDF), most
+   * recent `PRODUCT_PHOTO` per product. Same fetch shape
+   * `SourcingBotService#sendCatalogExport` already uses for its own PDF.
+   */
+  private async rawPhotoDataUrisByProductId(tx: TenantPrismaClient, productIds: string[]): Promise<Map<string, string>> {
+    if (productIds.length === 0) return new Map();
+    const photoAssets = await tx.fileAsset.findMany({
+      where: { entityType: 'Product', entityId: { in: productIds }, domain: 'PRODUCT_PHOTO', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { entityId: true, storageKey: true, mimeType: true },
+    });
+    const assetByProductId = new Map<string, { storageKey: string; mimeType: string }>();
+    for (const fa of photoAssets) if (!assetByProductId.has(fa.entityId)) assetByProductId.set(fa.entityId, fa);
+
+    const PHOTO_FETCH_CONCURRENCY = 10;
+    const dataUriByProductId = new Map<string, string>();
+    const ids = [...assetByProductId.keys()];
+    for (let i = 0; i < ids.length; i += PHOTO_FETCH_CONCURRENCY) {
+      const chunk = ids.slice(i, i + PHOTO_FETCH_CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (productId) => {
+          const { storageKey, mimeType } = assetByProductId.get(productId)!;
+          try {
+            const object = await this.r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }));
+            const chunks: Buffer[] = [];
+            for await (const part of object.Body as any) chunks.push(Buffer.isBuffer(part) ? part : Buffer.from(part));
+            dataUriByProductId.set(productId, `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}`);
+          } catch (err) {
+            this.logger.warn(`Outreach letter: failed to fetch photo for product ${productId}: ${String(err)}`);
+          }
+        }),
+      );
+    }
+    return dataUriByProductId;
+  }
+
+  /**
+   * "окрім тексту має бути пдф файл з фото артикулом та назвою деталі,
+   * нижче прикріплені пдф файли усіх товарів зі списку" (2026-11-11) — a
+   * simple photo/article/name grid, every product in the candidate's own
+   * category (same category the candidate is already scoped to — "мають
+   * відповідати напрямку його праці" is exactly what that scoping already
+   * guarantees, no separate matching step needed). Deliberately simpler
+   * than `sendCatalogExport`'s own PDF (no prices/suppliers columns — this
+   * goes to an outside party, not internal staff).
+   */
+  private async renderCandidateProductsPdf(
+    tx: TenantPrismaClient,
+    categoryName: string,
+    products: Array<{ id: string; article: string; name: string }>,
+  ): Promise<Buffer> {
+    const photoDataUriByProductId = await this.rawPhotoDataUrisByProductId(tx, products.map((p) => p.id));
+    const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const cellsHtml = products
+      .map((p) => {
+        const photoUri = photoDataUriByProductId.get(p.id);
+        const photoCell = photoUri ? `<img src="${photoUri}" class="photo">` : '<div class="photo photo-empty">—</div>';
+        return `<div class="item">${photoCell}<div class="label"><b>${escapeHtml(p.article)}</b><br>${escapeHtml(p.name)}</div></div>`;
+      })
+      .join('\n');
+
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
+  h1 { font-size: 16px; margin: 0 0 14px; }
+  .item { display: inline-block; width: 160px; vertical-align: top; margin: 0 10px 14px 0; page-break-inside: avoid; }
+  .photo { width: 100px; height: 100px; object-fit: contain; display: block; border: 1px solid #ddd; }
+  .photo-empty { display: flex; align-items: center; justify-content: center; color: #999; }
+  .label { margin-top: 4px; line-height: 1.3; }
+</style></head>
+<body>
+  <h1>${escapeHtml(categoryName)} — ${products.length} позицій</h1>
+  ${cellsHtml}
+</body></html>`;
+
+    return renderHtmlToPdf(html, 180_000);
+  }
+
+  /**
+   * "сформувати листа ... привітання і запит на співпрацю з проханням
+   * прорахувати деталі" (2026-11-11) — admin-only (same gate as
+   * createCandidate/createPriceProposal: this reaches out to an outside
+   * party on the company's behalf). Stateless: both this and
+   * `sendOutreachLetterEmail` below independently regenerate the PDF from
+   * the candidate's own category rather than caching it anywhere, so there
+   * is nothing to invalidate if the category's products change between
+   * the two calls.
+   */
+  async generateOutreachLetter(identity: ResolvedSourcingIdentity, candidateId: string) {
+    if (!identity.isAdmin) {
+      throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can generate an outreach letter.');
+    }
+    const { candidate, products } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const candidate = await tx.sourcingCandidateSupplier.findUnique({
+        where: { id: candidateId },
+        include: { category: { select: { id: true, name: true } } },
+      });
+      if (!candidate) return { candidate: null, products: [] };
+      const products = await tx.product.findMany({
+        where: { sourcingCategoryId: candidate.categoryId, deletedAt: null },
+        orderBy: { article: 'asc' },
+        select: { id: true, article: true, name: true },
+      });
+      return { candidate, products };
+    });
+    if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
+    if (products.length === 0) {
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Ця категорія поки не містить жодного товару.');
+    }
+
+    const { adapter, apiKey } = await this.resolveAiAdapter(identity);
+    const prompt =
+      `Напиши короткий діловий лист-звернення до потенційного постачальника "${candidate.name}", ` +
+      `який імовірно виготовляє деталі напрямку "${candidate.category.name}"` +
+      (candidate.whatTheyDo ? ` (${candidate.whatTheyDo})` : '') +
+      '. ' +
+      'Лист має містити: привітання, коротку пропозицію співпраці, прохання порахувати вартість деталей зі списку у прикріпленому PDF-файлі. ' +
+      'Пиши українською, ввічливо і по-діловому, без зайвої води. ' +
+      'НЕ використовуй символ довгого тире (—) ніде в тексті — лише звичайний дефіс або без нього. ' +
+      'Не додавай підпис чи контакти в кінці листа. ' +
+      'Поверни лише текст листа, без заголовків і пояснень.';
+
+    let generatedText: string;
+    try {
+      const result = await adapter.generateContent([{ role: 'user', parts: [{ text: prompt }] }], apiKey);
+      const translated = result.message.parts.find((p) => p.text !== undefined)?.text?.trim();
+      if (!translated) throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_EMPTY', 'Не вдалося згенерувати текст листа.');
+      generatedText = translated;
+    } catch (err) {
+      if (err instanceof AiProviderException) {
+        throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_FAILED', err.message);
+      }
+      throw err;
+    }
+
+    const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      this.renderCandidateProductsPdf(tx, candidate.category.name, products),
+    );
+
+    return {
+      text: generatedText,
+      pdfBase64: pdfBuffer.toString('base64'),
+      pdfFilename: `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`,
+      productCount: products.length,
+      candidateEmail: candidate.email,
+      candidatePhone: candidate.phone,
+    };
+  }
+
+  /** Sends the reviewed text + a freshly-regenerated PDF via SMTP (see `EmailService#send`'s own comment on the new `attachments` param). */
+  async sendOutreachLetterEmail(identity: ResolvedSourcingIdentity, candidateId: string, text: string): Promise<{ sent: boolean }> {
+    if (!identity.isAdmin) {
+      throw new CodedForbiddenException('SOURCING_OUTREACH_LETTER_FORBIDDEN', 'Only a procurement admin can send an outreach letter.');
+    }
+    const { candidate, products } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const candidate = await tx.sourcingCandidateSupplier.findUnique({
+        where: { id: candidateId },
+        include: { category: { select: { id: true, name: true } } },
+      });
+      if (!candidate) return { candidate: null, products: [] };
+      const products = await tx.product.findMany({
+        where: { sourcingCategoryId: candidate.categoryId, deletedAt: null },
+        orderBy: { article: 'asc' },
+        select: { id: true, article: true, name: true },
+      });
+      return { candidate, products };
+    });
+    if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
+    if (!candidate.email) {
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_EMAIL', 'У цього постачальника не вказано email.');
+    }
+    if (products.length === 0) {
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Ця категорія поки не містить жодного товару.');
+    }
+
+    const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
+      this.renderCandidateProductsPdf(tx, candidate.category.name, products),
+    );
+    const filename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
+    return this.emailService.send(candidate.email, `Запит на прорахунок - ${candidate.category.name}`, text, [
+      { filename, content: pdfBuffer, contentType: 'application/pdf' },
+    ]);
   }
 }

@@ -1,4 +1,8 @@
 import { SourcingAppService } from './sourcing-app.service';
+import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
+
+jest.mock('../../common/pdf/html-to-pdf');
+const mockRenderHtmlToPdf = renderHtmlToPdf as jest.MockedFunction<typeof renderHtmlToPdf>;
 
 describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   let prisma: any;
@@ -6,6 +10,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   let aiSettingsService: any;
   let geminiAdapter: any;
   let deepSeekAdapter: any;
+  let emailService: any;
   let tx: any;
   let service: SourcingAppService;
 
@@ -18,7 +23,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       supplier: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
       productSupplier: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
-      sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+      sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), findUnique: jest.fn() },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
       assembly: { findMany: jest.fn().mockResolvedValue([]) },
       assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
@@ -36,7 +41,9 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     };
     geminiAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва' }] } }) };
     deepSeekAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва (DeepSeek)' }] } }) };
-    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter);
+    emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
+    mockRenderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from('%PDF-fake'));
+    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter, emailService);
   });
 
   describe('getCategories', () => {
@@ -534,6 +541,91 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.sourcingNote.deleteMany).toHaveBeenCalledWith({ where: { entityType: 'Supplier', entityId: 's1' } });
       expect(tx.sourcingNote.upsert).not.toHaveBeenCalled();
       expect(result).toEqual({ note: null });
+    });
+  });
+
+  describe('generateOutreachLetter (2026-11-11 — "сформувати листа ... запит на співпрацю")', () => {
+    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: 'виробництво метизів', email: 'cand@example.test', phone: '+380501112233', category: { id: 'cat1', name: 'А. Метизи' } };
+
+    it('refuses a non-admin', async () => {
+      await expect(service.generateOutreachLetter({ ...identity, isAdmin: false } as any, 'cand1')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_FORBIDDEN' },
+      });
+      expect(tx.sourcingCandidateSupplier.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('throws when the candidate does not exist', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(null);
+      await expect(service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'missing')).rejects.toMatchObject({
+        response: { code: 'SOURCING_CANDIDATE_NOT_FOUND' },
+      });
+    });
+
+    it('throws when the candidate\'s category has no products', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([]);
+      await expect(service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_NO_PRODUCTS' },
+      });
+    });
+
+    it('generates AI text referencing the candidate and category, plus a PDF, and reports productCount/contact fields', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Гвинт М6' },
+        { id: 'p2', article: 'A2', name: 'Гайка М6' },
+      ]);
+      geminiAdapter.generateContent.mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Доброго дня! Пропонуємо співпрацю.' }] } });
+
+      const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
+
+      expect(geminiAdapter.generateContent).toHaveBeenCalledWith(
+        [{ role: 'user', parts: [{ text: expect.stringMatching(/НовийПостач.*А\. Метизи/s) }] }],
+        'test-gemini-key',
+      );
+      expect(mockRenderHtmlToPdf).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        text: 'Доброго дня! Пропонуємо співпрацю.',
+        productCount: 2,
+        candidateEmail: 'cand@example.test',
+        candidatePhone: '+380501112233',
+      });
+      expect(result.pdfBase64).toBe(Buffer.from('%PDF-fake').toString('base64'));
+    });
+  });
+
+  describe('sendOutreachLetterEmail (2026-11-11)', () => {
+    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: null, email: 'cand@example.test', phone: null, category: { id: 'cat1', name: 'А. Метизи' } };
+
+    it('refuses a non-admin', async () => {
+      await expect(service.sendOutreachLetterEmail({ ...identity, isAdmin: false } as any, 'cand1', 'text')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_FORBIDDEN' },
+      });
+      expect(emailService.send).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the candidate has no email on file', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue({ ...candidate, email: null });
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      await expect(service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'text')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_NO_EMAIL' },
+      });
+      expect(emailService.send).not.toHaveBeenCalled();
+    });
+
+    it('sends the reviewed text with a freshly-rendered PDF attached', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+
+      const result = await service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'Доброго дня!');
+
+      expect(emailService.send).toHaveBeenCalledWith(
+        'cand@example.test',
+        expect.stringContaining('А. Метизи'),
+        'Доброго дня!',
+        [expect.objectContaining({ content: Buffer.from('%PDF-fake'), contentType: 'application/pdf' })],
+      );
+      expect(result).toEqual({ sent: true });
     });
   });
 });
