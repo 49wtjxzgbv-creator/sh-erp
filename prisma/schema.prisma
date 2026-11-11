@@ -819,6 +819,18 @@ enum FileDomain {
   // non-committal заявка) or FINANCE_DOCUMENT/PURCHASE_INVOICE (those are
   // human-uploaded financial paperwork, not the order document itself).
   PURCHASE_ORDER_DOCUMENT
+  // Сформувати лист (2026-11-11) — entityType "SourcingCandidateSupplier",
+  // entityId = SourcingCandidateSupplier.id. System-generated (Chromium +
+  // pdf-lib merge, see SourcingAppService#generateOutreachLetter), same
+  // "system-rendered, its own value" rule as the other PDF domains above
+  // — not PURCHASE_REQUEST_DOCUMENT (that's an internal, already-
+  // onboarded-supplier document; this goes to a not-yet-onboarded
+  // candidate instead). Persisted (not just handed to the client as
+  // base64) specifically so the Mini App can give it a REAL presigned
+  // download URL — a client-only blob: URL turned out to be undownloadable
+  // in Telegram's own WebView ("неможливо скачати", the real incident this
+  // domain exists to fix).
+  SOURCING_OUTREACH_LETTER
 }
 
 enum FileConversionStatus {

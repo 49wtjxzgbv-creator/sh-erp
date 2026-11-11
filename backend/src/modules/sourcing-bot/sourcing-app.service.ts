@@ -920,11 +920,15 @@ export class SourcingAppService {
    * "сформувати листа ... привітання і запит на співпрацю з проханням
    * прорахувати деталі" (2026-11-11) — admin-only (same gate as
    * createCandidate/createPriceProposal: this reaches out to an outside
-   * party on the company's behalf). Stateless: both this and
-   * `sendOutreachLetterEmail` below independently regenerate the PDF from
-   * the candidate's own category rather than caching it anywhere, so there
-   * is nothing to invalidate if the category's products change between
-   * the two calls.
+   * party on the company's behalf). `sendOutreachLetterEmail` below still
+   * independently regenerates+remerges its OWN PDF rather than reusing
+   * this one (stateless, nothing to invalidate if the category's products
+   * change between the two calls) — but THIS method's own PDF is now
+   * persisted as a real `FileAsset` ("неможливо скачати", 2026-11-11 real
+   * incident: a client-only `blob:` URL built from base64 turned out to be
+   * undownloadable inside Telegram's own WebView — every OTHER document in
+   * this Mini App is a real presigned R2 URL, which downloads/previews
+   * fine; this now matches that, instead of being the one exception).
    */
   async generateOutreachLetter(identity: ResolvedSourcingIdentity, candidateId: string) {
     if (!identity.isAdmin) {
@@ -974,14 +978,27 @@ export class SourcingAppService {
       throw err;
     }
 
-    const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items),
-    );
+    const pdfFilename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
+    const pdfUrl = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const pdfBuffer = await this.renderAndMergeCandidatePdf(tx, identity, candidate.category.name, candidate.name, items);
+      const { fileAssetId } = await this.filesService.storeGeneratedAsset({
+        companyId: identity.companyId,
+        actorUserId: identity.userId,
+        domain: 'SOURCING_OUTREACH_LETTER',
+        entityType: 'SourcingCandidateSupplier',
+        entityId: candidateId,
+        originalName: pdfFilename,
+        mimeType: 'application/pdf',
+        bytes: pdfBuffer,
+      });
+      const { downloadUrl } = await this.filesService.getDownloadUrl(identity, fileAssetId);
+      return downloadUrl;
+    });
 
     return {
       text: generatedText,
-      pdfBase64: pdfBuffer.toString('base64'),
-      pdfFilename: `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`,
+      pdfUrl,
+      pdfFilename,
       productCount: items.length,
       candidateEmail: candidate.email,
       candidatePhone: candidate.phone,

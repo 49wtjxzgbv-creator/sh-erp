@@ -45,6 +45,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       getDownloadUrl: jest.fn().mockResolvedValue({ downloadUrl: 'https://example.test/photo.jpg' }),
       listForEntities: jest.fn().mockResolvedValue({}),
       getFileAssetBytes: jest.fn().mockResolvedValue({ bytes: await makeMinimalPdf(), mimeType: 'application/pdf', originalName: 'drawing.pdf' }),
+      storeGeneratedAsset: jest.fn().mockResolvedValue({ fileAssetId: 'letter-file-1' }),
     };
     aiSettingsService = {
       getProvider: jest.fn().mockResolvedValue('gemini'),
@@ -653,8 +654,14 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
         candidateEmail: 'cand@example.test',
         candidatePhone: '+380501112233',
       });
+      // "неможливо скачати" (2026-11-11) — a real presigned URL now, not a client-only blob:.
+      expect(result.pdfUrl).toBe('https://example.test/photo.jpg');
+      expect(filesService.storeGeneratedAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ domain: 'SOURCING_OUTREACH_LETTER', entityType: 'SourcingCandidateSupplier', entityId: 'cand1', mimeType: 'application/pdf' }),
+      );
       // 1 main table page + 2 pages from each merged attachment = 5
-      const merged = await PDFDocument.load(Buffer.from(result.pdfBase64, 'base64'));
+      const storedBytes = filesService.storeGeneratedAsset.mock.calls[0][0].bytes;
+      const merged = await PDFDocument.load(storedBytes);
       expect(merged.getPageCount()).toBe(5);
     });
   });

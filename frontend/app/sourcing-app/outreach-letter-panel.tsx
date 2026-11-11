@@ -7,13 +7,6 @@ import { getTelegramWebApp } from './telegram-webapp';
 import { useGenerateOutreachLetter, useSendOutreachLetterEmail } from './use-sourcing-app';
 import type { OutreachLetter } from './sourcing-app-client';
 
-function base64ToBlobUrl(base64: string, mime: string): string {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: mime }));
-}
-
 /**
  * "біля кожного нового постачальника додай кнопку сформувати листа ...
  * привітання і запит на співпрацю з проханням прорахувати деталі ... окрім
@@ -21,14 +14,17 @@ function base64ToBlobUrl(base64: string, mime: string): string {
  * формування має бути електронна пошта телеграм вотсап чи ще щось куди
  * саме надсилати" (2026-11-11) — admin-only panel inside `CandidateSheet`.
  * "Генерувати" calls the AI once and shows an EDITABLE draft (the admin
- * reviews/tweaks before anything goes out); the PDF (photo/article/name of
- * every product in the candidate's own category) opens in the same
- * `DocumentPreview` product documents already use. Channels are whichever
- * contact fields the candidate actually has — email sends for real
- * through the backend's SMTP; WhatsApp just opens a pre-filled `wa.me`
- * link (no API exists to attach a file to that deep link, so the PDF has
- * to be attached by hand there — same practical limit `ContactLinks`
- * already accepts for phone/website).
+ * reviews/tweaks before anything goes out). The PDF is a real presigned
+ * R2 URL ("неможливо скачати", 2026-11-11 — a client-only `blob:` URL
+ * built from base64 wasn't downloadable inside Telegram's own WebView;
+ * `SourcingAppService#generateOutreachLetter` now persists it as a real
+ * `FileAsset`), opened externally via `openLink` for actual saving — the
+ * same convention `ContactLinks`' own website link already uses — with an
+ * in-app `DocumentPreview` as a quick-look secondary option. Channels are
+ * whichever contact fields the candidate actually has — email sends for
+ * real through the backend's SMTP; WhatsApp just opens a pre-filled
+ * `wa.me` link (no API exists to attach a file to that deep link, so the
+ * PDF has to be attached by hand there).
  */
 export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
   const textFieldId = useId();
@@ -37,7 +33,6 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
 
   const [letter, setLetter] = useState<OutreachLetter | null>(null);
   const [text, setText] = useState('');
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
@@ -50,20 +45,7 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
     setText('');
     setPreviewOpen(false);
     setEmailSent(false);
-    setPdfUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
   }, [candidateId]);
-
-  // Blob URLs are only reclaimed when explicitly revoked — release the
-  // previous one before creating the next, and on unmount.
-  useEffect(() => {
-    return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function handleGenerate() {
     try {
@@ -71,10 +53,6 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
       setLetter(result);
       setText(result.text);
       setEmailSent(false);
-      setPdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return base64ToBlobUrl(result.pdfBase64, 'application/pdf');
-      });
       getTelegramWebApp()?.HapticFeedback.notificationOccurred('success');
     } catch (err) {
       getTelegramWebApp()?.HapticFeedback.notificationOccurred('error');
@@ -116,6 +94,13 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
     else window.open(url, '_blank');
   }
 
+  function openPdfExternally() {
+    if (!letter) return;
+    const webApp = getTelegramWebApp();
+    if (webApp) webApp.openLink(letter.pdfUrl);
+    else window.open(letter.pdfUrl, '_blank');
+  }
+
   return (
     <section>
       <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Запит на прорахунок</p>
@@ -136,14 +121,15 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
             style={{ background: 'var(--tg-secondary-bg)', color: 'var(--tg-text)' }}
           />
 
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            className="flex w-full items-center gap-2 rounded-lg p-2.5 text-left text-sm active:opacity-70"
-            style={{ background: 'var(--tg-secondary-bg)' }}
-          >
-            📕 <span>PDF — {letter.productCount} товар{letter.productCount === 1 ? '' : letter.productCount < 5 ? 'и' : 'ів'}</span>
-          </button>
+          <div className="flex gap-2">
+            {/* "неможливо скачати" (2026-11-11) — the primary action opens the real presigned URL in the system browser, which can actually save/share a file; the in-app preview below is a quick-look option, not a replacement for this. */}
+            <Button size="sm" className="flex-1" onClick={openPdfExternally}>
+              ⬇️ PDF — {letter.productCount} товар{letter.productCount === 1 ? '' : letter.productCount < 5 ? 'и' : 'ів'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)}>
+              👁
+            </Button>
+          </div>
 
           <Button variant="outline" size="sm" onClick={handleGenerate} loading={generate.isPending}>
             🔄 Згенерувати заново
@@ -168,8 +154,8 @@ export function OutreachLetterPanel({ candidateId }: { candidateId: string }) {
         </div>
       )}
 
-      {previewOpen && pdfUrl && (
-        <DocumentPreview doc={{ id: candidateId, name: letter?.pdfFilename ?? 'rfq.pdf', url: pdfUrl }} onClose={() => setPreviewOpen(false)} />
+      {previewOpen && letter && (
+        <DocumentPreview doc={{ id: candidateId, name: letter.pdfFilename, url: letter.pdfUrl }} onClose={() => setPreviewOpen(false)} />
       )}
     </section>
   );

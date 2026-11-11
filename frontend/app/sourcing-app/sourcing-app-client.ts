@@ -204,10 +204,19 @@ export interface CreateCandidateInput {
   productId?: string;
 }
 
-/** "сформувати листа ... запит на співпрацю з проханням прорахувати деталі" (2026-11-11) — AI-generated greeting + RFQ text, plus a PDF (photo/article/name) of every product in the candidate's own category. */
+/**
+ * "сформувати листа ... запит на співпрацю з проханням прорахувати деталі"
+ * (2026-11-11) — AI-generated greeting + RFQ text, plus a PDF (table +
+ * each qualifying product's own merged drawing) of every product in the
+ * candidate's own category that has one. `pdfUrl` is a real presigned R2
+ * URL (2026-11-11 follow-up — "неможливо скачати": a client-only `blob:`
+ * URL built from base64 turned out undownloadable inside Telegram's own
+ * WebView), not inline base64 — same shape every other document link in
+ * this Mini App already uses.
+ */
 export interface OutreachLetter {
   text: string;
-  pdfBase64: string;
+  pdfUrl: string;
   pdfFilename: string;
   productCount: number;
   candidateEmail: string | null;
