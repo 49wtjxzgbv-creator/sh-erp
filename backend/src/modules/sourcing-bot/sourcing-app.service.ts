@@ -849,8 +849,14 @@ export class SourcingAppService {
     for (const item of items) {
       for (const fileId of item.pdfFileIds) {
         try {
-          const { bytes, mimeType } = await this.filesService.getFileAssetBytes(identity, fileId);
-          if (mimeType !== 'application/pdf') continue;
+          // "так і не додає ... файли пдф" (2026-11-11) — `item.pdfFileIds`
+          // was already picked by filename extension (see
+          // `candidateOutreachItems`'s own comment on why, not by
+          // mimeType), so no second mimeType gate here either —
+          // `PDFDocument.load` below is itself the real validity check,
+          // and the catch below is what actually protects against a
+          // non-PDF slipping through.
+          const { bytes } = await this.filesService.getFileAssetBytes(identity, fileId);
           const source = await PDFDocument.load(bytes);
           for (const page of await merged.copyPages(source, source.getPageIndices())) merged.addPage(page);
         } catch {
@@ -869,6 +875,14 @@ export class SourcingAppService {
    * to send the candidate besides a photo, which isn't enough on its own
    * for a quote request. One batched `listForEntities` call for the whole
    * category rather than one per product.
+   *
+   * "так і не додає ... файли пдф з кресленнями" (2026-11-11 follow-up) —
+   * the first version filtered by `mimeType === 'application/pdf'`, which
+   * silently matched nothing for real uploads whose stored mimeType isn't
+   * that exact literal string. Matches by FILENAME EXTENSION instead, the
+   * same `/\.pdf$/i` test `findModelAndDocuments` above already uses (and
+   * already proven correct — it's what powers ProductSheet's own
+   * "Документи" section), not mimeType sniffing.
    */
   private async candidateOutreachItems(
     identity: ResolvedSourcingIdentity,
@@ -878,7 +892,7 @@ export class SourcingAppService {
     const filesByProductId = await this.filesService.listForEntities(identity, 'Product', products.map((p) => p.id), ['PRODUCT_DOCUMENT']);
     const items: CandidateOutreachItem[] = [];
     for (const p of products) {
-      const pdfFileIds = (filesByProductId[p.id] ?? []).filter((f) => f.mimeType === 'application/pdf').map((f) => f.id);
+      const pdfFileIds = (filesByProductId[p.id] ?? []).filter((f) => /\.pdf$/i.test(f.originalName)).map((f) => f.id);
       if (pdfFileIds.length > 0) items.push({ ...p, pdfFileIds });
     }
     return items;

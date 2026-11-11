@@ -607,6 +607,24 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result.productCount).toBe(1);
     });
 
+    // "так і не додає до пдф файла товарів вкладені у товари файли пдф з
+    // кресленнями" (2026-11-11) — the real root cause: the first fix
+    // filtered by `mimeType === 'application/pdf'`, which silently matched
+    // nothing for a real upload whose stored mimeType isn't that exact
+    // string. Must match by filename extension instead.
+    it('includes a product whose PDF has a non-"application/pdf" stored mimeType, as long as the filename ends in .pdf', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
+      tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
+      filesService.listForEntities.mockResolvedValue({
+        p1: [{ id: 'f1', mimeType: 'application/octet-stream', originalName: 'kreslennia.pdf' }],
+      });
+
+      const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
+
+      expect(result.productCount).toBe(1);
+      expect(filesService.getFileAssetBytes).toHaveBeenCalledWith(expect.anything(), 'f1');
+    });
+
     it('generates AI text referencing the candidate and category, merges each product\'s own PDF in, and reports productCount/contact fields', async () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
       tx.product.findMany.mockResolvedValue([
