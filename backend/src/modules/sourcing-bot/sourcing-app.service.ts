@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { FileDomain } from '@prisma/client';
 import { PDFDocument } from 'pdf-lib';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
@@ -54,6 +54,8 @@ export interface ProductRow {
  */
 @Injectable()
 export class SourcingAppService {
+  private readonly logger = new Logger(SourcingAppService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
@@ -846,6 +848,8 @@ export class SourcingAppService {
     const mainDoc = await PDFDocument.load(mainPdfBytes);
     for (const page of await merged.copyPages(mainDoc, mainDoc.getPageIndices())) merged.addPage(page);
 
+    let mergedCount = 0;
+    let failedCount = 0;
     for (const item of items) {
       for (const fileId of item.pdfFileIds) {
         try {
@@ -859,11 +863,19 @@ export class SourcingAppService {
           const { bytes } = await this.filesService.getFileAssetBytes(identity, fileId);
           const source = await PDFDocument.load(bytes);
           for (const page of await merged.copyPages(source, source.getPageIndices())) merged.addPage(page);
-        } catch {
-          // One unreadable/corrupt attachment must not break the whole letter — same "skip, don't abort" rule `mergeAttachments` follows.
+          mergedCount++;
+        } catch (err) {
+          // One unreadable/corrupt attachment must not break the whole
+          // letter — same "skip, don't abort" rule `mergeAttachments`
+          // follows. LOGGED though (2026-11-11 — a prior version swallowed
+          // this silently, which is exactly why "так і не додало" took
+          // three rounds to actually diagnose instead of one).
+          failedCount++;
+          this.logger.warn(`Outreach letter: failed to merge product ${item.id}'s attachment ${fileId}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         }
       }
     }
+    this.logger.log(`Outreach letter: merged ${mergedCount}/${mergedCount + failedCount} product attachment(s) for ${items.length} item(s).`);
     return Buffer.from(await merged.save());
   }
 
@@ -892,9 +904,15 @@ export class SourcingAppService {
     const filesByProductId = await this.filesService.listForEntities(identity, 'Product', products.map((p) => p.id), ['PRODUCT_DOCUMENT']);
     const items: CandidateOutreachItem[] = [];
     for (const p of products) {
-      const pdfFileIds = (filesByProductId[p.id] ?? []).filter((f) => /\.pdf$/i.test(f.originalName)).map((f) => f.id);
-      if (pdfFileIds.length > 0) items.push({ ...p, pdfFileIds });
+      const allDocs = filesByProductId[p.id] ?? [];
+      const pdfFileIds = allDocs.filter((f) => /\.pdf$/i.test(f.originalName)).map((f) => f.id);
+      if (pdfFileIds.length > 0) {
+        items.push({ ...p, pdfFileIds });
+      } else if (allDocs.length > 0) {
+        this.logger.debug(`Outreach letter: product ${p.id} (${p.article}) has ${allDocs.length} PRODUCT_DOCUMENT file(s) but none end in .pdf: ${allDocs.map((f) => f.originalName).join(', ')}`);
+      }
     }
+    this.logger.log(`Outreach letter: ${items.length}/${products.length} product(s) qualified (have a .pdf among their documents).`);
     return items;
   }
 
