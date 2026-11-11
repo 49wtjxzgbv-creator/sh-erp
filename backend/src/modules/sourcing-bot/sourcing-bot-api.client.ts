@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-export interface TelegramInlineKeyboardButton {
-  text: string;
-  callback_data: string;
-}
+/**
+ * A button is either a plain callback (handled by this bot's own FSM) or a
+ * `web_app` button (2026-11-11 — "після старт воно має пропонувати не
+ * оберіть категорію, а відкрити застосунок") — opens the Mini App
+ * in-place inside Telegram, same `{url}` shape Telegram's own Bot API
+ * docs specify for `InlineKeyboardButton.web_app`. Mutually exclusive,
+ * never both on the same button.
+ */
+export type TelegramInlineKeyboardButton = { text: string; callback_data: string } | { text: string; web_app: { url: string } };
 
 export interface TelegramInlineKeyboard {
   inline_keyboard: TelegramInlineKeyboardButton[][];

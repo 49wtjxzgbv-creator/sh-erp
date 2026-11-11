@@ -22,6 +22,21 @@ const MAIN_MENU: TelegramReplyKeyboard = {
   resize_keyboard: true,
 };
 
+/**
+ * "після старт воно має пропонувати не оберіть категорію, а відкрити
+ * застосунок" (2026-11-11) — the chat FSM's own category-browsing flow
+ * (`sendMainMenu`'s "📂 Оберіть категорію:") still exists for `/categories`
+ * and anyone who prefers it, but a fresh `/start` should lead straight to
+ * the Mini App (`frontend/app/sourcing-app/`), not the old text flow.
+ * `FRONTEND_URL` may be a comma-separated list (same convention as
+ * `main.ts`'s own CORS origin handling) — only the first origin is a real
+ * URL to open.
+ */
+function openAppKeyboard(): TelegramInlineKeyboard {
+  const origin = (process.env.FRONTEND_URL ?? '').split(',')[0]?.trim();
+  return { inline_keyboard: [[{ text: '📱 Відкрити застосунок', web_app: { url: `${origin}/sourcing-app` } }]] };
+}
+
 const HELP_TEXT =
   '🤖 <b>Як це працює</b>\n\n' +
   '📂 <b>Категорії</b> — список напрямків пошуку, у кожній: текст запиту для копіювання, товари з цінами, потенційні постачальники.\n' +
@@ -178,8 +193,8 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
       data: { sourcingBotChatId: chatId, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
     });
     this.identityService.invalidate(chatId);
-    await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}! Ось список категорій для пошуку постачальників:`, MAIN_MENU);
-    await this.sendMainMenu(chatId);
+    await this.telegram.sendMessage(chatId, `✅ Готово, ${user.fullName}!`, MAIN_MENU);
+    await this.telegram.sendMessage(chatId, '📱 Відкрийте застосунок, щоб шукати товари й постачальників:', openAppKeyboard());
   }
 
   // ============================================================
@@ -195,7 +210,7 @@ export class SourcingBotService implements OnModuleInit, OnApplicationShutdown {
         const identity = await this.resolveIdentity(chatId);
         if (identity) {
           await this.telegram.sendMessage(chatId, `👋 Вітаю, ${identity.fullName}!`, MAIN_MENU);
-          await this.sendMainMenu(chatId);
+          await this.telegram.sendMessage(chatId, '📱 Відкрийте застосунок, щоб шукати товари й постачальників:', openAppKeyboard());
         } else {
           await this.telegram.sendMessage(chatId, 'Щоб почати, згенеруйте код на сторінці «Сповіщення» в ERP і надішліть: /start КОД');
         }

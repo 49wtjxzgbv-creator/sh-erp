@@ -89,11 +89,15 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('уже прив\'язано'));
     });
 
-    it('valid code pairs the chat, clears the code, and shows the main menu', async () => {
+    // "після старт воно має пропонувати не оберіть категорію, а відкрити
+    // застосунок" (2026-11-11) — the old text-based "📂 Оберіть категорію"
+    // flow no longer follows pairing; a web_app button opening the Mini
+    // App does instead.
+    it('valid code pairs the chat, clears the code, and prompts to open the Mini App', async () => {
+      process.env.FRONTEND_URL = 'https://sh-erp.pro';
       pairingPrisma.user.findFirst
         .mockResolvedValueOnce(user) // lookup by code
         .mockResolvedValueOnce(null); // no existing chat link
-      tx.sourcingCategory.findMany.mockResolvedValue([{ id: 'cat1', name: 'А. Метизи' }]);
 
       await service.handleUpdate(msg('/start ABC123'));
 
@@ -102,8 +106,13 @@ describe('SourcingBotService (2026-11-09 — procurement sourcing bot)', () => {
         data: { sourcingBotChatId: chatId, sourcingBotPairingCode: null, sourcingBotPairingCodeExpiresAt: null },
       });
       expect(telegram.sendMessage).toHaveBeenCalledWith(chatId, expect.stringContaining('Готово'), expect.anything());
-      // code lookup + existing-chat check + one more re-resolve for the main menu that follows (cache was cleared on pairing)
-      expect(pairingPrisma.user.findFirst).toHaveBeenCalledTimes(3);
+      expect(telegram.sendMessage).toHaveBeenCalledWith(
+        chatId,
+        expect.stringContaining('Відкрийте застосунок'),
+        { inline_keyboard: [[{ text: '📱 Відкрити застосунок', web_app: { url: 'https://sh-erp.pro/sourcing-app' } }]] },
+      );
+      // code lookup + existing-chat check only — no more main-menu re-resolve, since the open-app prompt no longer re-reads identity.
+      expect(pairingPrisma.user.findFirst).toHaveBeenCalledTimes(2);
     });
   });
 
