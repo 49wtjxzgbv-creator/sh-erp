@@ -5,6 +5,7 @@ import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
 import { DeepSeekAdapter } from '../ai/providers/deepseek.adapter';
 import { EmailService } from '../notifications/email.service';
+import { OutreachLetterRendererService } from './outreach-letter-renderer.service';
 import { SourcingBotModule } from './sourcing-bot.module';
 import { SourcingAppController } from './sourcing-app.controller';
 import { SourcingAppService } from './sourcing-app.service';
@@ -37,6 +38,6 @@ import { TelegramWebAppAuthGuard } from './telegram-webapp-auth.guard';
 @Module({
   imports: [PrismaModule, FilesModule, SourcingBotModule],
   controllers: [SourcingAppController],
-  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter, DeepSeekAdapter, EmailService],
+  providers: [SourcingAppService, TelegramWebAppAuthGuard, AiSettingsService, GeminiAdapter, DeepSeekAdapter, EmailService, OutreachLetterRendererService],
 })
 export class SourcingAppModule {}

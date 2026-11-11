@@ -1,4 +1,5 @@
 import { SourcingAppService } from './sourcing-app.service';
+import { OutreachLetterRendererService } from './outreach-letter-renderer.service';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 
 jest.mock('../../common/pdf/html-to-pdf');
@@ -24,6 +25,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       productSupplier: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
       fileAsset: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), findUnique: jest.fn() },
+      company: { findUnique: jest.fn().mockResolvedValue({ name: 'Наша Компанія' }) },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
       assembly: { findMany: jest.fn().mockResolvedValue([]) },
       assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
@@ -43,7 +45,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     deepSeekAdapter = { generateContent: jest.fn().mockResolvedValue({ message: { role: 'model', parts: [{ text: 'Перекладена назва (DeepSeek)' }] } }) };
     emailService = { send: jest.fn().mockResolvedValue({ sent: true }) };
     mockRenderHtmlToPdf.mockReset().mockResolvedValue(Buffer.from('%PDF-fake'));
-    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter, emailService);
+    service = new SourcingAppService(prisma, filesService, aiSettingsService, geminiAdapter, deepSeekAdapter, emailService, new OutreachLetterRendererService());
   });
 
   describe('getCategories', () => {

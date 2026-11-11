@@ -1,9 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { FileDomain } from '@prisma/client';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { PrismaService, TenantPrismaClient } from '../../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
-import { createR2Client, R2_BUCKET } from '../files/r2-client';
 import { renderHtmlToPdf } from '../../common/pdf/html-to-pdf';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { GeminiAdapter } from '../ai/providers/gemini.adapter';
@@ -15,6 +13,7 @@ import { ResolvedSourcingIdentity } from './sourcing-identity.service';
 import { PRICE_FIELDS, STATUS_LABELS, priceNumber } from './sourcing-shared';
 import { UpdateOutreachDto } from './dto/update-outreach.dto';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
+import { OutreachLetterRendererService } from './outreach-letter-renderer.service';
 
 const APP_PAGE_SIZE = 30;
 
@@ -46,9 +45,6 @@ export interface ProductRow {
  */
 @Injectable()
 export class SourcingAppService {
-  private readonly logger = new Logger(SourcingAppService.name);
-  private readonly r2 = createR2Client();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly filesService: FilesService,
@@ -56,6 +52,7 @@ export class SourcingAppService {
     private readonly geminiAdapter: GeminiAdapter,
     private readonly deepSeekAdapter: DeepSeekAdapter,
     private readonly emailService: EmailService,
+    private readonly outreachLetterRenderer: OutreachLetterRendererService,
   ) {}
 
   async getCategories(identity: ResolvedSourcingIdentity) {
@@ -795,82 +792,36 @@ export class SourcingAppService {
   }
 
   /**
-   * Raw R2 bytes (not presigned URLs — `photoUrlsByProductId` is for the
-   * browser, this is for EMBEDDING into a server-rendered PDF), most
-   * recent `PRODUCT_PHOTO` per product. Same fetch shape
-   * `SourcingBotService#sendCatalogExport` already uses for its own PDF.
-   */
-  private async rawPhotoDataUrisByProductId(tx: TenantPrismaClient, productIds: string[]): Promise<Map<string, string>> {
-    if (productIds.length === 0) return new Map();
-    const photoAssets = await tx.fileAsset.findMany({
-      where: { entityType: 'Product', entityId: { in: productIds }, domain: 'PRODUCT_PHOTO', deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      select: { entityId: true, storageKey: true, mimeType: true },
-    });
-    const assetByProductId = new Map<string, { storageKey: string; mimeType: string }>();
-    for (const fa of photoAssets) if (!assetByProductId.has(fa.entityId)) assetByProductId.set(fa.entityId, fa);
-
-    const PHOTO_FETCH_CONCURRENCY = 10;
-    const dataUriByProductId = new Map<string, string>();
-    const ids = [...assetByProductId.keys()];
-    for (let i = 0; i < ids.length; i += PHOTO_FETCH_CONCURRENCY) {
-      const chunk = ids.slice(i, i + PHOTO_FETCH_CONCURRENCY);
-      await Promise.all(
-        chunk.map(async (productId) => {
-          const { storageKey, mimeType } = assetByProductId.get(productId)!;
-          try {
-            const object = await this.r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }));
-            const chunks: Buffer[] = [];
-            for await (const part of object.Body as any) chunks.push(Buffer.isBuffer(part) ? part : Buffer.from(part));
-            dataUriByProductId.set(productId, `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}`);
-          } catch (err) {
-            this.logger.warn(`Outreach letter: failed to fetch photo for product ${productId}: ${String(err)}`);
-          }
-        }),
-      );
-    }
-    return dataUriByProductId;
-  }
-
-  /**
-   * "окрім тексту має бути пдф файл з фото артикулом та назвою деталі,
-   * нижче прикріплені пдф файли усіх товарів зі списку" (2026-11-11) — a
-   * simple photo/article/name grid, every product in the candidate's own
-   * category (same category the candidate is already scoped to — "мають
-   * відповідати напрямку його праці" is exactly what that scoping already
-   * guarantees, no separate matching step needed). Deliberately simpler
-   * than `sendCatalogExport`'s own PDF (no prices/suppliers columns — this
-   * goes to an outside party, not internal staff).
+   * "формує пдф файл не так як заявка на прорахунок постачальникам"
+   * (2026-11-11) — the first version of this PDF was a plain photo grid;
+   * it now matches the company's own real "Заявка на прорахунок" document
+   * (`PurchaseRequestRendererService`) visually — same header/parties/
+   * numbered-table/footer skeleton, via its own dedicated
+   * `OutreachLetterRendererService` (see that file's own header comment
+   * for why it's a fork, not a shared import). Photos are presigned URLs
+   * (`photoUrlsByProductId`, the same helper every list in this file
+   * already uses), not embedded bytes — `renderHtmlToPdf`'s Chromium page
+   * has no network restriction, so it fetches them live, same as
+   * `PurchaseRequestRendererService`'s own `photoUrl` field.
    */
   private async renderCandidateProductsPdf(
     tx: TenantPrismaClient,
+    identity: ResolvedSourcingIdentity,
     categoryName: string,
+    supplierName: string,
     products: Array<{ id: string; article: string; name: string }>,
   ): Promise<Buffer> {
-    const photoDataUriByProductId = await this.rawPhotoDataUrisByProductId(tx, products.map((p) => p.id));
-    const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const cellsHtml = products
-      .map((p) => {
-        const photoUri = photoDataUriByProductId.get(p.id);
-        const photoCell = photoUri ? `<img src="${photoUri}" class="photo">` : '<div class="photo photo-empty">—</div>';
-        return `<div class="item">${photoCell}<div class="label"><b>${escapeHtml(p.article)}</b><br>${escapeHtml(p.name)}</div></div>`;
-      })
-      .join('\n');
-
-    const html = `<!doctype html>
-<html><head><meta charset="utf-8"><style>
-  body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
-  h1 { font-size: 16px; margin: 0 0 14px; }
-  .item { display: inline-block; width: 160px; vertical-align: top; margin: 0 10px 14px 0; page-break-inside: avoid; }
-  .photo { width: 100px; height: 100px; object-fit: contain; display: block; border: 1px solid #ddd; }
-  .photo-empty { display: flex; align-items: center; justify-content: center; color: #999; }
-  .label { margin-top: 4px; line-height: 1.3; }
-</style></head>
-<body>
-  <h1>${escapeHtml(categoryName)} — ${products.length} позицій</h1>
-  ${cellsHtml}
-</body></html>`;
-
+    const [company, photoUrlByProductId] = await Promise.all([
+      tx.company.findUnique({ where: { id: identity.companyId }, select: { name: true } }),
+      this.photoUrlsByProductId(tx, identity, products.map((p) => p.id)),
+    ]);
+    const html = this.outreachLetterRenderer.renderHtml({
+      categoryName,
+      createdAt: new Date(),
+      fromName: company?.name ?? '',
+      supplierName,
+      items: products.map((p) => ({ article: p.article, name: p.name, photoUrl: photoUrlByProductId.get(p.id) ?? null })),
+    });
     return renderHtmlToPdf(html, 180_000);
   }
 
@@ -932,7 +883,7 @@ export class SourcingAppService {
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderCandidateProductsPdf(tx, candidate.category.name, products),
+      this.renderCandidateProductsPdf(tx, identity, candidate.category.name, candidate.name, products),
     );
 
     return {
@@ -972,7 +923,7 @@ export class SourcingAppService {
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>
-      this.renderCandidateProductsPdf(tx, candidate.category.name, products),
+      this.renderCandidateProductsPdf(tx, identity, candidate.category.name, candidate.name, products),
     );
     const filename = `rfq-${candidate.category.name.replace(/[^\p{L}\p{N}]+/gu, '-')}.pdf`;
     return this.emailService.send(candidate.email, `Запит на прорахунок - ${candidate.category.name}`, text, [
