@@ -228,6 +228,43 @@ describe('PurchaseOrdersService', () => {
       );
     });
 
+    // "в пдф файл чомусь не додає креслення товару" (2026-11-12)
+    it("merges each line's own product/assembly PDF drawing into the attachments passed to pdfService, one per unique product/assembly", async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
+        ...order,
+        items: [
+          { ...order.items[0], productId: 'p1', assemblyId: null },
+          { id: 'item3', productId: 'p1', assemblyId: null, articleSnapshot: 'ABC-2', qtyOrdered: 3, expectedPrice: null, supplierConfirmedPrice: null, currentDeliveryScheduleId: null, deliverySchedules: [] }, // same product again
+          { id: 'item4', productId: null, assemblyId: 'a1', articleSnapshot: 'ASM-1', qtyOrdered: 2, expectedPrice: null, supplierConfirmedPrice: null, currentDeliveryScheduleId: null, deliverySchedules: [] },
+        ],
+      });
+      filesService.listForEntities.mockImplementation((_user: any, entityType: string, _ids: string[], domains: string[]) => {
+        if (entityType === 'Product' && domains.includes('PRODUCT_DOCUMENT')) {
+          return Promise.resolve({ p1: [{ id: 'doc-p1', originalName: 'kreslennia.pdf' }] });
+        }
+        if (entityType === 'Assembly' && domains.includes('ASSEMBLY_DOCUMENT')) {
+          return Promise.resolve({ a1: [{ id: 'doc-a1-model', originalName: 'model.glb' }, { id: 'doc-a1-pdf', originalName: 'asm.pdf' }] });
+        }
+        return Promise.resolve({});
+      });
+
+      await service.generatePdf(user, 'po1');
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(user, 'Product', ['p1'], ['PRODUCT_DOCUMENT']);
+      expect(filesService.listForEntities).toHaveBeenCalledWith(user, 'Assembly', ['a1'], ['ASSEMBLY_DOCUMENT']);
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(
+        user,
+        expect.objectContaining({ attachments: expect.arrayContaining([{ fileAssetId: 'doc-p1' }, { fileAssetId: 'doc-a1-pdf' }]) }),
+      );
+      const { attachments } = pdfService.generateAndStore.mock.calls[0][1];
+      expect(attachments).toHaveLength(2); // p1's drawing merged once despite 2 lines; a1's .glb skipped
+    });
+
+    it('passes an empty attachments array when no line\'s product/assembly has a PDF drawing', async () => {
+      await service.generatePdf(user, 'po1');
+      expect(pdfService.generateAndStore).toHaveBeenCalledWith(user, expect.objectContaining({ attachments: [] }));
+    });
+
     it('resolves the branding print logo to a presigned URL for fromLogoUrl', async () => {
       prisma.tenant.companyBranding.findUnique.mockResolvedValue({ companyId: 'c1', printLogoFileId: 'logo-1' });
       await service.generatePdf(user, 'po1');

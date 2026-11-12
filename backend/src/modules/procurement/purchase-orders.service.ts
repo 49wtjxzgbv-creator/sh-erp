@@ -132,10 +132,11 @@ export class PurchaseOrdersService {
     const order = await this.findOne(user, id);
     const items = order.items as any[];
 
-    const [branding, company, renderItems] = await Promise.all([
+    const [branding, company, renderItems, attachments] = await Promise.all([
       this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
       this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
       this.buildPdfRenderItems(user, items),
+      this.buildPdfAttachments(user, items),
     ]);
 
     // Settings → Branding → "Логотип друку" (CompanyBranding.printLogoFileId) — same fallback-to-nothing shape as PurchaseRequestsService#generatePdf's own logo resolution.
@@ -159,6 +160,7 @@ export class PurchaseOrdersService {
       purchaseOrderId: id,
       purchaseOrderNumber: order.number,
       html,
+      attachments,
     });
 
     const updated = await this.prisma.tenant.purchaseOrder.update({ where: { id }, data: { pdfFileId }, include: { items: true } });
@@ -211,6 +213,35 @@ export class PurchaseOrdersService {
   }
 
   /**
+   * "в пдф файл чомусь не додає креслення товару" (2026-11-12) — unlike
+   * PurchaseRequestItem.attachedFileIds (a заявка-only, per-line, staff-
+   * picked selection), a PurchaseOrder has no equivalent field: every
+   * line's own linked product/assembly drawing is merged in automatically
+   * whenever one exists — matching `findModelAndDocuments`'s own `/\.pdf$/i`
+   * filename-extension match (proven correct there; mimeType sniffing
+   * silently misses real uploads). One drawing per unique product/assembly
+   * — a product repeated across several lines doesn't get its drawing
+   * merged in twice.
+   */
+  private async buildPdfAttachments(user: RequestUser, items: any[]): Promise<{ fileAssetId: string }[]> {
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => Boolean(v)))];
+    const assemblyIds = [...new Set(items.map((i) => i.assemblyId).filter((v): v is string => Boolean(v)))];
+    const [productDocs, assemblyDocs] = await Promise.all([
+      productIds.length > 0 ? this.filesService.listForEntities(user, 'Product', productIds, ['PRODUCT_DOCUMENT']) : {},
+      assemblyIds.length > 0 ? this.filesService.listForEntities(user, 'Assembly', assemblyIds, ['ASSEMBLY_DOCUMENT']) : {},
+    ]);
+
+    const attachments: { fileAssetId: string }[] = [];
+    for (const docsById of [productDocs, assemblyDocs]) {
+      for (const docs of Object.values(docsById as Record<string, Array<{ id: string; originalName: string }>>)) {
+        const pdfDoc = docs.find((f) => /\.pdf$/i.test(f.originalName));
+        if (pdfDoc) attachments.push({ fileAssetId: pdfDoc.id });
+      }
+    }
+    return attachments;
+  }
+
+  /**
    * "чомусь воно зробило кожну заявку окремим замовленням постачальнику а
    * не одним файлом" (2026-11-09) — ONE PDF covering every sibling order
    * fanned out from the same заявка conversion (resolveBatchOrderIds),
@@ -229,10 +260,11 @@ export class PurchaseOrdersService {
     const primary = orders[0];
 
     const allItems = orders.flatMap((o) => o.items as any[]);
-    const [branding, company, renderItems] = await Promise.all([
+    const [branding, company, renderItems, attachments] = await Promise.all([
       this.prisma.tenant.companyBranding.findUnique({ where: { companyId: user.companyId } }),
       this.prisma.tenant.company.findUnique({ where: { id: user.companyId } }),
       this.buildPdfRenderItems(user, allItems),
+      this.buildPdfAttachments(user, allItems),
     ]);
     const fromLogoUrl = branding?.printLogoFileId
       ? ((await this.filesService.getDownloadUrl(user, branding.printLogoFileId).catch(() => null))?.downloadUrl ?? null)
@@ -262,6 +294,7 @@ export class PurchaseOrdersService {
       purchaseOrderId: id,
       purchaseOrderNumber: combinedNumber,
       html,
+      attachments,
     });
 
     await this.prisma.tenant.purchaseOrder.updateMany({ where: { id: { in: orderIds } }, data: { combinedPdfFileId } });
