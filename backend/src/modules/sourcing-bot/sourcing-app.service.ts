@@ -21,6 +21,9 @@ const APP_PAGE_SIZE = 30;
 /** Sentinel categoryId for the Mini App's synthetic "Всі товари" entry (2026-11-10 — "в категоріях має бути категорія всі щоб просто гортати всі товари") — no real SourcingCategory has this id, so it can never collide with one. */
 export const ALL_CATEGORIES_ID = 'all';
 
+/** "в категорії метизи не потрібно додавати деталі тільки з кресленнями, так як метизи йдуть стандартні і креслення на них ніхто не робить" (2026-11-12) — the PDF-attachment gate in `candidateOutreachItems` assumes a drawing exists for anything worth quoting, which is true for custom-machined parts but never true for standard fasteners (bolts, nuts, washers — nobody drafts a DIN 933 bolt). This is the category code checked to skip that gate. */
+const FASTENER_CATEGORY_CODE = 'A';
+
 /** A category product that qualifies for an outreach letter — see `candidateOutreachItems`'s own comment on why "has at least one attached PDF" is the gate, not just category membership. */
 interface CandidateOutreachItem {
   id: string;
@@ -902,10 +905,17 @@ export class SourcingAppService {
    * same `/\.pdf$/i` test `findModelAndDocuments` above already uses (and
    * already proven correct — it's what powers ProductSheet's own
    * "Документи" section), not mimeType sniffing.
+   *
+   * "в категорії метизи не потрібно додавати деталі тільки з кресленнями"
+   * (2026-11-12) — standard fasteners never get a drawing, so `requirePdf`
+   * lets `FASTENER_CATEGORY_CODE` skip the gate entirely: every product in
+   * that category qualifies regardless of attachments (any PDF it DOES
+   * happen to have is still merged in, just not required).
    */
   private async candidateOutreachItems(
     identity: ResolvedSourcingIdentity,
     products: Array<{ id: string; article: string; name: string }>,
+    requirePdf: boolean,
   ): Promise<CandidateOutreachItem[]> {
     if (products.length === 0) return [];
     const filesByProductId = await this.filesService.listForEntities(identity, 'Product', products.map((p) => p.id), ['PRODUCT_DOCUMENT']);
@@ -913,13 +923,13 @@ export class SourcingAppService {
     for (const p of products) {
       const allDocs = filesByProductId[p.id] ?? [];
       const pdfFileIds = allDocs.filter((f) => /\.pdf$/i.test(f.originalName)).map((f) => f.id);
-      if (pdfFileIds.length > 0) {
+      if (pdfFileIds.length > 0 || !requirePdf) {
         items.push({ ...p, pdfFileIds });
       } else if (allDocs.length > 0) {
         this.logger.debug(`Outreach letter: product ${p.id} (${p.article}) has ${allDocs.length} PRODUCT_DOCUMENT file(s) but none end in .pdf: ${allDocs.map((f) => f.originalName).join(', ')}`);
       }
     }
-    this.logger.log(`Outreach letter: ${items.length}/${products.length} product(s) qualified (have a .pdf among their documents).`);
+    this.logger.log(`Outreach letter: ${items.length}/${products.length} product(s) qualified (${requirePdf ? 'have a .pdf among their documents' : 'PDF not required for this category'}).`);
     return items;
   }
 
@@ -944,7 +954,7 @@ export class SourcingAppService {
     const { candidate, items } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const candidate = await tx.sourcingCandidateSupplier.findUnique({
         where: { id: candidateId },
-        include: { category: { select: { id: true, name: true } } },
+        include: { category: { select: { id: true, name: true, code: true } } },
       });
       if (!candidate) return { candidate: null, items: [] };
       const products = await tx.product.findMany({
@@ -952,12 +962,15 @@ export class SourcingAppService {
         orderBy: { article: 'asc' },
         select: { id: true, article: true, name: true },
       });
-      const items = await this.candidateOutreachItems(identity, products);
+      const items = await this.candidateOutreachItems(identity, products, candidate.category.code !== FASTENER_CATEGORY_CODE);
       return { candidate, items };
     });
     if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
     if (items.length === 0) {
-      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Жоден товар цієї категорії не має доданого PDF-файла.');
+      const message = candidate.category.code === FASTENER_CATEGORY_CODE
+        ? 'У цій категорії ще немає жодного товару.'
+        : 'Жоден товар цієї категорії не має доданого PDF-файла.';
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', message);
     }
 
     const { adapter, apiKey } = await this.resolveAiAdapter(identity);
@@ -1020,7 +1033,7 @@ export class SourcingAppService {
     const { candidate, items } = await this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
       const candidate = await tx.sourcingCandidateSupplier.findUnique({
         where: { id: candidateId },
-        include: { category: { select: { id: true, name: true } } },
+        include: { category: { select: { id: true, name: true, code: true } } },
       });
       if (!candidate) return { candidate: null, items: [] };
       const products = await tx.product.findMany({
@@ -1028,7 +1041,7 @@ export class SourcingAppService {
         orderBy: { article: 'asc' },
         select: { id: true, article: true, name: true },
       });
-      const items = await this.candidateOutreachItems(identity, products);
+      const items = await this.candidateOutreachItems(identity, products, candidate.category.code !== FASTENER_CATEGORY_CODE);
       return { candidate, items };
     });
     if (!candidate) throw new CodedNotFoundException('SOURCING_CANDIDATE_NOT_FOUND', 'Candidate supplier not found.');
@@ -1036,7 +1049,10 @@ export class SourcingAppService {
       throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_EMAIL', 'У цього постачальника не вказано email.');
     }
     if (items.length === 0) {
-      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', 'Жоден товар цієї категорії не має доданого PDF-файла.');
+      const message = candidate.category.code === FASTENER_CATEGORY_CODE
+        ? 'У цій категорії ще немає жодного товару.'
+        : 'Жоден товар цієї категорії не має доданого PDF-файла.';
+      throw new CodedBadRequestException('SOURCING_OUTREACH_LETTER_NO_PRODUCTS', message);
     }
 
     const pdfBuffer = await this.prisma.runInTenantTransaction(tenantCtx(identity), (tx) =>

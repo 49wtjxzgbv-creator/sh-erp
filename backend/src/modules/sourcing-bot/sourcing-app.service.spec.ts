@@ -557,7 +557,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   });
 
   describe('generateOutreachLetter (2026-11-11 — "сформувати листа ... запит на співпрацю")', () => {
-    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: 'виробництво метизів', email: 'cand@example.test', phone: '+380501112233', category: { id: 'cat1', name: 'А. Метизи' } };
+    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: 'виробництво метизів', email: 'cand@example.test', phone: '+380501112233', category: { id: 'cat1', name: 'Б. Труби', code: 'B' } };
 
     it('refuses a non-admin', async () => {
       await expect(service.generateOutreachLetter({ ...identity, isAdmin: false } as any, 'cand1')).rejects.toMatchObject({
@@ -587,6 +587,31 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(candidate);
       tx.product.findMany.mockResolvedValue([{ id: 'p1', article: 'A1', name: 'Гвинт М6' }]);
       filesService.listForEntities.mockResolvedValue({}); // no PRODUCT_DOCUMENT files for p1 at all
+      await expect(service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1')).rejects.toMatchObject({
+        response: { code: 'SOURCING_OUTREACH_LETTER_NO_PRODUCTS' },
+      });
+    });
+
+    // "в категорії метизи не потрібно додавати деталі тільки з
+    // кресленнями, так як метизи йдуть стандартні і креслення на них
+    // ніхто не робить" (2026-11-12)
+    it('includes every product of a fastener-category (code A) candidate even with no PDF attached', async () => {
+      const fastenerCandidate = { ...candidate, category: { id: 'cat1', name: 'А. Метизи', code: 'A' } };
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue(fastenerCandidate);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Болт M12x120 DIN933' },
+        { id: 'p2', article: 'A2', name: 'Гайка М12' },
+      ]);
+      filesService.listForEntities.mockResolvedValue({}); // no PRODUCT_DOCUMENT files at all — standard fasteners never get a drawing
+
+      const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
+
+      expect(result.productCount).toBe(2);
+    });
+
+    it('throws for a fastener-category candidate only when the category itself has no products', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue({ ...candidate, category: { id: 'cat1', name: 'А. Метизи', code: 'A' } });
+      tx.product.findMany.mockResolvedValue([]);
       await expect(service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1')).rejects.toMatchObject({
         response: { code: 'SOURCING_OUTREACH_LETTER_NO_PRODUCTS' },
       });
@@ -668,7 +693,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       const result = await service.generateOutreachLetter({ ...identity, isAdmin: true } as any, 'cand1');
 
       expect(geminiAdapter.generateContent).toHaveBeenCalledWith(
-        [{ role: 'user', parts: [{ text: expect.stringMatching(/НовийПостач.*А\. Метизи/s) }] }],
+        [{ role: 'user', parts: [{ text: expect.stringMatching(/НовийПостач.*Б\. Труби/s) }] }],
         'test-gemini-key',
       );
       expect(mockRenderHtmlToPdf).toHaveBeenCalled();
@@ -693,7 +718,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
   });
 
   describe('sendOutreachLetterEmail (2026-11-11)', () => {
-    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: null, email: 'cand@example.test', phone: null, category: { id: 'cat1', name: 'А. Метизи' } };
+    const candidate = { id: 'cand1', name: 'НовийПостач', whatTheyDo: null, email: 'cand@example.test', phone: null, category: { id: 'cat1', name: 'Б. Труби', code: 'B' } };
 
     it('refuses a non-admin', async () => {
       await expect(service.sendOutreachLetterEmail({ ...identity, isAdmin: false } as any, 'cand1', 'text')).rejects.toMatchObject({
@@ -731,13 +756,32 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
 
       expect(emailService.send).toHaveBeenCalledWith(
         'cand@example.test',
-        expect.stringContaining('А. Метизи'),
+        expect.stringContaining('Б. Труби'),
         'Доброго дня!',
         [expect.objectContaining({ contentType: 'application/pdf' })],
       );
       const [, , , attachments] = emailService.send.mock.calls[0];
       const merged = await PDFDocument.load(attachments[0].content);
       expect(merged.getPageCount()).toBe(2); // 1 table page + 1 page from the merged attachment
+      expect(result).toEqual({ sent: true });
+    });
+
+    // "в категорії метизи не потрібно додавати деталі тільки з
+    // кресленнями" (2026-11-12)
+    it('includes every product of a fastener-category (code A) candidate even with no PDF attached', async () => {
+      tx.sourcingCandidateSupplier.findUnique.mockResolvedValue({ ...candidate, category: { id: 'cat1', name: 'А. Метизи', code: 'A' } });
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Болт M10x70 DIN933' },
+        { id: 'p2', article: 'A2', name: 'Шайба DIN125' },
+      ]);
+      filesService.listForEntities.mockResolvedValue({});
+
+      const result = await service.sendOutreachLetterEmail({ ...identity, isAdmin: true } as any, 'cand1', 'Доброго дня!');
+
+      expect(emailService.send).toHaveBeenCalled();
+      const [, , , attachments] = emailService.send.mock.calls[0];
+      const merged = await PDFDocument.load(attachments[0].content);
+      expect(merged.getPageCount()).toBe(1); // table page only — neither product has an attachment to merge
       expect(result).toEqual({ sent: true });
     });
   });
