@@ -113,6 +113,38 @@ export class SupplierPortalService {
     }));
   }
 
+  /**
+   * "коли ... натискаєш на деталь чи виріб у списку то потрібно щоб
+   * відкривалась інформація про деталь в каталозі" (2026-11-13) — the
+   * portal's own catalog detail route is keyed by the `ProductSupplier`
+   * row id (same id `listCatalog`/`getCatalogEntry` already use), not the
+   * raw productId, so a click target needs this lookup rather than just
+   * forwarding productId straight into a URL. Null for a line with no
+   * productId (виріб/assembly line, or an article not yet in Products) or
+   * one whose product was never sent to this supplier via an order/
+   * request — SupplierCatalogService#ensureCatalogEntries runs on every
+   * order/request, so in practice any product actually itself appearing
+   * in one of THIS supplier's own open orders already has an entry.
+   */
+  private async attachCatalogEntryIds<T extends { productId: string | null }>(
+    actor: RequestSupplierPortalUser,
+    items: T[],
+  ): Promise<(T & { catalogEntryId: string | null })[]> {
+    const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => v != null))];
+    const entries =
+      productIds.length > 0
+        ? await this.prisma.tenant.productSupplier.findMany({
+            where: { supplierId: actor.supplierId, productId: { in: productIds } },
+            select: { id: true, productId: true },
+          })
+        : [];
+    const entryIdByProductId = new Map(entries.map((e) => [e.productId, e.id]));
+    return items.map((item) => ({
+      ...item,
+      catalogEntryId: item.productId ? (entryIdByProductId.get(item.productId) ?? null) : null,
+    }));
+  }
+
   private async attachAttachedFiles<T extends { attachedFileIds: string[] }>(
     actor: RequestSupplierPortalUser,
     items: T[],
@@ -666,7 +698,8 @@ export class SupplierPortalService {
     rows.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     const photoRows = await this.attachPhotoUrls(actor, rows);
-    return { items: photoRows };
+    const items = await this.attachCatalogEntryIds(actor, photoRows);
+    return { items };
   }
 
   /**

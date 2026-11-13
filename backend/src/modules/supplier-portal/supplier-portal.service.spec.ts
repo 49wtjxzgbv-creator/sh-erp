@@ -526,6 +526,31 @@ describe('SupplierPortalService', () => {
 
       expect(result.items).toEqual([]);
     });
+
+    // "коли натискаєш на деталь чи виріб у списку то потрібно щоб
+    // відкривалась інформація про деталь в каталозі" (2026-11-13)
+    it("resolves each row's own ProductSupplier catalog-entry id (null for a line with no productId, or no entry yet)", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po5',
+          expectedDeliveryDate: new Date('2026-11-15'),
+          items: [
+            { productId: 'p1', articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qtyOrdered: 10, qtyReceived: 0, currentDeliverySchedule: null },
+            { productId: 'p2', articleSnapshot: 'NOENTRY', productNameSnapshot: 'No catalog entry', qtyOrdered: 10, qtyReceived: 0, currentDeliverySchedule: null },
+            { productId: null, articleSnapshot: 'ASM', productNameSnapshot: 'виріб line', qtyOrdered: 2, qtyReceived: 0, currentDeliverySchedule: null },
+          ],
+        },
+      ]);
+      prisma.tenant.productSupplier.findMany.mockResolvedValue([{ id: 'ps1', productId: 'p1' }]);
+
+      const result = await service.listUpcomingDeliveries(actor);
+
+      expect(result.items).toEqual([
+        expect.objectContaining({ article: 'ABC', catalogEntryId: 'ps1' }),
+        expect.objectContaining({ article: 'NOENTRY', catalogEntryId: null }),
+        expect.objectContaining({ article: 'ASM', catalogEntryId: null }),
+      ]);
+    });
   });
 
   describe('getDashboardSummary', () => {

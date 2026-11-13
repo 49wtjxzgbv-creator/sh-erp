@@ -20,6 +20,7 @@ interface UpcomingDeliveryRow {
   qty: number;
   scheduleStatus: string | null;
   photoUrl: string | null;
+  catalogEntryId: string | null;
 }
 
 type SectionKey = 'overdue' | 'thisWeek' | 'nextTwoWeeks' | 'later';
@@ -181,7 +182,16 @@ export default function SupplierPortalDeliveriesPage() {
                   <div
                     key={`${row.orderId}-${i}`}
                     className={`flex cursor-pointer items-center gap-3 rounded-md py-2 pl-3 pr-2 transition-colors hover:brightness-95 ${SECTION_ROW_STYLE[section.key]}`}
-                    onClick={() => router.push(`/supplier-portal/orders/${row.orderId}`)}
+                    // "коли ... натискаєш на деталь чи виріб у списку то
+                    // потрібно щоб відкривалась інформація про деталь в
+                    // каталозі" (2026-11-13) — opens the product's own
+                    // catalog entry when one exists; falls back to the
+                    // order (the previous, only, behavior) for a line with
+                    // no catalog entry — a виріб/assembly line, or an
+                    // article not yet in Products.
+                    onClick={() =>
+                      router.push(row.catalogEntryId ? `/supplier-portal/catalog/${row.catalogEntryId}` : `/supplier-portal/orders/${row.orderId}`)
+                    }
                   >
                     <Avatar src={row.photoUrl} size="sm" zoomable={false} />
                     <div className="min-w-0 flex-1">
