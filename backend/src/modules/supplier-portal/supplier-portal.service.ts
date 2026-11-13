@@ -61,15 +61,33 @@ export class SupplierPortalService {
    * only (not the dashboard list — no per-line article column there to
    * put a photo next to), so this isn't paid on every dashboard load.
    */
-  private async attachPhotoUrls<T extends { productId: string | null }>(
+  /**
+   * "у плані виробництва чомусь не на всі деталі зі списку підтягує фото"
+   * (2026-11-13) — the only caller whose rows can ALSO be a виріб
+   * (assembly) line (`listUpcomingDeliveries`, PurchaseOrderItem.assemblyId
+   * since 2026-11-04) only ever resolved PRODUCT_PHOTO, leaving every
+   * assembly-only line (productId null) with no photo at all — not
+   * missing data, just a lookup this method never did. `assemblyId` is
+   * optional in the generic constraint so the other three callers (whose
+   * items have no such field) are unaffected.
+   */
+  private async attachPhotoUrls<T extends { productId: string | null; assemblyId?: string | null }>(
     actor: RequestSupplierPortalUser,
     items: T[],
   ): Promise<(T & { photoUrl: string | null })[]> {
     const productIds = [...new Set(items.map((i) => i.productId).filter((v): v is string => v != null))];
-    const photos = productIds.length > 0 ? await this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']) : {};
+    const assemblyIds = [...new Set(items.map((i) => i.assemblyId).filter((v): v is string => v != null))];
+    const [photos, assemblyPhotos] = await Promise.all([
+      productIds.length > 0 ? this.filesService.listForEntities(this.asFilesActor(actor), 'Product', productIds, ['PRODUCT_PHOTO']) : {},
+      assemblyIds.length > 0 ? this.filesService.listForEntities(this.asFilesActor(actor), 'Assembly', assemblyIds, ['ASSEMBLY_PHOTO']) : {},
+    ]);
     return items.map((item) => ({
       ...item,
-      photoUrl: item.productId ? ((photos as any)[item.productId]?.[0]?.downloadUrl ?? null) : null,
+      photoUrl: item.productId
+        ? ((photos as any)[item.productId]?.[0]?.downloadUrl ?? null)
+        : item.assemblyId
+          ? ((assemblyPhotos as any)[item.assemblyId]?.[0]?.downloadUrl ?? null)
+          : null,
     }));
   }
 
@@ -657,6 +675,7 @@ export class SupplierPortalService {
     const rows: {
       orderId: string;
       productId: string | null;
+      assemblyId: string | null;
       article: string;
       productName: string;
       date: Date;
@@ -671,6 +690,7 @@ export class SupplierPortalService {
             rows.push({
               orderId: order.id,
               productId: item.productId,
+              assemblyId: item.assemblyId,
               article: item.articleSnapshot,
               productName: item.productNameSnapshot,
               date: line.date,
@@ -684,6 +704,7 @@ export class SupplierPortalService {
             rows.push({
               orderId: order.id,
               productId: item.productId,
+              assemblyId: item.assemblyId,
               article: item.articleSnapshot,
               productName: item.productNameSnapshot,
               date: order.expectedDeliveryDate,

@@ -551,6 +551,35 @@ describe('SupplierPortalService', () => {
         expect.objectContaining({ article: 'ASM', catalogEntryId: null }),
       ]);
     });
+
+    // "у плані виробництва чомусь не на всі деталі зі списку підтягує
+    // фото" (2026-11-13) — a виріб (assembly) line has productId null, so
+    // it never got a photo at all before this resolved ASSEMBLY_PHOTO too.
+    it("resolves a виріб (assembly) line's own ASSEMBLY_PHOTO when it has no productId", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
+        {
+          id: 'po6',
+          expectedDeliveryDate: new Date('2026-11-15'),
+          items: [
+            { productId: 'p1', assemblyId: null, articleSnapshot: 'ABC', productNameSnapshot: 'Widget', qtyOrdered: 10, qtyReceived: 0, currentDeliverySchedule: null },
+            { productId: null, assemblyId: 'a1', articleSnapshot: 'ASM', productNameSnapshot: 'виріб', qtyOrdered: 2, qtyReceived: 0, currentDeliverySchedule: null },
+          ],
+        },
+      ]);
+      filesService.listForEntities.mockImplementation((_actor: any, entityType: string) =>
+        entityType === 'Product'
+          ? Promise.resolve({ p1: [{ downloadUrl: 'https://example.com/p1.jpg' }] })
+          : Promise.resolve({ a1: [{ downloadUrl: 'https://example.com/a1.jpg' }] }),
+      );
+
+      const result = await service.listUpcomingDeliveries(actor);
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.anything(), 'Assembly', ['a1'], ['ASSEMBLY_PHOTO']);
+      expect(result.items).toEqual([
+        expect.objectContaining({ article: 'ABC', photoUrl: 'https://example.com/p1.jpg' }),
+        expect.objectContaining({ article: 'ASM', photoUrl: 'https://example.com/a1.jpg' }),
+      ]);
+    });
   });
 
   describe('getDashboardSummary', () => {
