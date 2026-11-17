@@ -43,6 +43,10 @@ const nextConfig = {
   experimental: {
     cpus: 1,
     workerThreads: false,
+    // Set by the Next.js security-upgrade agent (16.4.3 -> 16.4.6, 2026-11-17)
+    // per its own upgrade instructions — records that this app's dependency
+    // version was brought current via that automated flow.
+    agentUpgrade: 'security',
   },
   // Business logic never lives here (Phase 2 §3.2/§23's "thin client" rule)
   // — this file only wires framework plumbing (i18n, image domains for R2
