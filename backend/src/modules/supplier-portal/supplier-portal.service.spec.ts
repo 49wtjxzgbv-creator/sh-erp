@@ -628,6 +628,7 @@ describe('SupplierPortalService', () => {
       prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
         {
           id: 'po1',
+          number: 'ЗАМ-2026-0001',
           orderDate: new Date('2026-10-01'),
           items: [
             { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 30, supplierShippedQty: 10 },
@@ -639,7 +640,7 @@ describe('SupplierPortalService', () => {
       const result = await service.listStock(actor);
 
       expect(result.items).toEqual([
-        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30, supplierShippedQty: 10, cuttingSpec: null }),
+        expect.objectContaining({ itemId: 'item1', orderId: 'po1', orderNumber: 'ЗАМ-2026-0001', qtyRemaining: 80, supplierReadyQty: 30, supplierShippedQty: 10, cuttingSpec: null }),
       ]);
     });
 

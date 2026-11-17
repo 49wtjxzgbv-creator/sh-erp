@@ -779,6 +779,7 @@ export class SupplierPortalService {
       return {
         itemId: item.id,
         orderId: order.id,
+        orderNumber: order.number,
         productId: item.productId,
         article: item.articleSnapshot,
         productName: item.productNameSnapshot,

@@ -2081,6 +2081,8 @@
     "stockRemainingLabel": "Залишилось виготовити",
     "stockReadyLabel": "Готово у вас",
     "stockShippedLabel": "Відвантажено",
+    "stockViewAll": "Загальний",
+    "stockViewByOrder": "По замовленнях",
     "noStockItems": "Немає відкритих позицій",
     "navCutting": "Розкрій",
     "cuttingMaterialTitle": "Матеріал",

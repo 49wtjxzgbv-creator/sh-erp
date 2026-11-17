@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
 import { Search } from 'lucide-react';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
@@ -17,6 +18,7 @@ import { useApiErrorMessage } from '@/lib/api-error-message';
 interface StockRow {
   itemId: string;
   orderId: string;
+  orderNumber: string;
   productId: string | null;
   article: string;
   productName: string;
@@ -44,6 +46,13 @@ interface StockRow {
  * in on our side (PurchaseOrdersService#receive); letting a supplier
  * write it directly would let them overstate what we've actually
  * received, corrupting our own inventory/receiving records.
+ *
+ * "загальний по всіх замовленнях і окремо по кожному щоб відслідковувати
+ * що на яке замовлення зроблено" (2026-11-18) — same rows, two views:
+ * "Загальний" is the original flat cross-order list; "По замовленнях"
+ * groups the identical rows under each order's own number, so a supplier
+ * can see at a glance what's outstanding for ONE specific order instead
+ * of hunting through the flat list.
  */
 export default function SupplierPortalStockPage() {
   const t = useTranslations('supplierPortal');
@@ -106,8 +115,99 @@ export default function SupplierPortalStockPage() {
     return rows.filter((row) => row.article.toLowerCase().includes(query) || row.productName.toLowerCase().includes(query));
   }, [rows, search]);
 
+  // Groups preserve the flat list's own order (whatever listStock returned
+  // them in) — just bucketed by orderId, not re-sorted by anything new.
+  const groupedByOrder = useMemo(() => {
+    const groups: { orderId: string; orderNumber: string; rows: StockRow[] }[] = [];
+    const indexByOrderId = new Map<string, number>();
+    for (const row of filteredRows) {
+      let idx = indexByOrderId.get(row.orderId);
+      if (idx === undefined) {
+        idx = groups.length;
+        indexByOrderId.set(row.orderId, idx);
+        groups.push({ orderId: row.orderId, orderNumber: row.orderNumber, rows: [] });
+      }
+      groups[idx].rows.push(row);
+    }
+    return groups;
+  }, [filteredRows]);
+
   if (loading) {
     return <LoadingBlock />;
+  }
+
+  function renderRow(row: StockRow) {
+    return (
+      <TableRow key={row.itemId}>
+        <TableCell>
+          <Avatar src={row.photoUrl} size="sm" />
+        </TableCell>
+        <TableCell className="cursor-pointer" onClick={() => router.push(`/supplier-portal/orders/${row.orderId}`)}>
+          {row.article}
+        </TableCell>
+        <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
+        <TableCell>{row.qtyOrdered}</TableCell>
+        {/* "готово те що ми зробили а відвантажено це з того що ми зробили ... не має віднімати від того що залишилось виготовити" (2026-11-18) — supplierShippedQty is a SUBSET of supplierReadyQty (how much of "made" has shipped), not an additional qty on top of it, so only readyQty comes out of qtyRemaining here. */}
+        <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
+        <TableCell>
+          <Input
+            type="number"
+            step="any"
+            min={0}
+            max={row.qtyRemaining}
+            value={readyDraft[row.itemId] ?? ''}
+            onChange={(e) => setReadyDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
+          />
+        </TableCell>
+        <TableCell>
+          {/* "відвантажено це з того що ми зробили" (2026-11-18) — a SUBSET of "Готово у вас", not an additional qty, so its ceiling tracks the live ready draft (falling back to the row's own last-saved value while that draft is still empty), not qtyRemaining independently. */}
+          <Input
+            type="number"
+            step="any"
+            min={0}
+            max={Number(readyDraft[row.itemId] || row.supplierReadyQty || 0)}
+            value={shippedDraft[row.itemId] ?? ''}
+            onChange={(e) => setShippedDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
+          />
+          {errors[row.itemId] && <p className="mt-1 text-xs text-destructive">{errors[row.itemId]}</p>}
+        </TableCell>
+        <TableCell>
+          <Button type="button" size="sm" variant="outline" loading={savingId === row.itemId} onClick={() => handleSave(row.itemId)}>
+            {tc('save')}
+          </Button>
+        </TableCell>
+      </TableRow>
+    );
+  }
+
+  function renderTable(rowsToRender: StockRow[]) {
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12" />
+            <TableHead>{t('article')}</TableHead>
+            <TableHead>{t('productName')}</TableHead>
+            <TableHead>{t('qty')}</TableHead>
+            <TableHead>{t('stockRemainingLabel')}</TableHead>
+            <TableHead className="w-48">{t('stockReadyLabel')}</TableHead>
+            <TableHead className="w-48">{t('stockShippedLabel')}</TableHead>
+            <TableHead className="w-24" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rowsToRender.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                {t('noStockItems')}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rowsToRender.map(renderRow)
+          )}
+        </TableBody>
+      </Table>
+    );
   }
 
   return (
@@ -142,71 +242,31 @@ export default function SupplierPortalStockPage() {
               </span>
             )}
           />
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12" />
-                <TableHead>{t('article')}</TableHead>
-                <TableHead>{t('productName')}</TableHead>
-                <TableHead>{t('qty')}</TableHead>
-                <TableHead>{t('stockRemainingLabel')}</TableHead>
-                <TableHead className="w-48">{t('stockReadyLabel')}</TableHead>
-                <TableHead className="w-48">{t('stockShippedLabel')}</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                    {t('noStockItems')}
-                  </TableCell>
-                </TableRow>
+          <Tabs defaultValue="all">
+            <TabsList>
+              <TabsTrigger value="all">{t('stockViewAll')}</TabsTrigger>
+              <TabsTrigger value="byOrder">{t('stockViewByOrder')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="all">{renderTable(filteredRows)}</TabsContent>
+            <TabsContent value="byOrder" className="space-y-4">
+              {groupedByOrder.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">{t('noStockItems')}</p>
               ) : (
-                filteredRows.map((row) => (
-                  <TableRow key={row.itemId}>
-                    <TableCell>
-                      <Avatar src={row.photoUrl} size="sm" />
-                    </TableCell>
-                    <TableCell className="cursor-pointer" onClick={() => router.push(`/supplier-portal/orders/${row.orderId}`)}>
-                      {row.article}
-                    </TableCell>
-                    <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
-                    <TableCell>{row.qtyOrdered}</TableCell>
-                    {/* "готово те що ми зробили а відвантажено це з того що ми зробили ... не має віднімати від того що залишилось виготовити" (2026-11-18) — supplierShippedQty is a SUBSET of supplierReadyQty (how much of "made" has shipped), not an additional qty on top of it, so only readyQty comes out of qtyRemaining here. */}
-                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        step="any"
-                        min={0}
-                        max={row.qtyRemaining}
-                        value={readyDraft[row.itemId] ?? ''}
-                        onChange={(e) => setReadyDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {/* "відвантажено це з того що ми зробили" (2026-11-18) — a SUBSET of "Готово у вас", not an additional qty, so its ceiling tracks the live ready draft (falling back to the row's own last-saved value while that draft is still empty), not qtyRemaining independently. */}
-                      <Input
-                        type="number"
-                        step="any"
-                        min={0}
-                        max={Number(readyDraft[row.itemId] || row.supplierReadyQty || 0)}
-                        value={shippedDraft[row.itemId] ?? ''}
-                        onChange={(e) => setShippedDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
-                      />
-                      {errors[row.itemId] && <p className="mt-1 text-xs text-destructive">{errors[row.itemId]}</p>}
-                    </TableCell>
-                    <TableCell>
-                      <Button type="button" size="sm" variant="outline" loading={savingId === row.itemId} onClick={() => handleSave(row.itemId)}>
-                        {tc('save')}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                groupedByOrder.map((group) => (
+                  <div key={group.orderId} className="space-y-2">
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-primary hover:underline"
+                      onClick={() => router.push(`/supplier-portal/orders/${group.orderId}`)}
+                    >
+                      {group.orderNumber}
+                    </button>
+                    {renderTable(group.rows)}
+                  </div>
                 ))
               )}
-            </TableBody>
-          </Table>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>
