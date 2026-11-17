@@ -3024,9 +3024,20 @@ model PurchaseOrderItem {
   // finished and sitting at their premises, not yet shipped — a
   // lightweight stand-in for a real ASN (advance shipping notice)
   // integration. Supplier-entered only, never auto-derived from
-  // qtyReceived or anything else; capped at (qtyOrdered - qtyReceived) by
-  // SupplierPortalService#updateSupplierReadyQty, not by a DB constraint.
+  // qtyReceived or anything else; capped (together with
+  // supplierShippedQty, below) at (qtyOrdered - qtyReceived) by
+  // SupplierPortalService#updateSupplierStockQty, not by a DB constraint.
   supplierReadyQty Decimal? @default(0) @db.Decimal(14, 3)
+
+  // "і де я маю вказувати що відвантажив" (2026-11-17) — the supplier's
+  // own self-declared qty already dispatched/in transit, distinct from
+  // `qtyReceived` (which only moves once STAFF physically checks goods in
+  // via PurchaseOrdersService#receive — never supplier-writable, that's
+  // the buyer's own confirmed record). Same self-declaration spirit as
+  // supplierReadyQty; SupplierPortalService#updateSupplierStockQty caps
+  // supplierReadyQty + supplierShippedQty together at (qtyOrdered -
+  // qtyReceived).
+  supplierShippedQty Decimal? @default(0) @db.Decimal(14, 3)
 
   // Links this purchase line back to the customer-order material
   // requirement it's covering (stock-reservation spec §5/§9) — single-

@@ -624,14 +624,14 @@ describe('SupplierPortalService', () => {
   });
 
   describe('listStock', () => {
-    it('includes only items with something still outstanding, carrying supplierReadyQty', async () => {
+    it('includes only items with something still outstanding, carrying supplierReadyQty and supplierShippedQty', async () => {
       prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
         {
           id: 'po1',
           orderDate: new Date('2026-10-01'),
           items: [
-            { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 30 },
-            { id: 'item2', productId: 'p2', articleSnapshot: 'B', productNameSnapshot: '-', qtyOrdered: 10, qtyReceived: 10, supplierReadyQty: 0 },
+            { id: 'item1', productId: 'p1', articleSnapshot: 'A', productNameSnapshot: '-', qtyOrdered: 100, qtyReceived: 20, supplierReadyQty: 30, supplierShippedQty: 10 },
+            { id: 'item2', productId: 'p2', articleSnapshot: 'B', productNameSnapshot: '-', qtyOrdered: 10, qtyReceived: 10, supplierReadyQty: 0, supplierShippedQty: 0 },
           ],
         },
       ]);
@@ -639,7 +639,7 @@ describe('SupplierPortalService', () => {
       const result = await service.listStock(actor);
 
       expect(result.items).toEqual([
-        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30, cuttingSpec: null }),
+        expect.objectContaining({ itemId: 'item1', qtyRemaining: 80, supplierReadyQty: 30, supplierShippedQty: 10, cuttingSpec: null }),
       ]);
     });
 
@@ -687,28 +687,36 @@ describe('SupplierPortalService', () => {
     });
   });
 
-  describe('updateSupplierReadyQty', () => {
+  describe('updateSupplierStockQty', () => {
     it('404s for an item not belonging to this supplier', async () => {
       prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue(null);
-      await expect(service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 10 })).rejects.toThrow();
+      await expect(service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 10, supplierShippedQty: 0 })).rejects.toThrow();
       expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
     });
 
-    it('rejects declaring more ready than is actually still outstanding', async () => {
+    it('rejects declaring ready alone greater than what is actually still outstanding', async () => {
       prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
-      await expect(service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 90 })).rejects.toThrow();
+      await expect(service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 90, supplierShippedQty: 0 })).rejects.toThrow();
       expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
     });
 
-    it('updates and audit-logs when within bounds', async () => {
+    // "і де я маю вказувати що відвантажив" (2026-11-17)
+    it('rejects when ready + shipped together exceed what is still outstanding, even if neither alone would', async () => {
       prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
-      prisma.tenant.purchaseOrderItem.update.mockResolvedValue({ id: 'item1', supplierReadyQty: 50 });
+      await expect(service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 50, supplierShippedQty: 40 })).rejects.toThrow();
+      expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
+    });
 
-      const result = await service.updateSupplierReadyQty(actor, 'item1', { supplierReadyQty: 50 });
+    it('updates both fields together and audit-logs when within bounds', async () => {
+      prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
+      prisma.tenant.purchaseOrderItem.update.mockResolvedValue({ id: 'item1', supplierReadyQty: 30, supplierShippedQty: 20 });
 
-      expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { supplierReadyQty: 50 } });
-      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order_item.supplier_ready_qty_updated' }));
-      expect(result.supplierReadyQty).toBe(50);
+      const result = await service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 30, supplierShippedQty: 20 });
+
+      expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { supplierReadyQty: 30, supplierShippedQty: 20 } });
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'purchase_order_item.supplier_stock_qty_updated' }));
+      expect(result.supplierReadyQty).toBe(30);
+      expect(result.supplierShippedQty).toBe(20);
     });
   });
 

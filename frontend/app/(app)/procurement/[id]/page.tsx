@@ -782,6 +782,7 @@ export default function PurchaseOrderDetailPage() {
                 <TableHead numeric>{t('actualPrice')}</TableHead>
                 <TableHead numeric>{t('supplierConfirmedPrice')}</TableHead>
                 <TableHead numeric>{t('supplierReadyQty')}</TableHead>
+                <TableHead numeric>{t('supplierShippedQty')}</TableHead>
                 {!isDelivered && canManage && <TableHead className="w-28">{t('receiveNow')}</TableHead>}
                 {!isDelivered && canManage && <TableHead className="w-28">{t('actualPrice')}</TableHead>}
               </TableRow>
@@ -815,6 +816,7 @@ export default function PurchaseOrderDetailPage() {
                   <TableCell numeric>{item.actualPrice != null ? formatEur(Number(item.actualPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.supplierConfirmedPrice != null ? formatEur(Number(item.supplierConfirmedPrice)) : '—'}</TableCell>
                   <TableCell numeric>{item.supplierReadyQty != null && Number(item.supplierReadyQty) > 0 ? item.supplierReadyQty : '—'}</TableCell>
+                  <TableCell numeric>{item.supplierShippedQty != null && Number(item.supplierShippedQty) > 0 ? item.supplierShippedQty : '—'}</TableCell>
                   {!isDelivered && canManage && (
                     <TableCell>
                       <Input

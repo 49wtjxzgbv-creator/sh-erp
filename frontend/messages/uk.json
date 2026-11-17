@@ -845,6 +845,7 @@
     "supplierConfirmedDeliveryDate": "Дата постачання від постачальника",
     "supplierConfirmedPrice": "Ціна від постачальника",
     "supplierReadyQty": "Готово у постачальника",
+    "supplierShippedQty": "Відвантажено постачальником",
     "supplierPortalCardTitle": "Портал постачальника",
     "portalActive": "Активний",
     "portalDeactivated": "Деактивовано",

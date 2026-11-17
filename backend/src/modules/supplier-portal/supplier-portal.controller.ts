@@ -11,7 +11,7 @@ import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { CreateSupplierInvoiceDocumentDto, CreateSupplierInvoicePaymentDto } from '../finance/dto/supplier-finance.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
-import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
+import { UpdateSupplierStockQtyDto } from './dto/update-supplier-stock-qty.dto';
 import { PreviewSupplierCuttingDto } from './dto/preview-supplier-cutting.dto';
 import { SupplierCuttingService } from './supplier-cutting.service';
 
@@ -267,13 +267,13 @@ export class SupplierPortalController {
   }
 
   @Patch('stock/:itemId')
-  @ApiOperation({ summary: 'Supplier declares how much of this line is already finished and sitting at their own premises — capped at what is still outstanding.' })
-  async updateSupplierReadyQty(
+  @ApiOperation({ summary: 'Supplier declares how much of this line is finished-and-not-shipped and how much is already dispatched — together capped at what is still outstanding.' })
+  async updateSupplierStockQty(
     @CurrentSupplierPortalUser() actor: RequestSupplierPortalUser,
     @Param('itemId') itemId: string,
-    @Body() dto: UpdateSupplierReadyQtyDto,
+    @Body() dto: UpdateSupplierStockQtyDto,
   ) {
-    return this.supplierPortalService.updateSupplierReadyQty(actor, itemId, dto);
+    return this.supplierPortalService.updateSupplierStockQty(actor, itemId, dto);
   }
 
   @Post('cutting/preview')

@@ -840,6 +840,7 @@
     "supplierConfirmedDeliveryDate": "Supplier-confirmed delivery date",
     "supplierConfirmedPrice": "Supplier-confirmed price",
     "supplierReadyQty": "Ready at supplier",
+    "supplierShippedQty": "Shipped by supplier",
     "supplierPortalCardTitle": "Supplier Portal",
     "portalActive": "Active",
     "portalDeactivated": "Deactivated",

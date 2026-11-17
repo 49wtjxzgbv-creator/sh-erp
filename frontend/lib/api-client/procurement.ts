@@ -176,6 +176,7 @@ export interface PurchaseOrderItem {
   catalogPrice?: number | null;
   /** "Склад" — the supplier's own declared qty already finished and sitting at their premises, not yet shipped. Supplier-entered only. */
   supplierReadyQty: DecimalString | null;
+  supplierShippedQty: DecimalString | null;
 }
 
 export type DeliveryScheduleStatus = 'PENDING' | 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED';

@@ -13,7 +13,7 @@ import { DeliveryScheduleLinesDto } from '../procurement/dto/delivery-schedule.d
 import { SupplierPortalUploadDto } from './dto/supplier-portal-upload.dto';
 import { QuotePurchaseRequestDto } from './dto/quote-purchase-request.dto';
 import { UpdateSupplierCatalogEntryDto } from './dto/update-supplier-catalog-entry.dto';
-import { UpdateSupplierReadyQtyDto } from './dto/update-supplier-ready-qty.dto';
+import { UpdateSupplierStockQtyDto } from './dto/update-supplier-stock-qty.dto';
 import { CreateSupplierInvoiceDocumentDto, CreateSupplierInvoicePaymentDto } from '../finance/dto/supplier-finance.dto';
 import { CodedBadRequestException, CodedNotFoundException } from '../../common/api-exceptions';
 
@@ -787,6 +787,7 @@ export class SupplierPortalService {
         qtyReceived: item.qtyReceived,
         qtyRemaining: Number(item.qtyOrdered) - Number(item.qtyReceived),
         supplierReadyQty: item.supplierReadyQty,
+        supplierShippedQty: item.supplierShippedQty,
         cuttingSpec: spec
           ? {
               kind: spec.kind,
@@ -805,30 +806,42 @@ export class SupplierPortalService {
     return { items: photoItems };
   }
 
-  /** Supplier declares how much of this line is already finished and sitting at their own premises — capped at what's actually still outstanding, never more. */
-  async updateSupplierReadyQty(actor: RequestSupplierPortalUser, itemId: string, dto: UpdateSupplierReadyQtyDto) {
+  /**
+   * Supplier declares how much of this line is already finished-and-
+   * not-shipped, and how much is already dispatched/in transit — "і де я
+   * маю вказувати що відвантажив" (2026-11-17). Together capped at
+   * what's actually still outstanding (qtyOrdered - qtyReceived), never
+   * more — `qtyReceived` itself stays staff-only, set only once goods
+   * are physically checked in (PurchaseOrdersService#receive), never
+   * supplier-writable.
+   */
+  async updateSupplierStockQty(actor: RequestSupplierPortalUser, itemId: string, dto: UpdateSupplierStockQtyDto) {
     const item = await this.prisma.tenant.purchaseOrderItem.findFirst({
       where: { id: itemId, purchaseOrder: { supplierId: actor.supplierId } },
     });
     if (!item) throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', 'Purchase order item not found.');
 
     const remaining = Number(item.qtyOrdered) - Number(item.qtyReceived);
-    if (dto.supplierReadyQty > remaining) {
-      throw new CodedBadRequestException('SUPPLIER_READY_QTY_EXCEEDS_REMAINING', `Cannot declare more ready (${dto.supplierReadyQty}) than is still outstanding (${remaining}).`);
+    const declaredTotal = dto.supplierReadyQty + dto.supplierShippedQty;
+    if (declaredTotal > remaining) {
+      throw new CodedBadRequestException(
+        'SUPPLIER_STOCK_QTY_EXCEEDS_REMAINING',
+        `Cannot declare ready + shipped (${declaredTotal}) greater than what is still outstanding (${remaining}).`,
+      );
     }
 
     const updated = await this.prisma.tenant.purchaseOrderItem.update({
       where: { id: itemId },
-      data: { supplierReadyQty: dto.supplierReadyQty },
+      data: { supplierReadyQty: dto.supplierReadyQty, supplierShippedQty: dto.supplierShippedQty },
     });
 
     await this.auditService.record({
       companyId: actor.companyId,
       actorUserId: null,
-      action: 'purchase_order_item.supplier_ready_qty_updated',
+      action: 'purchase_order_item.supplier_stock_qty_updated',
       entityType: 'PurchaseOrderItem',
       entityId: itemId,
-      after: { supplierReadyQty: dto.supplierReadyQty },
+      after: { supplierReadyQty: dto.supplierReadyQty, supplierShippedQty: dto.supplierShippedQty },
       metadata: { supplierPortalUserId: actor.supplierPortalUserId, supplierId: actor.supplierId },
     });
 

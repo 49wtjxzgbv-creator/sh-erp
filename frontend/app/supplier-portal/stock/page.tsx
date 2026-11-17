@@ -25,6 +25,7 @@ interface StockRow {
   qtyReceived: number;
   qtyRemaining: number;
   supplierReadyQty: number | null;
+  supplierShippedQty: number | null;
   photoUrl: string | null;
 }
 
@@ -35,6 +36,14 @@ interface StockRow {
  * the supplier's own premises, not yet shipped. The user's own words:
  * "деталі які він виготовив але ще нам не відправив і вони висять на
  * балансі у нього на складі."
+ *
+ * "і де я маю вказувати що відвантажив" (2026-11-17) — extended with a
+ * second self-declared number, supplierShippedQty (already dispatched/in
+ * transit), editable the same way as supplierReadyQty. Deliberately NOT
+ * `qtyReceived` — that field only moves once STAFF physically check goods
+ * in on our side (PurchaseOrdersService#receive); letting a supplier
+ * write it directly would let them overstate what we've actually
+ * received, corrupting our own inventory/receiving records.
  */
 export default function SupplierPortalStockPage() {
   const t = useTranslations('supplierPortal');
@@ -46,7 +55,8 @@ export default function SupplierPortalStockPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [readyDraft, setReadyDraft] = useState<Record<string, string>>({});
+  const [shippedDraft, setShippedDraft] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -55,11 +65,14 @@ export default function SupplierPortalStockPage() {
     try {
       const res = await supplierPortalApi.get<{ items: StockRow[] }>('supplier-portal/stock');
       setRows(res.items);
-      const seeded: Record<string, string> = {};
+      const seededReady: Record<string, string> = {};
+      const seededShipped: Record<string, string> = {};
       for (const row of res.items) {
-        seeded[row.itemId] = row.supplierReadyQty != null ? String(row.supplierReadyQty) : '';
+        seededReady[row.itemId] = row.supplierReadyQty != null ? String(row.supplierReadyQty) : '';
+        seededShipped[row.itemId] = row.supplierShippedQty != null ? String(row.supplierShippedQty) : '';
       }
-      setDraft(seeded);
+      setReadyDraft(seededReady);
+      setShippedDraft(seededShipped);
     } catch {
       setRows([]);
     } finally {
@@ -75,7 +88,10 @@ export default function SupplierPortalStockPage() {
     setErrors((prev) => ({ ...prev, [itemId]: '' }));
     setSavingId(itemId);
     try {
-      await supplierPortalApi.patch(`supplier-portal/stock/${itemId}`, { supplierReadyQty: Number(draft[itemId] || 0) });
+      await supplierPortalApi.patch(`supplier-portal/stock/${itemId}`, {
+        supplierReadyQty: Number(readyDraft[itemId] || 0),
+        supplierShippedQty: Number(shippedDraft[itemId] || 0),
+      });
       await load();
     } catch (err) {
       setErrors((prev) => ({ ...prev, [itemId]: apiErrorMessage(err, tc('error')) }));
@@ -133,9 +149,9 @@ export default function SupplierPortalStockPage() {
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qty')}</TableHead>
-                <TableHead>{t('stockShippedLabel')}</TableHead>
                 <TableHead>{t('stockRemainingLabel')}</TableHead>
                 <TableHead className="w-48">{t('stockReadyLabel')}</TableHead>
+                <TableHead className="w-48">{t('stockShippedLabel')}</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
@@ -157,18 +173,27 @@ export default function SupplierPortalStockPage() {
                     </TableCell>
                     <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
                     <TableCell>{row.qtyOrdered}</TableCell>
-                    {/* "зараз у складі нема колонки відвантажено щоб вести облік виробництва" (2026-11-17) — qtyReceived IS the shipped-and-arrived qty (this app has no separate in-transit state), already returned by this endpoint but never rendered until now. */}
-                    <TableCell>{row.qtyReceived}</TableCell>
-                    {/* "коли вказуєш якусь кількість як готову воно не віднімає від кількості яку залишилось виготовити" (2026-11-17) — qtyRemaining is "not yet received by us", not "not yet made" by the supplier; a declared-ready qty is already made (just not shipped), so it has to come out of what's shown here. The input's own `max` stays the raw qtyRemaining on purpose — that's the real ceiling for supplierReadyQty itself (declaring the whole outstanding qty ready is valid), not for this derived display. */}
-                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
+                    {/* "коли вказуєш якусь кількість як готову воно не віднімає від кількості яку залишилось виготовити" (2026-11-17) — qtyRemaining is "not yet received by us", not "not yet made"; both self-declared numbers (ready, shipped) are already made, just not yet checked in on our side, so both come out of what's shown here. The inputs' own `max` stays the raw qtyRemaining on purpose — that's the real ceiling for each declared value itself (the server enforces the combined ready+shipped ceiling), not for this derived display. */}
+                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0) - (row.supplierShippedQty ?? 0)}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         step="any"
                         min={0}
                         max={row.qtyRemaining}
-                        value={draft[row.itemId] ?? ''}
-                        onChange={(e) => setDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
+                        value={readyDraft[row.itemId] ?? ''}
+                        onChange={(e) => setReadyDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {/* "і де я маю вказувати що відвантажив" (2026-11-17) — self-declared, same spirit/shape as "Готово у вас", not a mirror of any staff-confirmed count. */}
+                      <Input
+                        type="number"
+                        step="any"
+                        min={0}
+                        max={row.qtyRemaining}
+                        value={shippedDraft[row.itemId] ?? ''}
+                        onChange={(e) => setShippedDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
                       />
                       {errors[row.itemId] && <p className="mt-1 text-xs text-destructive">{errors[row.itemId]}</p>}
                     </TableCell>
