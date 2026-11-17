@@ -524,30 +524,32 @@ describe('PurchaseOrdersService', () => {
       });
     });
 
-    // "яка логіка якщо готово 3 і відвантажено 3 то залишилось
-    // виготовити -3 а не -6" (2026-11-18) — the real root cause: receiving
-    // never reconciled these self-declared fields, so they went stale and
-    // double-subtracted against qtyRemaining once goods actually arrived.
+    // "готово те що ми зробили а відвантажено це з того що ми зробили
+    // ... не має віднімати від того що залишилось виготовити" (2026-11-18)
+    // — supplierShippedQty is a SUBSET of supplierReadyQty, not
+    // additional, so both drop by the SAME received qty (each clamped at
+    // 0) rather than being consumed from one before the other.
     describe('reconciling supplierReadyQty/supplierShippedQty on receive', () => {
-      it('consumes from supplierShippedQty first, leaving supplierReadyQty untouched when shipped alone covers it', async () => {
+      it('reduces both ready and shipped by the received qty, each independently clamped at 0', async () => {
         prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
           { id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 10 },
         ]);
         prisma.tenant.purchaseOrder.update.mockResolvedValue({ id: 'po1', status: 'DELIVERED', items: [] });
         prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({
           ...order,
-          items: [{ ...order.items[0], id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 4, supplierReadyQty: 3, supplierShippedQty: 3 }],
+          items: [{ ...order.items[0], id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 4, supplierReadyQty: 5, supplierShippedQty: 3 }],
         });
 
         await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 3 }] });
 
+        // ready 5-3=2, shipped 3-3=0 — shipped <= ready preserved (0 <= 2).
         expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({
           where: { id: 'item1' },
-          data: { qtyReceived: { increment: 3 }, supplierShippedQty: 0, supplierReadyQty: 3 },
+          data: { qtyReceived: { increment: 3 }, supplierReadyQty: 2, supplierShippedQty: 0 },
         });
       });
 
-      it('spills into supplierReadyQty once the received qty exceeds supplierShippedQty', async () => {
+      it('clamps both at 0 once the received qty exceeds what was declared, never going negative', async () => {
         prisma.tenant.purchaseOrderItem.findMany.mockResolvedValue([
           { id: 'item1', productId: 'p1', qtyOrdered: 10, qtyReceived: 10 },
         ]);
@@ -559,10 +561,9 @@ describe('PurchaseOrdersService', () => {
 
         await service.receive(user, 'po1', { lines: [{ purchaseOrderItemId: 'item1', qtyReceived: 6 }] });
 
-        // 6 received: 3 consumed from shipped (-> 0), remaining 3 consumed from ready (-> 0) — never goes negative.
         expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({
           where: { id: 'item1' },
-          data: { qtyReceived: { increment: 6 }, supplierShippedQty: 0, supplierReadyQty: 0 },
+          data: { qtyReceived: { increment: 6 }, supplierReadyQty: 0, supplierShippedQty: 0 },
         });
       });
     });

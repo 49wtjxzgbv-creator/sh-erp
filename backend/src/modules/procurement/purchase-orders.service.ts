@@ -466,26 +466,25 @@ export class PurchaseOrdersService {
         throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', `Purchase order item ${line.purchaseOrderItemId} does not belong to this order.`);
       }
 
-      // "яка логіка якщо готово 3 і відвантажено 3 то залишилось
-      // виготовити -3 а не -6" (2026-11-18) — the real bug: receiving
-      // never reconciled the supplier's own self-declared
-      // supplierReadyQty/supplierShippedQty, so they went stale the
-      // instant qtyReceived advanced past what they still accounted for
-      // — "Залишилось виготовити" (qtyRemaining - ready - shipped) then
-      // double-subtracted units that had already arrived. Receiving now
-      // consumes from supplierShippedQty first (what's received was
-      // presumably shipped), then any leftover from supplierReadyQty,
-      // both clamped at 0 — keeps `ready + shipped <= remaining` true
-      // after every receive, not just at the moment the supplier saved it.
-      const shippedConsumed = Math.min(Number(item.supplierShippedQty ?? 0), Number(line.qtyReceived));
-      const readyConsumed = Math.min(Number(item.supplierReadyQty ?? 0), Number(line.qtyReceived) - shippedConsumed);
+      // "готово те що ми зробили а відвантажено це з того що ми зробили
+      // ... не має віднімати від того що залишилось виготовити"
+      // (2026-11-18) — supplierShippedQty is a SUBSET of
+      // supplierReadyQty (how much of "made" has shipped), not an
+      // additional qty on top of it. Receiving never reconciled either
+      // field, so they went stale the instant qtyReceived advanced past
+      // what they still accounted for. Both drop by the received qty
+      // (clamped at 0) — reducing both by the same amount preserves
+      // `shipped <= ready` (whatever it was before), since clamping at 0
+      // is monotonic.
+      const readyAfter = Math.max(0, Number(item.supplierReadyQty ?? 0) - Number(line.qtyReceived));
+      const shippedAfter = Math.max(0, Number(item.supplierShippedQty ?? 0) - Number(line.qtyReceived));
 
       await this.prisma.tenant.purchaseOrderItem.update({
         where: { id: item.id },
         data: {
           qtyReceived: { increment: line.qtyReceived },
-          supplierShippedQty: Number(item.supplierShippedQty ?? 0) - shippedConsumed,
-          supplierReadyQty: Number(item.supplierReadyQty ?? 0) - readyConsumed,
+          supplierReadyQty: readyAfter,
+          supplierShippedQty: shippedAfter,
           ...(line.actualPrice !== undefined ? { actualPrice: line.actualPrice } : {}),
         },
       });

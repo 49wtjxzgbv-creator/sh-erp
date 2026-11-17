@@ -807,13 +807,19 @@ export class SupplierPortalService {
   }
 
   /**
-   * Supplier declares how much of this line is already finished-and-
-   * not-shipped, and how much is already dispatched/in transit — "і де я
-   * маю вказувати що відвантажив" (2026-11-17). Together capped at
-   * what's actually still outstanding (qtyOrdered - qtyReceived), never
-   * more — `qtyReceived` itself stays staff-only, set only once goods
-   * are physically checked in (PurchaseOrdersService#receive), never
-   * supplier-writable.
+   * Supplier declares two numbers about this line — "готово те що ми
+   * зробили а відвантажено це з того що ми зробили" (2026-11-18):
+   * `supplierReadyQty` is the total qty MADE so far (whether still
+   * sitting at their premises or already on its way), capped at what's
+   * actually still outstanding (qtyOrdered - qtyReceived); `qtyReceived`
+   * itself stays staff-only, set only once goods are physically checked
+   * in (PurchaseOrdersService#receive), never supplier-writable.
+   * `supplierShippedQty` is a SUBSET of that — how much of the made qty
+   * has shipped — capped at supplierReadyQty, not at remaining
+   * independently. It's purely a logistics/informational split WITHIN
+   * "made," not an additional qty on top of it, so it must never be
+   * subtracted a second time from "Залишилось виготовити" (see the
+   * Склад page's own derived display).
    */
   async updateSupplierStockQty(actor: RequestSupplierPortalUser, itemId: string, dto: UpdateSupplierStockQtyDto) {
     const item = await this.prisma.tenant.purchaseOrderItem.findFirst({
@@ -822,11 +828,16 @@ export class SupplierPortalService {
     if (!item) throw new CodedNotFoundException('PURCHASE_ORDER_ITEM_NOT_FOUND', 'Purchase order item not found.');
 
     const remaining = Number(item.qtyOrdered) - Number(item.qtyReceived);
-    const declaredTotal = dto.supplierReadyQty + dto.supplierShippedQty;
-    if (declaredTotal > remaining) {
+    if (dto.supplierReadyQty > remaining) {
       throw new CodedBadRequestException(
         'SUPPLIER_STOCK_QTY_EXCEEDS_REMAINING',
-        `Cannot declare ready + shipped (${declaredTotal}) greater than what is still outstanding (${remaining}).`,
+        `Cannot declare ready (${dto.supplierReadyQty}) greater than what is still outstanding (${remaining}).`,
+      );
+    }
+    if (dto.supplierShippedQty > dto.supplierReadyQty) {
+      throw new CodedBadRequestException(
+        'SUPPLIER_SHIPPED_QTY_EXCEEDS_READY',
+        `Cannot declare shipped (${dto.supplierShippedQty}) greater than what's declared ready (${dto.supplierReadyQty}) — shipped is a subset of ready, not additional.`,
       );
     }
 

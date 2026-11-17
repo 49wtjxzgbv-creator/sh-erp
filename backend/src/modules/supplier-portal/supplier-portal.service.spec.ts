@@ -700,11 +700,23 @@ describe('SupplierPortalService', () => {
       expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
     });
 
-    // "і де я маю вказувати що відвантажив" (2026-11-17)
-    it('rejects when ready + shipped together exceed what is still outstanding, even if neither alone would', async () => {
+    // "готово те що ми зробили а відвантажено це з того що ми зробили"
+    // (2026-11-18) — shipped is a SUBSET of ready, not additional, so it's
+    // capped against ready, not independently against remaining.
+    it('rejects declaring shipped greater than declared ready, even when both individually fit within remaining', async () => {
       prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
-      await expect(service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 50, supplierShippedQty: 40 })).rejects.toThrow();
+      await expect(service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 30, supplierShippedQty: 40 })).rejects.toThrow();
       expect(prisma.tenant.purchaseOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts ready + shipped together exceeding remaining, as long as shipped stays within ready (shipped is not additional)', async () => {
+      prisma.tenant.purchaseOrderItem.findFirst.mockResolvedValue({ id: 'item1', qtyOrdered: 100, qtyReceived: 20 });
+      prisma.tenant.purchaseOrderItem.update.mockResolvedValue({ id: 'item1', supplierReadyQty: 80, supplierShippedQty: 80 });
+
+      const result = await service.updateSupplierStockQty(actor, 'item1', { supplierReadyQty: 80, supplierShippedQty: 80 });
+
+      expect(prisma.tenant.purchaseOrderItem.update).toHaveBeenCalledWith({ where: { id: 'item1' }, data: { supplierReadyQty: 80, supplierShippedQty: 80 } });
+      expect(result.supplierShippedQty).toBe(80);
     });
 
     it('updates both fields together and audit-logs when within bounds', async () => {

@@ -173,8 +173,8 @@ export default function SupplierPortalStockPage() {
                     </TableCell>
                     <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
                     <TableCell>{row.qtyOrdered}</TableCell>
-                    {/* "коли вказуєш якусь кількість як готову воно не віднімає від кількості яку залишилось виготовити" (2026-11-17) — qtyRemaining is "not yet received by us", not "not yet made"; both self-declared numbers (ready, shipped) are already made, just not yet checked in on our side, so both come out of what's shown here. The inputs' own `max` stays the raw qtyRemaining on purpose — that's the real ceiling for each declared value itself (the server enforces the combined ready+shipped ceiling), not for this derived display. */}
-                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0) - (row.supplierShippedQty ?? 0)}</TableCell>
+                    {/* "готово те що ми зробили а відвантажено це з того що ми зробили ... не має віднімати від того що залишилось виготовити" (2026-11-18) — supplierShippedQty is a SUBSET of supplierReadyQty (how much of "made" has shipped), not an additional qty on top of it, so only readyQty comes out of qtyRemaining here. */}
+                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
@@ -186,12 +186,12 @@ export default function SupplierPortalStockPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      {/* "і де я маю вказувати що відвантажив" (2026-11-17) — self-declared, same spirit/shape as "Готово у вас", not a mirror of any staff-confirmed count. */}
+                      {/* "відвантажено це з того що ми зробили" (2026-11-18) — a SUBSET of "Готово у вас", not an additional qty, so its ceiling tracks the live ready draft (falling back to the row's own last-saved value while that draft is still empty), not qtyRemaining independently. */}
                       <Input
                         type="number"
                         step="any"
                         min={0}
-                        max={row.qtyRemaining}
+                        max={Number(readyDraft[row.itemId] || row.supplierReadyQty || 0)}
                         value={shippedDraft[row.itemId] ?? ''}
                         onChange={(e) => setShippedDraft((prev) => ({ ...prev, [row.itemId]: e.target.value }))}
                       />

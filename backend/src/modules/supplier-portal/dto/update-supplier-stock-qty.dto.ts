@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsNumber, Min } from 'class-validator';
 
-/** "Склад" (2026-11-02, extended 2026-11-17 — "де я маю вказувати що відвантажив") — the supplier's own declared qty already finished-and-not-shipped, plus already-dispatched-and-in-transit. Both capped together at (qtyOrdered - qtyReceived) by SupplierPortalService#updateSupplierStockQty, not here. */
+/** "Склад" (2026-11-02, extended 2026-11-18 — "готово те що ми зробили а відвантажено це з того що ми зробили") — supplierReadyQty is total qty made so far (capped at qtyOrdered - qtyReceived); supplierShippedQty is a SUBSET of that already dispatched (capped at supplierReadyQty, not independently). Both caps enforced by SupplierPortalService#updateSupplierStockQty, not here. */
 export class UpdateSupplierStockQtyDto {
   @ApiProperty()
   @Type(() => Number)
