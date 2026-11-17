@@ -370,9 +370,12 @@ export default function SupplierPortalOrderDetailPage() {
   async function handleSubmit() {
     setError(null);
     setSuccess(false);
+    // ".replace(',', '.')" — the price field is a plain text input (not
+    // type="number") so the browser never normalizes a typed "1234,56"
+    // on its own; Ukrainian users type a comma decimal point routinely.
     const items = (order!.items ?? [])
-      .filter((item) => prices[item.id] && Number(prices[item.id]) >= 0)
-      .map((item) => ({ id: item.id, confirmedPrice: Number(prices[item.id]) }));
+      .filter((item) => prices[item.id] && Number(prices[item.id].replace(',', '.')) >= 0)
+      .map((item) => ({ id: item.id, confirmedPrice: Number(prices[item.id].replace(',', '.')) }));
     if (items.length === 0) {
       setError(t('invalidConfirmation'));
       return;
@@ -427,7 +430,7 @@ export default function SupplierPortalOrderDetailPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qtyOrdered')}</TableHead>
                 <TableHead>{t('qtyReceived')}</TableHead>
-                <TableHead className="w-40">{t('yourPrice')}</TableHead>
+                <TableHead className="w-48">{t('yourPrice')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -441,10 +444,9 @@ export default function SupplierPortalOrderDetailPage() {
                   <TableCell>{item.qtyOrdered}</TableCell>
                   <TableCell>{item.qtyReceived}</TableCell>
                   <TableCell>
+                    {/* "нормально не видно цін якщо там цифра більше чим 2 символи" (2026-11-17) — a native type="number" input's own spin-button controls eat into the box's visible width; same inputMode="decimal"-on-a-plain-text-input fix the Mini App's own quotedPrice field already uses, for the same reason. */}
                     <Input
-                      type="number"
-                      step="any"
-                      min={0}
+                      inputMode="decimal"
                       value={prices[item.id] ?? ''}
                       onChange={(e) => {
                         setPrices((prev) => ({ ...prev, [item.id]: e.target.value }));
