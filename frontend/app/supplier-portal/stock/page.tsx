@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { LoadingBlock } from '@/components/ui/loading-block';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
 import { Search } from 'lucide-react';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
@@ -68,6 +69,11 @@ export default function SupplierPortalStockPage() {
   const [shippedDraft, setShippedDraft] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // "і де по замовленнях щоб можна окремо було обирати яке замовлення"
+  // (2026-11-18) — 'all' shows every group stacked (the original
+  // behaviour); any other value narrows "По замовленнях" down to just
+  // that one order.
+  const [selectedOrderId, setSelectedOrderId] = useState<string>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -252,18 +258,36 @@ export default function SupplierPortalStockPage() {
               {groupedByOrder.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">{t('noStockItems')}</p>
               ) : (
-                groupedByOrder.map((group) => (
-                  <div key={group.orderId} className="space-y-2">
-                    <button
-                      type="button"
-                      className="text-sm font-medium text-primary hover:underline"
-                      onClick={() => router.push(`/supplier-portal/orders/${group.orderId}`)}
-                    >
-                      {group.orderNumber}
-                    </button>
-                    {renderTable(group.rows)}
-                  </div>
-                ))
+                <>
+                  {/* "і де по замовленнях щоб можна окремо було обирати яке замовлення" (2026-11-18) — narrows the groups below down to just one order instead of always stacking every open order. */}
+                  <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
+                    <SelectTrigger className="max-w-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('stockAllOrdersOption')}</SelectItem>
+                      {groupedByOrder.map((group) => (
+                        <SelectItem key={group.orderId} value={group.orderId}>
+                          {group.orderNumber}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {groupedByOrder
+                    .filter((group) => selectedOrderId === 'all' || group.orderId === selectedOrderId)
+                    .map((group) => (
+                      <div key={group.orderId} className="space-y-2">
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-primary hover:underline"
+                          onClick={() => router.push(`/supplier-portal/orders/${group.orderId}`)}
+                        >
+                          {group.orderNumber}
+                        </button>
+                        {renderTable(group.rows)}
+                      </div>
+                    ))}
+                </>
               )}
             </TabsContent>
           </Tabs>
