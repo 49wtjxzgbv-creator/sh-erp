@@ -430,7 +430,7 @@ export default function SupplierPortalOrderDetailPage() {
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qtyOrdered')}</TableHead>
                 <TableHead>{t('qtyReceived')}</TableHead>
-                <TableHead className="w-48">{t('yourPrice')}</TableHead>
+                <TableHead className="w-24">{t('yourPrice')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -444,10 +444,10 @@ export default function SupplierPortalOrderDetailPage() {
                   <TableCell>{item.qtyOrdered}</TableCell>
                   <TableCell>{item.qtyReceived}</TableCell>
                   <TableCell>
-                    {/* "нормально не видно цін якщо там цифра більше чим 2 символи" (2026-11-17) — the spinner removal alone wasn't enough: a width:100% input has no intrinsic content size of its own for the table's auto-layout algorithm to size the COLUMN by, so the `<th className="w-48">` hint got silently ignored and the rendered box collapsed to ~59px (confirmed live — verified via computed styles on the actual production page). `min-w-28` gives the input itself a real minimum box the layout algorithm has to honor, independent of the th hint. */}
+                    {/* "нормально не видно цін якщо там цифра більше чим 2 символи" (2026-11-17) — the spinner removal alone wasn't enough: a width:100% input has no intrinsic content size of its own for the table's auto-layout algorithm to size the COLUMN by, so the `<th>`'s own width hint got silently ignored and the rendered box collapsed to ~59px (confirmed live — verified via computed styles on the actual production page). `min-w-[5ch]` gives the input itself a real minimum box the layout algorithm has to honor, independent of the th hint. */}
                     <Input
                       inputMode="decimal"
-                      className="min-w-28"
+                      className="min-w-[5ch]"
                       value={prices[item.id] ?? ''}
                       onChange={(e) => {
                         setPrices((prev) => ({ ...prev, [item.id]: e.target.value }));
