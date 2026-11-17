@@ -2079,6 +2079,7 @@
     "deliveriesInDays": "за {count} дн.",
     "stockRemainingLabel": "Залишилось виготовити",
     "stockReadyLabel": "Готово у вас",
+    "stockShippedLabel": "Відвантажено",
     "noStockItems": "Немає відкритих позицій",
     "navCutting": "Розкрій",
     "cuttingMaterialTitle": "Матеріал",

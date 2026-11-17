@@ -1940,6 +1940,7 @@
     "deliveriesInDays": "in {count}d",
     "stockRemainingLabel": "Remaining to make",
     "stockReadyLabel": "Ready at your side",
+    "stockShippedLabel": "Shipped",
     "noStockItems": "No open items",
     "navCutting": "Cutting",
     "cuttingMaterialTitle": "Material",

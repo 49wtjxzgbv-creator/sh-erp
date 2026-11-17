@@ -133,6 +133,7 @@ export default function SupplierPortalStockPage() {
                 <TableHead>{t('article')}</TableHead>
                 <TableHead>{t('productName')}</TableHead>
                 <TableHead>{t('qty')}</TableHead>
+                <TableHead>{t('stockShippedLabel')}</TableHead>
                 <TableHead>{t('stockRemainingLabel')}</TableHead>
                 <TableHead className="w-48">{t('stockReadyLabel')}</TableHead>
                 <TableHead className="w-24" />
@@ -141,7 +142,7 @@ export default function SupplierPortalStockPage() {
             <TableBody>
               {filteredRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                     {t('noStockItems')}
                   </TableCell>
                 </TableRow>
@@ -156,6 +157,8 @@ export default function SupplierPortalStockPage() {
                     </TableCell>
                     <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
                     <TableCell>{row.qtyOrdered}</TableCell>
+                    {/* "зараз у складі нема колонки відвантажено щоб вести облік виробництва" (2026-11-17) — qtyReceived IS the shipped-and-arrived qty (this app has no separate in-transit state), already returned by this endpoint but never rendered until now. */}
+                    <TableCell>{row.qtyReceived}</TableCell>
                     {/* "коли вказуєш якусь кількість як готову воно не віднімає від кількості яку залишилось виготовити" (2026-11-17) — qtyRemaining is "not yet received by us", not "not yet made" by the supplier; a declared-ready qty is already made (just not shipped), so it has to come out of what's shown here. The input's own `max` stays the raw qtyRemaining on purpose — that's the real ceiling for supplierReadyQty itself (declaring the whole outstanding qty ready is valid), not for this derived display. */}
                     <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
                     <TableCell>
