@@ -1938,7 +1938,7 @@
     "deliveriesQtyLabel": "Qty: {qty}",
     "deliveriesOverdueBy": "overdue by {count}d",
     "deliveriesInDays": "in {count}d",
-    "stockRemainingLabel": "Remaining",
+    "stockRemainingLabel": "Remaining to make",
     "stockReadyLabel": "Ready at your side",
     "noStockItems": "No open items",
     "navCutting": "Cutting",

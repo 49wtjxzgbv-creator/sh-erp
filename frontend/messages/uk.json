@@ -2077,7 +2077,7 @@
     "deliveriesQtyLabel": "Кількість: {qty}",
     "deliveriesOverdueBy": "прострочено на {count} дн.",
     "deliveriesInDays": "за {count} дн.",
-    "stockRemainingLabel": "Залишилось",
+    "stockRemainingLabel": "Залишилось виготовити",
     "stockReadyLabel": "Готово у вас",
     "noStockItems": "Немає відкритих позицій",
     "navCutting": "Розкрій",

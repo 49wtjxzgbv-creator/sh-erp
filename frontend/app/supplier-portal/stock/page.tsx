@@ -156,7 +156,8 @@ export default function SupplierPortalStockPage() {
                     </TableCell>
                     <TableCell className="max-w-[220px] truncate" title={row.productName}>{row.productName}</TableCell>
                     <TableCell>{row.qtyOrdered}</TableCell>
-                    <TableCell>{row.qtyRemaining}</TableCell>
+                    {/* "коли вказуєш якусь кількість як готову воно не віднімає від кількості яку залишилось виготовити" (2026-11-17) — qtyRemaining is "not yet received by us", not "not yet made" by the supplier; a declared-ready qty is already made (just not shipped), so it has to come out of what's shown here. The input's own `max` stays the raw qtyRemaining on purpose — that's the real ceiling for supplierReadyQty itself (declaring the whole outstanding qty ready is valid), not for this derived display. */}
+                    <TableCell>{row.qtyRemaining - (row.supplierReadyQty ?? 0)}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
