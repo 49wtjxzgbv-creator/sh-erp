@@ -152,10 +152,10 @@ export default function SupplierPortalRequestDetailPage() {
                   <TableCell className="max-w-[260px] truncate" title={item.productNameSnapshot}>{item.productNameSnapshot}</TableCell>
                   <TableCell>{item.qty}</TableCell>
                   <TableCell>
-                    {/* "нормально не видно цін якщо там цифра більше чим 2 символи" (2026-11-17) — the spinner removal alone wasn't enough: a width:100% input has no intrinsic content size of its own for the table's auto-layout algorithm to size the COLUMN by, so the `<th>`'s own width hint got silently ignored and the rendered box collapsed to ~59px (confirmed live — verified via computed styles on the actual production page). `min-w-[5ch]` gives the input itself a real minimum box the layout algorithm has to honor, independent of the th hint. */}
+                    {/* "нормально не видно цін якщо там цифра більше чим 2 символи" (2026-11-17) — the spinner removal alone wasn't enough: a width:100% input has no intrinsic content size of its own for the table's auto-layout algorithm to size the COLUMN by, so the `<th>`'s own width hint got silently ignored and the rendered box collapsed to ~59px (confirmed live — verified via computed styles on the actual production page). `min-w-[calc(5ch+1.5rem)]` gives the input a real minimum box the layout algorithm has to honor — the +1.5rem accounts for this box-sizing: border-box input's own 0.75rem horizontal padding on each side, which a bare 5ch budget ate into instead of leaving room for the digits themselves (confirmed live again: 5ch alone rendered at the same ~59px as the original bug). */}
                     <Input
                       inputMode="decimal"
-                      className="min-w-[5ch]"
+                      className="min-w-[calc(5ch+1.5rem)]"
                       disabled={request.status !== 'SENT'}
                       value={prices[item.id] ?? ''}
                       onChange={(e) => {
