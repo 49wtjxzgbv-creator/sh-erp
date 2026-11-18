@@ -1786,6 +1786,7 @@
     "view": "View",
     "loadingModel": "Loading 3D modelâ¦ Large files can take several minutes.",
     "view3d": "View 3D",
+    "capturePhotoFromModel": "Photo of the assembly from 3D",
     "convertEdrawings": "Convert eDrawings",
     "convertEdrawingsHint": "External free tool (innerscene.com) — converts .easm/.eprt/.edrw to .glb right in your browser, without uploading the file to any server. After exporting, attach the resulting .glb via \"Add document\".",
     "modelLoadError": "Failed to load 3D model",

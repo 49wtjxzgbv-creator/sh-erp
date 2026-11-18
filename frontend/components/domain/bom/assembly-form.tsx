@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -26,7 +27,7 @@ import { toast } from '@/lib/hooks/use-toast';
 import { Entity3DModelField } from '@/components/domain/files/entity-3d-model-field';
 import { EntitySuppliersEditor } from '@/components/domain/procurement/entity-suppliers-editor';
 import { CreateProductDialog } from '@/components/domain/catalog/create-product-dialog';
-import { useCreateProductFromPart } from '@/components/domain/bom/use-create-product-from-part';
+import { useCreateProductFromPart, dataUrlToFile } from '@/components/domain/bom/use-create-product-from-part';
 
 // `z.coerce.number().min(0).optional().or(z.literal(''))` has a real bug for
 // a `min(0)` field specifically (caught in product-form.tsx 2026-10-08,
@@ -120,6 +121,7 @@ export function AssemblyForm({
   const tc = useTranslations('common');
   const tf = useTranslations('files');
   const tp = useTranslations('procurement');
+  const qc = useQueryClient();
 
   // "3D-модель — звірка з BOM" (2026-10-08): the assembly's own current
   // PRODUCT-type BOM lines, resolved to real articles — passed down to
@@ -203,6 +205,20 @@ export function AssemblyForm({
     // raw upload until a later click/refetch picks up `arOptimizedDownloadUrl`.
     const { downloadUrl } = await getFileDownloadUrl(asset.id);
     return downloadUrl;
+  }
+
+  // "чому не можно з них зробити фото специфікації і підтягнути його"
+  // (2026-11-18): Step3DViewer hands back a snapshot of the WHOLE loaded
+  // model (not one isolated part, unlike `handleCreateProduct` above) —
+  // this just uploads it as the assembly's own ASSEMBLY_PHOTO and
+  // invalidates EntityPhotoField's query so the new photo appears without
+  // a page reload.
+  async function handleCapturePhoto(dataUrl: string) {
+    if (!assembly) return;
+    const file = dataUrlToFile(dataUrl, `${assembly.article || assembly.id}.png`);
+    if (!file) return;
+    await uploadFile(file, { domain: 'ASSEMBLY_PHOTO', entityType: 'Assembly', entityId: assembly.id });
+    qc.invalidateQueries({ queryKey: ['files', 'Assembly', assembly.id] });
   }
 
   const {
@@ -295,6 +311,7 @@ export function AssemblyForm({
               onAddToBom={readOnly ? undefined : handleAddToBom}
               onCreateProduct={readOnly ? undefined : handleCreateProduct}
               onActivateAr={readOnly ? undefined : handleActivateAr}
+              onCapturePhoto={readOnly ? undefined : handleCapturePhoto}
               readOnly={readOnly}
             />
           </CardContent>

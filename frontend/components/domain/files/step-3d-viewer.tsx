@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
-import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink, Pencil, Save } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink, Pencil, Save, Camera } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
 import { cn } from '@/lib/utils';
@@ -180,6 +180,18 @@ export interface Step3DViewerProps {
    * `onAddToBom`.
    */
   onSaveModel?: (glb: ArrayBuffer) => Promise<void>;
+  /**
+   * "у цю специфікацію ми завантажили файл glb та step, чому не можно з
+   * них зробити фото специфікації і підтягнути його" (2026-11-18) — offers
+   * an always-visible "Фото специфікації з 3D" button (whole model, no
+   * selection needed) that hands back a PNG data URL snapshot of the
+   * current view (`SceneApi.captureWholeModelSnapshot`). The CALLER owns
+   * uploading it as the entity's own photo (`EntityPhotoField`'s domain)
+   * — same division of responsibility as `onCreateProduct`/`onSaveModel`,
+   * this component never touches storage itself. Omit to read-only-gate
+   * it (no caller-side write permission).
+   */
+  onCapturePhoto?: (dataUrl: string) => void;
 }
 
 type ViewerState = 'loading' | 'ready' | 'error';
@@ -216,6 +228,8 @@ interface SceneApi {
   /** "просто подивитись анімацію" (2026-10-09) — eases every top-level node out along its own direction from the assembly's center (`true`) or back to its real assembled position (`false`). Idempotent — calling with the same value mid-animation just lets the current tween keep going. */
   setExploded: (enabled: boolean) => void;
   captureSnapshot: (id: string) => string | null;
+  /** "чому не можна з них зробити фото специфікації і підтягнути його" (2026-11-18) — the whole-model counterpart to `captureSnapshot`: no isolation, no reframing, just the current (already fully-visible, already-fitted-to-view) frame read back as a PNG data URL. Unlike per-part isolation, nothing needs hiding first — outside of an in-progress `captureSnapshot` call the scene always shows every mesh at its normal camera framing already. */
+  captureWholeModelSnapshot: () => string;
   exportPartGlb: (id: string) => Promise<ArrayBuffer | null>;
   computeVolume: (id: string) => number | null;
   /** "перейменовувати самі деталь артикулом" (2026-10-12) — renames a node in the LIVE scene only (`object.name` + `object.userData.name`, the one `buildTree` actually reads — see its own header comment on why `userData.name` is authoritative). Returns `false` if `id` doesn't resolve to a node. Doesn't touch the stored file at all; `exportFullGlb` below is what actually persists it. */
@@ -239,7 +253,7 @@ const PARSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0xf59e0b); // amber-500 — distinct from typical CAD greys/blues
 
-export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, onCreateProduct, onActivateAr, onSaveModel }: Step3DViewerProps) {
+export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, onCreateProduct, onActivateAr, onSaveModel, onCapturePhoto }: Step3DViewerProps) {
   const t = useTranslations('files');
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneApiRef = useRef<SceneApi | null>(null);
@@ -518,6 +532,11 @@ export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, o
     }
   }
 
+  function handleCapturePhoto() {
+    const dataUrl = sceneApiRef.current?.captureWholeModelSnapshot();
+    if (dataUrl) onCapturePhoto?.(dataUrl);
+  }
+
   return (
     // Stacked (model on top, tree below, both scrollable in their own
     // strip) below the `sm` breakpoint — a fixed w-64 side panel on a
@@ -554,8 +573,20 @@ export function Step3DViewer({ url, glbUrl, arGlbUrl, bomArticles, onAddToBom, o
             {explodedMode ? t('assembleModel') : t('explodeModel')}
           </button>
         )}
-        {state === 'ready' && glbUrl && (
-          <ArViewButton getGlbUrl={handleActivateArRequest} className="absolute right-2 top-2 bg-background/90 shadow-sm" />
+        {state === 'ready' && (glbUrl || onCapturePhoto) && (
+          <div className="absolute right-2 top-2 flex flex-col items-end gap-2">
+            {glbUrl && <ArViewButton getGlbUrl={handleActivateArRequest} className="bg-background/90 shadow-sm" />}
+            {onCapturePhoto && (
+              <button
+                type="button"
+                onClick={handleCapturePhoto}
+                className="flex items-center gap-1.5 rounded border border-border bg-background/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-secondary/50"
+              >
+                <Camera className="h-3 w-3" />
+                {t('capturePhotoFromModel')}
+              </button>
+            )}
+          </div>
         )}
         {state === 'loading' && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('loadingModel')}</p>
@@ -1390,6 +1421,17 @@ function mountScene(
     return dataUrl;
   }
 
+  // "чому не можна з них зробити фото специфікації і підтягнути його"
+  // (2026-11-18) — "Фото специфікації з 3D" button's handler. The scene
+  // is already rendered at its current (whole-model) camera framing by
+  // this point in every normal call path, so this is just a render +
+  // readback, no save/restore dance like `captureSnapshot` needs for its
+  // temporary isolation.
+  function captureWholeModelSnapshot(): string {
+    renderer.render(scene, camera);
+    return renderer.domElement.toDataURL('image/png');
+  }
+
   // "до товару додавало glb файл саме цієї позиції якої робить фото"
   // (2026-10-08): companion to `captureSnapshot` — exports just the
   // target node's own subtree (its meshes, with the same per-node-cloned
@@ -1445,6 +1487,7 @@ function mountScene(
     setIsolated,
     setExploded,
     captureSnapshot,
+    captureWholeModelSnapshot,
     exportPartGlb,
     computeVolume,
     renameNode,

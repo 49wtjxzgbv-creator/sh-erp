@@ -110,6 +110,8 @@ export interface EntityDocumentsFieldProps {
   ) => void;
   /** Forwarded to Step3DViewer's own `onActivateAr` prop — see its header comment. */
   onActivateAr?: (article: string, name: string, glb: ArrayBuffer | null) => Promise<string | null>;
+  /** Forwarded to Step3DViewer's own `onCapturePhoto` prop — see its header comment. */
+  onCapturePhoto?: (dataUrl: string) => void;
   /**
    * "перейменовувати самі деталь артикулом" (2026-10-12): gates
    * Step3DViewer's own `onSaveModel` prop — the actual upload/replace
@@ -130,7 +132,7 @@ export interface EntityDocumentsFieldProps {
  * rather than `useFilesForEntity`, purely to get `downloadUrl` attached to
  * each row in one request instead of one `/download-url` call per document.
  */
-export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct, onActivateAr, readOnly }: EntityDocumentsFieldProps) {
+export function EntityDocumentsField({ domain, entityType, entityId, accept = 'application/pdf,.step,.stp,.glb,.dxf,image/*', bomArticles, onAddToBom, onCreateProduct, onActivateAr, onCapturePhoto, readOnly }: EntityDocumentsFieldProps) {
   const t = useTranslations('files');
   const tc = useTranslations('common');
   const qc = useQueryClient();
@@ -332,6 +334,7 @@ export function EntityDocumentsField({ domain, entityType, entityId, accept = 'a
                 onCreateProduct={onCreateProduct}
                 onActivateAr={onActivateAr}
                 onSaveModel={!readOnly && isGlbFile(modelDoc.originalName) ? handleSaveRenamedModel : undefined}
+                onCapturePhoto={onCapturePhoto}
               />
             )}
           </div>
