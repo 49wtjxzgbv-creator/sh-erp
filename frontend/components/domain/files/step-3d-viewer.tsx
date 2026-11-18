@@ -910,7 +910,21 @@ function ModelTreeRow({
  */
 function isArticleCandidateName(trimmed: string): boolean {
   if (trimmed.indexOf('-') > 0) return true;
-  return /^\d+([._]\d+)*$/.test(trimmed);
+  if (/^\d+([._]\d+)*$/.test(trimmed)) return true;
+  // "чомусь воно не розпізнає все з чого складається наприклад товар
+  // 435981" (2026-11-18, real node name: "435981_entspannt_109") — a THIRD
+  // shape this gate used to miss entirely: numeric article, underscore,
+  // then free-form (non-numeric) text — "ARTICLE_description", the
+  // underscore counterpart of the dash case above. The previous bare-
+  // numeric regex only covered "article_moreNumbers" (e.g. "434924_195");
+  // it silently dropped this node from the whole tab (not even "немає в
+  // каталозі" — `walk()` never added it to `byArticle` at all), even
+  // though `articleMatches`/`extractArticleCandidate` elsewhere in this
+  // file already split on the exact same point and matched it fine in the
+  // interactive viewer's own BOM cross-check. Reuses that same split point
+  // so both code paths agree on what counts as the article.
+  const splitIndex = articleSplitIndex(trimmed);
+  return splitIndex > 0 && /^\d+$/.test(trimmed.slice(0, splitIndex));
 }
 
 /**
