@@ -34,11 +34,21 @@ if (!stepPath || !glbPath) {
 // assemblies inside a size the rest of the pipeline can actually handle.
 function pickTessellationParams(stepFileSizeBytes) {
   const MB = 1024 * 1024;
-  if (stepFileSizeBytes < 5 * MB) {
-    return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.01, angularDeflection: 0.5 };
-  }
+  // "чому у них всіх така рубана форма, і виглядає нереалістично"
+  // (2026-11-18): the old 5–15MB tier (0.03/0.8) visibly faceted curved
+  // surfaces on perfectly ordinary files — confirmed on a real 5.68MB
+  // single-part rod (456066.STEP: 79k verts at 0.03/0.8 vs 140k at
+  // 0.01/0.5, visibly smoother) — while costing nothing extra in
+  // practice: a real 9.42MB 786-mesh assembly (452330-2.step) produced
+  // the IDENTICAL vertex count and was, if anything, slightly FASTER at
+  // the fine setting (42.6s vs 48.2s). Merged into the fine tier below
+  // 15MB on that evidence. The >=15MB tier is left untouched — THAT is
+  // where the real incident this whole function exists for actually
+  // happened (a 17.4MB file dense with small threaded parts produced a
+  // 518MB .glb at this same fine setting), so the one known bad case
+  // still gets the original, deliberately coarse treatment.
   if (stepFileSizeBytes < 15 * MB) {
-    return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.03, angularDeflection: 0.8 };
+    return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.01, angularDeflection: 0.5 };
   }
   return { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.06, angularDeflection: 1.2 };
 }
