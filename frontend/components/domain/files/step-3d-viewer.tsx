@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ChevronDown, ChevronRight, ChevronUp, Check, AlertTriangle, Plus, Loader2, Search, X, Eye, EyeOff, Expand, Shrink, Pencil, Save, Camera } from 'lucide-react';
 import type { OcctReadResult } from 'occt-import-js';
 import type { StepParseRequest, StepParseResponse } from './step-parser.worker';
@@ -1099,6 +1100,28 @@ async function loadStepViaWorker(url: string, onWorker: (worker: Worker) => void
 }
 
 /**
+ * "типу не як 3д модель а реалізм" (2026-11-18) — a PBR material with no
+ * environment to reflect has nothing to show but its single directional
+ * light's highlight; everything else reads as flat, obviously-synthetic
+ * CG rather than a real object (real materials always pick up SOME
+ * ambient reflection from their surroundings, even indoors under plain
+ * lighting). `RoomEnvironment` + `PMREMGenerator` bakes that ambient
+ * reflection for free, no external HDR asset needed. `ACESFilmicToneMapping`
+ * is the other half of the same effect — it rolls off bright highlights
+ * the way a real camera/eye does instead of clipping them to flat white.
+ * Shared by every renderer in this file (interactive viewer + both
+ * offscreen snapshot renderers) so a part's saved photo looks the same as
+ * what the user actually saw live.
+ */
+function applyRealisticLook(renderer: THREE.WebGLRenderer, scene: THREE.Scene): void {
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+}
+
+/**
  * Frames, lights, and renders `group` into `container` — shared by both
  * load paths. Also wires up click-to-select: a raycast hit is mapped back
  * to a tree node id via `userData.__treeNodeId` (set by `buildTree` on
@@ -1139,6 +1162,7 @@ function mountScene(
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, height);
   container.appendChild(renderer.domElement);
+  applyRealisticLook(renderer, scene);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -1513,6 +1537,7 @@ function mountScene(
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();
+      scene.environment?.dispose();
     },
   };
 }
@@ -2031,10 +2056,12 @@ export async function captureGlbSnapshot(glbUrl: string): Promise<string | null>
   const camera = new THREE.PerspectiveCamera(45, 1, maxDim / 1000, maxDim * 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE);
+  applyRealisticLook(renderer, scene);
 
   const dataUrl = isolateRenderToDataUrl(renderer, scene, camera, group, group);
 
   renderer.dispose();
+  scene.environment?.dispose();
   group.traverse((o) => {
     if (o instanceof THREE.Mesh) {
       o.geometry.dispose();
@@ -2146,6 +2173,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const camera = new THREE.PerspectiveCamera(45, 1, maxDim / 1000, maxDim * 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(SNAPSHOT_SIZE, SNAPSHOT_SIZE); // never appended to the DOM — a WebGLRenderer renders and reads back (toDataURL) just fine fully offscreen.
+  applyRealisticLook(renderer, scene);
 
   const parts: GlbPartAnalysis[] = partsMeta
     .map((part) => {
@@ -2174,6 +2202,7 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
     if (disposed) return;
     disposed = true;
     renderer.dispose();
+    scene.environment?.dispose();
     group.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
