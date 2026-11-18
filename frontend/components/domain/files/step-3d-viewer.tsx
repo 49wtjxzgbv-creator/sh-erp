@@ -1115,9 +1115,15 @@ async function loadStepViaWorker(url: string, onWorker: (worker: Worker) => void
  */
 function applyRealisticLook(renderer: THREE.WebGLRenderer, scene: THREE.Scene): void {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 1;
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  // `RoomEnvironment` on its own is bright enough to blow highlights out
+  // to near-white once stacked on the scene's existing Hemisphere+
+  // Directional lights (confirmed live — the whole model went washed-out
+  // white before this) — scaled down to just enough for a believable
+  // ambient reflection without dominating the direct lighting.
+  scene.environmentIntensity = 0.4;
   pmrem.dispose();
 }
 
@@ -1147,8 +1153,12 @@ function mountScene(
   const volumeScaleToMm3 = volumeUnitScaleToMm3(maxDim);
   group.position.sub(center);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  // Lowered from 2/1.5 (2026-11-18, alongside `applyRealisticLook` below)
+  // — those values were tuned for a flat scene with NO ambient
+  // contribution at all; stacked on top of a real environment map AND
+  // ACESFilmicToneMapping, they overexposed everything to near-white.
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
   dirLight.position.set(maxDim, maxDim, maxDim);
   scene.add(dirLight);
 
@@ -2047,8 +2057,12 @@ export async function captureGlbSnapshot(glbUrl: string): Promise<string | null>
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf3f4f6);
   scene.add(group);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  // Lowered from 2/1.5 (2026-11-18, alongside `applyRealisticLook` below)
+  // — those values were tuned for a flat scene with NO ambient
+  // contribution at all; stacked on top of a real environment map AND
+  // ACESFilmicToneMapping, they overexposed everything to near-white.
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
   dirLight.position.set(maxDim, maxDim, maxDim);
   scene.add(dirLight);
 
@@ -2164,8 +2178,12 @@ export async function analyzeGlbParts(glbUrl: string): Promise<GlbModelAnalysis>
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf3f4f6);
   scene.add(group);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  // Lowered from 2/1.5 (2026-11-18, alongside `applyRealisticLook` below)
+  // — those values were tuned for a flat scene with NO ambient
+  // contribution at all; stacked on top of a real environment map AND
+  // ACESFilmicToneMapping, they overexposed everything to near-white.
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
   dirLight.position.set(maxDim, maxDim, maxDim);
   scene.add(dirLight);
 
