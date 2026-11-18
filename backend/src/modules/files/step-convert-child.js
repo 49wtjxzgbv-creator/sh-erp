@@ -71,9 +71,22 @@ async function main() {
       );
     }
     primitive.setIndices(doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(mesh.index.array)).setBuffer(buffer));
-    if (mesh.color) {
-      primitive.setMaterial(doc.createMaterial().setBaseColorFactor([...mesh.color, 1]));
-    }
+    // "чому з степ деталі 3д такі темні і чорні майже нічого не видно"
+    // (2026-11-18): a glTF material's own spec default is
+    // metallicFactor=1/roughnessFactor=1 — a perfectly smooth, fully
+    // metallic surface — which renders almost black under this app's
+    // plain directional+hemisphere lighting (no environment map for the
+    // metal's reflection to pick up; only a thin specular highlight shows
+    // at all). `doc.createMaterial()` was only ever given a base color,
+    // never touching those two, so every STEP→GLB conversion inherited
+    // that default. Matches the client-side fallback conversion's own
+    // values (`step-3d-viewer.tsx`'s `loadStepViaWorker`) for a
+    // consistent look regardless of which path produced the GLB. Also
+    // always creates a material now (not just when `mesh.color` exists)
+    // so a colorless mesh gets the same light-gray/non-metal look instead
+    // of the untouched default material (metallic WHITE, same problem).
+    const color = mesh.color ?? [0x9c / 255, 0xa3 / 255, 0xaf / 255];
+    primitive.setMaterial(doc.createMaterial().setBaseColorFactor([...color, 1]).setMetallicFactor(0.1).setRoughnessFactor(0.7));
     const gltfMesh = doc.createMesh(mesh.name || 'mesh');
     gltfMesh.addPrimitive(primitive);
     scene.addChild(doc.createNode(mesh.name || 'node').setMesh(gltfMesh));
