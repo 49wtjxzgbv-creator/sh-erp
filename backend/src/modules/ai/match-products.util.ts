@@ -23,10 +23,23 @@ export interface MatchedBomLine {
  * identical matching behavior instead of a third copy. `recognizeInvoice`
  * itself is left as-is (out of scope for this change) but could adopt this
  * helper later.
+ *
+ * "не розпізнає все з чого складається ... покращити підбір — шукати і за
+ * артикулом, не лише за назвою" (2026-11-18) — a STEP file's own part
+ * names routinely ARE the article number (CAD software has no separate
+ * "name" field most shops bother filling in), so article is checked
+ * first, both exact and substring, before falling back to the
+ * name-only checks this already had.
  */
 export function matchProductByName(rawName: string, products: Product[]): Product | undefined {
   const rawLower = rawName.toLowerCase();
-  let match = products.find((p) => p.name.toLowerCase() === rawLower);
+  let match = products.find((p) => p.article.toLowerCase() === rawLower);
+  if (!match) {
+    match = products.find((p) => p.name.toLowerCase() === rawLower);
+  }
+  if (!match) {
+    match = products.find((p) => rawLower.length > 3 && (p.article.toLowerCase().includes(rawLower) || rawLower.includes(p.article.toLowerCase())));
+  }
   if (!match) {
     match = products.find((p) => rawLower.length > 3 && (p.name.toLowerCase().includes(rawLower) || rawLower.includes(p.name.toLowerCase())));
   }

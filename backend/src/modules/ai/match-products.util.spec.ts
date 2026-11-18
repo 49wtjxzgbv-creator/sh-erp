@@ -25,6 +25,28 @@ describe('matchProductByName', () => {
   it('returns undefined for no match', () => {
     expect(matchProductByName('Щось зовсім інше', products)).toBeUndefined();
   });
+
+  // "не розпізнає все з чого складається ... покращити підбір — шукати і
+  // за артикулом" (2026-11-18) — a STEP file's own part name is routinely
+  // just the article number, with no real product name at all.
+  it('matches on an exact article number, even though it is not the product name', () => {
+    expect(matchProductByName('A-002', products)?.id).toBe('p2');
+  });
+
+  it('matches case-insensitively on article', () => {
+    expect(matchProductByName('a-001', products)?.id).toBe('p1');
+  });
+
+  it('matches when the raw name is a substring of a real article', () => {
+    const withLongArticle = [...products, { id: 'p3', article: '435981-REV2', name: '' } as any];
+    expect(matchProductByName('435981', withLongArticle)?.id).toBe('p3');
+  });
+
+  it('prefers an exact article match over a substring name match', () => {
+    // "A-001" also happens to read as a substring of this unrelated product's name.
+    const ambiguous = [...products, { id: 'p3', article: 'X', name: 'Корпус A-0011 великий' } as any];
+    expect(matchProductByName('A-001', ambiguous)?.id).toBe('p1');
+  });
 });
 
 describe('toMatchedBomLine', () => {
