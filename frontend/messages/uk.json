@@ -843,6 +843,7 @@
     "supplierQuotedPrice": "Ціна від постачальника",
     "actualPrice": "Фактична ціна",
     "supplierConfirmedDeliveryDate": "Дата постачання від постачальника",
+    "invoiceNumberLabel": "Номер рахунку",
     "supplierConfirmedPrice": "Ціна від постачальника",
     "supplierReadyQty": "Готово у постачальника",
     "supplierShippedQty": "Відвантажено постачальником",

@@ -838,6 +838,7 @@
     "supplierQuotedPrice": "Supplier's price",
     "actualPrice": "Actual price",
     "supplierConfirmedDeliveryDate": "Supplier-confirmed delivery date",
+    "invoiceNumberLabel": "Numer faktury",
     "supplierConfirmedPrice": "Supplier-confirmed price",
     "supplierReadyQty": "Ready at supplier",
     "supplierShippedQty": "Shipped by supplier",
