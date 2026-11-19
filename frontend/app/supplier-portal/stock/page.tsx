@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Avatar } from '@/components/ui/avatar';
@@ -15,6 +15,7 @@ import { EntityCombobox } from '@/components/domain/shared/entity-combobox';
 import { Search } from 'lucide-react';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
+import { cn } from '@/lib/utils';
 
 interface StockRow {
   itemId: string;
@@ -74,6 +75,20 @@ export default function SupplierPortalStockPage() {
   // behaviour); any other value narrows "По замовленнях" down to just
   // that one order.
   const [selectedOrderId, setSelectedOrderId] = useState<string>('all');
+  // "коли в складі щось шукаєш в пошуку і натискаєш воно відкриває каталог
+  // а не підсвічує у списку складу те що шукаємо" (2026-11-19) — selecting
+  // a search suggestion used to `router.push` straight to that order's
+  // page instead of staying on Склад; now it just highlights/scrolls to
+  // the matching row in whichever view (Загальний/По замовленнях) is
+  // already open. Cleared the moment the user types a NEW query, so a
+  // stale highlight never lingers on an unrelated row.
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+
+  useEffect(() => {
+    if (!highlightedItemId) return;
+    rowRefs.current.get(highlightedItemId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightedItemId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,7 +159,14 @@ export default function SupplierPortalStockPage() {
 
   function renderRow(row: StockRow) {
     return (
-      <TableRow key={row.itemId}>
+      <TableRow
+        key={row.itemId}
+        ref={(el) => {
+          if (el) rowRefs.current.set(row.itemId, el);
+          else rowRefs.current.delete(row.itemId);
+        }}
+        className={cn(row.itemId === highlightedItemId && 'bg-primary/10')}
+      >
         <TableCell>
           <Avatar src={row.photoUrl} size="sm" />
         </TableCell>
@@ -226,15 +248,24 @@ export default function SupplierPortalStockPage() {
         <CardContent className="space-y-3">
           <EntityCombobox<StockRow>
             query={search}
-            onQueryChange={setSearch}
+            onQueryChange={(q) => {
+              setSearch(q);
+              setHighlightedItemId(null);
+            }}
             open={searchOpen}
             onOpenChange={setSearchOpen}
             items={filteredRows}
             getKey={(row) => row.itemId}
             onSelect={(row) => {
-              setSearch(`${row.article} — ${row.productName}`);
+              // Clears the query (not the combined "article — name" label
+              // it used to set) — `filteredRows` filters by substring
+              // match on the row's OWN article/name, so leaving that
+              // combined label in `search` would filter every row out,
+              // including the one just selected.
+              setSearch('');
               setSearchOpen(false);
-              router.push(`/supplier-portal/orders/${row.orderId}`);
+              setSelectedOrderId(row.orderId);
+              setHighlightedItemId(row.itemId);
             }}
             placeholder={t('catalogSearchPlaceholder')}
             leading={<Search className="h-4 w-4 shrink-0 text-muted-foreground" />}
