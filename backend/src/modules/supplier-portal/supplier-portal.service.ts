@@ -182,7 +182,8 @@ export class SupplierPortalService {
       orderBy: { orderDate: 'desc' },
       include: { items: true },
     });
-    return { items: orders };
+    const invoiceNumbersByOrder = await this.fetchInvoiceNumbersByOrder(orders.map((o) => o.id));
+    return { items: orders.map((o) => ({ ...o, invoiceNumbers: invoiceNumbersByOrder.get(o.id) ?? [] })) };
   }
 
   async getPurchaseOrder(actor: RequestSupplierPortalUser, id: string) {
@@ -208,7 +209,34 @@ export class SupplierPortalService {
     // has already priced via quotePurchaseRequest (ProductSupplier.
     // supplierOfferedPrice). Attach it so the portal can pre-fill the
     // "Ваша ціна" input instead of leaving it empty.
-    return { ...order, items: await this.attachCatalogPrices(actor, withPhotos) };
+    const invoiceNumbersByOrder = await this.fetchInvoiceNumbersByOrder([id]);
+    return {
+      ...order,
+      invoiceNumbers: invoiceNumbersByOrder.get(id) ?? [],
+      items: await this.attachCatalogPrices(actor, withPhotos),
+    };
+  }
+
+  /**
+   * "якщо постачальник призначив декільком замовленням один рахунок на
+   * оплату" (2026-11-19) — every INVOICE-type document number linked to
+   * each of the given orders via the many-to-many join table; a document
+   * shared by several orders shows up under every one of them.
+   */
+  private async fetchInvoiceNumbersByOrder(orderIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    if (orderIds.length === 0) return map;
+    const links = await this.prisma.tenant.purchaseOrderDocumentOrder.findMany({
+      where: { purchaseOrderId: { in: orderIds } },
+      include: { document: { select: { documentType: true, documentNumber: true } } },
+    });
+    for (const link of links) {
+      if (link.document.documentType !== 'INVOICE' || !link.document.documentNumber) continue;
+      const bucket = map.get(link.purchaseOrderId);
+      if (bucket) bucket.push(link.document.documentNumber);
+      else map.set(link.purchaseOrderId, [link.document.documentNumber]);
+    }
+    return map;
   }
 
   async confirmPurchaseOrder(actor: RequestSupplierPortalUser, id: string, dto: ConfirmPurchaseOrderDto) {

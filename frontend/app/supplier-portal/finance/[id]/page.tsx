@@ -34,8 +34,8 @@ interface PortalInvoiceDetail {
   note: string | null;
   paymentStatus: InvoicePaymentStatus;
   payments: PortalInvoicePayment[];
-  /** Null — "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06). */
-  purchaseOrder: { id: string; orderDate: string } | null;
+  /** Zero, one, or several — see Фінанси list page's own PortalInvoiceRow comment (2026-11-19, many-to-many). */
+  linkedOrders: { id: string; number: string; orderDate: string }[];
 }
 
 const STATUS_VARIANT: Record<InvoicePaymentStatus, 'secondary' | 'warning' | 'success' | 'outline'> = {
@@ -202,8 +202,8 @@ export default function SupplierPortalFinanceDocumentPage() {
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">{t('orderDate')}</span>
-            <span>{invoice.purchaseOrder ? new Date(invoice.purchaseOrder.orderDate).toLocaleDateString() : t('financeNoOrderOption')}</span>
+            <span className="text-muted-foreground">{t('financeLinkedOrdersLabel')}</span>
+            <span>{invoice.linkedOrders.length > 0 ? invoice.linkedOrders.map((o) => o.number).join(', ') : t('financeNoOrderOption')}</span>
           </div>
           {invoice.documentDate && (
             <div className="flex items-center justify-between">

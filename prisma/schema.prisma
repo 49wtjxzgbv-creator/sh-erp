@@ -170,6 +170,7 @@ model Company {
   deliveryScheduleLines          DeliveryScheduleLine[]
   purchaseOrderComments          PurchaseOrderComment[]
   purchaseOrderDocuments         PurchaseOrderDocument[]
+  purchaseOrderDocumentOrders    PurchaseOrderDocumentOrder[]
   purchaseOrderPayments          PurchaseOrderPayment[]
   purchaseOrderExpenses          PurchaseOrderExpense[]
   customerOrderDocuments         CustomerOrderDocument[]
@@ -2978,8 +2979,8 @@ model PurchaseOrder {
   sourceCustomerOrder CustomerOrder?          @relation(fields: [sourceCustomerOrderId], references: [id], onDelete: SetNull)
   items               PurchaseOrderItem[]
   comments            PurchaseOrderComment[] // Phase 2 — staff/supplier discussion thread, oldest first
-  financeDocuments    PurchaseOrderDocument[] // Finance module (2026-08-24)
-  financeExpenses     PurchaseOrderExpense[] // Finance module (2026-08-24)
+  financeDocumentLinks PurchaseOrderDocumentOrder[] // Finance module (2026-08-24) — join table (2026-11-19), see PurchaseOrderDocumentOrder's own header comment
+  financeExpenses      PurchaseOrderExpense[] // Finance module (2026-08-24)
 
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderItem.purchaseOrder
   @@unique([companyId, number])
@@ -3447,41 +3448,70 @@ enum PurchaseOrderExpenseCategory {
 // (metadata only), then the file is attached via the normal 2-step presigned
 // upload against that id — avoids inventing a second file-linking mechanism.
 //
-// `purchaseOrderId` nullable (2026-11-06 — "рахунок не обов'язково може
-// бути прив'язаний до замовлення"): a supplier-portal-uploaded invoice does
-// not always correspond to one specific PurchaseOrder (a combined invoice,
-// a service fee, something invoiced before any PO exists). The composite
-// FK below only enforces referential integrity when `purchaseOrderId` IS
-// set (Postgres MATCH SIMPLE — a NULL in any FK column exempts the row
-// from the constraint entirely), so `onDelete: Cascade` is unchanged and
-// still correct for the linked case. A document with no order is still
-// reachable via its `counterpartyId` (see FinanceService#listDocumentsForSupplier) —
-// it is never orphaned from a staff point of view, just not PO-scoped.
+// `purchaseOrderId` single FK REMOVED 2026-11-19 ("якщо постачальник
+// призначив декільком замовленням один рахунок на оплату") — a real
+// supplier routinely invoices several orders on ONE combined invoice,
+// which a single nullable FK can never represent. Replaced by the
+// `PurchaseOrderDocumentOrder` join table below (same "zero, one, or
+// many" linking already used for ProductSupplier). A document with zero
+// rows there is still a valid, unlinked document — exactly the same
+// "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06)
+// case as before, just expressed as "zero join rows" instead of "null FK".
+// A document with no order link is still reachable via its
+// `counterpartyId` (see FinanceService#listDocumentsForSupplier).
 model PurchaseOrderDocument {
-  id              String                    @id @default(uuid()) @db.Uuid
-  companyId       String                    @db.Uuid
-  purchaseOrderId String?                   @db.Uuid
-  documentType    PurchaseOrderDocumentType
-  documentNumber  String?
-  documentDate    DateTime?                 @db.Date
-  counterpartyId  String                    @db.Uuid // Supplier — the PO's own supplier OR any other counterparty (DHL, customs broker, insurer); see Supplier.financeDocuments comment
-  amount          Decimal?                  @db.Decimal(14, 2) // nullable — some documents (e.g. a plain Packing List) carry no monetary amount and can never receive Payments (enforced in service layer)
-  currency        String                    @default("EUR")
-  note            String?
-  createdById     String                    @db.Uuid
+  id             String                    @id @default(uuid()) @db.Uuid
+  companyId      String                    @db.Uuid
+  documentType   PurchaseOrderDocumentType
+  documentNumber String?
+  documentDate   DateTime?                 @db.Date
+  counterpartyId String                    @db.Uuid // Supplier — the PO's own supplier OR any other counterparty (DHL, customs broker, insurer); see Supplier.financeDocuments comment
+  amount         Decimal?                  @db.Decimal(14, 2) // nullable — some documents (e.g. a plain Packing List) carry no monetary amount and can never receive Payments (enforced in service layer)
+  currency       String                    @default("EUR")
+  note           String?
+  createdById    String                    @db.Uuid
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  company       Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  purchaseOrder PurchaseOrder?         @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade) // composite, optional — see model comment above
-  counterparty  Supplier               @relation("DocumentCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
-  payments      PurchaseOrderPayment[]
-  expenseLinks  PurchaseOrderExpense[] // Expenses that cite this document as their confirming paperwork (optional, see PurchaseOrderExpense.documentId)
+  company      Company                      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  orderLinks   PurchaseOrderDocumentOrder[] // zero, one, or many linked PurchaseOrders — see model header comment
+  counterparty Supplier                     @relation("DocumentCounterparty", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  payments     PurchaseOrderPayment[]
+  expenseLinks PurchaseOrderExpense[] // Expenses that cite this document as their confirming paperwork (optional, see PurchaseOrderExpense.documentId)
 
   @@unique([companyId, id]) // composite-FK target for PurchaseOrderPayment.document
-  @@index([companyId, purchaseOrderId])
   @@index([counterpartyId])
   @@map("purchase_order_documents")
+}
+
+// Join table (2026-11-19, see PurchaseOrderDocument's own header comment)
+// — one Document can cover several Orders (a combined supplier invoice),
+// and in principle one Order could receive documents from this join in
+// more than one row too, though in practice a given (document, order)
+// pair is unique (`@@unique` below). FinanceService#buildSummary
+// deliberately EXCLUDES a document's `amount` from any single order's own
+// `totalDocuments`/`unpaidPerDocuments` sum once it is linked to MORE
+// THAN one order (confirmed design, 2026-11-19) — folding the full
+// invoiced amount into every linked order's own total would overstate
+// money actually owed per order. The document still appears in that
+// order's own document list/count for reference; only the sum excludes
+// it. A document linked to 0 or 1 orders is unaffected.
+model PurchaseOrderDocumentOrder {
+  id              String   @id @default(uuid()) @db.Uuid
+  companyId       String   @db.Uuid
+  documentId      String   @db.Uuid
+  purchaseOrderId String   @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document      PurchaseOrderDocument @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder         @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Cascade)
+
+  @@unique([documentId, purchaseOrderId])
+  @@index([companyId])
+  @@index([purchaseOrderId])
+  @@map("purchase_order_document_orders")
 }
 
 // A single payment against one Document. A Document's payment status

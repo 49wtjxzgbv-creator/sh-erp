@@ -330,10 +330,19 @@ export class PurchaseOrdersService {
         // this order was fanned out from a заявка that spanned several
         // customer orders (sourceCustomerOrderId set by convertToOrder).
         sourceCustomerOrder: { select: { id: true, orderNumber: true } },
+        // "якщо постачальник призначив декільком замовленням один рахунок
+        // на оплату" (2026-11-19) — every INVOICE-type document's own
+        // number linked to THIS order via the many-to-many join table; a
+        // document shared with other orders still shows up here too.
+        financeDocumentLinks: { include: { document: { select: { documentType: true, documentNumber: true } } } },
       },
     });
     if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
-    return order;
+    const invoiceNumbers = (order.financeDocumentLinks ?? [])
+      .map((l) => l.document)
+      .filter((d) => d.documentType === 'INVOICE' && d.documentNumber)
+      .map((d) => d.documentNumber as string);
+    return { ...order, invoiceNumbers };
   }
 
   /**
@@ -405,7 +414,7 @@ export class PurchaseOrdersService {
   async remove(user: RequestUser, id: string) {
     const order = await this.findOne(user, id);
     const [documentCount, expenseCount] = await Promise.all([
-      this.prisma.tenant.purchaseOrderDocument.count({ where: { purchaseOrderId: id } }),
+      this.prisma.tenant.purchaseOrderDocumentOrder.count({ where: { purchaseOrderId: id } }),
       this.prisma.tenant.purchaseOrderExpense.count({ where: { purchaseOrderId: id } }),
     ]);
     if (documentCount > 0 || expenseCount > 0) {

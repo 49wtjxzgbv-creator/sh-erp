@@ -1982,6 +1982,7 @@
     "navFinance": "Finance",
     "financeUploadTitle": "Upload invoice",
     "financeOrderLabel": "Order",
+    "financeLinkedOrdersLabel": "Verknüpfte Bestellungen",
     "financeSelectOrderPlaceholder": "Select an order",
     "financeUploadButton": "Upload invoice",
     "financeInvoicesTitle": "Your invoices",

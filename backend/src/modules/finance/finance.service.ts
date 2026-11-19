@@ -152,13 +152,22 @@ export class FinanceService {
 
   async getSummary(user: RequestUser, purchaseOrderId: string): Promise<PurchaseOrderFinanceSummary> {
     const order = await this.findOrderWithItemsOrThrow(purchaseOrderId);
-    const [documents, expenses, payments, primaryCurrency] = await Promise.all([
-      this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId } }),
+    const [documentsByOrder, paymentsByOrder, expenses, primaryCurrency] = await Promise.all([
+      this.fetchDocumentsGroupedByOrders([purchaseOrderId]),
+      this.fetchPaymentsGroupedByOrders([purchaseOrderId]),
       this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId } }),
-      this.prisma.tenant.purchaseOrderPayment.findMany({ where: { document: { purchaseOrderId } } }),
       this.exchangeRatesService.getBaseCurrency(user.companyId),
     ]);
-    return this.buildSummary(purchaseOrderId, order.items, documents, expenses, payments, order.currency ?? 'EUR', user.companyId, primaryCurrency);
+    return this.buildSummary(
+      purchaseOrderId,
+      order.items,
+      documentsByOrder.get(purchaseOrderId) ?? [],
+      expenses,
+      paymentsByOrder.get(purchaseOrderId) ?? [],
+      order.currency ?? 'EUR',
+      user.companyId,
+      primaryCurrency,
+    );
   }
 
   /**
@@ -187,19 +196,13 @@ export class FinanceService {
     });
     const orderIds = orders.map((o) => o.id);
 
-    const [documents, expenses, payments, primaryCurrency] = await Promise.all([
-      this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: orderIds } } }),
+    const [documentsByOrder, expenses, paymentsByOrder, primaryCurrency] = await Promise.all([
+      this.fetchDocumentsGroupedByOrders(orderIds),
       this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: orderIds } } }),
-      this.prisma.tenant.purchaseOrderPayment.findMany({
-        where: { document: { purchaseOrderId: { in: orderIds } } },
-        include: { document: { select: { purchaseOrderId: true } } },
-      }),
+      this.fetchPaymentsGroupedByOrders(orderIds),
       this.exchangeRatesService.getBaseCurrency(user.companyId),
     ]);
-
-    const documentsByOrder = groupBy(documents, (d) => d.purchaseOrderId);
     const expensesByOrder = groupBy(expenses, (e) => e.purchaseOrderId);
-    const paymentsByOrder = groupBy(payments, (p) => p.document.purchaseOrderId);
 
     let rows = await Promise.all(
       orders.map(async (order) => {
@@ -238,9 +241,9 @@ export class FinanceService {
   private async buildSummary(
     purchaseOrderId: string,
     items: PoItemForCost[],
-    documents: (MoneyRow & TimestampedRow)[],
+    documents: (MoneyRow & TimestampedRow & { orderLinkCount?: number })[],
     expenses: (MoneyRow & TimestampedRow)[],
-    payments: (MoneyRow & TimestampedRow)[],
+    payments: (MoneyRow & TimestampedRow & { orderLinkCount?: number })[],
     currency: Currency,
     companyId: string,
     primaryCurrency: Currency,
@@ -259,8 +262,15 @@ export class FinanceService {
     const goodsCost = await this.exchangeRatesService.convert(rawGoodsCost, currency, primaryCurrency, companyId, new Date());
 
     const expensesByCurrency = this.sumByCurrency(expenses);
-    const documentsByCurrency = this.sumByCurrency(documents.filter((d) => d.amount !== null));
-    const paymentsByCurrency = this.sumByCurrency(payments);
+    // "якщо постачальник призначив декільком замовленням один рахунок на
+    // оплату" (2026-11-19) — a document (and any payments against it)
+    // linked to MORE than one order is excluded from every one of those
+    // orders' own totalDocuments/paid sum, so the full invoiced total
+    // isn't overstated by appearing in full under each linked order. It
+    // still counts toward `documentCount` below (reference only) and
+    // still has its own per-document paymentStatus in `listDocuments`.
+    const documentsByCurrency = this.sumByCurrency(documents.filter((d) => d.amount !== null && (d.orderLinkCount ?? 1) <= 1));
+    const paymentsByCurrency = this.sumByCurrency(payments.filter((p) => (p.orderLinkCount ?? 1) <= 1));
 
     const currencies = new Set<string>([primaryCurrency, ...expensesByCurrency.keys(), ...documentsByCurrency.keys(), ...paymentsByCurrency.keys()]);
 
@@ -298,6 +308,70 @@ export class FinanceService {
       lastActivityAt,
       otherCurrencies,
     };
+  }
+
+  /**
+   * Fans a flat set of PurchaseOrderDocument rows out to every order id
+   * they're linked to, via the many-to-many join table (2026-11-19) — a
+   * single document can legitimately end up under MORE than one order id
+   * now, unlike the old `groupBy(docs, d => d.purchaseOrderId)` single-
+   * key grouping this replaces. Each row carries its own `orderLinkCount`
+   * so `buildSummary` can exclude a multi-order document's amount from
+   * any one order's own totalDocuments sum while still surfacing it in
+   * that order's own document list/count for reference.
+   */
+  private async fetchDocumentsGroupedByOrders(
+    orderIds: string[],
+  ): Promise<Map<string, (MoneyRow & TimestampedRow & { id: string; orderLinkCount: number })[]>> {
+    const map = new Map<string, (MoneyRow & TimestampedRow & { id: string; orderLinkCount: number })[]>();
+    if (orderIds.length === 0) return map;
+
+    const links = await this.prisma.tenant.purchaseOrderDocumentOrder.findMany({
+      where: { purchaseOrderId: { in: orderIds } },
+      select: { purchaseOrderId: true, documentId: true },
+    });
+    const documentIds = [...new Set(links.map((l) => l.documentId))];
+    if (documentIds.length === 0) return map;
+
+    const documents = await this.prisma.tenant.purchaseOrderDocument.findMany({
+      where: { id: { in: documentIds } },
+      include: { _count: { select: { orderLinks: true } } },
+    });
+    const documentsById = new Map(documents.map((d) => [d.id, { ...d, orderLinkCount: d._count.orderLinks }]));
+
+    for (const link of links) {
+      const doc = documentsById.get(link.documentId);
+      if (!doc) continue;
+      const bucket = map.get(link.purchaseOrderId);
+      if (bucket) bucket.push(doc);
+      else map.set(link.purchaseOrderId, [doc]);
+    }
+    return map;
+  }
+
+  /** Same fan-out-to-every-linked-order shape as fetchDocumentsGroupedByOrders, for Payments — a Payment's own order exposure is entirely derived from its parent Document's orderLinks. */
+  private async fetchPaymentsGroupedByOrders(
+    orderIds: string[],
+  ): Promise<Map<string, (MoneyRow & TimestampedRow & { orderLinkCount: number })[]>> {
+    const map = new Map<string, (MoneyRow & TimestampedRow & { orderLinkCount: number })[]>();
+    if (orderIds.length === 0) return map;
+
+    const payments = await this.prisma.tenant.purchaseOrderPayment.findMany({
+      where: { document: { orderLinks: { some: { purchaseOrderId: { in: orderIds } } } } },
+      include: { document: { include: { orderLinks: { select: { purchaseOrderId: true } }, _count: { select: { orderLinks: true } } } } },
+    });
+
+    for (const p of payments) {
+      const orderLinkCount = p.document._count.orderLinks;
+      for (const link of p.document.orderLinks) {
+        if (!orderIds.includes(link.purchaseOrderId)) continue;
+        const row = { amount: p.amount, currency: p.currency, createdAt: p.createdAt, orderLinkCount };
+        const bucket = map.get(link.purchaseOrderId);
+        if (bucket) bucket.push(row);
+        else map.set(link.purchaseOrderId, [row]);
+      }
+    }
+    return map;
   }
 
   /**
@@ -357,11 +431,24 @@ export class FinanceService {
   async listDocuments(user: RequestUser, purchaseOrderId: string) {
     await this.findOrderWithItemsOrThrow(purchaseOrderId);
     const documents = await this.prisma.tenant.purchaseOrderDocument.findMany({
-      where: { purchaseOrderId },
-      include: { counterparty: { select: { id: true, name: true } }, payments: true },
+      where: { orderLinks: { some: { purchaseOrderId } } },
+      include: {
+        counterparty: { select: { id: true, name: true } },
+        payments: true,
+        orderLinks: { include: { purchaseOrder: { select: { id: true, number: true } } } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    return documents.map((d) => ({ ...d, paymentStatus: this.documentPaymentStatus(d, d.payments) }));
+    // "якщо постачальник призначив декільком замовленням один рахунок на
+    // оплату" (2026-11-19) — `linkedOrders` surfaces every OTHER order this
+    // same document also covers, so staff can see at a glance that its
+    // amount isn't exclusively this order's own (see buildSummary's own
+    // exclusion of multi-order documents from totalDocuments).
+    return documents.map((d) => ({
+      ...d,
+      paymentStatus: this.documentPaymentStatus(d, d.payments),
+      linkedOrders: d.orderLinks.map((l) => l.purchaseOrder),
+    }));
   }
 
   async createDocument(user: RequestUser, purchaseOrderId: string, dto: CreatePurchaseOrderDocumentDto) {
@@ -371,7 +458,6 @@ export class FinanceService {
     const document = await this.prisma.tenant.purchaseOrderDocument.create({
       data: {
         companyId: user.companyId,
-        purchaseOrderId,
         documentType: dto.documentType,
         documentNumber: dto.documentNumber,
         documentDate: dto.documentDate,
@@ -380,6 +466,7 @@ export class FinanceService {
         currency: dto.currency ?? 'EUR',
         note: dto.note,
         createdById: user.userId,
+        orderLinks: { create: { purchaseOrderId } },
       },
     });
 
@@ -397,7 +484,11 @@ export class FinanceService {
 
   async getDocument(user: RequestUser, documentId: string) {
     const document = await this.getDocumentWithPaymentsOrThrow(documentId);
-    return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
+    return {
+      ...document,
+      paymentStatus: this.documentPaymentStatus(document, document.payments),
+      linkedOrders: (document.orderLinks ?? []).map((l) => l.purchaseOrder),
+    };
   }
 
   // ---------------------------------------------------------------------
@@ -419,10 +510,10 @@ export class FinanceService {
 
   /**
    * Every invoice where this supplier is the counterparty — regardless of
-   * whether it is linked to one of their orders (`purchaseOrderId` may be
-   * null, see the schema's own comment on that column). Shared by two
-   * callers: the supplier-portal "Фінанси" section (scoped to the caller's
-   * own supplierId) AND the staff-facing `GET finance/suppliers/:id/documents`
+   * how many orders (zero, one, or several — see PurchaseOrderDocumentOrder's
+   * own header comment) it is linked to. Shared by two callers: the
+   * supplier-portal "Фінанси" section (scoped to the caller's own
+   * supplierId) AND the staff-facing `GET finance/suppliers/:id/documents`
    * route below (Supplier detail page) — same rows, same derived
    * paymentStatus, just a different permission gate at the controller.
    */
@@ -431,11 +522,15 @@ export class FinanceService {
       where: { counterpartyId: supplierId, documentType: 'INVOICE' },
       include: {
         payments: true,
-        purchaseOrder: { select: { id: true, orderDate: true, status: true } },
+        orderLinks: { include: { purchaseOrder: { select: { id: true, number: true, orderDate: true, status: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return documents.map((d) => ({ ...d, paymentStatus: this.documentPaymentStatus(d, d.payments) }));
+    return documents.map((d) => ({
+      ...d,
+      paymentStatus: this.documentPaymentStatus(d, d.payments),
+      linkedOrders: d.orderLinks.map((l) => l.purchaseOrder),
+    }));
   }
 
   /** 404s (not 403s) for anyone else's invoice, or a non-INVOICE document — never confirms an id belongs to another supplier. */
@@ -444,15 +539,22 @@ export class FinanceService {
     if (document.counterpartyId !== supplierId || document.documentType !== 'INVOICE') {
       throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found.');
     }
-    return { ...document, paymentStatus: this.documentPaymentStatus(document, document.payments) };
+    return {
+      ...document,
+      paymentStatus: this.documentPaymentStatus(document, document.payments),
+      linkedOrders: (document.orderLinks ?? []).map((l) => l.purchaseOrder),
+    };
   }
 
   /**
-   * `dto.purchaseOrderId` is optional — "рахунок не обов'язково може бути
-   * прив'язаний до замовлення" (2026-11-06): when present, ownership
-   * against this supplier is still verified (same 404-not-403 convention
-   * as everywhere else); when absent, the invoice is created with no order
-   * link at all, still reachable via counterpartyId (see
+   * `dto.purchaseOrderIds` is optional and an ARRAY (2026-11-06 — "рахунок
+   * не обов'язково може бути прив'язаний до замовлення"; extended
+   * 2026-11-19 — "якщо постачальник призначив декільком замовленням один
+   * рахунок на оплату"): EVERY id is verified against this supplier's own
+   * orders before anything is created — a single mismatch 404s the whole
+   * request rather than silently creating the document with a partial set
+   * of links. When the array is empty/absent, the invoice is created with
+   * no order link at all, still reachable via counterpartyId (see
    * listDocumentsForSupplier) — never silently attached to some other
    * order of this supplier's as a guess.
    */
@@ -462,15 +564,20 @@ export class FinanceService {
     supplierPortalUserId: string,
     dto: CreateSupplierInvoiceDocumentDto,
   ) {
-    if (dto.purchaseOrderId) {
-      const order = await this.prisma.tenant.purchaseOrder.findFirst({ where: { id: dto.purchaseOrderId, supplierId } });
-      if (!order) throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
+    const purchaseOrderIds = [...new Set(dto.purchaseOrderIds ?? [])];
+    if (purchaseOrderIds.length > 0) {
+      const matchedOrders = await this.prisma.tenant.purchaseOrder.findMany({
+        where: { id: { in: purchaseOrderIds }, supplierId },
+        select: { id: true },
+      });
+      if (matchedOrders.length !== purchaseOrderIds.length) {
+        throw new CodedNotFoundException('PURCHASE_ORDER_NOT_FOUND', 'Purchase order not found.');
+      }
     }
 
     const document = await this.prisma.tenant.purchaseOrderDocument.create({
       data: {
         companyId,
-        purchaseOrderId: dto.purchaseOrderId ?? null,
         documentType: 'INVOICE',
         documentNumber: dto.documentNumber,
         documentDate: dto.documentDate,
@@ -479,6 +586,9 @@ export class FinanceService {
         currency: dto.currency ?? 'EUR',
         note: dto.note,
         createdById: supplierPortalUserId,
+        orderLinks: purchaseOrderIds.length
+          ? { create: purchaseOrderIds.map((purchaseOrderId) => ({ purchaseOrderId })) }
+          : undefined,
       },
     });
 
@@ -489,7 +599,7 @@ export class FinanceService {
       entityType: 'PurchaseOrderDocument',
       entityId: document.id,
       after: document,
-      metadata: { purchaseOrderId: dto.purchaseOrderId ?? null, supplierPortalUserId },
+      metadata: { purchaseOrderIds, supplierPortalUserId },
     });
     return document;
   }
@@ -876,19 +986,12 @@ export class FinanceService {
     ]);
 
     const poIds = linkedPOs.map((p) => p.id);
-    const [poDocuments, poExpenses, poPayments] = await Promise.all([
-      poIds.length ? this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+    const [poDocsByPo, poExpenses, poPayByPo] = await Promise.all([
+      this.fetchDocumentsGroupedByOrders(poIds),
       poIds.length ? this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
-      poIds.length
-        ? this.prisma.tenant.purchaseOrderPayment.findMany({
-            where: { document: { purchaseOrderId: { in: poIds } } },
-            include: { document: { select: { purchaseOrderId: true } } },
-          })
-        : Promise.resolve([]),
+      this.fetchPaymentsGroupedByOrders(poIds),
     ]);
-    const poDocsByPo = groupBy(poDocuments, (d) => d.purchaseOrderId);
     const poExpByPo = groupBy(poExpenses, (e) => e.purchaseOrderId);
-    const poPayByPo = groupBy(poPayments, (p) => p.document.purchaseOrderId);
     const posByCustomerOrder = groupBy(linkedPOs, (p) => p.sourceCustomerOrderId as string);
 
     const directDocsByOrder = groupBy(directDocuments, (d) => d.customerOrderId);
@@ -939,19 +1042,12 @@ export class FinanceService {
     primaryCurrency: Currency,
   ): Promise<CustomerOrderPurchaseOrderRollup[]> {
     const poIds = linkedPOs.map((p) => p.id);
-    const [poDocuments, poExpenses, poPayments] = await Promise.all([
-      poIds.length ? this.prisma.tenant.purchaseOrderDocument.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
+    const [docsByPo, poExpenses, payByPo] = await Promise.all([
+      this.fetchDocumentsGroupedByOrders(poIds),
       poIds.length ? this.prisma.tenant.purchaseOrderExpense.findMany({ where: { purchaseOrderId: { in: poIds } } }) : Promise.resolve([]),
-      poIds.length
-        ? this.prisma.tenant.purchaseOrderPayment.findMany({
-            where: { document: { purchaseOrderId: { in: poIds } } },
-            include: { document: { select: { purchaseOrderId: true } } },
-          })
-        : Promise.resolve([]),
+      this.fetchPaymentsGroupedByOrders(poIds),
     ]);
-    const docsByPo = groupBy(poDocuments, (d) => d.purchaseOrderId);
     const expByPo = groupBy(poExpenses, (e) => e.purchaseOrderId);
-    const payByPo = groupBy(poPayments, (p) => p.document.purchaseOrderId);
 
     return Promise.all(
       linkedPOs.map(async (po) => ({
@@ -1323,7 +1419,11 @@ export class FinanceService {
   private async getDocumentWithPaymentsOrThrow(documentId: string) {
     const document = await this.prisma.tenant.purchaseOrderDocument.findUnique({
       where: { id: documentId },
-      include: { counterparty: { select: { id: true, name: true } }, payments: { orderBy: { paidAt: 'asc' } } },
+      include: {
+        counterparty: { select: { id: true, name: true } },
+        payments: { orderBy: { paidAt: 'asc' } },
+        orderLinks: { include: { purchaseOrder: { select: { id: true, number: true } } } },
+      },
     });
     if (!document) throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found.');
     return document;
@@ -1340,10 +1440,10 @@ export class FinanceService {
     if (!supplier) throw new CodedNotFoundException('SUPPLIER_NOT_FOUND', 'Counterparty supplier not found.');
   }
 
-  /** RLS already keeps this within the company; this closes the rest of the ownership chain — same "404 for cross-order, not just cross-tenant" convention as PurchaseOrdersService#findScheduleForOrder. */
+  /** RLS already keeps this within the company; this closes the rest of the ownership chain — same "404 for cross-order, not just cross-tenant" convention as PurchaseOrdersService#findScheduleForOrder. "belongs to" now means "is among this document's orderLinks" (2026-11-19, many-to-many) rather than a single FK match. */
   private async assertDocumentBelongsToOrder(documentId: string, purchaseOrderId: string) {
-    const document = await this.prisma.tenant.purchaseOrderDocument.findUnique({ where: { id: documentId } });
-    if (!document || document.purchaseOrderId !== purchaseOrderId) {
+    const link = await this.prisma.tenant.purchaseOrderDocumentOrder.findFirst({ where: { documentId, purchaseOrderId } });
+    if (!link) {
       throw new CodedNotFoundException('FINANCE_DOCUMENT_NOT_FOUND', 'Document not found on this purchase order.');
     }
   }

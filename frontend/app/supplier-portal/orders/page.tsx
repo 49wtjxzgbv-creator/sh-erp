@@ -17,6 +17,8 @@ interface PortalPurchaseOrderRow {
   expectedDeliveryDate: string | null;
   supplierConfirmedAt: string | null;
   items: { id: string }[];
+  /** "якщо постачальник призначив декільком замовленням один рахунок на оплату" (2026-11-19) — every INVOICE-type document number linked to this order; the same invoice may show up on several orders' rows. */
+  invoiceNumbers: string[];
 }
 
 const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success'> = {
@@ -70,18 +72,19 @@ export default function SupplierPortalOrdersPage() {
                 <TableHead>{t('expectedDeliveryDate')}</TableHead>
                 <TableHead>{t('lineCount')}</TableHead>
                 <TableHead>{t('confirmed')}</TableHead>
+                <TableHead>{t('invoiceNumberLabel')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {t('loading')}
                   </TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {t('noOrders')}
                   </TableCell>
                 </TableRow>
@@ -102,6 +105,7 @@ export default function SupplierPortalOrdersPage() {
                         <Badge variant="secondary">{t('no')}</Badge>
                       )}
                     </TableCell>
+                    <TableCell>{o.invoiceNumbers.length > 0 ? o.invoiceNumbers.join(', ') : '—'}</TableCell>
                   </TableRow>
                 ))
               )}

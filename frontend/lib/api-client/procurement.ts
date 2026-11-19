@@ -232,6 +232,15 @@ export interface PurchaseOrder {
   combinedPdfFileId: string | null;
   /** Present on create/findOne/receive responses; not on query() list rows. */
   items?: PurchaseOrderItem[];
+  /**
+   * "якщо постачальник призначив декільком замовленням один рахунок на
+   * оплату" (2026-11-19) — every INVOICE-type PurchaseOrderDocument
+   * number linked to this order via the many-to-many join table (zero,
+   * one, or several — the same invoice may list several orders at once).
+   * Present on the main ERP's findOne() and the supplier portal's own
+   * listPurchaseOrders()/getPurchaseOrder() responses.
+   */
+  invoiceNumbers?: string[];
 }
 
 /** Every sibling order fanned out from the same заявка conversion as the one requested (including itself) — see PurchaseOrdersService#getBatch. */

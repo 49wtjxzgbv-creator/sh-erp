@@ -408,6 +408,11 @@ export default function SupplierPortalOrderDetailPage() {
             <p className="text-xs text-muted-foreground">{t('expectedDeliveryDate')}</p>
             <p className="text-sm">{order.expectedDeliveryDate ? new Date(order.expectedDeliveryDate).toLocaleDateString() : '—'}</p>
           </div>
+          <div>
+            {/* "якщо постачальник призначив декільком замовленням один рахунок на оплату" (2026-11-19) */}
+            <p className="text-xs text-muted-foreground">{t('invoiceNumberLabel')}</p>
+            <p className="text-sm">{order.invoiceNumbers && order.invoiceNumbers.length > 0 ? order.invoiceNumbers.join(', ') : '—'}</p>
+          </div>
           {order.comment && (
             <div className="col-span-full">
               <p className="text-xs text-muted-foreground">{t('comment')}</p>

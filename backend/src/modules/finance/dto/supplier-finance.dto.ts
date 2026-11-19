@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsDate, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDate, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 
 const toOptionalDate = ({ value }: { value: unknown }) => (value === '' || value === null || value === undefined ? undefined : value);
 
@@ -12,16 +12,21 @@ const toOptionalDate = ({ value }: { value: unknown }) => (value === '' || value
  * INVOICE server-side) and no `counterpartyId` (always the uploading
  * supplier's own id) — see FinanceService#createDocumentAsSupplier.
  *
- * `purchaseOrderId` is OPTIONAL (2026-11-06 — "рахунок не обов'язково може
- * бути прив'язаний до замовлення"): a supplier's invoice does not always
- * correspond to one specific order. When present, ownership against the
- * caller's own supplierId is still verified server-side.
+ * `purchaseOrderIds` is OPTIONAL and an ARRAY (2026-11-06 — "рахунок не
+ * обов'язково може бути прив'язаний до замовлення"; extended 2026-11-19 —
+ * "якщо постачальник призначив декільком замовленням один рахунок на
+ * оплату"): a supplier's invoice does not always correspond to exactly
+ * one order — it may cover zero, one, or several. When present, EVERY id
+ * is verified against the caller's own supplierId server-side before
+ * anything is created (see FinanceService#createDocumentAsSupplier).
  */
 export class CreateSupplierInvoiceDocumentDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
-  @IsUUID()
-  purchaseOrderId?: string;
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('4', { each: true })
+  purchaseOrderIds?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

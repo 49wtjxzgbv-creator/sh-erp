@@ -2121,6 +2121,7 @@
     "navFinance": "Фінанси",
     "financeUploadTitle": "Завантажити рахунок",
     "financeOrderLabel": "Замовлення",
+    "financeLinkedOrdersLabel": "Прив'язані замовлення",
     "financeSelectOrderPlaceholder": "Оберіть замовлення",
     "financeUploadButton": "Завантажити рахунок",
     "financeInvoicesTitle": "Ваші рахунки",

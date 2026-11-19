@@ -40,6 +40,7 @@ describe('FinanceService', () => {
       tenant: {
         purchaseOrder: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
         purchaseOrderDocument: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+        purchaseOrderDocumentOrder: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn() },
         purchaseOrderPayment: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         purchaseOrderExpense: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
         supplier: { findUnique: jest.fn() },
@@ -55,6 +56,46 @@ describe('FinanceService', () => {
   });
 
   const user = { userId: 'u1', companyId: 'c1', email: 'a@b.c', roleId: 'r1' };
+
+  /**
+   * "якщо постачальник призначив декільком замовленням один рахунок на
+   * оплату" (2026-11-19) — getSummary/listPurchaseOrdersWithSummary/
+   * getCustomerOrderSummary now resolve documents through the many-to-many
+   * join table (fetchDocumentsGroupedByOrders: purchaseOrderDocumentOrder
+   * links, then purchaseOrderDocument rows by id) instead of a flat
+   * `purchaseOrderId` column. Mocks that two-step chain from the SAME flat
+   * `{ purchaseOrderId, doc }[]` shape every test below already used, so
+   * none of the actual `expect()` assertions needed to change — only how
+   * the mocks are wired. Pass the SAME `doc` object reference under two
+   * different purchaseOrderIds to simulate one document linked to several
+   * orders (orderLinkCount > 1, excluded from buildSummary's sum).
+   */
+  function mockDocumentsByOrder(entries: { purchaseOrderId: string; doc: Record<string, any> }[]) {
+    const idByDocRef = new Map<object, string>();
+    let next = 0;
+    for (const { doc } of entries) {
+      if (!idByDocRef.has(doc)) idByDocRef.set(doc, `doc-auto-${next++}`);
+    }
+    const linkCountByDocRef = new Map<object, number>();
+    for (const { doc } of entries) linkCountByDocRef.set(doc, (linkCountByDocRef.get(doc) ?? 0) + 1);
+
+    prisma.tenant.purchaseOrderDocumentOrder.findMany.mockResolvedValue(
+      entries.map(({ purchaseOrderId, doc }) => ({ purchaseOrderId, documentId: idByDocRef.get(doc) })),
+    );
+    prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue(
+      [...idByDocRef.entries()].map(([doc, id]) => ({ ...doc, id, _count: { orderLinks: linkCountByDocRef.get(doc) } })),
+    );
+  }
+
+  /** Same idea as mockDocumentsByOrder, for fetchPaymentsGroupedByOrders — a Payment's own order exposure comes entirely from its parent Document's orderLinks, fetched in one query with the document (+ its orderLinkCount) already nested in. */
+  function mockPaymentsByOrder(entries: { purchaseOrderId: string; payment: Record<string, any>; orderLinkCount?: number }[]) {
+    prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue(
+      entries.map(({ purchaseOrderId, payment, orderLinkCount }) => ({
+        ...payment,
+        document: { orderLinks: [{ purchaseOrderId }], _count: { orderLinks: orderLinkCount ?? 1 } },
+      })),
+    );
+  }
 
   // ---------------------------------------------------------------------
   // Documents
@@ -75,7 +116,7 @@ describe('FinanceService', () => {
       expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           companyId: 'c1',
-          purchaseOrderId: 'po1',
+          orderLinks: { create: { purchaseOrderId: 'po1' } },
           counterpartyId: 's1',
           amount: 4000,
           currency: 'EUR',
@@ -241,7 +282,7 @@ describe('FinanceService', () => {
 
     it('creates an expense linked to its confirming document, after verifying the document belongs to the same PO', async () => {
       prisma.tenant.purchaseOrder.findUnique.mockResolvedValue(order());
-      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc-dhl', purchaseOrderId: 'po1' });
+      prisma.tenant.purchaseOrderDocumentOrder.findFirst.mockResolvedValue({ id: 'link1', documentId: 'doc-dhl', purchaseOrderId: 'po1' });
       prisma.tenant.purchaseOrderExpense.create.mockResolvedValue({ id: 'exp2' });
 
       await service.createExpense(user, 'po1', { category: 'SHIPPING', amount: 180, documentId: 'doc-dhl' } as any);
@@ -252,7 +293,7 @@ describe('FinanceService', () => {
 
     it('404s when the linked document belongs to a different purchase order', async () => {
       prisma.tenant.purchaseOrder.findUnique.mockResolvedValue(order());
-      prisma.tenant.purchaseOrderDocument.findUnique.mockResolvedValue({ id: 'doc-other', purchaseOrderId: 'po-OTHER' });
+      prisma.tenant.purchaseOrderDocumentOrder.findFirst.mockResolvedValue(null); // no (doc-other, po1) link exists — it belongs to po-OTHER instead
       await expect(service.createExpense(user, 'po1', { category: 'SHIPPING', amount: 180, documentId: 'doc-other' } as any)).rejects.toThrow(NotFoundException);
       expect(prisma.tenant.purchaseOrderExpense.create).not.toHaveBeenCalled();
     });
@@ -265,9 +306,9 @@ describe('FinanceService', () => {
   describe('getSummary', () => {
     const setup = (items: any[], documents: any[], expenses: any[], payments: any[]) => {
       prisma.tenant.purchaseOrder.findUnique.mockResolvedValue({ id: 'po1', items });
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue(documents);
+      mockDocumentsByOrder(documents.map((doc) => ({ purchaseOrderId: 'po1', doc })));
       prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue(expenses);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue(payments);
+      mockPaymentsByOrder(payments.map((payment) => ({ purchaseOrderId: 'po1', payment })));
     };
     const d = (over: Partial<any>) => ({ createdAt: new Date(), currency: 'EUR', ...over });
 
@@ -325,6 +366,40 @@ describe('FinanceService', () => {
       expect(s.totalDocuments).toBe(4250); // the amount-less document excluded from the sum
     });
 
+    it('Scenario E — a document linked to MORE than one order is excluded from EACH linked order\'s own totalDocuments, but still counted in documentCount for both ("якщо постачальник призначив декільком замовленням один рахунок на оплату", 2026-11-19)', async () => {
+      prisma.tenant.purchaseOrder.findUnique.mockImplementation((args: any) =>
+        Promise.resolve({ id: args.where.id, items: [{ qtyOrdered: 1, expectedPrice: 1000, actualPrice: null }] }),
+      );
+      const sharedInvoice = d({ amount: 900 });
+      mockDocumentsByOrder([
+        { purchaseOrderId: 'po1', doc: sharedInvoice },
+        { purchaseOrderId: 'po2', doc: sharedInvoice },
+      ]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([]);
+
+      const s1 = await service.getSummary(user, 'po1');
+      const s2 = await service.getSummary(user, 'po2');
+
+      expect(s1.totalDocuments).toBe(0); // NOT 900 — would overstate the full invoice against each order
+      expect(s1.documentCount).toBe(1); // still visible on this order for reference
+      expect(s2.totalDocuments).toBe(0);
+      expect(s2.documentCount).toBe(1);
+    });
+
+    it('a document linked to exactly ONE order is unaffected by the multi-order exclusion (regression guard — the common case)', async () => {
+      setup(
+        [{ qtyOrdered: 1, expectedPrice: 1000, actualPrice: null }],
+        [d({ amount: 900 })],
+        [],
+        [d({ amount: 900 })],
+      );
+      const s = await service.getSummary(user, 'po1');
+      expect(s.totalDocuments).toBe(900);
+      expect(s.paid).toBe(900);
+      expect(s.documentCount).toBe(1);
+    });
+
     it('uses actualPrice over expectedPrice when both are present (realized cost wins)', async () => {
       setup([{ qtyOrdered: 2, expectedPrice: 100, actualPrice: 90 }], [], [], []);
       const s = await service.getSummary(user, 'po1');
@@ -337,9 +412,9 @@ describe('FinanceService', () => {
         currency: 'USD',
         items: [{ qtyOrdered: 1, expectedPrice: 100, actualPrice: null }],
       });
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([]);
+      mockDocumentsByOrder([]);
       prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([{ createdAt: new Date(), currency: 'USD', amount: 20 }]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([]);
       exchangeRatesService.getBaseCurrency.mockResolvedValue('USD');
 
       const s = await service.getSummary(user, 'po1');
@@ -356,9 +431,9 @@ describe('FinanceService', () => {
         currency: 'USD',
         items: [{ qtyOrdered: 1, expectedPrice: 100, actualPrice: null }],
       });
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([]);
+      mockDocumentsByOrder([]);
       prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([]);
       exchangeRatesService.convert.mockImplementation((amount: number, from: string, to: string) =>
         Promise.resolve(from === to ? amount : amount * 0.9),
       );
@@ -494,12 +569,16 @@ describe('FinanceService', () => {
         { id: 'po-partial', items: [], supplierNameSnapshot: 'S2', supplierId: 's2', status: 'ORDERED', orderDate: new Date() },
         { id: 'po-paid', items: [], supplierNameSnapshot: 'S3', supplierId: 's3', status: 'ORDERED', orderDate: new Date() },
       ]);
-      const d = (purchaseOrderId: string, amount: number) => ({ purchaseOrderId, amount, currency: 'EUR', createdAt: new Date() });
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d('po-unpaid', 100), d('po-partial', 100), d('po-paid', 100)]);
+      const d = (amount: number) => ({ amount, currency: 'EUR', createdAt: new Date() });
+      mockDocumentsByOrder([
+        { purchaseOrderId: 'po-unpaid', doc: d(100) },
+        { purchaseOrderId: 'po-partial', doc: d(100) },
+        { purchaseOrderId: 'po-paid', doc: d(100) },
+      ]);
       prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([
-        { amount: 40, currency: 'EUR', createdAt: new Date(), document: { purchaseOrderId: 'po-partial' } },
-        { amount: 100, currency: 'EUR', createdAt: new Date(), document: { purchaseOrderId: 'po-paid' } },
+      mockPaymentsByOrder([
+        { purchaseOrderId: 'po-partial', payment: { amount: 40, currency: 'EUR', createdAt: new Date() } },
+        { purchaseOrderId: 'po-paid', payment: { amount: 100, currency: 'EUR', createdAt: new Date() } },
       ]);
 
       const result = await service.listPurchaseOrdersWithSummary(user, {} as any);
@@ -514,12 +593,13 @@ describe('FinanceService', () => {
         { id: 'po-unpaid', items: [], supplierNameSnapshot: 'S1', supplierId: 's1', status: 'ORDERED', orderDate: new Date() },
         { id: 'po-paid', items: [], supplierNameSnapshot: 'S3', supplierId: 's3', status: 'ORDERED', orderDate: new Date() },
       ]);
-      const d = (purchaseOrderId: string, amount: number) => ({ purchaseOrderId, amount, currency: 'EUR', createdAt: new Date() });
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d('po-unpaid', 100), d('po-paid', 100)]);
-      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([
-        { amount: 100, currency: 'EUR', createdAt: new Date(), document: { purchaseOrderId: 'po-paid' } },
+      const d = (amount: number) => ({ amount, currency: 'EUR', createdAt: new Date() });
+      mockDocumentsByOrder([
+        { purchaseOrderId: 'po-unpaid', doc: d(100) },
+        { purchaseOrderId: 'po-paid', doc: d(100) },
       ]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([{ purchaseOrderId: 'po-paid', payment: { amount: 100, currency: 'EUR', createdAt: new Date() } }]);
 
       const result = await service.listPurchaseOrdersWithSummary(user, { paymentStatus: 'PAID' } as any);
       expect(result.items).toHaveLength(1);
@@ -543,11 +623,12 @@ describe('FinanceService', () => {
         { id: 'poA', supplierNameSnapshot: 'S-A', status: 'ORDERED', orderDate: new Date(), items: [{ qtyOrdered: 1, expectedPrice: 4000, actualPrice: null }] },
         { id: 'poB', supplierNameSnapshot: 'S-B', status: 'ORDERED', orderDate: new Date(), items: [{ qtyOrdered: 1, expectedPrice: 800, actualPrice: null }] },
       ]);
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d({ purchaseOrderId: 'poA', amount: 4000 }), d({ purchaseOrderId: 'poB', amount: 800 })]);
-      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([
-        { ...d({ amount: 4000 }), document: { purchaseOrderId: 'poA' } },
+      mockDocumentsByOrder([
+        { purchaseOrderId: 'poA', doc: d({ amount: 4000 }) },
+        { purchaseOrderId: 'poB', doc: d({ amount: 800 }) },
       ]);
+      prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([{ purchaseOrderId: 'poA', payment: d({ amount: 4000 }) }]);
       prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([]);
       prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 50 })]); // e.g. packaging, not tied to any PO
       prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
@@ -612,9 +693,9 @@ describe('FinanceService', () => {
       prisma.tenant.purchaseOrder.findMany.mockResolvedValue([
         { id: 'poA', supplierNameSnapshot: 'S-A', status: 'ORDERED', orderDate: new Date(), items: [] },
       ]);
-      prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([d({ purchaseOrderId: 'poA', amount: 300, currency: 'USD' })]);
+      mockDocumentsByOrder([{ purchaseOrderId: 'poA', doc: d({ amount: 300, currency: 'USD' }) }]);
       prisma.tenant.purchaseOrderExpense.findMany.mockResolvedValue([]);
-      prisma.tenant.purchaseOrderPayment.findMany.mockResolvedValue([]);
+      mockPaymentsByOrder([]);
       prisma.tenant.customerOrderDocument.findMany.mockResolvedValue([]);
       prisma.tenant.customerOrderExpense.findMany.mockResolvedValue([d({ amount: 20, currency: 'USD' })]);
       prisma.tenant.customerOrderPayment.findMany.mockResolvedValue([]);
@@ -705,7 +786,7 @@ describe('FinanceService', () => {
   describe('listDocumentsForSupplier', () => {
     it('scopes to counterpartyId + documentType INVOICE, and attaches derived paymentStatus', async () => {
       prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([
-        { id: 'doc1', amount: 100, currency: 'EUR', payments: [{ amount: 100, currency: 'EUR' }] },
+        { id: 'doc1', amount: 100, currency: 'EUR', payments: [{ amount: 100, currency: 'EUR' }], orderLinks: [] },
       ]);
 
       const result = await service.listDocumentsForSupplier('s1');
@@ -716,12 +797,12 @@ describe('FinanceService', () => {
       expect(result[0].paymentStatus).toBe('PAID');
     });
 
-    it('includes an invoice with no linked order (purchaseOrder: null) without crashing', async () => {
+    it('includes an invoice with no linked order (linkedOrders: []) without crashing', async () => {
       prisma.tenant.purchaseOrderDocument.findMany.mockResolvedValue([
-        { id: 'doc1', amount: 100, currency: 'EUR', payments: [], purchaseOrder: null },
+        { id: 'doc1', amount: 100, currency: 'EUR', payments: [], orderLinks: [] },
       ]);
       const result = await service.listDocumentsForSupplier('s1');
-      expect(result[0].purchaseOrder).toBeNull();
+      expect(result[0].linkedOrders).toEqual([]);
       expect(result[0].paymentStatus).toBe('UNPAID');
     });
   });
@@ -746,16 +827,19 @@ describe('FinanceService', () => {
 
   describe('createDocumentAsSupplier', () => {
     it('forces documentType INVOICE and counterpartyId to the supplier\'s own id, stamping createdById with the supplier-portal user id', async () => {
-      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue({ id: 'po1', supplierId: 's1' });
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([{ id: 'po1' }]);
       prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 500 });
 
-      await service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderId: 'po1', amount: 500 } as any);
+      await service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderIds: ['po1'], amount: 500 } as any);
 
-      expect(prisma.tenant.purchaseOrder.findFirst).toHaveBeenCalledWith({ where: { id: 'po1', supplierId: 's1' } });
+      expect(prisma.tenant.purchaseOrder.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['po1'] }, supplierId: 's1' },
+        select: { id: true },
+      });
       expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           companyId: 'c1',
-          purchaseOrderId: 'po1',
+          orderLinks: { create: [{ purchaseOrderId: 'po1' }] },
           documentType: 'INVOICE',
           counterpartyId: 's1',
           amount: 500,
@@ -766,20 +850,34 @@ describe('FinanceService', () => {
       expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'finance_document.created_by_supplier', actorUserId: null }));
     });
 
-    it("404s when the given order does not belong to this supplier (never confirms it exists elsewhere)", async () => {
-      prisma.tenant.purchaseOrder.findFirst.mockResolvedValue(null);
-      await expect(service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderId: 'po-other', amount: 500 } as any)).rejects.toThrow(NotFoundException);
+    it('creates ONE document with N join rows when the invoice covers multiple orders ("один рахунок на кілька замовлень", 2026-11-19)', async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([{ id: 'po1' }, { id: 'po2' }]);
+      prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 900 });
+
+      await service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderIds: ['po1', 'po2'], amount: 900 } as any);
+
+      expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledTimes(1);
+      expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ orderLinks: { create: [{ purchaseOrderId: 'po1' }, { purchaseOrderId: 'po2' }] } }),
+      });
+    });
+
+    it("404s when ANY given order does not belong to this supplier, before creating anything (never a partial set of links)", async () => {
+      prisma.tenant.purchaseOrder.findMany.mockResolvedValue([{ id: 'po1' }]); // po-other not matched
+      await expect(
+        service.createDocumentAsSupplier('c1', 's1', 'spu1', { purchaseOrderIds: ['po1', 'po-other'], amount: 500 } as any),
+      ).rejects.toThrow(NotFoundException);
       expect(prisma.tenant.purchaseOrderDocument.create).not.toHaveBeenCalled();
     });
 
-    it("рахунок не обов'язково може бути прив'язаний до замовлення — creates with purchaseOrderId: null when omitted, no ownership lookup performed", async () => {
+    it("рахунок не обов'язково може бути прив'язаний до замовлення — creates with no orderLinks when omitted, no ownership lookup performed", async () => {
       prisma.tenant.purchaseOrderDocument.create.mockResolvedValue({ id: 'doc1', amount: 500 });
 
       await service.createDocumentAsSupplier('c1', 's1', 'spu1', { amount: 500 } as any);
 
-      expect(prisma.tenant.purchaseOrder.findFirst).not.toHaveBeenCalled();
+      expect(prisma.tenant.purchaseOrder.findMany).not.toHaveBeenCalled();
       expect(prisma.tenant.purchaseOrderDocument.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ companyId: 'c1', purchaseOrderId: null, counterpartyId: 's1', amount: 500 }),
+        data: expect.objectContaining({ companyId: 'c1', orderLinks: undefined, counterpartyId: 's1', amount: 500 }),
       });
     });
   });

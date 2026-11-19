@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingBlock } from '@/components/ui/loading-block';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supplierPortalApi } from '@/lib/supplier-portal/api';
 import { useApiErrorMessage } from '@/lib/api-error-message';
@@ -24,15 +23,20 @@ interface PortalInvoiceRow {
   amount: string | null;
   currency: string;
   paymentStatus: InvoicePaymentStatus;
-  /** Null — "рахунок не обов'язково може бути прив'язаний до замовлення" (2026-11-06). */
-  purchaseOrder: { id: string; orderDate: string; status: PurchaseOrderStatus } | null;
+  /**
+   * Zero, one, or several — "якщо постачальник призначив декільком
+   * замовленням один рахунок на оплату" (2026-11-19): one invoice can
+   * cover several orders via the many-to-many join table, replacing the
+   * old single nullable `purchaseOrder` field (empty array is the new
+   * "рахунок не обов'язково може бути прив'язаний до замовлення",
+   * 2026-11-06, case).
+   */
+  linkedOrders: { id: string; number: string; orderDate: string; status: PurchaseOrderStatus }[];
 }
-
-/** Radix Select forbids an empty-string item value, so "no order" needs a real sentinel instead of undefined/''. */
-const NO_ORDER = '__none__';
 
 interface PortalOrderOption {
   id: string;
+  number: string;
   orderDate: string;
   status: PurchaseOrderStatus;
 }
@@ -63,7 +67,7 @@ export default function SupplierPortalFinancePage() {
   const [orders, setOrders] = useState<PortalOrderOption[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [orderId, setOrderId] = useState<string>(NO_ORDER);
+  const [orderIds, setOrderIds] = useState<string[]>([]);
   const [documentNumber, setDocumentNumber] = useState('');
   const [documentDate, setDocumentDate] = useState('');
   const [amount, setAmount] = useState('');
@@ -103,14 +107,14 @@ export default function SupplierPortalFinancePage() {
     setSubmitting(true);
     try {
       await supplierPortalApi.post('supplier-portal/finance-documents', {
-        purchaseOrderId: orderId === NO_ORDER ? undefined : orderId,
+        purchaseOrderIds: orderIds.length > 0 ? orderIds : undefined,
         documentNumber: documentNumber || undefined,
         documentDate: documentDate || undefined,
         amount: value,
         currency,
         note: note || undefined,
       });
-      setOrderId(NO_ORDER);
+      setOrderIds([]);
       setDocumentNumber('');
       setDocumentDate('');
       setAmount('');
@@ -137,21 +141,31 @@ export default function SupplierPortalFinancePage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+              {/* "якщо постачальник призначив декільком замовленням один
+                  рахунок на оплату" (2026-11-19) — zero-or-more orders per
+                  invoice (was a single Select), so one combined invoice can
+                  cover several orders at once instead of needing a separate
+                  upload per order. */}
               <Label>{t('financeOrderLabel')}</Label>
-              <Select value={orderId} onValueChange={setOrderId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('financeSelectOrderPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_ORDER}>{t('financeNoOrderOption')}</SelectItem>
-                  {orders.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {new Date(o.orderDate).toLocaleDateString()} · {t(`status${o.status}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-input p-2">
+                {orders.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('noOrders')}</p>
+                ) : (
+                  orders.map((o) => (
+                    <label key={o.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={orderIds.includes(o.id)}
+                        onChange={(e) =>
+                          setOrderIds((prev) => (e.target.checked ? [...prev, o.id] : prev.filter((id) => id !== o.id)))
+                        }
+                      />
+                      {o.number} · {new Date(o.orderDate).toLocaleDateString()} · {t(`status${o.status}`)}
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invoice-number">{t('invoiceNumberLabel')}</Label>
@@ -191,7 +205,7 @@ export default function SupplierPortalFinancePage() {
               <TableRow>
                 <TableHead>{t('invoiceDateLabel')}</TableHead>
                 <TableHead>{t('invoiceNumberLabel')}</TableHead>
-                <TableHead>{t('orderDate')}</TableHead>
+                <TableHead>{t('financeLinkedOrdersLabel')}</TableHead>
                 <TableHead>{t('invoiceAmountLabel')}</TableHead>
                 <TableHead>{t('status')}</TableHead>
               </TableRow>
@@ -208,7 +222,7 @@ export default function SupplierPortalFinancePage() {
                   <TableRow key={inv.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/finance/${inv.id}`)}>
                     <TableCell>{inv.documentDate ? new Date(inv.documentDate).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>{inv.documentNumber || '—'}</TableCell>
-                    <TableCell>{inv.purchaseOrder ? new Date(inv.purchaseOrder.orderDate).toLocaleDateString() : '—'}</TableCell>
+                    <TableCell>{inv.linkedOrders.length > 0 ? inv.linkedOrders.map((o) => o.number).join(', ') : '—'}</TableCell>
                     <TableCell>{inv.amount ? `${inv.amount} ${inv.currency}` : '—'}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[inv.paymentStatus]}>
