@@ -11,6 +11,7 @@ import type { PurchaseOrderStatus } from '@/lib/api-client/procurement';
 
 interface PortalPurchaseOrderRow {
   id: string;
+  number: string;
   orderDate: string;
   status: PurchaseOrderStatus;
   expectedDeliveryDate: string | null;
@@ -63,6 +64,7 @@ export default function SupplierPortalOrdersPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>{t('orderNumber')}</TableHead>
                 <TableHead>{t('orderDate')}</TableHead>
                 <TableHead>{t('status')}</TableHead>
                 <TableHead>{t('expectedDeliveryDate')}</TableHead>
@@ -73,19 +75,20 @@ export default function SupplierPortalOrdersPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     {t('loading')}
                   </TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     {t('noOrders')}
                   </TableCell>
                 </TableRow>
               ) : (
                 orders.map((o) => (
                   <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/supplier-portal/orders/${o.id}`)}>
+                    <TableCell className="font-medium">{o.number}</TableCell>
                     <TableCell>{new Date(o.orderDate).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[o.status]}>{t(`status${o.status}`)}</Badge>

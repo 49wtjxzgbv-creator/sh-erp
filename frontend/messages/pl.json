@@ -1826,6 +1826,7 @@
     "panelTitle": "Supplier Portal",
     "signOut": "Sign out",
     "yourPurchaseOrders": "Your purchase orders",
+    "orderNumber": "Numer zamówienia",
     "orderDate": "Order date",
     "status": "Status",
     "expectedDeliveryDate": "Expected delivery date",
