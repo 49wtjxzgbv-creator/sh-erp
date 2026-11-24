@@ -2281,8 +2281,6 @@
     "printPeriod": "Period",
     "printGeneratedAt": "Generated",
     "legendTitle": "Legend",
-    "plannedPeriod": "Geplanter Zeitraum",
-    "noDeadlines": "Keine Aufträge mit Termin.",
     "deadlinesSheetTitle": "Termine",
     "printDeadlines": "Termine drucken",
     "legendPlan": "Plan",

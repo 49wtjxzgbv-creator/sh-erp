@@ -329,16 +329,6 @@
   .planner-print-orders-table th {
     font-size: 11px;
   }
-  /* "Терміни виконання" deadline sheet (planner-deadlines-print.tsx,
-   * 2026-11-24 — "щоб це було гарно і приємно виглядало на листі"): a
-   * simple one-row-per-order list, roomier than the dense Gantt table
-   * since there's no calendar grid competing for space.
-   */
-  .planner-print-deadlines-table td,
-  .planner-print-deadlines-table th {
-    font-size: 10px;
-    padding: 6px 8px;
-  }
   .planner-print-datesgrid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -522,11 +512,6 @@
 .print-preview-mode .planner-print-orders-table td,
 .print-preview-mode .planner-print-orders-table th {
   font-size: 11px;
-}
-.print-preview-mode .planner-print-deadlines-table td,
-.print-preview-mode .planner-print-deadlines-table th {
-  font-size: 10px;
-  padding: 6px 8px;
 }
 .print-preview-mode .planner-print-datesgrid {
   display: grid;

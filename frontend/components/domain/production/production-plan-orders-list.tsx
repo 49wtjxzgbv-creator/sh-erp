@@ -16,12 +16,15 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
-import { PlannerDeadlinesPrintTable } from '@/components/domain/planner/planner-deadlines-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
 
-// "зроби можливість друкувати всі замовлення у яких є термін виконання"
-// (2026-11-24): this page now hosts TWO independent `<PrintArea>`s (the
-// existing Gantt calendar print, plus the new deadline sheet) — every
+// "зроби можливість друкувати всі замовлення у яких є термін виконання
+// щоб це було гарно і приємно виглядало на листі" + "мав на увазі щоб це
+// було графіком з тижнями" (2026-11-24): same Gantt print component as
+// "Графік по замовленнях" below (weeks included — see that view's own
+// week-number row), just fed a filtered order list — not a separate plain
+// table. This page now hosts TWO independent `<PrintArea>`s (the full
+// Gantt, plus this deadline-only one) — every
 // `<PrintArea>` starts marked `print-area--active` by default (see that
 // component's own header comment), so without this, clicking either
 // "Друкувати" button would print BOTH stacked together. Deactivates every
@@ -280,17 +283,26 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
           </div>
 
           <PrintArea printAreaId={DEADLINES_PRINT_AREA_ID}>
-            {/* No @page override here, deliberately — a plain inline
-                `<style>` tag sets page size for the WHOLE document
-                regardless of which `.print-area` is visually active (CSS
-                has no way to scope `@page` to a DOM subtree), so this
-                just inherits whatever the Gantt print area above already
-                set rather than fighting it with a second, order-dependent
-                override. Landscape's extra width reads fine for this
-                table too — five columns with real breathing room, not a
-                cramped portrait squeeze. */}
-            <PrintDocumentHeader title={tPlanner('deadlinesSheetTitle')} subtitle={String(year)} />
-            <PlannerDeadlinesPrintTable orders={board.orders} />
+            {/* Same landscape rule as the Gantt print above — harmless to
+                repeat (a `<style>` tag sets `@page` for the whole
+                document regardless of which `.print-area` is visually
+                active, there's no way to scope it to one DOM subtree),
+                and keeps this block self-documenting on its own. */}
+            <style>{`@page { size: landscape; margin: 10mm; }`}</style>
+            <PrintDocumentHeader title={tPlanner('deadlinesSheetTitle')} subtitle={printPeriodLabel} />
+            <PlannerOrdersPrintTable
+              orders={board.orders.filter((o) => o.deadline !== null)}
+              from={printFrom}
+              to={printTo}
+              scale={printScale}
+              datesHidden={printDatesHidden}
+            />
+            <div className="mt-4">
+              <strong className="text-[9px]">{tPlanner('legendTitle')}:</strong>
+              <div className="mt-1">
+                <PlannerOrdersPrintLegend />
+              </div>
+            </div>
           </PrintArea>
         </>
       )}
