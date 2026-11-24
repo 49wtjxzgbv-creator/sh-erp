@@ -696,7 +696,7 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
 
-      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1', 'item1');
 
       expect(result).toEqual({
         assemblyId: 'a1',
@@ -767,7 +767,7 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
 
-      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1', 'item1');
 
       expect(result.children[0]).toEqual({
         assemblyId: 'sub1',
@@ -782,6 +782,10 @@ describe('AssembliesService', () => {
       expect(prisma.tenant.customerOrderItem.findMany).toHaveBeenCalledWith({ where: { customerOrderId: 'order-1' }, select: { id: true } });
       expect(prisma.tenant.productionOrder.findMany).toHaveBeenCalledWith({
         where: { OR: [{ customerOrderItemId: { in: ['item1'] } }, { subAssemblyForItemId: { in: ['item1'] } }] },
+        select: { id: true },
+      });
+      expect(prisma.tenant.productionOrder.findMany).toHaveBeenCalledWith({
+        where: { OR: [{ customerOrderItemId: 'item1' }, { subAssemblyForItemId: 'item1' }] },
         select: { id: true },
       });
       for (const call of prisma.tenant.finishedGood.count.mock.calls.filter((c: any) => c[0].where.status === 'CONSUMED' && !('productionOrderId' in c[0].where))) {
@@ -813,7 +817,7 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
 
-      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1', 'item1');
 
       expect(result.children[0]).toEqual({
         assemblyId: 'sub1',
@@ -848,7 +852,7 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([]);
 
-      const result = await service.getProductionTree(user, 'a1', 2, 'order-1');
+      const result = await service.getProductionTree(user, 'a1', 2, 'order-1', 'item1');
 
       expect(result.children[0]).toEqual({
         assemblyId: 'sub1',
@@ -871,14 +875,18 @@ describe('AssembliesService', () => {
       });
     });
 
-    it('skips the CONSUMED-stock lookup entirely when this order has no items/batches yet, instead of querying with an empty `in`', async () => {
+    it('skips the order-wide CONSUMED-stock lookup when this order has no items yet instead of querying with an empty `in` — the item-scoped lookup still runs (scalar itemId, no `in` to be empty) but finds nothing either', async () => {
       prisma.tenant.assembly.findUnique.mockResolvedValueOnce({ id: 'a1', components: [] }).mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null, laborCostPerUnit: 0 });
       prisma.tenant.customerOrderItem.findMany.mockResolvedValue([]);
       prisma.tenant.finishedGood.count.mockResolvedValue(0);
 
-      await service.getProductionTree(user, 'a1', 1, 'order-1');
+      await service.getProductionTree(user, 'a1', 1, 'order-1', 'item1');
 
-      expect(prisma.tenant.productionOrder.findMany).not.toHaveBeenCalled();
+      expect(prisma.tenant.productionOrder.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.tenant.productionOrder.findMany).toHaveBeenCalledWith({
+        where: { OR: [{ customerOrderItemId: 'item1' }, { subAssemblyForItemId: 'item1' }] },
+        select: { id: true },
+      });
       expect(prisma.tenant.finishedGood.count).toHaveBeenCalledTimes(2); // general IN_STOCK + purchased IN_STOCK only, no CONSUMED lookups
     });
 
@@ -892,7 +900,49 @@ describe('AssembliesService', () => {
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }])
         .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'a1', qtyPerUnit: 1 }]); // sub1 points back at a1
 
-      await expect(service.getProductionTree(user, 'a1', 1, 'order-1')).rejects.toThrow(ConflictException);
+      await expect(service.getProductionTree(user, 'a1', 1, 'order-1', 'item1')).rejects.toThrow(ConflictException);
+    });
+
+    it('a sub-assembly shared by TWO different line items is NOT marked `done` for a sibling item just because the OTHER item already produced and consumed its own units (2026-11-24 fix, real order #441835 — "чому я не можу запустити в роботу" on article 288171_172_173, needed by three Förderband line items at once: qty 79/38/3)', async () => {
+      // item-288442 needed 79 of sub1 and already produced+consumed all 79
+      // into its OWN batch (po-288442). item-452024 independently needs 38
+      // of the SAME sub1 and never produced any — its own item-scoped
+      // production-order lookup finds nothing, so the 79 units consumed by
+      // its sibling must NOT count toward its own requirement.
+      prisma.tenant.assembly.findUnique
+        .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() for item-288442's call
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null, laborCostPerUnit: 0 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: '288171_172_173', laborCostPerUnit: 0 })
+        .mockResolvedValueOnce({ id: 'a1', components: [] }) // findOne() for item-452024's call
+        .mockResolvedValueOnce({ id: 'a1', name: 'A1', article: null, laborCostPerUnit: 0 })
+        .mockResolvedValueOnce({ id: 'sub1', name: 'Sub1', article: '288171_172_173', laborCostPerUnit: 0 });
+      prisma.tenant.assemblyComponent.findMany
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }]) // a1's children, item-288442's call
+        .mockResolvedValueOnce([]) // sub1's children, item-288442's call
+        .mockResolvedValueOnce([{ componentType: 'ASSEMBLY', subAssemblyId: 'sub1', qtyPerUnit: 1 }]) // a1's children, item-452024's call
+        .mockResolvedValueOnce([]); // sub1's children, item-452024's call
+      prisma.tenant.customerOrderItem.findMany.mockResolvedValue([{ id: 'item-288442' }, { id: 'item-452024' }]);
+      prisma.tenant.productionOrder.findMany.mockImplementation((args: any) => {
+        const or = args.where.OR;
+        if (typeof or[0].customerOrderItemId === 'object') return Promise.resolve([{ id: 'po-order-wide' }]); // order-wide lookup, `{ in: [...] }` shape — irrelevant to `done` here
+        const itemId = or[0].customerOrderItemId ?? or[0].subAssemblyForItemId; // item-scoped lookup, bare itemId
+        return Promise.resolve(itemId === 'item-288442' ? [{ id: 'po-288442' }] : []);
+      });
+      prisma.tenant.finishedGood.count.mockImplementation((args: any) => {
+        const where = args.where;
+        if (where.status === 'IN_STOCK') return Promise.resolve(0); // nothing sitting on the shelf for either node
+        if (where.status === 'CONSUMED' && !('productionOrderId' in where)) {
+          return Promise.resolve(where.consumedInProductionOrderId.in.includes('po-288442') ? 79 : 0);
+        }
+        return Promise.resolve(0); // purchased-consumed — irrelevant here
+      });
+      subAssemblyReservationService.getClaimedIncludingConsumedForOrder.mockResolvedValue(0);
+
+      const doneNode = await service.getProductionTree(user, 'a1', 79, 'order-1', 'item-288442');
+      const notDoneNode = await service.getProductionTree(user, 'a1', 38, 'order-1', 'item-452024');
+
+      expect(doneNode.children[0]).toMatchObject({ assemblyId: 'sub1', qtyNeeded: 79, done: true });
+      expect(notDoneNode.children[0]).toMatchObject({ assemblyId: 'sub1', qtyNeeded: 38, done: false });
     });
   });
 });

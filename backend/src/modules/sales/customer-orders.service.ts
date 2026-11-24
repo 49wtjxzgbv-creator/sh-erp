@@ -830,7 +830,7 @@ export class CustomerOrdersService {
     const item = (order.items as any[]).find((i) => i.id === itemId);
     if (!item) throw new CodedNotFoundException('CUSTOMER_ORDER_ITEM_NOT_FOUND', 'This item does not belong to this customer order.');
 
-    const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId);
+    const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId, itemId);
 
     const batches = await this.prisma.tenant.productionOrder.findMany({
       where: { OR: [{ customerOrderItemId: itemId }, { subAssemblyForItemId: itemId }] },
@@ -965,7 +965,7 @@ export class CustomerOrdersService {
     let estimated = 0;
     const estimatedByArticleMap = new Map<string, PayrollEstimatedArticleLine>();
     for (const item of items) {
-      const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId);
+      const tree = await this.assembliesService.getProductionTree(user, item.assemblyId, Number(item.qty), orderId, item.id);
       estimated += sumLaborFund(tree);
       collectLaborFundByArticle(tree, estimatedByArticleMap);
     }

@@ -1137,16 +1137,17 @@ export class AssembliesService {
    * supplier-link-gated one) — this is about physical stock readiness,
    * not purchasing.
    */
-  async getProductionTree(user: RequestUser, assemblyId: string, qty: number, customerOrderId: string): Promise<ProductionTreeNode> {
+  async getProductionTree(user: RequestUser, assemblyId: string, qty: number, customerOrderId: string, itemId: string): Promise<ProductionTreeNode> {
     await this.findOne(user, assemblyId);
     // 2026-09-17 user report ("коли ми використовували [куплені готовими]
     // в інших виробах вони списались з складу і чомусь статус... змінився
     // що потрібно виготовити"): every ProductionOrder batch that belongs to
     // THIS customer order (via customerOrderItemId, or subAssemblyForItemId
     // for a sub-assembly batch — same dual-field resolution
-    // ProductionOrdersService#resolveCustomerOrderId uses), computed once
-    // up front and threaded through the whole recursion below — see
-    // `done`'s own doc comment for why this is needed.
+    // ProductionOrdersService#resolveCustomerOrderId uses) — used ONLY for
+    // the PURCHASED-origin offset below (qtyPurchasedConsumedForThisOrder),
+    // which stays order-wide on purpose (a purchased unit has no labor
+    // regardless of which item's batch it was folded into).
     const orderItemIds = (await this.prisma.tenant.customerOrderItem.findMany({ where: { customerOrderId }, select: { id: true } })).map(
       (i) => i.id,
     );
@@ -1158,13 +1159,38 @@ export class AssembliesService {
           })
         ).map((p) => p.id)
       : [];
-    return this.buildProductionTree(user, customerOrderId, consumedIntoProductionOrderIds, assemblyId, qty, new Set());
+    // 2026-11-24 fix (real order #441835, article 288171_172_173 needed by
+    // THREE sibling Förderband line items at once, qty 79/38/3 — user
+    // report "чому я не можу запустити в виробництво" even though
+    // "Залишилось виготовити: 38" was clearly nonzero): `done`'s own
+    // CONSUMED-stock count must be scoped to batches belonging to THIS
+    // line item specifically, not the whole order — see `done`'s own doc
+    // comment for the full incident. Without this, 79 units produced and
+    // consumed for item 288442's own batch satisfied `done` for the OTHER
+    // two items' separate 38 and 3 unit requirements too, since the old
+    // order-wide count never distinguished which item a batch belonged to.
+    const itemConsumedIntoProductionOrderIds = (
+      await this.prisma.tenant.productionOrder.findMany({
+        where: { OR: [{ customerOrderItemId: itemId }, { subAssemblyForItemId: itemId }] },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+    return this.buildProductionTree(
+      user,
+      customerOrderId,
+      consumedIntoProductionOrderIds,
+      itemConsumedIntoProductionOrderIds,
+      assemblyId,
+      qty,
+      new Set(),
+    );
   }
 
   private async buildProductionTree(
     user: RequestUser,
     customerOrderId: string,
     consumedIntoProductionOrderIds: string[],
+    itemConsumedIntoProductionOrderIds: string[],
     assemblyId: string,
     qty: number,
     visited: Set<string>,
@@ -1206,10 +1232,12 @@ export class AssembliesService {
       }),
       // See `done`'s own doc comment — units of THIS node's own assembly
       // that were already legitimately consumed as a component of another
-      // node's batch, in service of THIS same customer order.
-      consumedIntoProductionOrderIds.length
+      // node's batch, in service of THIS same line item (2026-11-24: scoped
+      // to the item, not the whole order — see `itemConsumedIntoProductionOrderIds`'s
+      // doc comment on getProductionTree).
+      itemConsumedIntoProductionOrderIds.length
         ? this.prisma.tenant.finishedGood.count({
-            where: { assemblyId, status: 'CONSUMED', consumedInProductionOrderId: { in: consumedIntoProductionOrderIds } },
+            where: { assemblyId, status: 'CONSUMED', consumedInProductionOrderId: { in: itemConsumedIntoProductionOrderIds } },
           })
         : Promise.resolve(0),
       this.subAssemblyReservationService.getClaimedIncludingConsumedForOrder(user, customerOrderId, assemblyId),
@@ -1244,6 +1272,7 @@ export class AssembliesService {
           user,
           customerOrderId,
           consumedIntoProductionOrderIds,
+          itemConsumedIntoProductionOrderIds,
           line.subAssemblyId,
           qty * Number(line.qtyPerUnit),
           visited,
@@ -1261,16 +1290,21 @@ export class AssembliesService {
       qtyInStock,
       // 2026-09-17 fix: `qtyInStock` alone used to decide `done` — correct
       // for a node still sitting on the shelf, but wrong once it's already
-      // been pulled into a batch FOR THIS ORDER (ProductionOrdersService's
+      // been pulled into a batch FOR THIS LINE ITEM (ProductionOrdersService's
       // FIFO consumption at start() marks those units CONSUMED, which drops
       // them out of the live IN_STOCK count entirely). That consumption
       // already fulfilled this node's own requirement — e.g. a sub-assembly
       // bought ready-made and claimed "Зі складу", then used as a component
-      // of another виріб in the same order — so it must not flip back to
-      // "потрібно виготовити" just because the physical units moved from
-      // "on the shelf" to "built into the parent". `qtyConsumedForThisOrder`
-      // is scoped to consumption tied to THIS customer order's own batches
-      // only (see getProductionTree), never another order's.
+      // of another виріб in the same ITEM's own tree — so it must not flip
+      // back to "потрібно виготовити" just because the physical units moved
+      // from "on the shelf" to "built into the parent". `qtyConsumedForThisOrder`
+      // is scoped to THIS line item's own batches only (see
+      // `itemConsumedIntoProductionOrderIds`'s doc comment on
+      // getProductionTree) — 2026-11-24 fix: it used to be scoped to the
+      // whole order, so a sub-assembly shared by several sibling line items
+      // had one item's real production satisfy `done` for every OTHER
+      // sibling that never actually produced its own units (real order
+      // #441835, article 288171_172_173).
       done: qtyInStock + qtyConsumedForThisOrder >= Math.ceil(qty),
       laborFundEstimate:
         Number(assembly.laborCostPerUnit) *
