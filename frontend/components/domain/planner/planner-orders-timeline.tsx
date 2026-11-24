@@ -229,16 +229,26 @@ export function PlannerOrdersTimelineView({
                     to the day-of-month numbers below, not a replacement, so
                     staff who think in days keep that too. */}
                 {(scale === 'week' || scale === 'month') &&
-                  weeks.map((w, i) => (
-                    <span
-                      key={i}
-                      className="absolute top-[22px] whitespace-nowrap rounded-sm bg-secondary px-1 text-[10px] font-semibold tabular-nums text-muted-foreground"
-                      style={{ left: px(w, viewFrom, pxPerDay) + 3 }}
-                      title={`${t('weekNumberLabel')} ${isoWeekNumber(w)}`}
-                    >
-                      W{isoWeekNumber(w)}
-                    </span>
-                  ))}
+                  weeks.map((w, i) => {
+                    // "а як розуміти коли початок і кінець тижня якого"
+                    // (2026-11-24): the week-number badge alone didn't make
+                    // the actual Mon–Sun boundary obvious — the tooltip now
+                    // spells it out, and the gridline at this exact Monday
+                    // is drawn heavier than the plain day gridlines below
+                    // (see the body gridline loop) so the boundary itself
+                    // is visible at a glance, not just on hover.
+                    const weekEnd = new Date(w.getFullYear(), w.getMonth(), w.getDate() + 6);
+                    return (
+                      <span
+                        key={i}
+                        className="absolute top-[22px] whitespace-nowrap rounded-sm bg-secondary px-1 text-[10px] font-semibold tabular-nums text-muted-foreground"
+                        style={{ left: px(w, viewFrom, pxPerDay) + 3 }}
+                        title={`${t('weekNumberLabel')} ${isoWeekNumber(w)}: ${fmtDate(w)}–${fmtDate(weekEnd)}`}
+                      >
+                        W{isoWeekNumber(w)}
+                      </span>
+                    );
+                  })}
                 {scale === 'week' &&
                   days.map((d, i) => (
                     <span key={i} className="absolute top-10 text-xs tabular-nums text-muted-foreground" style={{ left: px(d, viewFrom, pxPerDay) + 3 }}>
@@ -255,10 +265,17 @@ export function PlannerOrdersTimelineView({
             </div>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0" style={{ left: frozenWidth, width: canvasWidth }}>
+                {/* Monday (week start) drawn heavier than the plain day
+                    gridlines — see the week-number badge's own comment
+                    above for why: a day gridline alone didn't make it
+                    obvious where one week's column ends and the next
+                    begins. */}
                 {scale === 'week' &&
-                  days.map((d, i) => <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: px(d, viewFrom, pxPerDay) }} />)}
+                  days.map((d, i) => (
+                    <div key={i} className={cn('absolute inset-y-0 w-px', d.getDay() === 1 ? 'bg-border' : 'bg-border/40')} style={{ left: px(d, viewFrom, pxPerDay) }} />
+                  ))}
                 {scale === 'month' &&
-                  weeks.map((w, i) => <div key={i} className="absolute inset-y-0 w-px bg-border/40" style={{ left: px(w, viewFrom, pxPerDay) }} />)}
+                  weeks.map((w, i) => <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: px(w, viewFrom, pxPerDay) }} />)}
                 {months.map((m, i) => (
                   <div key={i} className="absolute inset-y-0 w-px bg-border" style={{ left: px(m.start, viewFrom, pxPerDay) }} />
                 ))}
