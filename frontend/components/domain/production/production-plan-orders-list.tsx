@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type ColumnDef } from '@tanstack/react-table';
-import { CalendarRange, ChevronRight, Minus, Plus, Printer } from 'lucide-react';
+import { CalendarRange, ChevronRight, Minus, Plus, Printer, CalendarClock } from 'lucide-react';
 import { useCustomerOrders } from '@/lib/hooks/use-sales';
 import { usePlannerBoard } from '@/lib/hooks/use-planner';
 import { startOfWeek, startOfMonth } from '@/lib/timeline-utils';
@@ -16,7 +16,27 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { PlannerOrdersTimelineView } from '@/components/domain/planner/planner-orders-timeline';
 import { PlannerOrdersPrintTable, PlannerOrdersPrintLegend } from '@/components/domain/planner/planner-orders-print';
+import { PlannerDeadlinesPrintTable } from '@/components/domain/planner/planner-deadlines-print';
 import { PrintArea, PrintDocumentHeader, PreviewButton } from '@/components/domain/print/print-area';
+
+// "зроби можливість друкувати всі замовлення у яких є термін виконання"
+// (2026-11-24): this page now hosts TWO independent `<PrintArea>`s (the
+// existing Gantt calendar print, plus the new deadline sheet) — every
+// `<PrintArea>` starts marked `print-area--active` by default (see that
+// component's own header comment), so without this, clicking either
+// "Друкувати" button would print BOTH stacked together. Deactivates every
+// OTHER print area right before firing `window.print()`, same exclusivity
+// `usePrintOptions` (print-options.tsx) gives a heavier column-picker print
+// view — this page's two prints are both plain "click and print", no
+// options dialog needed, so the activation is just inlined here instead.
+const GANTT_PRINT_AREA_ID = 'orders-gantt';
+const DEADLINES_PRINT_AREA_ID = 'orders-deadlines';
+
+function activateOnlyPrintArea(id: string) {
+  document.querySelectorAll('.print-area').forEach((el) => {
+    el.classList.toggle('print-area--active', el.getAttribute('data-print-area-id') === id);
+  });
+}
 
 const PAGE_SIZE = 50;
 
@@ -99,6 +119,12 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
   }
 
   function handlePrint() {
+    activateOnlyPrintArea(GANTT_PRINT_AREA_ID);
+    window.setTimeout(() => window.print(), 50);
+  }
+
+  function handlePrintDeadlines() {
+    activateOnlyPrintArea(DEADLINES_PRINT_AREA_ID);
     window.setTimeout(() => window.print(), 50);
   }
 
@@ -210,7 +236,7 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
                   <Printer className="mr-2 h-4 w-4" />
                   {tPrint('printAction')}
                 </Button>
-                <PreviewButton />
+                <PreviewButton printAreaId={GANTT_PRINT_AREA_ID} />
               </div>
             </div>
             <div className="p-3">
@@ -223,7 +249,7 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
             </div>
           </div>
 
-          <PrintArea>
+          <PrintArea printAreaId={GANTT_PRINT_AREA_ID}>
             {/* Landscape — same as Планер's own "По замовленнях" print (this table is a wide month-by-month calendar, cramped in portrait). */}
             <style>{`@page { size: landscape; margin: 10mm; }`}</style>
             <PrintDocumentHeader title={tp('scheduleByOrders')} subtitle={printPeriodLabel} />
@@ -234,6 +260,37 @@ export function ProductionPlanOrdersList({ basePath, title }: { basePath: string
                 <PlannerOrdersPrintLegend />
               </div>
             </div>
+          </PrintArea>
+
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/40 px-3 py-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+                <CalendarClock className="h-4 w-4" />
+              </span>
+              <h3 className="text-sm font-semibold">{tPlanner('deadlinesSheetTitle')}</h3>
+              <Badge variant="outline">{board.orders.filter((o) => o.deadline !== null).length}</Badge>
+              <div className="no-print ml-auto flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handlePrintDeadlines}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  {tPlanner('printDeadlines')}
+                </Button>
+                <PreviewButton printAreaId={DEADLINES_PRINT_AREA_ID} />
+              </div>
+            </div>
+          </div>
+
+          <PrintArea printAreaId={DEADLINES_PRINT_AREA_ID}>
+            {/* No @page override here, deliberately — a plain inline
+                `<style>` tag sets page size for the WHOLE document
+                regardless of which `.print-area` is visually active (CSS
+                has no way to scope `@page` to a DOM subtree), so this
+                just inherits whatever the Gantt print area above already
+                set rather than fighting it with a second, order-dependent
+                override. Landscape's extra width reads fine for this
+                table too — five columns with real breathing room, not a
+                cramped portrait squeeze. */}
+            <PrintDocumentHeader title={tPlanner('deadlinesSheetTitle')} subtitle={String(year)} />
+            <PlannerDeadlinesPrintTable orders={board.orders} />
           </PrintArea>
         </>
       )}
