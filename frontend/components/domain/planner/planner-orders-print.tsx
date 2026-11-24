@@ -1,5 +1,5 @@
 import { useTranslations } from 'next-intl';
-import { timelinePercent as percent, timelineMonthMarks as monthMarks, timelineWeekMarks as weekMarks, timelineDayMarks as dayMarks } from '@/lib/timeline-utils';
+import { timelinePercent as percent, timelineMonthMarks as monthMarks, timelineWeekMarks as weekMarks, timelineDayMarks as dayMarks, isoWeekNumber } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import type { PlannerOrderNode } from '@/lib/api-client/planner';
 
@@ -119,7 +119,11 @@ export function PlannerOrdersPrintTable({
   const ts = useTranslations('sales');
   const months = monthMarks(from, to);
   const days = scale === 'week' ? dayMarks(from, to) : [];
-  const weeks = scale === 'month' ? weekMarks(from, to) : [];
+  // "в друці і перегляді також мають відображатись тижні" (2026-11-24):
+  // needed at `week` scale too now (for the ISO week-number row below),
+  // not just `month` — mirrors the same change in PlannerOrdersTimelineView
+  // (the on-screen version of this same chart).
+  const weeks = scale === 'week' || scale === 'month' ? weekMarks(from, to) : [];
   const sorted = [...orders].sort((a, b) => {
     const aStart = a.plan.startAt ? new Date(a.plan.startAt).getTime() : Infinity;
     const bStart = b.plan.startAt ? new Date(b.plan.startAt).getTime() : Infinity;
@@ -150,17 +154,27 @@ export function PlannerOrdersPrintTable({
               ))}
             </div>
             {scale !== 'year' && (
+              <div className="relative h-[9px] w-full">
+                {weeks.map((w, i) => (
+                  <span key={i} className="absolute top-0 whitespace-nowrap font-semibold text-[7px]" style={{ left: `${percent(w, from, to)}%` }}>
+                    W{isoWeekNumber(w)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {scale !== 'year' && (
               <div className="relative h-3 w-full">
                 {days.map((d, i) => (
                   <span key={i} className="absolute top-0 text-[7px]" style={{ left: `${percent(d, from, to)}%` }}>
                     {d.getDate()}
                   </span>
                 ))}
-                {weeks.map((w, i) => (
-                  <span key={i} className="absolute top-0 font-medium text-[7px]" style={{ left: `${percent(w, from, to)}%` }}>
-                    {w.getDate()}
-                  </span>
-                ))}
+                {scale === 'month' &&
+                  weeks.map((w, i) => (
+                    <span key={i} className="absolute top-0 font-medium text-[7px]" style={{ left: `${percent(w, from, to)}%` }}>
+                      {w.getDate()}
+                    </span>
+                  ))}
               </div>
             )}
           </th>
