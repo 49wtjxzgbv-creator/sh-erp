@@ -2257,6 +2257,7 @@
     "prevPeriod": "Previous period",
     "nextPeriod": "Next period",
     "todayButton": "Today",
+    "weekNumberLabel": "Kalenderwoche",
     "collapseDates": "Collapse date columns",
     "expandDates": "Expand date columns",
     "dateColStart": "Start",

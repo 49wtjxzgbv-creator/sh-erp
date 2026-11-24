@@ -84,3 +84,22 @@ export function startOfWeek(date: Date): Date {
 export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
+
+/**
+ * "німці все рахують тижнями... почали виготовляти 28 тижня" (2026-11-24):
+ * ISO-8601 week number (1–53) — the convention German clients/suppliers
+ * use throughout this app's own product names (see any "Achse"/"Scheibe"
+ * article in the catalog). Standard algorithm: snap to this date's own
+ * Thursday (ISO weeks belong to the year containing their Thursday, which
+ * is what makes the last/first week of a year unambiguous), then count
+ * weeks from the first Thursday of that Thursday's year.
+ */
+export function isoWeekNumber(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const isoDay = (d.getUTCDay() + 6) % 7; // Monday=0..Sunday=6
+  d.setUTCDate(d.getUTCDate() - isoDay + 3); // this week's Thursday
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstIsoDay = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstIsoDay + 3);
+  return 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400000));
+}

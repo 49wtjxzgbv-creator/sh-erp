@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { timelineMonthMarks, timelineWeekMarks, timelineDayMarks } from '@/lib/timeline-utils';
+import { timelineMonthMarks, timelineWeekMarks, timelineDayMarks, isoWeekNumber } from '@/lib/timeline-utils';
 import { cn } from '@/lib/utils';
 import { px } from './planner-gantt';
 import { Button } from '@/components/ui/button';
@@ -91,7 +91,10 @@ export function PlannerOrdersTimelineView({
 
   const pxPerDay = PX_PER_DAY[scale];
   const months = useMemo(() => timelineMonthMarks(viewFrom, viewTo), [viewFrom, viewTo]);
-  const weeks = useMemo(() => (scale === 'month' ? timelineWeekMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
+  // "німці все рахують тижнями" (2026-11-24): needed at `week` scale too now
+  // (for the ISO week-number row below), not just `month` — previously only
+  // computed for `month`, where it doubled as the per-Monday gridline source.
+  const weeks = useMemo(() => (scale === 'week' || scale === 'month' ? timelineWeekMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const days = useMemo(() => (scale === 'week' ? timelineDayMarks(viewFrom, viewTo) : []), [scale, viewFrom, viewTo]);
   const showToday = now >= viewFrom && now <= viewTo;
   const canvasWidth = Math.max(((viewTo.getTime() - viewFrom.getTime()) / 86400000) * pxPerDay, 600);
@@ -214,21 +217,37 @@ export function PlannerOrdersTimelineView({
                   ))}
                 </div>
               )}
-              <div className="relative shrink-0" style={{ width: canvasWidth, height: scale === 'year' ? 32 : 46 }}>
+              <div className="relative shrink-0" style={{ width: canvasWidth, height: scale === 'year' ? 32 : 58 }}>
                 {months.map((m, i) => (
                   <span key={i} className="absolute top-2 whitespace-nowrap text-sm font-semibold" style={{ left: px(m.start, viewFrom, pxPerDay) + 6 }}>
                     {m.label}
                   </span>
                 ))}
+                {/* "німці все рахують тижнями... 28 тижня" (2026-11-24): ISO
+                    week number, the convention German clients/suppliers
+                    already use everywhere else in this app — a parallel row
+                    to the day-of-month numbers below, not a replacement, so
+                    staff who think in days keep that too. */}
+                {(scale === 'week' || scale === 'month') &&
+                  weeks.map((w, i) => (
+                    <span
+                      key={i}
+                      className="absolute top-[22px] whitespace-nowrap rounded-sm bg-secondary px-1 text-[10px] font-semibold tabular-nums text-muted-foreground"
+                      style={{ left: px(w, viewFrom, pxPerDay) + 3 }}
+                      title={`${t('weekNumberLabel')} ${isoWeekNumber(w)}`}
+                    >
+                      W{isoWeekNumber(w)}
+                    </span>
+                  ))}
                 {scale === 'week' &&
                   days.map((d, i) => (
-                    <span key={i} className="absolute top-7 text-xs tabular-nums text-muted-foreground" style={{ left: px(d, viewFrom, pxPerDay) + 3 }}>
+                    <span key={i} className="absolute top-10 text-xs tabular-nums text-muted-foreground" style={{ left: px(d, viewFrom, pxPerDay) + 3 }}>
                       {d.getDate()}
                     </span>
                   ))}
                 {scale === 'month' &&
                   weeks.map((w, i) => (
-                    <span key={i} className="absolute top-7 text-xs font-medium tabular-nums text-muted-foreground" style={{ left: px(w, viewFrom, pxPerDay) + 3 }}>
+                    <span key={i} className="absolute top-10 text-xs font-medium tabular-nums text-muted-foreground" style={{ left: px(w, viewFrom, pxPerDay) + 3 }}>
                       {w.getDate()}
                     </span>
                   ))}
