@@ -315,9 +315,13 @@ export class SourcingAppService {
    */
   async getAssemblies(identity: ResolvedSourcingIdentity) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      // "список виробів має бути сортований по кількості компонентів від
+      // більшої кількості до меншої" (2026-11-25) — same `componentCount`
+      // (direct BOM-line count) AssemblyCard already shows per row, just
+      // now the list's own order instead of alphabetical.
       const assemblies = await tx.assembly.findMany({
         where: { deletedAt: null },
-        orderBy: { name: 'asc' },
+        orderBy: { components: { _count: 'desc' } },
         select: { id: true, name: true, article: true, _count: { select: { components: true } } },
       });
       // "у списку виробів також має бути фото виробу" (2026-11-10)

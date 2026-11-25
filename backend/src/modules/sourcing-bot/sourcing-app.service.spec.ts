@@ -254,6 +254,11 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(tx.fileAsset.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ entityType: 'Assembly', domain: 'ASSEMBLY_PHOTO' }) }));
       expect(result[0].photoUrl).toBe('https://example.test/photo.jpg');
     });
+
+    it('orders by component count descending — "список виробів має бути сортований по кількості компонентів від більшої кількості до меншої" (2026-11-25)', async () => {
+      await service.getAssemblies(identity as any);
+      expect(tx.assembly.findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { components: { _count: 'desc' } } }));
+    });
   });
 
   describe('getAssembly (2026-11-25 — "вгорі фото виробу артикул назва")', () => {
