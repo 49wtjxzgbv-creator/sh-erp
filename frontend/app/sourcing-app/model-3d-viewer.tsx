@@ -53,6 +53,14 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     if (!el) return;
     el.cameraControls = true;
     el.disableZoom = false;
+    // "зроби щоб можна було більше приближувати" (2026-11-25) — model-viewer's
+    // own default minimum zoom distance is tuned for a roughly cube-shaped
+    // model and doesn't let the user pinch/scroll nearly as close as useful
+    // for inspecting one end/detail of an elongated real assembly. `5%`
+    // (vs. the "auto" default, closer to 25-50% of the fitted distance)
+    // lets the camera get much nearer before model-viewer clamps further
+    // zoom.
+    el.minCameraOrbit = 'auto auto 5%';
     el.interactionPrompt = 'none';
     el.shadowIntensity = 1;
     el.exposure = 1;
