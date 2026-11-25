@@ -96,8 +96,9 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
       >
         <X className="h-7 w-7" />
       </button>
+      {/* 2026-11-25 user report ("є деякі маленького розміру... і їх майже не видно"): `max-h`/`max-w` alone only ever cap a SMALL source photo down to its own tiny intrinsic size — nothing forces it to scale UP to fill the available space. Giving the `<img>` a real `w-[90vw] h-[90vh]` box lets `object-contain` scale in BOTH directions (shrinks a large photo the same as before, but now also enlarges a small one) while still preserving its aspect ratio and never exceeding the viewport. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- same cross-origin presigned-URL reasoning as Avatar */}
-      <img ref={imgRef} src={src} alt={alt} className="max-h-[90vh] max-w-[90vw] rounded-md object-contain shadow-2xl" />
+      <img ref={imgRef} src={src} alt={alt} className="h-[90vh] w-[90vw] rounded-md object-contain shadow-2xl" />
     </div>,
     document.body,
   );
