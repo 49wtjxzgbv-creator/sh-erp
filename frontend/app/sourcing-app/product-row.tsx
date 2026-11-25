@@ -5,6 +5,11 @@ import { useTranslateName } from './use-sourcing-app';
 import { formatWeightKg } from './format-weight';
 import type { ProductRow as ProductRowData } from './sourcing-app-client';
 
+/** Up to 2 decimals, trailing zeros trimmed — same convention as formatWeightKg, since a BOM qtyPerUnit can be fractional (e.g. cut-to-length material). */
+function formatQty(qty: number): string {
+  return `${Number(qty.toFixed(2))}`;
+}
+
 export function ProductRow({ product, onClick }: { product: ProductRowData; onClick: () => void }) {
   // "перекласти всі" (2026-11-10) — reads the shared translate cache only
   // (never fetches on its own, `enabled: false`); reactively shows the
@@ -34,6 +39,10 @@ export function ProductRow({ product, onClick }: { product: ProductRowData; onCl
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-0.5 text-xs" style={{ color: 'var(--tg-hint)' }}>
+        {/* "бажано щоб ще писало кількість деталей яка входить до цього виробу" (2026-11-25) — only set on the виріб/Assembly parts list (useAssemblyProducts), null everywhere else. Styled to stand out (link color, bold) since it's the number this specific screen exists to answer. */}
+        {product.qtyInAssembly !== null && (
+          <span className="font-semibold" style={{ color: 'var(--tg-link)' }}>× {formatQty(product.qtyInAssembly)}</span>
+        )}
         {product.supplierCount > 0 && <span>🏭 {product.supplierCount}</span>}
         {product.weightKg !== null && <span>⚖️ {formatWeightKg(product.weightKg)}</span>}
       </div>

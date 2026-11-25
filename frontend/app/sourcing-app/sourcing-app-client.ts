@@ -82,6 +82,8 @@ export interface ProductRow {
   supplierCount: number;
   /** "до кожного товару ще додати вагу" (2026-11-11) — Product.weightPerUnitKg, in kg. */
   weightKg: number | null;
+  /** "бажано щоб ще писало кількість деталей яка входить до цього виробу" (2026-11-25) — how many of this part go into ONE unit of the виріб/Assembly being browsed. Only set when the list IS an assembly's own parts list (useAssemblyProducts) — null for category-browse/search rows. */
+  qtyInAssembly: number | null;
 }
 
 /** "пошук товарів не по категоріям а по виробах" (2026-11-10) — a виріб/специфікація (Assembly), browsed by its real BOM components instead of a sourcing category. */

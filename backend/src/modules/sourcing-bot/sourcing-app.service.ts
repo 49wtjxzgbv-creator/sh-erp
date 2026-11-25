@@ -46,6 +46,15 @@ export interface ProductRow {
   supplierCount: number;
   /** "до кожного товару ще додати вагу" (2026-11-11) — Product.weightPerUnitKg, the same field AssembliesService#calculateWeight already reads live. */
   weightKg: number | null;
+  /**
+   * "бажано щоб ще писало кількість деталей яка входить до цього виробу"
+   * (2026-11-25) — how many of this product go into ONE unit of the
+   * виріб/Assembly being browsed, aggregated across its full recursive BOM
+   * (see `flattenAssemblyProductIds`'s own doc comment). Only populated by
+   * `getAssemblyProducts` — `null` for category-browse/search rows, where
+   * "qty per assembly" has no meaning.
+   */
+  qtyInAssembly: number | null;
 }
 
 /**
@@ -256,6 +265,7 @@ export class SourcingAppService {
     identity: ResolvedSourcingIdentity,
     where: Record<string, unknown>,
     pagination: { skip?: number; take?: number } = {},
+    qtyByProductId?: Map<string, number>,
   ): Promise<{ items: ProductRow[]; total: number }> {
     const [total, products] = await Promise.all([
       tx.product.count({ where }),
@@ -270,6 +280,7 @@ export class SourcingAppService {
       prices: this.toPriceList(p),
       supplierCount: p._count.suppliers,
       weightKg: priceNumber(p.weightPerUnitKg),
+      qtyInAssembly: qtyByProductId?.get(p.id) ?? null,
     }));
     return { items, total };
   }
@@ -319,45 +330,60 @@ export class SourcingAppService {
   }
 
   /**
-   * Every DISTINCT real `Product` anywhere in `assemblyId`'s BOM tree, at
-   * ANY depth — same cycle-guard shape as
-   * `AssembliesService#flattenRequirements` (private there, so
-   * reimplemented here rather than exported just for this one caller);
-   * unlike that method this doesn't aggregate quantities — a sourcing
-   * tool cares "which parts does this product need," not "how many of
-   * each," so a plain distinct id set is enough.
+   * Every real `Product` anywhere in `assemblyId`'s BOM tree, at ANY depth,
+   * mapped to how many of it go into ONE unit of the root assembly — same
+   * cycle-guard shape as `AssembliesService#flattenRequirements` (private
+   * there, so reimplemented here rather than exported just for this one
+   * caller). 2026-11-25 ("бажано щоб ще писало кількість деталей яка
+   * входить до цього виробу"): this used to return a plain distinct id
+   * `Set` with no quantity at all — a sourcing tool only ever needed "which
+   * parts," not "how many" — but browsing a виріб's own parts list is
+   * exactly where that number matters.
    *
    * Walks breadth-first BY LEVEL rather than recursing node-by-node
    * (2026-11-11) — the original per-node recursion issued one
    * `assemblyComponent.findMany` per sub-assembly, sequentially, which is
    * a real N+1 chain for a wide/deep BOM tree. Batching every assembly id
    * at the current depth into a single `{ in: [...] }` query cuts that to
-   * one round-trip per LEVEL instead of per NODE.
+   * one round-trip per LEVEL instead of per NODE. `assemblyMultiplier`
+   * accumulates every contribution arriving at the SAME sub-assembly
+   * WITHIN one level before that level's query runs, so a sub-assembly
+   * shared by two siblings at the same depth still gets its full combined
+   * quantity. A sub-assembly reached again at a DIFFERENT depth (a rarer
+   * diamond-shaped BOM) still only contributes via whichever path reaches
+   * it first — same `visited`-driven limitation the old distinct-set
+   * version already had, just now one that could under-count instead of
+   * being a harmless no-op; accepted rather than giving up the level-batched
+   * query shape for a rare case.
    */
-  private async flattenAssemblyProductIds(tx: TenantPrismaClient, rootAssemblyId: string): Promise<Set<string>> {
-    const productIds = new Set<string>();
+  private async flattenAssemblyProductIds(tx: TenantPrismaClient, rootAssemblyId: string): Promise<Map<string, number>> {
+    const productQty = new Map<string, number>();
     const visited = new Set<string>([rootAssemblyId]);
+    let assemblyMultiplier = new Map<string, number>([[rootAssemblyId, 1]]);
     let frontier = [rootAssemblyId];
 
     while (frontier.length > 0) {
       const components = await tx.assemblyComponent.findMany({ where: { assemblyId: { in: frontier } } });
-      const nextFrontier: string[] = [];
+      const nextMultiplier = new Map<string, number>();
       for (const line of components) {
+        const contribution = (assemblyMultiplier.get(line.assemblyId) ?? 0) * Number(line.qtyPerUnit);
         if (line.componentType === 'PRODUCT' && line.productId) {
-          productIds.add(line.productId);
+          productQty.set(line.productId, (productQty.get(line.productId) ?? 0) + contribution);
         } else if (line.componentType === 'ASSEMBLY' && line.subAssemblyId && !visited.has(line.subAssemblyId)) {
-          visited.add(line.subAssemblyId);
-          nextFrontier.push(line.subAssemblyId);
+          nextMultiplier.set(line.subAssemblyId, (nextMultiplier.get(line.subAssemblyId) ?? 0) + contribution);
         }
       }
-      frontier = nextFrontier;
+      for (const id of nextMultiplier.keys()) visited.add(id);
+      assemblyMultiplier = nextMultiplier;
+      frontier = [...nextMultiplier.keys()];
     }
-    return productIds;
+    return productQty;
   }
 
   async getAssemblyProducts(identity: ResolvedSourcingIdentity, assemblyId: string, search: string | undefined, page: number, filter?: string) {
     return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
-      const productIds = [...(await this.flattenAssemblyProductIds(tx, assemblyId))];
+      const qtyByProductId = await this.flattenAssemblyProductIds(tx, assemblyId);
+      const productIds = [...qtyByProductId.keys()];
       if (productIds.length === 0) return { items: [], total: 0, page, pageSize: APP_PAGE_SIZE, hasMore: false };
 
       const where = this.applyProductFilter(
@@ -368,7 +394,7 @@ export class SourcingAppService {
         },
         filter,
       );
-      const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE });
+      const { items, total } = await this.queryProductRows(tx, identity, where, { skip: page * APP_PAGE_SIZE, take: APP_PAGE_SIZE }, qtyByProductId);
       return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
     });
   }
@@ -403,6 +429,7 @@ export class SourcingAppService {
         prices: this.toPriceList(p),
         supplierCount: p._count.suppliers,
         weightKg: priceNumber(p.weightPerUnitKg),
+        qtyInAssembly: null,
       }));
       return { items, total, hasMore: total > items.length };
     });

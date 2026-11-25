@@ -323,6 +323,55 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       expect(result).toEqual({ items: [], total: 0, page: 0, pageSize: 30, hasMore: false });
       expect(tx.product.count).not.toHaveBeenCalled();
     });
+
+    // "бажано щоб ще писало кількість деталей яка входить до цього виробу" (2026-11-25)
+    it('reports qtyInAssembly: a direct PRODUCT line uses its own qtyPerUnit, and a line inside a sub-assembly multiplies through the parent sub-assembly line\'s own qtyPerUnit', async () => {
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: { in: string[] } } }) => {
+        if (where.assemblyId.in.includes('parent')) {
+          return Promise.resolve([
+            { componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, assemblyId: 'parent', qtyPerUnit: 3 },
+            { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'child', assemblyId: 'parent', qtyPerUnit: 2 },
+          ]);
+        }
+        if (where.assemblyId.in.includes('child')) {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'p2', subAssemblyId: null, assemblyId: 'child', qtyPerUnit: 5 }]);
+        }
+        return Promise.resolve([]);
+      });
+      tx.product.count.mockResolvedValue(2);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Деталь 1', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, _count: { suppliers: 0 } },
+        { id: 'p2', article: 'A2', name: 'Деталь 2', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, _count: { suppliers: 0 } },
+      ]);
+
+      const result = await service.getAssemblyProducts(identity as any, 'parent', undefined, 0);
+
+      expect(result.items.find((i) => i.id === 'p1')?.qtyInAssembly).toBe(3); // direct line, own qtyPerUnit
+      expect(result.items.find((i) => i.id === 'p2')?.qtyInAssembly).toBe(10); // 2 (sub-assembly line) * 5 (its own line inside child)
+    });
+
+    it('sums qtyInAssembly across two sibling lines pointing at the same sub-assembly, at the same BOM depth', async () => {
+      tx.assemblyComponent.findMany.mockImplementation(({ where }: { where: { assemblyId: { in: string[] } } }) => {
+        if (where.assemblyId.in.includes('parent')) {
+          return Promise.resolve([
+            { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'shared', assemblyId: 'parent', qtyPerUnit: 1 },
+            { componentType: 'ASSEMBLY', productId: null, subAssemblyId: 'shared', assemblyId: 'parent', qtyPerUnit: 4 },
+          ]);
+        }
+        if (where.assemblyId.in.includes('shared')) {
+          return Promise.resolve([{ componentType: 'PRODUCT', productId: 'p1', subAssemblyId: null, assemblyId: 'shared', qtyPerUnit: 2 }]);
+        }
+        return Promise.resolve([]);
+      });
+      tx.product.count.mockResolvedValue(1);
+      tx.product.findMany.mockResolvedValue([
+        { id: 'p1', article: 'A1', name: 'Деталь 1', germanPriceExclVat: null, germanPriceInclVat: null, localPriceExclVat: null, localPriceInclVat: null, sellPriceEur: null, _count: { suppliers: 0 } },
+      ]);
+
+      const result = await service.getAssemblyProducts(identity as any, 'parent', undefined, 0);
+
+      expect(result.items.find((i) => i.id === 'p1')?.qtyInAssembly).toBe(10); // (1 + 4) combined multiplier into `shared` * 2 inside it
+    });
   });
 
   describe('getSuppliers (paginated by supplier, 2026-11-11)', () => {
