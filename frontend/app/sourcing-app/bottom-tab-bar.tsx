@@ -9,6 +9,7 @@ const TABS = [
   { href: '/sourcing-app', label: 'Категорії', icon: '📂' },
   { href: '/sourcing-app/search', label: 'Пошук', icon: '🔎' },
   { href: '/sourcing-app/suppliers', label: 'Постачальники', icon: '🏭' },
+  { href: '/sourcing-app/price-analysis', label: 'Ціни', icon: '📈' },
   { href: '/sourcing-app/status', label: 'Статус', icon: '📊' },
 ];
 

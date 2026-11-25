@@ -16,7 +16,18 @@ import type { RealSupplierPrice } from './sourcing-app-client';
  * product's own id, needed since the proposal is keyed on
  * (productId, supplierId), not just the supplier.
  */
-export function RealSupplierRow({ productId, supplier, canPropose }: { productId: string; supplier: RealSupplierPrice; canPropose: boolean }) {
+export function RealSupplierRow({
+  productId,
+  supplier,
+  canPropose,
+  cheapestOurPrice,
+}: {
+  productId: string;
+  supplier: RealSupplierPrice;
+  canPropose: boolean;
+  /** Lowest `ourPrice` among ALL real suppliers of this product — only passed when there are 2+ to compare, so one lone supplier never gets a meaningless "найдешевша" badge. "потрібен... аналізатор по цінах... відсоткове співвідношення" (2026-11-25). */
+  cheapestOurPrice?: number | null;
+}) {
   const [proposing, setProposing] = useState(false);
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
@@ -52,6 +63,15 @@ export function RealSupplierRow({ productId, supplier, canPropose }: { productId
         {supplier.ourPrice !== null && supplier.supplierOfferedPrice !== null && ' · '}
         {supplier.supplierOfferedPrice !== null && `постачальник: ${formatEur(supplier.supplierOfferedPrice)}`}
       </p>
+      {supplier.ourPrice !== null && cheapestOurPrice !== null && cheapestOurPrice !== undefined && (
+        supplier.ourPrice <= cheapestOurPrice ? (
+          <p className="mt-0.5 text-xs font-medium" style={{ color: 'var(--tg-link)' }}>💚 найдешевша</p>
+        ) : (
+          <p className="mt-0.5 text-xs font-medium" style={{ color: '#d97706' }}>
+            +{Math.round(((supplier.ourPrice - cheapestOurPrice) / cheapestOurPrice) * 100)}% від найдешевшої
+          </p>
+        )
+      )}
 
       {supplier.pendingProposal && (
         <p className="mt-1 text-xs" style={{ color: 'var(--tg-link)' }}>

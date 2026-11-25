@@ -17,6 +17,7 @@ import {
   type CreateCandidateInput,
   type AssemblySummary,
   type AssemblyDetail,
+  type PriceAnalysisResponse,
 } from './sourcing-app-client';
 
 /** The Mini App's own "not paired yet" screen checks for this specific code (TelegramWebAppAuthGuard) rather than a generic error state. */
@@ -51,6 +52,14 @@ export function useCategoryProducts(categoryId: string, search: string, page: nu
     queryKey: ['sourcing-app', 'categories', categoryId, 'products', search, page, filter],
     queryFn: () => sourcingAppClient.get<ProductListResponse>(`categories/${categoryId}/products`, { search: search || undefined, page: String(page), filter }),
     enabled: Boolean(categoryId),
+  });
+}
+
+/** "аналізатор по цінах... відсоткове співвідношення" (2026-11-25) — ranked list of products where our real suppliers' prices diverge most. */
+export function usePriceAnalysis(page: number) {
+  return useQuery({
+    queryKey: ['sourcing-app', 'price-analysis', page],
+    queryFn: () => sourcingAppClient.get<PriceAnalysisResponse>('price-analysis', { page: String(page) }),
   });
 }
 

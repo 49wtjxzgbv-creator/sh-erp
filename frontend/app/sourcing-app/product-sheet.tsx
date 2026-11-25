@@ -57,6 +57,14 @@ export function ProductSheet({
     setCopied(false);
   }, [productId]);
 
+  // "аналізатор по цінах... відсоткове співвідношення" (2026-11-25) — only
+  // meaningful with 2+ real suppliers to actually compare; a lone supplier
+  // would trivially always be "the cheapest".
+  const ourPrices = (product?.realSuppliers ?? [])
+    .map((s) => s.ourPrice)
+    .filter((v): v is number => v !== null && v > 0);
+  const cheapestOurPrice = ourPrices.length > 1 ? Math.min(...ourPrices) : null;
+
   function openAssembly(assemblyId: string) {
     onClose();
     router.push(`/sourcing-app/assemblies/${assemblyId}`);
@@ -192,7 +200,7 @@ export function ProductSheet({
               <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Наявні постачальники</p>
               <div className="space-y-2">
                 {product.realSuppliers.map((s) => (
-                  <RealSupplierRow key={s.id} productId={product.id} supplier={s} canPropose={Boolean(me?.isAdmin)} />
+                  <RealSupplierRow key={s.id} productId={product.id} supplier={s} canPropose={Boolean(me?.isAdmin)} cheapestOurPrice={cheapestOurPrice} />
                 ))}
               </div>
             </section>

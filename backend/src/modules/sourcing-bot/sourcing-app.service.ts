@@ -304,6 +304,54 @@ export class SourcingAppService {
   }
 
   /**
+   * "потрібен в застосунку аналізатор по цінах... між всіма постачальками і
+   * цінами загалом відсоткове співвідношення" (2026-11-25) — every product
+   * with at least 2 DIFFERENT real suppliers' own confirmed prices
+   * (`ProductSupplier.price` — "ourPrice", what we actually pay; NOT
+   * `supplierOfferedPrice`, the supplier's own unreconciled self-declared
+   * figure, and deliberately NOT our own `sellPriceEur` sale price either
+   * — mixing a cost price and a sale price into one "spread" would measure
+   * markup, not supplier competition), ranked by spread % (max vs min)
+   * descending — the biggest spread is the biggest potential saving from
+   * switching suppliers, which is the whole point of this screen. A
+   * product with 0 or 1 supplier price has nothing to compare and is
+   * excluded entirely, not shown with an empty/meaningless 0% row.
+   *
+   * Computed in-app, not via SQL aggregation — this company's whole
+   * sourcing catalog is a few hundred products (see `getCategoryProducts`'
+   * own "Всі товари" scope), small enough that fetching every product's
+   * supplier prices once and ranking in memory is simpler and fast enough,
+   * matching this module's existing "simple over clever" convention
+   * elsewhere (e.g. `flattenAssemblyProductIds`'s own level-batching, not
+   * a recursive CTE).
+   */
+  async getPriceAnalysis(identity: ResolvedSourcingIdentity, page: number) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const products = await tx.product.findMany({
+        where: { sourcingCategoryId: { not: null }, deletedAt: null },
+        select: { id: true, article: true, name: true, suppliers: { select: { price: true } } },
+      });
+
+      const withSpread = products
+        .map((p) => {
+          const prices = p.suppliers.map((s) => priceNumber(s.price)).filter((v): v is number => v !== null && v > 0);
+          const min = Math.min(...prices);
+          const max = Math.max(...prices);
+          return { id: p.id, article: p.article, name: p.name, supplierCount: prices.length, minPrice: min, maxPrice: max, spreadPercent: ((max - min) / min) * 100 };
+        })
+        .filter((p) => p.supplierCount >= 2 && p.spreadPercent > 0)
+        .sort((a, b) => b.spreadPercent - a.spreadPercent);
+
+      const total = withSpread.length;
+      const pageItems = withSpread.slice(page * APP_PAGE_SIZE, (page + 1) * APP_PAGE_SIZE);
+      const photoUrlByProductId = await this.photoUrlsByProductId(tx, identity, pageItems.map((p) => p.id));
+      const items = pageItems.map((p) => ({ ...p, photoUrl: photoUrlByProductId.get(p.id) ?? null }));
+
+      return { items, total, page, pageSize: APP_PAGE_SIZE, hasMore: (page + 1) * APP_PAGE_SIZE < total };
+    });
+  }
+
+  /**
    * "пошук товарів не по категоріям а по виробах... відкриваємо
    * [специфікацію] і у нас весь список товарів які в неї входять"
    * (2026-11-10) — every real `Assembly` ("специфікація"/виріб this
