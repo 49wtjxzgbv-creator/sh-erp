@@ -52,7 +52,6 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     const el = viewerRef.current;
     if (!el) return;
     el.cameraControls = true;
-    el.autoRotate = true;
     el.disableZoom = false;
     el.interactionPrompt = 'none';
     el.shadowIntensity = 1;
@@ -60,17 +59,34 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     el.src = src;
 
     // "чомусь не всі 3д моделі виробів відкриваються по центру екрана та не
-    // приближуються наскільки того хочеться" (2026-11-25): model-viewer's
-    // "auto" camera framing sizes/centers the shot from the model's own
-    // bounding box the instant its FIRST (possibly still-incomplete, for a
-    // large multi-mesh STEP-converted assembly) geometry is available —
-    // re-framing once `load` fires guarantees it's computed from the
-    // FULLY decoded mesh. `75%` (vs the 100% "fits exactly" default)
-    // pulls the camera in closer uniformly, since the complaint was never
-    // "wrong for one specific model" but "not zoomed in enough" in
-    // general across many different real assemblies.
+    // приближуються наскільки того хочеться" (2026-11-25, real assemblies
+    // 457185/457243/444685zb — confirmed via inspect-assembly-glb-bounds.ts
+    // against the actual production .glb files): these aren't off-center
+    // geometry, they're genuinely extreme shapes — a ~4.3m long conveyor
+    // only 0.16-0.25m thick (26.6x), a flat panel 0.06m thick spanning
+    // 2.3x3.4m (54.1x). Two compounding problems, not one:
+    //  1. `autoRotate` (default on) spins the camera around the model's
+    //     world Y-axis — for a shape elongated along a DIFFERENT axis, that
+    //     sweep alternates between "edge-on" (looks like a tiny speck) and
+    //     "broadside" (fills the frame) every few seconds, which reads as
+    //     "sometimes centered, sometimes not, never quite right" even
+    //     though each individual frame IS correctly centered. Turned off —
+    //     the drag-to-rotate hint below already assumes manual exploration
+    //     is the primary interaction, not a showcase spin.
+    //  2. model-viewer's "auto" camera distance fits the bounding SPHERE
+    //     (dominated by the longest dimension) — correct for a roughly
+    //     cube-shaped part, but leaves an elongated/flat one looking tiny
+    //     since its short dimension is dwarfed by the frame sized for its
+    //     long one. `getDimensions()` (real decoded-mesh size, available
+    //     once `load` fires) drives a tighter zoom specifically scaled to
+    //     how extreme the shape's aspect ratio actually is, rather than one
+    //     fixed percentage for every model regardless of shape.
     const handleLoad = () => {
-      el.cameraOrbit = 'auto auto 75%';
+      const { x, y, z } = el.getDimensions();
+      const [largest, mid] = [x, y, z].sort((a, b) => b - a);
+      const aspect = mid > 0 ? largest / mid : 1;
+      const zoomPercent = aspect > 8 ? 45 : aspect > 3 ? 60 : 85;
+      el.cameraOrbit = `auto auto ${zoomPercent}%`;
       el.jumpCameraToGoal();
     };
     el.addEventListener('load', handleLoad);
