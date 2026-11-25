@@ -19,15 +19,17 @@ export default function SourcingAppHomePage() {
   // reflected in the URL (not just component state) specifically so that
   // the category/assembly detail pages' back-button (`router.back()`)
   // actually lands back on whichever tab the user came from, not always
-  // the default one.
-  const mode: Mode = searchParams.get('mode') === 'assemblies' ? 'assemblies' : 'categories';
+  // the default one. "коли відкриваємо застосунок... пошук виробами на
+  // початку" (2026-11-25) — виробами is now the default (no `mode` param),
+  // категорії is the one that needs an explicit `?mode=categories`.
+  const mode: Mode = searchParams.get('mode') === 'categories' ? 'categories' : 'assemblies';
   const { data: categories, isLoading: loadingCategories } = useCategories();
   const { data: assemblies, isLoading: loadingAssemblies } = useAssemblies();
 
   const totalProductCount = categories?.reduce((sum, c) => sum + c.productCount, 0) ?? 0;
 
   function setMode(next: Mode) {
-    router.replace(next === 'categories' ? pathname : `${pathname}?mode=${next}`, { scroll: false });
+    router.replace(next === 'assemblies' ? pathname : `${pathname}?mode=${next}`, { scroll: false });
   }
 
   return (
