@@ -45,7 +45,7 @@ export function DocumentPreview({ doc, onClose }: { doc: { id: string; name: str
           <DialogPrimitive.Title className="sr-only">{doc.name}</DialogPrimitive.Title>
           <div
             className="flex shrink-0 items-center justify-between gap-2 p-3"
-            style={{ paddingTop: 'calc(max(0.75rem, env(safe-area-inset-top)) + var(--tg-content-safe-area-top, 0px))' }}
+            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
           >
             <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{doc.name}</p>
             <DialogPrimitive.Close

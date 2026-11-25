@@ -19,14 +19,6 @@ export interface TelegramThemeParams {
   destructive_text_color?: string;
 }
 
-/** Bot API 8.0+ — insets in CSS px, only non-zero while the Mini App is actually running (empty object otherwise). */
-export interface TelegramSafeAreaInset {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
-}
-
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { user?: { id: number; first_name?: string } };
@@ -35,29 +27,8 @@ export interface TelegramWebApp {
   ready(): void;
   expand(): void;
   close(): void;
-  /** Device-level safe area (notch, home indicator) — same thing `env(safe-area-inset-*)` already covers via CSS, kept here only for completeness. */
-  safeAreaInset?: TelegramSafeAreaInset;
-  /**
-   * 2026-11-25 user report ("вгорі кнопка закрити і інші налазять на кнопки
-   * нашого застосунку" — right after `requestFullscreen()` shipped): in
-   * fullscreen mode Telegram floats its OWN close/more-menu buttons directly
-   * ON TOP of the WebView content, not above it — `env(safe-area-inset-top)`
-   * (the device notch) knows nothing about this; THIS inset is specifically
-   * the space Telegram's own floating chrome occupies, so any fixed header
-   * must add it on top of the device safe area, not instead of it.
-   */
-  contentSafeAreaInset?: TelegramSafeAreaInset;
-  /**
-   * Bot API 8.0+ — on a phone, `expand()` already covers the full screen,
-   * but on iPad/desktop Telegram clients it only expands within a
-   * phone-sized modal window; THIS is the call that actually takes over
-   * the whole screen there (2026-11-25 user report: "в телеграм постачальники
-   * на айпаді відкривається в маленькому телефонному розмірі"). Optional —
-   * older clients won't have it.
-   */
-  requestFullscreen?(): void;
-  onEvent(event: 'themeChanged' | 'safeAreaChanged' | 'contentSafeAreaChanged', callback: () => void): void;
-  offEvent(event: 'themeChanged' | 'safeAreaChanged' | 'contentSafeAreaChanged', callback: () => void): void;
+  onEvent(event: 'themeChanged', callback: () => void): void;
+  offEvent(event: 'themeChanged', callback: () => void): void;
   showAlert(message: string, callback?: () => void): void;
   showConfirm(message: string, callback: (confirmed: boolean) => void): void;
   openLink(url: string): void;
