@@ -108,26 +108,6 @@ export interface ProductListResponse {
   hasMore: boolean;
 }
 
-/** "аналізатор по цінах... між всіма постачальками і цінами загалом відсоткове співвідношення" (2026-11-25) — one row per product with 2+ real supplier prices, ranked by spread % descending (biggest potential saving from switching suppliers first). */
-export interface PriceAnalysisRow {
-  id: string;
-  article: string;
-  name: string;
-  photoUrl: string | null;
-  supplierCount: number;
-  minPrice: number;
-  maxPrice: number;
-  spreadPercent: number;
-}
-
-export interface PriceAnalysisResponse {
-  items: PriceAnalysisRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  hasMore: boolean;
-}
-
 export interface RealSupplierPrice {
   id: string;
   name: string;

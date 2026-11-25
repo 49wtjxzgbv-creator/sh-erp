@@ -240,45 +240,6 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
     });
   });
 
-  describe('getPriceAnalysis (2026-11-25 — "аналізатор по цінах... між всіма постачальками і цінами загалом відсоткове співвідношення")', () => {
-    it('ranks products by supplier-price spread % descending, excluding products with fewer than 2 supplier prices', async () => {
-      tx.product.findMany.mockResolvedValue([
-        { id: 'p1', article: 'A1', name: 'Малий розкид', suppliers: [{ price: 10 }, { price: 11 }] }, // 10% spread
-        { id: 'p2', article: 'A2', name: 'Великий розкид', suppliers: [{ price: 10 }, { price: 25 }] }, // 150% spread
-        { id: 'p3', article: 'A3', name: 'Один постачальник', suppliers: [{ price: 10 }] }, // excluded — nothing to compare
-        { id: 'p4', article: 'A4', name: 'Без постачальників', suppliers: [] }, // excluded
-      ]);
-
-      const result = await service.getPriceAnalysis(identity as any, 0);
-
-      expect(result.items.map((i: any) => i.id)).toEqual(['p2', 'p1']);
-      expect(result.items[0]).toMatchObject({ id: 'p2', minPrice: 10, maxPrice: 25, spreadPercent: 150 });
-      expect(result.total).toBe(2);
-    });
-
-    it('ignores null/zero supplier prices when computing the spread', async () => {
-      tx.product.findMany.mockResolvedValue([
-        { id: 'p1', article: 'A1', name: 'X', suppliers: [{ price: 10 }, { price: null }, { price: 0 }, { price: 20 }] },
-      ]);
-
-      const result = await service.getPriceAnalysis(identity as any, 0);
-
-      expect(result.items[0]).toMatchObject({ id: 'p1', supplierCount: 2, minPrice: 10, maxPrice: 20, spreadPercent: 100 });
-    });
-
-    it('paginates, reporting hasMore from the total', async () => {
-      tx.product.findMany.mockResolvedValue(
-        Array.from({ length: 35 }, (_, i) => ({ id: `p${i}`, article: `A${i}`, name: `X${i}`, suppliers: [{ price: 10 }, { price: 20 }] })),
-      );
-
-      const result = await service.getPriceAnalysis(identity as any, 0);
-
-      expect(result.items).toHaveLength(30);
-      expect(result.total).toBe(35);
-      expect(result.hasMore).toBe(true);
-    });
-  });
-
   describe('getAssemblies (2026-11-10 — "пошук товарів не по категоріям а по виробах")', () => {
     it('maps _count.components to a plain componentCount, with no photo', async () => {
       tx.assembly.findMany.mockResolvedValue([{ id: 'asm1', name: 'Моноблок А', article: 'M-A', _count: { components: 7 } }]);

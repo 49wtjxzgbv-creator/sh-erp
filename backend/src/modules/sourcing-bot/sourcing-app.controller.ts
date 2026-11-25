@@ -50,12 +50,6 @@ export class SourcingAppController {
     return this.sourcingAppService.getCategoryProducts(identity, categoryId, search, Number(page ?? 0) || 0, filter);
   }
 
-  @Get('price-analysis')
-  @ApiOperation({ summary: 'Products with 2+ real supplier prices, ranked by spread % (max vs min) descending — biggest potential saving from switching suppliers first.' })
-  async priceAnalysis(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Query('page') page?: string) {
-    return this.sourcingAppService.getPriceAnalysis(identity, Number(page ?? 0) || 0);
-  }
-
   @Get('assemblies')
   @ApiOperation({ summary: 'Every "виріб"/специфікація (Assembly) this company manufactures, with its direct BOM-line count.' })
   async assemblies(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity) {
