@@ -8,6 +8,7 @@ import { useTelegramSafeArea } from './use-telegram-safe-area';
 import { useMe, isNotPairedError } from './use-sourcing-app';
 import { NotPairedScreen } from './not-paired-screen';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Logo } from '@/components/domain/shell/logo';
 import { BottomTabBar } from './bottom-tab-bar';
 
 /**
@@ -73,7 +74,13 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
                 paddingTop: 'calc(max(0.75rem, env(safe-area-inset-top)) + var(--tg-content-safe-area-top, 0px))',
               }}
             >
-              <p className="text-sm font-semibold">👋 {me?.fullName ?? 'Пошук постачальників'}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">👋 {me?.fullName ?? 'Пошук постачальників'}</p>
+                <div className="flex shrink-0 items-center gap-1.5 opacity-80">
+                  <Logo size={18} />
+                  <span className="text-xs font-semibold">SH ERP</span>
+                </div>
+              </div>
             </header>
             <main id="sourcing-app-scroll" className="flex-1 overflow-y-auto">{children}</main>
             <BottomTabBar />
