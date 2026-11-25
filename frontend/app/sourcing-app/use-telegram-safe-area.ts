@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { getTelegramWebApp, TELEGRAM_FULLSCREEN_MIN_WIDTH } from './telegram-webapp';
+import { getTelegramWebApp, isLargeScreenDevice } from './telegram-webapp';
 
 /**
  * Typical height of Telegram's floating close/more-menu buttons in
- * fullscreen mode — used as a FLOOR, not the real value, because a real
+ * fullscreen mode -- used as a FLOOR, not the real value, because a real
  * device tested 2026-11-25 reported `contentSafeAreaInset.top` as 0 while
  * visibly drawing those buttons over the content. Only applied when we
- * actually requested fullscreen (see TELEGRAM_FULLSCREEN_MIN_WIDTH) — on a
- * phone, which never calls requestFullscreen(), this stays irrelevant.
+ * actually requested fullscreen (see isLargeScreenDevice) -- on a phone,
+ * which never calls requestFullscreen(), this stays irrelevant.
  */
 const FALLBACK_CONTENT_SAFE_AREA_TOP_PX = 54;
 
@@ -23,12 +23,12 @@ function applyContentSafeArea(top: number, bottom: number, fullscreenRequested: 
  * Mirrors `Telegram.WebApp.contentSafeAreaInset` onto `--tg-content-safe-
  * area-*` CSS custom properties, with a guaranteed floor for the top inset
  * whenever this route requested fullscreen (see this file's own constant
- * comment for why the floor exists — Telegram's self-reported value can't
+ * comment for why the floor exists -- Telegram's self-reported value can't
  * be trusted alone). Defaults to 0 outside Telegram or on an older client.
  */
 export function useTelegramSafeArea() {
   useEffect(() => {
-    const fullscreenRequested = typeof window !== 'undefined' && window.innerWidth >= TELEGRAM_FULLSCREEN_MIN_WIDTH;
+    const fullscreenRequested = isLargeScreenDevice();
     const webApp = getTelegramWebApp();
     if (!webApp) {
       applyContentSafeArea(0, 0, false);

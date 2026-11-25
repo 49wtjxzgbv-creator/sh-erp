@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Script from 'next/script';
-import { getTelegramWebApp, TELEGRAM_FULLSCREEN_MIN_WIDTH } from './telegram-webapp';
+import { getTelegramWebApp, isLargeScreenDevice } from './telegram-webapp';
 import { useTelegramTheme } from './use-telegram-theme';
 import { useTelegramSafeArea } from './use-telegram-safe-area';
 import { useMe, isNotPairedError } from './use-sourcing-app';
@@ -33,11 +33,11 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
     const webApp = getTelegramWebApp();
     webApp?.ready();
     webApp?.expand();
-    // See TELEGRAM_FULLSCREEN_MIN_WIDTH's doc comment — only iPad/desktop
-    // (which open in a small phone-sized window without this) take on
-    // fullscreen's floating-chrome overlap risk; a phone already fills the
-    // screen via expand() alone.
-    if (window.innerWidth >= TELEGRAM_FULLSCREEN_MIN_WIDTH) {
+    // See isLargeScreenDevice's doc comment — only iPad/desktop (which open
+    // in a small phone-sized window without this) take on fullscreen's
+    // floating-chrome overlap risk; a phone already fills the screen via
+    // expand() alone.
+    if (isLargeScreenDevice()) {
       webApp?.requestFullscreen?.();
     }
   }, [sdkReady]);

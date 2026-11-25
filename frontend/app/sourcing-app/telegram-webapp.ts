@@ -41,6 +41,19 @@ export interface TelegramSafeAreaInset {
  */
 export const TELEGRAM_FULLSCREEN_MIN_WIDTH = 768;
 
+/**
+ * 2026-11-25, second attempt: `window.innerWidth` measures the CURRENT
+ * WebView viewport — which on iPad is exactly the small phone-sized sheet
+ * this whole fix exists to escape, so gating on it never actually fired
+ * (real user report: "на айпаді так і маленьке" — still small after the
+ * width-gated fix shipped). `window.screen.width` is the real device
+ * screen size regardless of how small the WebView is currently rendered,
+ * so it correctly identifies a tablet/desktop even before expanding.
+ */
+export function isLargeScreenDevice(): boolean {
+  return typeof window !== 'undefined' && window.screen.width >= TELEGRAM_FULLSCREEN_MIN_WIDTH;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: { user?: { id: number; first_name?: string } };
