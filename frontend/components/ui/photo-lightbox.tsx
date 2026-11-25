@@ -72,7 +72,14 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
         // button) — this is the one control on the whole screen with
         // nothing else to accidentally hit, so it should be impossible to
         // miss or misclick.
-        className="absolute right-4 top-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
+        className="absolute right-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
+        // `--tg-content-safe-area-top` (defaults to 0px everywhere outside
+        // the sourcing-app Telegram Mini App) keeps this clear of
+        // Telegram's own floating close/menu buttons in fullscreen mode —
+        // same pattern as sourcing-app's other full-screen overlays
+        // (model-3d-viewer, document-preview). A no-op on every other page
+        // that renders this shared component.
+        style={{ top: 'calc(1rem + env(safe-area-inset-top) + var(--tg-content-safe-area-top, 0px))' }}
         aria-label="Close"
       >
         <X className="h-7 w-7" />
