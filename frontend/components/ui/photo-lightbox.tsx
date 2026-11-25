@@ -35,17 +35,6 @@ export interface PhotoLightboxProps {
  * listener closes on both. The button keeps its own onClick too, but is
  * effectively redundant now: this capture-phase listener already fires
  * (and closes) before the click even reaches the button.
- *
- * `e.stopPropagation()` (2026-11-25 user report, sourcing-app on iPad:
- * tapping beside the photo closed the lightbox but the SAME tap also
- * landed on whatever was underneath, e.g. navigating a list item): closing
- * triggers a synchronous React unmount of the backdrop mid-dispatch: on
- * WebKit touch devices, the browser's hit-testing for that tap can then
- * resolve against whatever element is NOW exposed at that point instead of
- * the (just-removed) backdrop, letting the tap "fall through" to the page
- * behind. Stopping propagation the moment we decide to close keeps this
- * one event from being used for anything else, regardless of what the DOM
- * looks like a moment later.
  */
 export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -56,7 +45,6 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
     }
     function onDocumentClick(e: MouseEvent) {
       if (imgRef.current && e.target instanceof Node && imgRef.current.contains(e.target)) return;
-      e.stopPropagation();
       onClose();
     }
     document.addEventListener('keydown', onKeyDown);
@@ -84,21 +72,13 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
         // button) — this is the one control on the whole screen with
         // nothing else to accidentally hit, so it should be impossible to
         // miss or misclick.
-        className="absolute right-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
-        // `--tg-content-safe-area-top` (defaults to 0px everywhere outside
-        // the sourcing-app Telegram Mini App) keeps this clear of
-        // Telegram's own floating close/menu buttons in fullscreen mode —
-        // same pattern as sourcing-app's other full-screen overlays
-        // (model-3d-viewer, document-preview). A no-op on every other page
-        // that renders this shared component.
-        style={{ top: 'calc(1rem + env(safe-area-inset-top) + var(--tg-content-safe-area-top, 0px))' }}
+        className="absolute right-4 top-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
         aria-label="Close"
       >
         <X className="h-7 w-7" />
       </button>
-      {/* 2026-11-25 user report ("є деякі маленького розміру... і їх майже не видно"): `max-h`/`max-w` alone only ever cap a SMALL source photo down to its own tiny intrinsic size — nothing forces it to scale UP to fill the available space. Giving the `<img>` a real `w-[90vw] h-[90vh]` box lets `object-contain` scale in BOTH directions (shrinks a large photo the same as before, but now also enlarges a small one) while still preserving its aspect ratio and never exceeding the viewport. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- same cross-origin presigned-URL reasoning as Avatar */}
-      <img ref={imgRef} src={src} alt={alt} className="h-[90vh] w-[90vw] rounded-md object-contain shadow-2xl" />
+      <img ref={imgRef} src={src} alt={alt} className="max-h-[90vh] max-w-[90vw] rounded-md object-contain shadow-2xl" />
     </div>,
     document.body,
   );

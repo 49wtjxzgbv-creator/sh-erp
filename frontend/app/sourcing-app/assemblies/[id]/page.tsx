@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PhotoLightbox } from '@/components/ui/photo-lightbox';
+import { PhotoLightbox } from '../../photo-lightbox';
 import { useAssembly, useAssemblyProducts, useBulkTranslate, type ProductFilter } from '../../use-sourcing-app';
 import { useTelegramBackButton } from '../../use-telegram-back-button';
 import { ProductRow } from '../../product-row';

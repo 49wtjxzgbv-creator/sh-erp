@@ -11,7 +11,7 @@ import { AddCandidateSheet } from './add-candidate-sheet';
 import { NoteEditor } from './note-editor';
 import { RealSupplierRow } from './real-supplier-row';
 import { formatWeightKg } from './format-weight';
-import { PhotoLightbox } from '@/components/ui/photo-lightbox';
+import { PhotoLightbox } from './photo-lightbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { getTelegramWebApp } from './telegram-webapp';
