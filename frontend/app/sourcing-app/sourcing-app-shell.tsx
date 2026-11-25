@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Script from 'next/script';
 import { getTelegramWebApp } from './telegram-webapp';
 import { useTelegramTheme } from './use-telegram-theme';
+import { useTelegramSafeArea } from './use-telegram-safe-area';
 import { useMe, isNotPairedError } from './use-sourcing-app';
 import { NotPairedScreen } from './not-paired-screen';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,6 +19,7 @@ import { BottomTabBar } from './bottom-tab-bar';
  */
 export function SourcingAppShell({ children }: { children: React.ReactNode }) {
   useTelegramTheme();
+  useTelegramSafeArea();
 
   const [sdkReady, setSdkReady] = useState(false);
 
@@ -60,7 +62,11 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
             {/* "видно що фон напівпрозорий" (2026-11-10)-class fixes already gave every full-screen overlay (MobileSheet, Model3DViewer, DocumentPreview) a safe-area-aware top inset — this header is the one piece of chrome visible on EVERY screen and was the one left out. */}
             <header
               className="shrink-0 border-b px-4 pb-3"
-              style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 20%, transparent)', paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+              style={{
+                borderColor: 'color-mix(in srgb, var(--tg-hint) 20%, transparent)',
+                // `--tg-content-safe-area-top` (2026-11-25) stacks ON TOP of the device safe area — it's Telegram's own floating close/menu buttons in fullscreen mode, not the device notch, so one does not substitute for the other.
+                paddingTop: 'calc(max(0.75rem, env(safe-area-inset-top)) + var(--tg-content-safe-area-top, 0px))',
+              }}
             >
               <p className="text-sm font-semibold">👋 {me?.fullName ?? 'Пошук постачальників'}</p>
             </header>

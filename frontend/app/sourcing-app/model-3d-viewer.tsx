@@ -80,7 +80,7 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
           <DialogPrimitive.Close
             className="absolute right-4 z-10 rounded-full bg-black/60 p-3 text-white transition-colors hover:bg-black/80"
             aria-label="Закрити"
-            style={{ top: 'max(1rem, env(safe-area-inset-top))' }}
+            style={{ top: 'calc(max(1rem, env(safe-area-inset-top)) + var(--tg-content-safe-area-top, 0px))' }}
           >
             <X className="h-7 w-7" />
           </DialogPrimitive.Close>
