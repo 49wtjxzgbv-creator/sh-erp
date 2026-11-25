@@ -56,6 +56,12 @@ export class SourcingAppController {
     return this.sourcingAppService.getAssemblies(identity);
   }
 
+  @Get('assemblies/:id')
+  @ApiOperation({ summary: 'A single "виріб"/специфікація (Assembly) — name, article, photo, direct BOM-line count — for the parts-list screen\'s own header.' })
+  async assembly(@CurrentSourcingIdentity() identity: ResolvedSourcingIdentity, @Param('id') assemblyId: string) {
+    return this.sourcingAppService.getAssembly(identity, assemblyId);
+  }
+
   @Get('assemblies/:id/products')
   @ApiOperation({ summary: 'Every real Product anywhere in this assembly\'s BOM tree (recursively flattened through sub-assemblies), paginated.' })
   async assemblyProducts(

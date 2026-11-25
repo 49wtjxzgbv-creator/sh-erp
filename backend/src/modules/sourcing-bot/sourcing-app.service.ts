@@ -330,6 +330,32 @@ export class SourcingAppService {
   }
 
   /**
+   * "там перелік товарів... бажано щоб вгорі фото виробу артикул назва"
+   * (2026-11-25) — the single-assembly counterpart to `getAssemblies`
+   * above, for the parts-list screen's own header (opened by id from the
+   * list, which carries no state across the navigation) so it doesn't
+   * drop straight into the flat parts list with no context for what виріб
+   * they're even looking at.
+   */
+  async getAssembly(identity: ResolvedSourcingIdentity, assemblyId: string) {
+    return this.prisma.runInTenantTransaction(tenantCtx(identity), async (tx) => {
+      const assembly = await tx.assembly.findUnique({
+        where: { id: assemblyId },
+        select: { id: true, name: true, article: true, deletedAt: true, _count: { select: { components: true } } },
+      });
+      if (!assembly || assembly.deletedAt) throw new CodedNotFoundException('SOURCING_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
+      const photoUrlByAssemblyId = await this.photoUrlsByEntityId(tx, identity, 'Assembly', 'ASSEMBLY_PHOTO', [assembly.id]);
+      return {
+        id: assembly.id,
+        name: assembly.name,
+        article: assembly.article,
+        componentCount: assembly._count.components,
+        photoUrl: photoUrlByAssemblyId.get(assembly.id) ?? null,
+      };
+    });
+  }
+
+  /**
    * Every real `Product` anywhere in `assemblyId`'s BOM tree, at ANY depth,
    * mapped to how many of it go into ONE unit of the root assembly — same
    * cycle-guard shape as `AssembliesService#flattenRequirements` (private

@@ -62,6 +62,16 @@ export function useAssemblies() {
   });
 }
 
+/** "вгорі фото виробу артикул назва і написано що цей виріб складається з таких компонентів" (2026-11-25) — the parts-list page's own header; opened by id from the list, which carries no state across the navigation, so this is a real fetch, not a cache reuse of useAssemblies' list query. */
+export function useAssembly(assemblyId: string) {
+  return useQuery({
+    queryKey: ['sourcing-app', 'assemblies', assemblyId],
+    queryFn: () => sourcingAppClient.get<AssemblySummary>(`assemblies/${assemblyId}`),
+    enabled: Boolean(assemblyId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useAssemblyProducts(assemblyId: string, search: string, page: number, filter?: ProductFilter) {
   return useQuery({
     queryKey: ['sourcing-app', 'assemblies', assemblyId, 'products', search, page, filter],

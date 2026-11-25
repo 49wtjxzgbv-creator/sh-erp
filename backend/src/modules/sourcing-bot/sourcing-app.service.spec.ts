@@ -35,7 +35,7 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       sourcingCandidateSupplier: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn(), findUnique: jest.fn() },
       company: { findUnique: jest.fn().mockResolvedValue({ name: 'Наша Компанія' }) },
       sourcingOutreach: { update: jest.fn(), create: jest.fn() },
-      assembly: { findMany: jest.fn().mockResolvedValue([]) },
+      assembly: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       assemblyComponent: { findMany: jest.fn().mockResolvedValue([]) },
       sourcingNote: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn(), deleteMany: jest.fn() },
       sourcingPriceProposal: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
@@ -253,6 +253,26 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       const result = await service.getAssemblies(identity as any);
       expect(tx.fileAsset.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ entityType: 'Assembly', domain: 'ASSEMBLY_PHOTO' }) }));
       expect(result[0].photoUrl).toBe('https://example.test/photo.jpg');
+    });
+  });
+
+  describe('getAssembly (2026-11-25 — "вгорі фото виробу артикул назва")', () => {
+    it('returns a single assembly by id with its photo and componentCount', async () => {
+      tx.assembly.findUnique.mockResolvedValue({ id: 'asm1', name: 'Моноблок А', article: 'M-A', deletedAt: null, _count: { components: 7 } });
+      tx.fileAsset.findMany.mockResolvedValue([{ id: 'file1', entityId: 'asm1' }]);
+
+      const result = await service.getAssembly(identity as any, 'asm1');
+
+      expect(tx.assembly.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'asm1' } }));
+      expect(result).toEqual({ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7, photoUrl: 'https://example.test/photo.jpg' });
+    });
+
+    it('throws SOURCING_ASSEMBLY_NOT_FOUND for a missing or soft-deleted assembly', async () => {
+      tx.assembly.findUnique.mockResolvedValue(null);
+      await expect(service.getAssembly(identity as any, 'missing')).rejects.toMatchObject({ response: { code: 'SOURCING_ASSEMBLY_NOT_FOUND' } });
+
+      tx.assembly.findUnique.mockResolvedValue({ id: 'asm1', name: 'X', article: null, deletedAt: new Date(), _count: { components: 0 } });
+      await expect(service.getAssembly(identity as any, 'asm1')).rejects.toMatchObject({ response: { code: 'SOURCING_ASSEMBLY_NOT_FOUND' } });
     });
   });
 

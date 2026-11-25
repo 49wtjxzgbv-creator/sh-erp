@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAssemblyProducts, useBulkTranslate, type ProductFilter } from '../../use-sourcing-app';
+import { useAssembly, useAssemblyProducts, useBulkTranslate, type ProductFilter } from '../../use-sourcing-app';
 import { useTelegramBackButton } from '../../use-telegram-back-button';
 import { ProductRow } from '../../product-row';
 import { ProductSheet } from '../../product-sheet';
@@ -26,6 +26,7 @@ export default function AssemblyProductsPage() {
   // на головне" (2026-11-10) — see categories/[id]/page.tsx's own comment.
   useTelegramBackButton(() => router.back());
 
+  const { data: assembly } = useAssembly(params.id);
   const { data, isLoading } = useAssemblyProducts(params.id, search, page, filter);
   const { translateAll, progress } = useBulkTranslate();
 
@@ -36,6 +37,24 @@ export default function AssemblyProductsPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* "вгорі фото виробу артикул назва і написано що цей виріб складається з таких компонентів" (2026-11-25) — dropping straight into the flat parts list with no context for which виріб this even is. NOT part of the sticky bar below — this scrolls away normally, same as any page header. */}
+      {assembly && (
+        <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 15%, transparent)' }}>
+          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg" style={{ background: 'var(--tg-secondary-bg)' }}>
+            {assembly.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
+              <img src={assembly.photoUrl} alt={assembly.name} className="h-full w-full object-contain" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-2xl">🏭</div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{assembly.article ? `${assembly.article} — ` : ''}{assembly.name}</p>
+            <p className="mt-0.5 text-xs" style={{ color: 'var(--tg-hint)' }}>Цей виріб складається з таких компонентів:</p>
+          </div>
+        </div>
+      )}
+
       <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>
         <div className="p-3 pb-2">
           <Input
