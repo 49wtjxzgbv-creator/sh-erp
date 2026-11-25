@@ -58,6 +58,23 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     el.shadowIntensity = 1;
     el.exposure = 1;
     el.src = src;
+
+    // "чомусь не всі 3д моделі виробів відкриваються по центру екрана та не
+    // приближуються наскільки того хочеться" (2026-11-25): model-viewer's
+    // "auto" camera framing sizes/centers the shot from the model's own
+    // bounding box the instant its FIRST (possibly still-incomplete, for a
+    // large multi-mesh STEP-converted assembly) geometry is available —
+    // re-framing once `load` fires guarantees it's computed from the
+    // FULLY decoded mesh. `75%` (vs the 100% "fits exactly" default)
+    // pulls the camera in closer uniformly, since the complaint was never
+    // "wrong for one specific model" but "not zoomed in enough" in
+    // general across many different real assemblies.
+    const handleLoad = () => {
+      el.cameraOrbit = 'auto auto 75%';
+      el.jumpCameraToGoal();
+    };
+    el.addEventListener('load', handleLoad);
+    return () => el.removeEventListener('load', handleLoad);
   }, [ready, src]);
 
   useEffect(() => {
