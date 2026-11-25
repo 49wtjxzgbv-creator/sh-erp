@@ -195,6 +195,30 @@ describe('FilesService', () => {
     expect(prisma.tenant.fileAsset.findMany).not.toHaveBeenCalled();
   });
 
+  it('listByIds (and every other presigned-download path) sets Content-Disposition: inline for a previewable type like PDF, so FilePreviewButton/document-preview can still render it in an iframe (2026-11-25 regression — a prior fix forced attachment on EVERY file, breaking PDF preview on the main site AND the sourcing-app Mini App)', async () => {
+    prisma.tenant.fileAsset.findMany.mockResolvedValue([
+      { id: 'f1', originalName: 'invoice.pdf', storageKey: 'tenants/c1/product_document/product/p1/invoice.pdf' },
+    ]);
+
+    await service.listByIds(user, ['f1']);
+
+    const calls = (getSignedUrl as jest.Mock).mock.calls;
+    const disposition = calls[calls.length - 1][1].input.ResponseContentDisposition as string;
+    expect(disposition).toBe('inline; filename="invoice.pdf"');
+  });
+
+  it('listByIds keeps Content-Disposition: attachment for a STEP file — the one format that genuinely cannot be usefully previewed inline (opens as a wall of raw ASCII otherwise)', async () => {
+    prisma.tenant.fileAsset.findMany.mockResolvedValue([
+      { id: 'f1', originalName: 'part.step', storageKey: 'tenants/c1/product_document/product/p1/part.step' },
+    ]);
+
+    await service.listByIds(user, ['f1']);
+
+    const calls = (getSignedUrl as jest.Mock).mock.calls;
+    const disposition = calls[calls.length - 1][1].input.ResponseContentDisposition as string;
+    expect(disposition).toBe('attachment; filename="part.step"');
+  });
+
   describe('getSpreadsheetPreview', () => {
     const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 

@@ -15,6 +15,25 @@ import { GlbOptimizationService } from './glb-optimization.service';
 const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 const DOWNLOAD_URL_TTL_SECONDS = 60 * 60;
 
+/**
+ * 2026-11-24 fix ("не зміг скачати прикріплений файл степ") forced
+ * `ResponseContentDisposition: attachment` on EVERY presigned download URL
+ * below, to stop a plain-text format like STEP (literal ASCII, ISO-10303-21)
+ * from opening as a wall of raw text instead of downloading. 2026-11-25
+ * regression report ("не працює перегляд пдф файлів на сайті та в
+ * додатку"): that went too far — forcing a PDF (or any other previewable
+ * type) to `attachment` too broke every inline preview surface that points
+ * an `<iframe>`/viewer at this same URL (FilePreviewButton's PDF iframe,
+ * sourcing-app's document-preview). Only a format nobody can usefully
+ * preview inline anyway (STEP/STP, CSV — same raw-text problem) still needs
+ * forcing; everything else goes back to `inline`, which still carries the
+ * real filename for "Save As" either way.
+ */
+function contentDisposition(filename: string): string {
+  const forceDownload = /\.(step|stp|csv)$/i.test(filename);
+  return `${forceDownload ? 'attachment' : 'inline'}; filename="${filename}"`;
+}
+
 /** Only the modern OOXML format — ExcelJS (already a backend dependency, see products-import-export.service.ts) reads .xlsx, not legacy binary .xls. A genuine legacy .xls attachment falls back to "no preview, download instead" client-side, same honest-gap convention as any other unsupported preview type — not silently claimed to work. */
 const SPREADSHEET_PREVIEW_MIME_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
 const MAX_PREVIEW_SIZE_BYTES = 15 * 1024 * 1024;
@@ -416,19 +435,13 @@ export class FilesService {
     const fileAsset = await this.prisma.tenant.fileAsset.findUnique({ where: { id: fileAssetId } });
     if (!fileAsset || fileAsset.deletedAt) throw new CodedNotFoundException('FILE_NOT_FOUND', 'File not found.');
 
-    // "не зміг скачати прикріплений файл степ" (2026-11-24) — same gap as
-    // uploadEphemeralExport had (see that method's own 2026-09-06 comment):
-    // without ResponseContentDisposition, R2 serves the object inline, so
-    // a plain-text format like STEP (ISO-10303-21, literal ASCII) just
-    // opens as a wall of text in a new tab instead of downloading. A
-    // binary format (glb, etc.) never showed this — the browser can't
-    // render it inline either way, so it downloads regardless.
+    // See contentDisposition's own doc comment.
     const downloadUrl = await getSignedUrl(
       this.r2,
       new GetObjectCommand({
         Bucket: R2_BUCKET,
         Key: fileAsset.storageKey,
-        ResponseContentDisposition: `attachment; filename="${fileAsset.originalName}"`,
+        ResponseContentDisposition: contentDisposition(fileAsset.originalName),
       }),
       { expiresIn: DOWNLOAD_URL_TTL_SECONDS },
     );
@@ -543,16 +556,11 @@ export class FilesService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // "не зміг скачати прикріплений файл степ" (2026-11-24) — every
-    // presigned URL below used to omit ResponseContentDisposition, so a
-    // plain-text format (STEP, CSV, etc.) opened inline in a new tab
-    // instead of downloading — see getDownloadUrl's own comment for the
-    // full story. The .glb variants never showed this (binary, can't
-    // render inline either way) but get the same header for consistency.
+    // See contentDisposition's own doc comment.
     const withUrls = await Promise.all(
       files.map(async (file) => ({
         ...file,
-        downloadUrl: await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }), {
+        downloadUrl: await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey, ResponseContentDisposition: contentDisposition(file.originalName) }), {
           expiresIn: DOWNLOAD_URL_TTL_SECONDS,
         }),
         // Only set once StepConversionService finishes — lets the frontend
@@ -561,7 +569,7 @@ export class FilesService {
         // comment for why that matters for a large real assembly).
         convertedDownloadUrl:
           file.conversionStatus === 'DONE' && file.convertedStorageKey
-            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.convertedStorageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }), {
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.convertedStorageKey, ResponseContentDisposition: contentDisposition(file.originalName) }), {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
@@ -571,7 +579,7 @@ export class FilesService {
         // conditional-fallback shape as `convertedDownloadUrl` above).
         optimizedDownloadUrl:
           file.optimizationStatus === 'DONE' && file.optimizedStorageKey
-            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.optimizedStorageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }), {
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.optimizedStorageKey, ResponseContentDisposition: contentDisposition(file.originalName) }), {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
@@ -582,7 +590,7 @@ export class FilesService {
         // mobile device, so a computer always keeps full detail.
         mobileOptimizedDownloadUrl:
           file.mobileOptimizationStatus === 'DONE' && file.mobileOptimizedStorageKey
-            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.mobileOptimizedStorageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }), {
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.mobileOptimizedStorageKey, ResponseContentDisposition: contentDisposition(file.originalName) }), {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
@@ -595,7 +603,7 @@ export class FilesService {
         // `mobileOptimizedDownloadUrl` above, which it renders correctly.
         arOptimizedDownloadUrl:
           file.arOptimizationStatus === 'DONE' && file.arOptimizedStorageKey
-            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.arOptimizedStorageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }), {
+            ? await getSignedUrl(this.r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.arOptimizedStorageKey, ResponseContentDisposition: contentDisposition(file.originalName) }), {
                 expiresIn: DOWNLOAD_URL_TTL_SECONDS,
               })
             : undefined,
@@ -628,7 +636,7 @@ export class FilesService {
         originalName: file.originalName,
         downloadUrl: await getSignedUrl(
           this.r2,
-          new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey, ResponseContentDisposition: `attachment; filename="${file.originalName}"` }),
+          new GetObjectCommand({ Bucket: R2_BUCKET, Key: file.storageKey, ResponseContentDisposition: contentDisposition(file.originalName) }),
           { expiresIn: DOWNLOAD_URL_TTL_SECONDS },
         ),
       })),
