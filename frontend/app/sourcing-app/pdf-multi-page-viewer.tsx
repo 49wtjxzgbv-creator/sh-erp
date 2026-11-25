@@ -5,18 +5,27 @@ import '@/lib/pdfjs-worker';
 import { getDocument } from 'pdfjs-dist';
 
 /**
- * "передперегляд показує тільки 1 сторінку пдф файла" (2026-11-11) —
- * `DocumentPreview` used to render PDFs via a plain `<iframe src={url}>`,
- * relying on the WebView's own native PDF plugin — Telegram's embedded
- * WebView apparently has none (or a partial one), rendering only the
- * first page. Renders every page itself instead, each onto its own
- * `<canvas>` via pdfjs-dist (`lib/pdfjs-worker.ts`'s already-configured
- * worker), stacked in one scrollable column — same "fetch bytes, hand to
- * pdfjs" shape `Dxf2DViewer`/`Step3DViewer` already use for their own
- * presigned R2 URLs (confirms R2's CORS already allows this fetch from
- * this app's own origin).
+ * "коли в вебзастосунку телеграм відкриваємо пдф файли то не можемо
+ * приблизити їх" (2026-11-25): there's no bug to fix in isolation here —
+ * the whole sourcing-app route deliberately disables the BROWSER's native
+ * pinch-zoom (`maximumScale: 1, userScalable: false` in layout.tsx, so a
+ * stray two-finger tap on a button elsewhere never zooms the whole UI),
+ * which also takes the PDF viewer's only zoom mechanism down with it since
+ * it never had one of its own. Two-finger pinch here is handled by hand —
+ * a CSS `transform: scale()` on `contentRef`, with `sizerRef` matching
+ * its SCALED footprint so the ALREADY-`overflow-auto` container gets real
+ * scrollbars/pan range at any zoom level, not just at 1x. Deliberately
+ * NOT implemented as a page re-render-per-pinch-frame (pdf.js rendering
+ * isn't cheap enough to track a live gesture at 60fps) — the canvases
+ * stay at their one fixed `outputScale` (device pixel ratio) resolution;
+ * CSS-scaling up a few times over that still reads reasonably sharp.
+ * Single-finger touches are left completely alone so normal vertical
+ * page-to-page scrolling keeps working exactly as before.
  */
 export function PdfMultiPageViewer({ url }: { url: string }) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const sizerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +47,7 @@ export function PdfMultiPageViewer({ url }: { url: string }) {
       const container = containerRef.current;
       if (!container) return;
       container.innerHTML = '';
-      const containerWidth = container.clientWidth || 360;
+      const containerWidth = outerRef.current?.clientWidth || 360;
       const outputScale = window.devicePixelRatio || 1;
 
       for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
@@ -76,11 +85,76 @@ export function PdfMultiPageViewer({ url }: { url: string }) {
     };
   }, [url]);
 
+  // Two-finger pinch-to-zoom — see this file's own header comment for why
+  // this exists at all (the route's global viewport disables native pinch).
+  useEffect(() => {
+    const outer = outerRef.current;
+    const sizer = sizerRef.current;
+    const content = contentRef.current;
+    if (!outer || !sizer || !content) return;
+
+    let scale = 1;
+    const MIN_SCALE = 1;
+    const MAX_SCALE = 4;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
+    let naturalWidth = 0;
+    let naturalHeight = 0;
+
+    function applyScale(newScale: number) {
+      scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
+      content!.style.transform = `scale(${scale})`;
+      sizer!.style.width = `${naturalWidth * scale}px`;
+      sizer!.style.height = `${naturalHeight * scale}px`;
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (e.pointerType !== 'touch') return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        naturalWidth = content!.scrollWidth;
+        naturalHeight = content!.scrollHeight;
+        const pts = [...pointers.values()];
+        pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+        pinchStartScale = scale;
+      }
+    }
+    function onPointerMove(e: PointerEvent) {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        e.preventDefault();
+        const pts = [...pointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+        applyScale(pinchStartScale * (dist / pinchStartDist));
+      }
+    }
+    function onPointerUp(e: PointerEvent) {
+      pointers.delete(e.pointerId);
+    }
+
+    outer.addEventListener('pointerdown', onPointerDown);
+    outer.addEventListener('pointermove', onPointerMove, { passive: false });
+    outer.addEventListener('pointerup', onPointerUp);
+    outer.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      outer.removeEventListener('pointerdown', onPointerDown);
+      outer.removeEventListener('pointermove', onPointerMove);
+      outer.removeEventListener('pointerup', onPointerUp);
+      outer.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [loading]);
+
   return (
-    <div className="h-full w-full overflow-y-auto bg-white p-2">
+    <div ref={outerRef} className="h-full w-full overflow-auto bg-white p-2" style={{ touchAction: 'pan-x pan-y' }}>
       {loading && <p className="p-6 text-center text-sm text-gray-500">Завантаження…</p>}
       {error && <p className="p-6 text-center text-sm text-red-500">{error}</p>}
-      <div ref={containerRef} />
+      <div ref={sizerRef}>
+        <div ref={contentRef} style={{ transformOrigin: 'top left' }}>
+          <div ref={containerRef} />
+        </div>
+      </div>
     </div>
   );
 }
