@@ -27,6 +27,15 @@ export interface TelegramWebApp {
   ready(): void;
   expand(): void;
   close(): void;
+  /**
+   * Bot API 8.0+ — on a phone, `expand()` already covers the full screen,
+   * but on iPad/desktop Telegram clients it only expands within a
+   * phone-sized modal window; THIS is the call that actually takes over
+   * the whole screen there (2026-11-25 user report: "в телеграм постачальники
+   * на айпаді відкривається в маленькому телефонному розмірі"). Optional —
+   * older clients won't have it.
+   */
+  requestFullscreen?(): void;
   onEvent(event: 'themeChanged', callback: () => void): void;
   offEvent(event: 'themeChanged', callback: () => void): void;
   showAlert(message: string, callback?: () => void): void;

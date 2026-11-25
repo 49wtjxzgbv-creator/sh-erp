@@ -31,6 +31,7 @@ export function SourcingAppShell({ children }: { children: React.ReactNode }) {
     const webApp = getTelegramWebApp();
     webApp?.ready();
     webApp?.expand();
+    webApp?.requestFullscreen?.();
   }, [sdkReady]);
 
   const { data: me, isLoading, error } = useMe(sdkReady);
