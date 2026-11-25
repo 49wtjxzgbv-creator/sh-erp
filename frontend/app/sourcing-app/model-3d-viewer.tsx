@@ -31,7 +31,25 @@ function ensureModelViewerRegistered(): Promise<void> {
  * `MobileSheet` uses, so this nests into Radix's layering/scroll-lock
  * correctly instead of fighting it.
  */
-export function Model3DViewer({ src, onClose }: { src: string; onClose: () => void }) {
+export function Model3DViewer({
+  src,
+  onClose,
+  adaptiveFraming = false,
+}: {
+  src: string;
+  onClose: () => void;
+  /**
+   * "компоненти 3д так і відображаються збільшеними а не як були до цього
+   * саме компоненти а не вироби" (2026-11-25): the aspect-ratio-driven
+   * zoom/no-autorotate fix below was built for extremely elongated/flat
+   * виробі (Assembly) models — applying it unconditionally also changed
+   * how a regular Product's own (usually normal-proportioned) 3D model
+   * looks, which nobody asked to change. Only `assemblies/[id]/page.tsx`
+   * passes `true`; `product-sheet.tsx` keeps the original
+   * autoRotate-on/pure-"auto"-framing behavior by leaving this unset.
+   */
+  adaptiveFraming?: boolean;
+}) {
   const [ready, setReady] = useState(false);
   const viewerRef = useRef<ModelViewerElement | null>(null);
 
@@ -53,6 +71,7 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     if (!el) return;
     el.cameraControls = true;
     el.disableZoom = false;
+    el.autoRotate = !adaptiveFraming;
     // "зроби щоб можна було більше приближувати" (2026-11-25) — model-viewer's
     // own default minimum zoom distance is tuned for a roughly cube-shaped
     // model and doesn't let the user pinch/scroll nearly as close as useful
@@ -89,6 +108,7 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     //     once `load` fires) drives a tighter zoom specifically scaled to
     //     how extreme the shape's aspect ratio actually is, rather than one
     //     fixed percentage for every model regardless of shape.
+    if (!adaptiveFraming) return;
     const handleLoad = () => {
       const { x, y, z } = el.getDimensions();
       const [largest, mid] = [x, y, z].sort((a, b) => b - a);
@@ -99,7 +119,7 @@ export function Model3DViewer({ src, onClose }: { src: string; onClose: () => vo
     };
     el.addEventListener('load', handleLoad);
     return () => el.removeEventListener('load', handleLoad);
-  }, [ready, src]);
+  }, [ready, src, adaptiveFraming]);
 
   useEffect(() => {
     const webApp = getTelegramWebApp();

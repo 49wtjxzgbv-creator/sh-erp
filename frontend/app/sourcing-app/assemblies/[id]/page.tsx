@@ -83,7 +83,7 @@ export default function AssemblyProductsPage() {
         <PhotoLightbox src={assembly.photoUrl} alt={assembly.name} onClose={() => setShowAssemblyPhoto(false)} />
       )}
       {assembly?.modelUrl && showAssembly3d && (
-        <Model3DViewer src={assembly.modelUrl} onClose={() => setShowAssembly3d(false)} />
+        <Model3DViewer src={assembly.modelUrl} onClose={() => setShowAssembly3d(false)} adaptiveFraming />
       )}
 
       <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>
