@@ -94,7 +94,10 @@ export function PdfMultiPageViewer({ url }: { url: string }) {
     if (!outer || !sizer || !content) return;
 
     let scale = 1;
-    const MIN_SCALE = 1;
+    // "щось воно приближає але не віддаляє" (2026-11-25) — MIN_SCALE was 1,
+    // the content's own starting scale, leaving no room to pinch back out
+    // below it at all. 0.5 gives a real two-way range.
+    const MIN_SCALE = 0.5;
     const MAX_SCALE = 4;
     const pointers = new Map<number, { x: number; y: number }>();
     let pinchStartDist = 0;
