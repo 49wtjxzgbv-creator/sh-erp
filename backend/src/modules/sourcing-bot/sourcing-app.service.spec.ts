@@ -264,7 +264,19 @@ describe('SourcingAppService (2026-11-10 — Mini App API)', () => {
       const result = await service.getAssembly(identity as any, 'asm1');
 
       expect(tx.assembly.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'asm1' } }));
-      expect(result).toEqual({ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7, photoUrl: 'https://example.test/photo.jpg' });
+      expect(result).toEqual({ id: 'asm1', name: 'Моноблок А', article: 'M-A', componentCount: 7, photoUrl: 'https://example.test/photo.jpg', modelUrl: null });
+    });
+
+    it('resolves a 3D model URL when the assembly has a usable ASSEMBLY_DOCUMENT .glb — "також щоб можна було відкрити фото виробу та 3д модель" (2026-11-25)', async () => {
+      tx.assembly.findUnique.mockResolvedValue({ id: 'asm1', name: 'Моноблок А', article: 'M-A', deletedAt: null, _count: { components: 7 } });
+      filesService.listForEntities.mockResolvedValue({
+        asm1: [{ id: 'f1', originalName: 'part.glb', downloadUrl: 'https://example.test/part.glb', optimizedDownloadUrl: 'https://example.test/part-optimized.glb' }],
+      });
+
+      const result = await service.getAssembly(identity as any, 'asm1');
+
+      expect(filesService.listForEntities).toHaveBeenCalledWith(expect.objectContaining({ userId: 'u1', companyId: 'c1' }), 'Assembly', ['asm1'], ['ASSEMBLY_DOCUMENT']);
+      expect(result.modelUrl).toBe('https://example.test/part-optimized.glb');
     });
 
     it('throws SOURCING_ASSEMBLY_NOT_FOUND for a missing or soft-deleted assembly', async () => {

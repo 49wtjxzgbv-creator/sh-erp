@@ -95,6 +95,11 @@ export interface AssemblySummary {
   photoUrl: string | null;
 }
 
+/** The parts-list screen's own richer header fetch (`useAssembly`, 2026-11-25) — same fields as `AssemblySummary` plus a 3D model URL, which the list view never needs (no per-row "🧊 3D" badge — see AssemblyCard). */
+export interface AssemblyDetail extends AssemblySummary {
+  modelUrl: string | null;
+}
+
 export interface ProductListResponse {
   items: ProductRow[];
   total: number;

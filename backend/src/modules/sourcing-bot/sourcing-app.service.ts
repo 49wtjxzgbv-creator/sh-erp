@@ -178,32 +178,35 @@ export class SourcingAppService {
   }
 
   /**
-   * A usable 3D model PLUS any PDF/DXF among this product's own
-   * `PRODUCT_DOCUMENT` files (2026-11-10 — "і 3д" / "щоб у картку товару
-   * підтягувався пдф файл і dxf якщо вони є"). Products never get a
-   * dedicated 3D-model upload slot — a `.glb` or `.step` (auto-converted
-   * to `.glb` by StepConversionService) simply lives among the product's
-   * own documents, same as the BOM/Assembly 3D pipeline. One batched
-   * `listForEntities` call serves both: `listForEntities` already
-   * resolves every conversion/optimization variant to a presigned URL
-   * (see its own header comments) — the model URL applies the same
-   * precedence `ArViewButton`/the BOM 3D viewer use (optimized >
-   * mobile-optimized > STEP-converted > already-.glb); the PDF/DXF list
-   * excludes whatever file that model URL came from, so the same file
-   * never shows up twice (once as "🧊 3D", once again as a plain
-   * document link).
+   * A usable 3D model PLUS any PDF/DXF among this entity's own documents
+   * (2026-11-10 — "і 3д" / "щоб у картку товару підтягувався пдф файл і
+   * dxf якщо вони є"). Neither Products nor Assemblies get a dedicated
+   * 3D-model upload slot — a `.glb` or `.step` (auto-converted to `.glb`
+   * by StepConversionService) simply lives among the entity's own
+   * documents. One batched `listForEntities` call serves both:
+   * `listForEntities` already resolves every conversion/optimization
+   * variant to a presigned URL (see its own header comments) — the model
+   * URL applies the same precedence `ArViewButton`/the BOM 3D viewer use
+   * (optimized > mobile-optimized > STEP-converted > already-.glb); the
+   * PDF/DXF list excludes whatever file that model URL came from, so the
+   * same file never shows up twice (once as "🧊 3D", once again as a
+   * plain document link). 2026-11-25 ("також щоб можна було відкрити
+   * фото виробу та 3д модель"): generalized from Product-only to also
+   * serve a виріб's own header (`getAssembly`) — same document pipeline,
+   * just `ASSEMBLY_DOCUMENT` instead of `PRODUCT_DOCUMENT`.
    */
   private async findModelAndDocuments(
     identity: ResolvedSourcingIdentity,
-    productId: string,
+    entityType: 'Product' | 'Assembly',
+    entityId: string,
   ): Promise<{ modelUrl: string | null; documents: Array<{ id: string; name: string; url: string }> }> {
-    const byProductId = await this.filesService.listForEntities(
+    const byEntityId = await this.filesService.listForEntities(
       { userId: identity.userId, companyId: identity.companyId },
-      'Product',
-      [productId],
-      ['PRODUCT_DOCUMENT'],
+      entityType,
+      [entityId],
+      [entityType === 'Product' ? 'PRODUCT_DOCUMENT' : 'ASSEMBLY_DOCUMENT'],
     );
-    const files = byProductId[productId] ?? [];
+    const files = byEntityId[entityId] ?? [];
 
     let modelUrl: string | null = null;
     let modelFileId: string | null = null;
@@ -345,12 +348,15 @@ export class SourcingAppService {
       });
       if (!assembly || assembly.deletedAt) throw new CodedNotFoundException('SOURCING_ASSEMBLY_NOT_FOUND', 'Assembly not found.');
       const photoUrlByAssemblyId = await this.photoUrlsByEntityId(tx, identity, 'Assembly', 'ASSEMBLY_PHOTO', [assembly.id]);
+      // "також щоб можна було відкрити фото виробу та 3д модель" (2026-11-25)
+      const { modelUrl } = await this.findModelAndDocuments(identity, 'Assembly', assembly.id);
       return {
         id: assembly.id,
         name: assembly.name,
         article: assembly.article,
         componentCount: assembly._count.components,
         photoUrl: photoUrlByAssemblyId.get(assembly.id) ?? null,
+        modelUrl,
       };
     });
   }
@@ -496,7 +502,7 @@ export class SourcingAppService {
       const pendingProposalBySupplierId = new Map(pendingProposals.map((p) => [p.supplierId, p]));
 
       const photoUrls = await this.allPhotoUrlsForProduct(tx, identity, product.id);
-      const { modelUrl, documents } = await this.findModelAndDocuments(identity, product.id);
+      const { modelUrl, documents } = await this.findModelAndDocuments(identity, 'Product', product.id);
 
       const candidates = product.sourcingCategoryId
         ? await tx.sourcingCandidateSupplier.findMany({

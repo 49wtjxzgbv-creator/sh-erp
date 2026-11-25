@@ -5,12 +5,14 @@ import { useParams, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PhotoLightbox } from '@/components/ui/photo-lightbox';
 import { useAssembly, useAssemblyProducts, useBulkTranslate, type ProductFilter } from '../../use-sourcing-app';
 import { useTelegramBackButton } from '../../use-telegram-back-button';
 import { ProductRow } from '../../product-row';
 import { ProductSheet } from '../../product-sheet';
 import { CandidateSheet } from '../../candidate-sheet';
 import { ProductFilterChips } from '../../product-filter-chips';
+import { Model3DViewer } from '../../model-3d-viewer';
 
 /** "пошук товарів не по категоріям а по виробах... відкриваємо [специфікацію] і у нас весь список товарів які в неї входять" (2026-11-10) — same list/sheet shape as categories/[id]/page.tsx, just backed by a flattened BOM instead of a sourcing category. */
 export default function AssemblyProductsPage() {
@@ -21,6 +23,9 @@ export default function AssemblyProductsPage() {
   const [filter, setFilter] = useState<ProductFilter>(undefined);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  // "також щоб можна було відкрити фото виробу та 3д модель" (2026-11-25)
+  const [showAssemblyPhoto, setShowAssemblyPhoto] = useState(false);
+  const [showAssembly3d, setShowAssembly3d] = useState(false);
 
   // "натискаємо повернутись назад то має повертатися у попереднє меню а не
   // на головне" (2026-11-10) — see categories/[id]/page.tsx's own comment.
@@ -40,12 +45,32 @@ export default function AssemblyProductsPage() {
       {/* "вгорі фото виробу артикул назва і написано що цей виріб складається з таких компонентів" (2026-11-25) — dropping straight into the flat parts list with no context for which виріб this even is. NOT part of the sticky bar below — this scrolls away normally, same as any page header. */}
       {assembly && (
         <div className="flex items-center gap-3 border-b p-4" style={{ borderColor: 'color-mix(in srgb, var(--tg-hint) 15%, transparent)' }}>
-          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg" style={{ background: 'var(--tg-secondary-bg)' }}>
-            {assembly.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
-              <img src={assembly.photoUrl} alt={assembly.name} className="h-full w-full object-contain" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-2xl">🏭</div>
+          {/* "також щоб можна було відкрити фото виробу та 3д модель" (2026-11-25) — same tap-to-zoom / "🧊 3D" badge pattern as product-sheet.tsx's own photo. */}
+          <div className="relative h-16 w-16 shrink-0">
+            <button
+              type="button"
+              onClick={() => assembly.photoUrl && setShowAssemblyPhoto(true)}
+              className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg"
+              style={{ background: 'var(--tg-secondary-bg)' }}
+              disabled={!assembly.photoUrl}
+            >
+              {assembly.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
+                <img src={assembly.photoUrl} alt={assembly.name} className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-2xl">🏭</span>
+              )}
+            </button>
+            {assembly.modelUrl && (
+              <button
+                type="button"
+                onClick={() => setShowAssembly3d(true)}
+                className="absolute -right-1.5 -top-1.5 flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold shadow-md"
+                style={{ background: 'var(--tg-button)', color: 'var(--tg-button-text)' }}
+                aria-label="3D"
+              >
+                🧊
+              </button>
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -53,6 +78,12 @@ export default function AssemblyProductsPage() {
             <p className="mt-0.5 text-xs" style={{ color: 'var(--tg-hint)' }}>Цей виріб складається з таких компонентів:</p>
           </div>
         </div>
+      )}
+      {assembly?.photoUrl && showAssemblyPhoto && (
+        <PhotoLightbox src={assembly.photoUrl} alt={assembly.name} onClose={() => setShowAssemblyPhoto(false)} />
+      )}
+      {assembly?.modelUrl && showAssembly3d && (
+        <Model3DViewer src={assembly.modelUrl} onClose={() => setShowAssembly3d(false)} />
       )}
 
       <div className="sticky top-0 z-10" style={{ background: 'var(--tg-bg)' }}>

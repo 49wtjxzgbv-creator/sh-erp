@@ -16,6 +16,7 @@ import {
   type UpdateOutreachInput,
   type CreateCandidateInput,
   type AssemblySummary,
+  type AssemblyDetail,
 } from './sourcing-app-client';
 
 /** The Mini App's own "not paired yet" screen checks for this specific code (TelegramWebAppAuthGuard) rather than a generic error state. */
@@ -66,7 +67,7 @@ export function useAssemblies() {
 export function useAssembly(assemblyId: string) {
   return useQuery({
     queryKey: ['sourcing-app', 'assemblies', assemblyId],
-    queryFn: () => sourcingAppClient.get<AssemblySummary>(`assemblies/${assemblyId}`),
+    queryFn: () => sourcingAppClient.get<AssemblyDetail>(`assemblies/${assemblyId}`),
     enabled: Boolean(assemblyId),
     staleTime: 5 * 60 * 1000,
   });
