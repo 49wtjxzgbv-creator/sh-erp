@@ -45,8 +45,15 @@ function applyTheme(theme: TelegramThemeParams) {
  * (not the ERP's `--background`/`--primary` etc.) so the Mini App matches
  * whatever light/dark theme the user has set in Telegram itself, live,
  * including a switch mid-session (`themeChanged`).
+ *
+ * `sdkReady` (2026-11-25 fix — same root cause as useTelegramSafeArea's own
+ * doc comment): `telegram-web-app.js` loads via `afterInteractive`, which
+ * can resolve AFTER this hook's first effect run — a ungated check used to
+ * see `getTelegramWebApp() === null`, fall back permanently, and never
+ * retry once the SDK actually became available. Depending on `sdkReady`
+ * re-runs this effect once the shell confirms the SDK is really there.
  */
-export function useTelegramTheme() {
+export function useTelegramTheme(sdkReady: boolean) {
   useEffect(() => {
     const webApp = getTelegramWebApp();
     if (!webApp) {
@@ -57,5 +64,5 @@ export function useTelegramTheme() {
     const handler = () => applyTheme(webApp.themeParams);
     webApp.onEvent('themeChanged', handler);
     return () => webApp.offEvent('themeChanged', handler);
-  }, []);
+  }, [sdkReady]);
 }

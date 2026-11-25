@@ -31,8 +31,21 @@ function applyContentSafeArea(top: number, bottom: number, fullscreenRequested: 
  * whenever this route requested fullscreen (see this file's own constant
  * comment for why the floor exists -- Telegram's self-reported value can't
  * be trusted alone). Defaults to 0 outside Telegram or on an older client.
+ *
+ * `sdkReady` (2026-11-25 fix -- THE actual root cause of three straight
+ * "nothing changed" reports on a real iPad, despite the deployed bundle
+ * confirmed correct each time via direct curl of the server's own JS
+ * chunk): `telegram-web-app.js` loads via `afterInteractive`, which can
+ * resolve AFTER this hook's effect first runs on mount -- the old ungated
+ * version saw `getTelegramWebApp() === null` on that first run, permanently
+ * set the inset to 0 via the `!webApp` branch, and NEVER retried once the
+ * SDK actually became available moments later (empty `[]` deps). No floor
+ * value could ever have fixed this -- the branch that applies the floor was
+ * simply never reached. Depending on `sdkReady` (set by the shell once
+ * `Script`'s `onLoad` fires or the SDK is found already cached) re-runs this
+ * effect at the moment the SDK is actually confirmed present.
  */
-export function useTelegramSafeArea() {
+export function useTelegramSafeArea(sdkReady: boolean) {
   useEffect(() => {
     const fullscreenRequested = isLargeScreenDevice();
     const webApp = getTelegramWebApp();
@@ -44,5 +57,5 @@ export function useTelegramSafeArea() {
     apply();
     webApp.onEvent('contentSafeAreaChanged', apply);
     return () => webApp.offEvent('contentSafeAreaChanged', apply);
-  }, []);
+  }, [sdkReady]);
 }

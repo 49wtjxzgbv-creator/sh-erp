@@ -18,10 +18,10 @@ import { BottomTabBar } from './bottom-tab-bar';
  * nested layout, same boundary `app/supplier-portal/` already draws.
  */
 export function SourcingAppShell({ children }: { children: React.ReactNode }) {
-  useTelegramTheme();
-  useTelegramSafeArea();
-
   const [sdkReady, setSdkReady] = useState(false);
+
+  useTelegramTheme(sdkReady);
+  useTelegramSafeArea(sdkReady);
 
   useEffect(() => {
     // The script may already be cached/loaded from a previous Script mount this session — onLoad alone would miss that case.
