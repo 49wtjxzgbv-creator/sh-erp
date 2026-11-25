@@ -16,17 +16,38 @@ import type { RealSupplierPrice } from './sourcing-app-client';
  * product's own id, needed since the proposal is keyed on
  * (productId, supplierId), not just the supplier.
  */
+/** `((benchmark - ourPrice) / benchmark) * 100` — positive = potential margin if sold at the benchmark price, negative = we're already paying the supplier MORE than that benchmark. Null when either side is missing/non-positive. */
+function marginVsBenchmark(ourPrice: number | null, benchmark: number | null | undefined): number | null {
+  if (ourPrice === null || benchmark === null || benchmark === undefined || benchmark <= 0) return null;
+  return ((benchmark - ourPrice) / benchmark) * 100;
+}
+
+function GermanMarginLine({ label, percent }: { label: string; percent: number | null }) {
+  if (percent === null) return null;
+  const rounded = Math.round(percent);
+  return (
+    <p className="text-xs" style={{ color: rounded >= 0 ? 'var(--tg-hint)' : '#dc2626' }}>
+      🇩🇪 {label}: {rounded >= 0 ? `маржа ${rounded}%` : `дорожче на ${Math.abs(rounded)}%`}
+    </p>
+  );
+}
+
 export function RealSupplierRow({
   productId,
   supplier,
   canPropose,
   cheapestOurPrice,
+  germanPriceExclVat,
+  germanPriceInclVat,
 }: {
   productId: string;
   supplier: RealSupplierPrice;
   canPropose: boolean;
   /** Lowest `ourPrice` among ALL real suppliers of this product — only passed when there are 2+ to compare, so one lone supplier never gets a meaningless "найдешевша" badge. "потрібен... аналізатор по цінах... відсоткове співвідношення" (2026-11-25). */
   cheapestOurPrice?: number | null;
+  /** "має бути порівняння цін німецька з пдв без пдв ціна постачальника... кожен постачальник окремо" (2026-11-25) — Product.germanPriceExclVat/InclVat, this product's OWN German-market benchmark, compared against THIS supplier's own ourPrice (not an aggregate across suppliers). */
+  germanPriceExclVat?: number | null;
+  germanPriceInclVat?: number | null;
 }) {
   const [proposing, setProposing] = useState(false);
   const [price, setPrice] = useState('');
@@ -72,6 +93,9 @@ export function RealSupplierRow({
           </p>
         )
       )}
+
+      <GermanMarginLine label="без ПДВ" percent={marginVsBenchmark(supplier.ourPrice, germanPriceExclVat)} />
+      <GermanMarginLine label="з ПДВ" percent={marginVsBenchmark(supplier.ourPrice, germanPriceInclVat)} />
 
       {supplier.pendingProposal && (
         <p className="mt-1 text-xs" style={{ color: 'var(--tg-link)' }}>

@@ -64,6 +64,8 @@ export function ProductSheet({
     .map((s) => s.ourPrice)
     .filter((v): v is number => v !== null && v > 0);
   const cheapestOurPrice = ourPrices.length > 1 ? Math.min(...ourPrices) : null;
+  const germanPriceExclVat = product?.prices.find((p) => p.field === 'germanPriceExclVat')?.value ?? null;
+  const germanPriceInclVat = product?.prices.find((p) => p.field === 'germanPriceInclVat')?.value ?? null;
 
   function openAssembly(assemblyId: string) {
     onClose();
@@ -200,7 +202,15 @@ export function ProductSheet({
               <p className="mb-1.5 text-xs font-semibold uppercase" style={{ color: 'var(--tg-hint)' }}>Наявні постачальники</p>
               <div className="space-y-2">
                 {product.realSuppliers.map((s) => (
-                  <RealSupplierRow key={s.id} productId={product.id} supplier={s} canPropose={Boolean(me?.isAdmin)} cheapestOurPrice={cheapestOurPrice} />
+                  <RealSupplierRow
+                    key={s.id}
+                    productId={product.id}
+                    supplier={s}
+                    canPropose={Boolean(me?.isAdmin)}
+                    cheapestOurPrice={cheapestOurPrice}
+                    germanPriceExclVat={germanPriceExclVat}
+                    germanPriceInclVat={germanPriceInclVat}
+                  />
                 ))}
               </div>
             </section>
