@@ -35,6 +35,17 @@ export interface PhotoLightboxProps {
  * listener closes on both. The button keeps its own onClick too, but is
  * effectively redundant now: this capture-phase listener already fires
  * (and closes) before the click even reaches the button.
+ *
+ * `e.stopPropagation()` (2026-11-25 user report, sourcing-app on iPad:
+ * tapping beside the photo closed the lightbox but the SAME tap also
+ * landed on whatever was underneath, e.g. navigating a list item): closing
+ * triggers a synchronous React unmount of the backdrop mid-dispatch: on
+ * WebKit touch devices, the browser's hit-testing for that tap can then
+ * resolve against whatever element is NOW exposed at that point instead of
+ * the (just-removed) backdrop, letting the tap "fall through" to the page
+ * behind. Stopping propagation the moment we decide to close keeps this
+ * one event from being used for anything else, regardless of what the DOM
+ * looks like a moment later.
  */
 export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -45,6 +56,7 @@ export function PhotoLightbox({ src, alt = '', onClose }: PhotoLightboxProps) {
     }
     function onDocumentClick(e: MouseEvent) {
       if (imgRef.current && e.target instanceof Node && imgRef.current.contains(e.target)) return;
+      e.stopPropagation();
       onClose();
     }
     document.addEventListener('keydown', onKeyDown);
